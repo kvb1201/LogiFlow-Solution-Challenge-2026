@@ -3,6 +3,7 @@
 from app.services.pipeline_registry import PIPELINES
 from app.services.scorer import score_route
 from app.services.enricher import enrich_segment
+from app.services.validator import validate_route
 
 
 def generate_all_routes(source, destination, constraints):
@@ -31,6 +32,9 @@ def optimize_routes(data):
         return {"error": "No routes available after applying constraints"}
 
     preferred = data.preferences.preferred_mode if data.preferences else None
+
+    for r in routes:
+        validate_route(r)
 
     # Score routes
     for r in routes:
