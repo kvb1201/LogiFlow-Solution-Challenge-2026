@@ -104,7 +104,7 @@ const InputForm = ({
                   setExcludedModes([]);
                 } else {
                   // exclude all other modes except selected
-                  const all = ["road", "rail", "hybrid"];
+                  const all = ["road", "rail", "water", "hybrid"];
                   const keep = val.toLowerCase();
                   const exclude = all.filter((m) => m !== keep);
                   setExcludedModes(exclude);
@@ -118,6 +118,7 @@ const InputForm = ({
               <option value="Any">Any</option>
               <option value="Road">Road</option>
               <option value="Rail">Rail</option>
+              <option value="Water">Water</option>
               <option value="Hybrid">Hybrid</option>
             </select>
             <p className="text-xs text-slate-400 mt-2">
@@ -136,6 +137,7 @@ const InputForm = ({
               <option value="Any">Any</option>
               <option value="Road">Road</option>
               <option value="Rail">Rail</option>
+              <option value="Water">Water</option>
               <option value="Hybrid">Hybrid</option>
             </select>
           </div>
@@ -145,7 +147,7 @@ const InputForm = ({
         <div className="mt-5">
           <label className="block text-sm font-medium text-slate-600 mb-2">Exclude Modes (hard constraints)</label>
           <div className="flex flex-wrap gap-4">
-            {['Road', 'Rail', 'Hybrid'].map((mode) => (
+            {['Road', 'Rail', 'Water', 'Hybrid'].map((mode) => (
               <label key={mode} className="inline-flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"

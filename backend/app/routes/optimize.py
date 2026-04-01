@@ -26,6 +26,7 @@ city_coords = {
     "Mumbai": (19.0760, 72.8777),
     "Vadodara": (22.3072, 73.1812),
     "Midpoint": (21.5, 73.0),
+    "Port": (21.3, 72.9),
 }
 
 def get_coords(name: str):
@@ -74,6 +75,17 @@ def generate_routes(source, destination):
             "risk": 0.3,
             "segments": [
                 {"mode": "Rail", "from": source, "to": destination}
+            ],
+        },
+        {
+            "type": "Water",
+            "mode": "water",
+            "time": 10,
+            "cost": 1500,
+            "risk": 0.5,
+            "segments": [
+                {"mode": "Water", "from": source, "to": "Port"},
+                {"mode": "Water", "from": "Port", "to": destination},
             ],
         },
         {

@@ -115,6 +115,7 @@ const MapView = ({ segments, sourceName, destName }) => {
         <div class="text-xs font-semibold text-slate-700 mb-1">Transport modes</div>
         <div class="flex items-center gap-2"><span style="background:#3b82f6; width:16px; height:4px; display:inline-block; border-radius:2px;"></span> Road</div>
         <div class="flex items-center gap-2"><span style="background:#10b981; width:16px; height:4px; display:inline-block; border-radius:2px;"></span> Rail</div>
+        <div class="flex items-center gap-2"><span style="background:#06b6d4; width:16px; height:4px; display:inline-block; border-radius:2px;"></span> Water</div>
         <div class="flex items-center gap-2"><span style="background:#f59e0b; width:16px; height:4px; display:inline-block; border-radius:2px;"></span> Hybrid</div>
         <div class="mt-1 text-xs text-slate-500"><i class="fas fa-location-dot"></i> Source &nbsp;&nbsp; <i class="fas fa-flag-checkered"></i> Destination</div>
       `;

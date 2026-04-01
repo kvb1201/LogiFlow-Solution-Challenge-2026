@@ -19,8 +19,9 @@ export const cityCoordinates = {
 
 // Mode -> color mapping for polylines
 export const modeColor = {
-  "Road": "#3b82f6",    // blue
-  "Rail": "#10b981",    // green
-  "Hybrid": "#f59e0b",  // orange
+  "Road": "#3b82f6",     // blue
+  "Rail": "#10b981",     // green
+  "Water": "#06b6d4",    // cyan
+  "Hybrid": "#f59e0b",   // orange
   "Intermodal": "#8b5cf6"
 };
