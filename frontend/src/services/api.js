@@ -68,7 +68,8 @@ export const fetchOptimizedRoute = async (
   constraints = {}
 ) => {
   try {
-    const response = await fetch('http://localhost:8000/optimize', {
+    console.log('Fetching optimized route from backend...');
+    const response = await fetch('/api/optimize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -81,7 +82,9 @@ export const fetchOptimizedRoute = async (
     });
 
     if (!response.ok) {
-      throw new Error('API request failed');
+      const errText = await response.text();
+      console.error('API request failed:', response.status, errText);
+      throw new Error(`API request failed with status: ${response.status}`);
     }
 
     return await response.json();
