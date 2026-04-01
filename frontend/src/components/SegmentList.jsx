@@ -20,9 +20,9 @@ const SegmentList = ({ segments, onHoverSegment }) => {
               {seg.mode}
             </div>
             <div className="text-slate-700">
-              <span className="font-medium">{seg.from}</span>
+              <span className="font-medium">{seg.from && seg.from.name}</span>
               <i className="fas fa-arrow-right mx-2 text-slate-400 text-xs"></i>
-              <span className="font-medium">{seg.to}</span>
+              <span className="font-medium">{seg.to && seg.to.name}</span>
             </div>
           </div>
         ))}

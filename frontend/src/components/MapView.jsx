@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { getCoords } from "../utils/helpers.js";
 import { modeColor } from "../utils/constants.js";
 
 const MapView = ({ segments, sourceName, destName }) => {
@@ -22,8 +21,8 @@ const MapView = ({ segments, sourceName, destName }) => {
     let accumulatedCoords = [];
     
     segmentsList.forEach((segment, idx) => {
-      const fromCoord = getCoords(segment.from);
-      const toCoord = getCoords(segment.to);
+      const fromCoord = [segment.from.lat, segment.from.lng];
+      const toCoord = [segment.to.lat, segment.to.lng];
       const segCoords = [fromCoord, toCoord];
       const color = modeColor[segment.mode] || "#6b7280";
       const polyline = L.polyline(segCoords, {
@@ -50,19 +49,32 @@ const MapView = ({ segments, sourceName, destName }) => {
   
   const addMarkers = (srcName, dstName) => {
     if (!mapRef.current) return;
-    const srcCoord = getCoords(srcName);
-    const dstCoord = getCoords(dstName);
-    
+    const firstSeg = segments && segments.length > 0 ? segments[0] : null;
+    const lastSeg = segments && segments.length > 0 ? segments[segments.length - 1] : null;
+
+    const srcCoord = firstSeg ? [firstSeg.from.lat, firstSeg.from.lng] : null;
+    const dstCoord = lastSeg ? [lastSeg.to.lat, lastSeg.to.lng] : null;
+
     const sourceIcon = L.divIcon({ html: '<i class="fas fa-location-dot text-blue-600 text-2xl drop-shadow"></i>', iconSize: [24, 24], className: 'bg-transparent' });
     const destIcon = L.divIcon({ html: '<i class="fas fa-flag-checkered text-green-600 text-2xl drop-shadow"></i>', iconSize: [24, 24], className: 'bg-transparent' });
-    
-    const srcMarker = L.marker(srcCoord, { icon: sourceIcon }).addTo(mapRef.current);
-    srcMarker.bindTooltip(`<b>Source:</b> ${srcName}`, { sticky: true });
-    const dstMarker = L.marker(dstCoord, { icon: destIcon }).addTo(mapRef.current);
-    dstMarker.bindTooltip(`<b>Destination:</b> ${dstName}`, { sticky: true });
-    
-    layersRef.current.markers.push(srcMarker, dstMarker);
-    return [srcCoord, dstCoord];
+
+    let coords = [];
+
+    if (srcCoord) {
+      const srcMarker = L.marker(srcCoord, { icon: sourceIcon }).addTo(mapRef.current);
+      srcMarker.bindTooltip(`<b>Source:</b> ${srcName}`, { sticky: true });
+      layersRef.current.markers.push(srcMarker);
+      coords.push(srcCoord);
+    }
+
+    if (dstCoord) {
+      const dstMarker = L.marker(dstCoord, { icon: destIcon }).addTo(mapRef.current);
+      dstMarker.bindTooltip(`<b>Destination:</b> ${destName}`, { sticky: true });
+      layersRef.current.markers.push(dstMarker);
+      coords.push(dstCoord);
+    }
+
+    return coords;
   };
   
   const fitBoundsToRoute = (allCoords) => {

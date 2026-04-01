@@ -68,7 +68,7 @@ export const fetchOptimizedRoute = async (
   constraints = {}
 ) => {
   try {
-    const response = await fetch('/api/optimize', {
+    const response = await fetch('http://localhost:8000/optimize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
