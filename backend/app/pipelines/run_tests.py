@@ -3,10 +3,10 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.pipelines.road import RoadPipeline
-from app.pipelines.rail import RailPipeline
-from app.pipelines.water import WaterPipeline
-from app.pipelines.hybrid import HybridPipeline
+from app.pipelines.road.pipeline import RoadPipeline
+from app.pipelines.rail.pipeline import RailPipeline
+from app.pipelines.water.pipeline import WaterPipeline
+from app.pipelines.hybrid.pipeline import HybridPipeline
 
 pipelines = [
     RoadPipeline(),

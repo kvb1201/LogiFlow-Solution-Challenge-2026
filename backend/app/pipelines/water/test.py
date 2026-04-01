@@ -1,13 +1,13 @@
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from app.pipelines.hybrid import HybridPipeline
+from app.pipelines.water.pipeline import WaterPipeline
 
 
 def test():
-    pipeline = HybridPipeline()
+    pipeline = WaterPipeline()
     routes = pipeline.generate("Surat", "Mumbai")
 
     print("Generated Routes:")

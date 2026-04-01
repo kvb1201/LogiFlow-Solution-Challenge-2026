@@ -1,5 +1,6 @@
 from app.pipelines.base import BasePipeline
 
+
 class WaterPipeline(BasePipeline):
     mode = "water"
 
