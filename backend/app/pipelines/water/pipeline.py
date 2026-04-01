@@ -3,6 +3,7 @@ from app.pipelines.base import BasePipeline
 
 class WaterPipeline(BasePipeline):
     mode = "water"
+    name = "Water Transport"
 
     def generate(self, source: str, destination: str):
         return [

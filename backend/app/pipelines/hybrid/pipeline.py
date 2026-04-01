@@ -3,6 +3,7 @@ from app.pipelines.base import BasePipeline
 
 class HybridPipeline(BasePipeline):
     mode = "hybrid"
+    name = "Hybrid Transport"
 
     def generate(self, source: str, destination: str):
         return [
