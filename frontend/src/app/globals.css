@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@theme {
+  --color-on-surface: #dfe2eb;
+  --color-background: #10141a;
+  --color-on-tertiary-container: #00320a;
+  --color-primary-fixed-dim: #acc7ff;
+  --color-on-surface-variant: #c1c6d6;
+  --color-on-secondary-fixed: #311300;
+  --color-secondary-fixed: #ffdbc8;
+  --color-primary: #acc7ff;
+  --color-surface-bright: #353940;
+  --color-on-primary-fixed: #001a40;
+  --color-inverse-primary: #005bbf;
+  --color-tertiary-fixed-dim: #67df70;
+  --color-primary-fixed: #d7e2ff;
+  --color-surface-container-low: #181c22;
+  --color-primary-container: #498fff;
+  --color-surface-variant: #31353c;
+  --color-outline-variant: #414754;
+  --color-tertiary-container: #27a640;
+  --color-surface: #10141a;
+  --color-inverse-on-surface: #2d3137;
+  --color-on-primary-fixed-variant: #004492;
+  --color-on-primary: #002f68;
+  --color-on-secondary-fixed-variant: #743500;
+  --color-surface-tint: #acc7ff;
+  --color-surface-container-lowest: #0a0e14;
+  --color-error-container: #93000a;
+  --color-on-primary-container: #00285b;
+  --color-inverse-surface: #dfe2eb;
+  --color-surface-container-highest: #31353c;
+  --color-on-tertiary: #00390d;
+  --color-secondary-container: #a65001;
+  --color-on-tertiary-fixed-variant: #005317;
+  --color-tertiary: #67df70;
+  --color-on-error-container: #ffdad6;
+  --color-surface-dim: #10141a;
+  --color-on-error: #690005;
+  --color-on-background: #dfe2eb;
+  --color-on-secondary: #512300;
+  --color-secondary-fixed-dim: #ffb689;
+  --color-on-secondary-container: #ffe3d3;
+  --color-secondary: #ffb689;
+  --color-on-tertiary-fixed: #002105;
+  --color-tertiary-fixed: #83fc89;
+  --color-outline: #8b909f;
+  --color-error: #ffb4ab;
+  --color-surface-container-high: #262a31;
+  --color-surface-container: #1c2026;
+  
+  --font-headline: "Inter", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-label: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--color-background); }
+::-webkit-scrollbar-thumb { background: var(--color-surface-container-highest); border-radius: 2px; }
+
+/* Custom slider thumb styles to match design */
+input[type=range] {
+  appearance: none;
+  background: transparent;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+}
+input[type=range]::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: none;
+}
