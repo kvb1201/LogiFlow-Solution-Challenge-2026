@@ -57,10 +57,41 @@ export default function MapView({ segments, sourceName, destName }: { segments?:
         if (segment.from?.lat && segment.from?.lng) {
           fromCoord = [segment.from.lat, segment.from.lng];
           accumulatedCoords.push(fromCoord);
+          
+          // Add marker for the "from" node if we haven't already
+          if (!markersToAdd.some(m => m[0] === fromCoord![0] && m[1] === fromCoord![1])) {
+            markersToAdd.push(fromCoord);
+            const isSource = markersToAdd.length === 1;
+            L.marker(fromCoord, { 
+              icon: L.divIcon({
+                html: `<div style="width: 14px; height: 14px; border-radius: 50%; background-color: ${isSource ? '#acc7ff' : '#ffffff'}; border: 2px solid ${isSource ? '#2F81F7' : '#333'}; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
+                className: '',
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+              })
+            })
+            .bindTooltip(`Node: ${segment.from.name || 'Waypoint'}`, { permanent: false })
+            .addTo(map);
+          }
         }
         if (segment.to?.lat && segment.to?.lng) {
           toCoord = [segment.to.lat, segment.to.lng];
           accumulatedCoords.push(toCoord);
+          
+          // Add marker for the "to" node if we haven't already
+          if (!markersToAdd.some(m => m[0] === toCoord![0] && m[1] === toCoord![1])) {
+            markersToAdd.push(toCoord);
+            L.marker(toCoord, { 
+              icon: L.divIcon({
+                html: `<div style="width: 14px; height: 14px; border-radius: 50%; background-color: #ffffff; border: 2px solid #333; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
+                className: '',
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+              })
+            })
+            .bindTooltip(`Node: ${segment.to.name || 'Waypoint'}`, { permanent: false })
+            .addTo(map);
+          }
         }
 
         if (fromCoord && toCoord) {
@@ -70,34 +101,12 @@ export default function MapView({ segments, sourceName, destName }: { segments?:
             weight: 5,
             opacity: 0.8,
             smoothFactor: 1,
-          }).addTo(map);
+          }).addTo(map)
+          .bindTooltip(`Mode: ${segment.mode}`, { sticky: true });
         }
       });
 
       if (accumulatedCoords.length > 0) {
-        markersToAdd.push(accumulatedCoords[0]);
-        markersToAdd.push(accumulatedCoords[accumulatedCoords.length - 1]);
-        
-        // Custom markers using icons similar to the Stitch HTML design
-        const createIcon = (color: string) => L.divIcon({
-          html: `<div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${color}; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
-          className: '',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
-
-        if (markersToAdd[0]) {
-          L.marker(markersToAdd[0], { icon: createIcon('#acc7ff') })
-            .bindTooltip(`Source: ${sourceName}`)
-            .addTo(map);
-        }
-        
-        if (markersToAdd[1]) {
-          L.marker(markersToAdd[1], { icon: createIcon('#acc7ff') })
-            .bindTooltip(`Destination: ${destName}`)
-            .addTo(map);
-        }
-
         const bounds = L.latLngBounds(accumulatedCoords);
         map.fitBounds(bounds, { padding: [50, 50] });
       }
