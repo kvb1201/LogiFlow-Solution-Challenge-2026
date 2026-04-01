@@ -7,6 +7,30 @@ import InputForm from '@/components/InputForm';
 
 const MapView = dynamic(() => import('@/components/Map'), { ssr: false });
 
+const calculateDistance = (segments: any[]) => {
+  if (!segments || segments.length === 0) return 0;
+  let totalDistance = 0;
+  
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  
+  segments.forEach(seg => {
+    if (seg.from?.lat && seg.from?.lng && seg.to?.lat && seg.to?.lng) {
+      const R = 6371; // km
+      const dLat = toRad(seg.to.lat - seg.from.lat);
+      const dLon = toRad(seg.to.lng - seg.from.lng);
+      const lat1 = toRad(seg.from.lat);
+      const lat2 = toRad(seg.to.lat);
+
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      totalDistance += R * c;
+    }
+  });
+  
+  return Math.round(totalDistance);
+};
+
 export default function Dashboard() {
   const {
     source,
@@ -153,7 +177,7 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex justify-between items-baseline">
                   <span className="text-on-surface-variant text-xs">Total Distance</span>
-                  <span className="mono text-sm">1,422 km</span>
+                  <span className="mono text-sm">{calculateDistance(activeRoute?.segments || [])} km</span>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-on-surface-variant text-xs">Transit Time</span>
