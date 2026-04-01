@@ -3,7 +3,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from app.pipelines.rail.pipeline import RailPipeline
+from app.pipelines.rail import RailPipeline
 
 
 def test():

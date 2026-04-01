@@ -3,6 +3,7 @@ from app.pipelines.base import BasePipeline
 
 class RoadPipeline(BasePipeline):
     mode = "road"
+    name = "Road Transport"
 
     def generate(self, source: str, destination: str):
         return [
