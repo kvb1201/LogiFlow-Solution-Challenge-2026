@@ -1,0 +1,59 @@
+# =========================
+# 🔹 Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# Virtual environments
+venv/
+.env/
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =========================
+# 🔹 ML / Data
+# =========================
+data/processed/
+data/synthetic/
+ml/models/*.pkl
+ml/models/*.joblib
+
+# =========================
+# 🔹 Logs
+# =========================
+*.log
+
+# =========================
+# 🔹 OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🔹 Node / Frontend
+# =========================
+node_modules/
+dist/
+build/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =========================
+# 🔹 IDEs
+# =========================
+.vscode/
+.idea/
+*.swp
+
+# =========================
+# 🔹 Misc
+# =========================
+*.tmp
+*.bak
