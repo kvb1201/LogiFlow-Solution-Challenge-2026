@@ -108,8 +108,18 @@ const App = () => {
                   <div className="p-3 pt-1 flex-grow">
                     <MapView 
                       segments={results.best_route.segments} 
-                      sourceName={source || (results.best_route.segments && results.best_route.segments.length > 0 ? results.best_route.segments[0].from : "Origin")}
-                      destName={destination || (results.best_route.segments && results.best_route.segments.length > 0 ? results.best_route.segments[results.best_route.segments.length-1].to : "Destination")}
+                      sourceName={
+                        source || 
+                        (results.best_route.segments && results.best_route.segments.length > 0 
+                          ? results.best_route.segments[0].from.name 
+                          : "Origin")
+                      }
+                      destName={
+                        destination || 
+                        (results.best_route.segments && results.best_route.segments.length > 0 
+                          ? results.best_route.segments[results.best_route.segments.length - 1].to.name 
+                          : "Destination")
+                      }
                     />
                   </div>
                 </div>
