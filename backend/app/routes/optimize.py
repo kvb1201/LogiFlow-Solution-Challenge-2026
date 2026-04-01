@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
+from app.services.optimizer import optimize_routes
 
 router = APIRouter()
 
@@ -125,45 +126,4 @@ def score_route(route, priority, preferred_mode):
 
 @router.post("/optimize")
 def optimize(data: OptimizeRequest):
-    routes = generate_routes(data.source, data.destination)
-
-    # Apply constraints (exclude modes)
-    excluded = data.constraints.excluded_modes if data.constraints else []
-    routes = [r for r in routes if r["mode"] not in excluded]
-
-    if not routes:
-        return {"error": "No routes available after applying constraints"}
-
-    preferred = data.preferences.preferred_mode if data.preferences else None
-
-    # Score routes
-    for r in routes:
-        r["score"] = score_route(r, data.priority, preferred)
-
-    # Sort by best score
-    routes.sort(key=lambda x: x["score"])
-
-    best = routes[0]
-
-    # Add explanation
-    best["explanation"] = f"Selected based on {data.priority.lower()} priority"
-
-    return {
-        "best_route": {
-            "type": best["type"],
-            "total_time": best["time"],
-            "total_cost": best["cost"],
-            "risk": best["risk"],
-            "segments": [enrich_segment(s) for s in best["segments"]],
-            "explanation": best["explanation"],
-        },
-        "alternatives": [
-            {
-                "mode": r["type"],
-                "time": r["time"],
-                "cost": r["cost"],
-                "risk": r["risk"],
-            }
-            for r in routes[1:]
-        ],
-    }
+    return optimize_routes(data)
