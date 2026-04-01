@@ -1,5 +1,6 @@
 from app.pipelines.base import BasePipeline
 
+
 class HybridPipeline(BasePipeline):
     mode = "hybrid"
 
