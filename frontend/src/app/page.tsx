@@ -53,18 +53,73 @@ export default function Dashboard() {
 
   if (!hasSearched) {
     return (
-      <div className="bg-[var(--color-surface)] text-[var(--color-on-surface)] min-h-screen flex flex-col items-center p-6 relative">
-      	{/* Simulated Map Background for Landing */}
-        <div className="absolute inset-0 z-0 bg-[#0d1117]">
-          <img className="w-full h-full object-cover opacity-10 grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNcTP-TzWsdkpKgND0InBCfzfNp_SkmEevfBjcxjBgSNfrYv3PnreSaqxE9GYKboWBcKwG608iLb4VduCboU8yY7GjYZllcLH2c3f7P0yxe3HpfL2aUm7NbzUWnQjslFEQJh0As2WBcXJL0TE8IXXB7Xs5uE7J_lYZk2mc9v2614ax6tfmPmA0quU-LQGDWoH6hzfgJLBCUfeA1L5sRiBhpUAeYH2TKUnAQbbnPLYamKMQEDunsHKO6ukh-N4z4kxHgiD-Qr90P4o" alt="bg"/>
+      <div className="bg-[#080b12] text-[var(--color-on-surface)] min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* ── Animated Mesh Gradient Background ── */}
+        <div className="absolute inset-0 z-0">
+          {/* Base dark layer */}
+          <div className="absolute inset-0 bg-[#080b12]" />
+          
+          {/* Animated mesh gradient blobs */}
+          <div className="absolute w-[600px] h-[600px] rounded-full opacity-[0.12] blur-[100px] bg-[#498fff] animate-mesh-1 top-[-10%] left-[-5%]" />
+          <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.08] blur-[90px] bg-[#67df70] animate-mesh-2 bottom-[-5%] right-[-5%]" />
+          <div className="absolute w-[400px] h-[400px] rounded-full opacity-[0.06] blur-[80px] bg-[#acc7ff] animate-mesh-3 top-[40%] left-[50%]" />
+          <div className="absolute w-[350px] h-[350px] rounded-full opacity-[0.05] blur-[70px] bg-[#ffb689] animate-mesh-4 top-[10%] right-[20%]" />
+          
+          {/* Subtle dot grid pattern */}
+          <div className="absolute inset-0 hero-dot-grid opacity-[0.35]" />
+          
+          {/* Top edge highlight */}
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+          
+          {/* Noise texture overlay for depth */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")' }} />
+          
+          {/* Vignette */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_#080b12_80%)]" />
         </div>
         
-        <div className="w-full max-w-4xl z-10 mt-16 max-w-[900px]">
-          <div className="text-center mb-10">
-            <h1 className="text-5xl font-bold font-headline tracking-tighter text-primary mb-4">LogiFlow</h1>
-            <p className="text-on-surface-variant max-w-xl mx-auto font-body">Optimize your supply chain routing with multimodal intelligence, dynamic risk mapping, and granular predictive alerts.</p>
+        <div className="w-full max-w-[900px] z-10 animate-slide-up">
+          {/* Hero Header */}
+          <div className="text-center mb-12">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full mb-6 animate-fade-in">
+              <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+              <span className="text-[11px] font-semibold tracking-widest uppercase text-primary">AI-Powered Logistics Intelligence</span>
+            </div>
+
+            <h1 className="text-6xl md:text-7xl font-black font-headline tracking-tighter mb-5">
+              <span className="bg-gradient-to-r from-primary via-primary-fixed-dim to-primary bg-clip-text text-transparent animate-gradient-shift" style={{ backgroundSize: '200% auto' }}>Logi</span>
+              <span className="text-on-surface">Flow</span>
+            </h1>
+            <p className="text-on-surface-variant max-w-2xl mx-auto font-body text-base leading-relaxed">
+              Optimize your supply chain routing with <span className="text-primary font-medium">multimodal intelligence</span>, <span className="text-tertiary font-medium">dynamic risk mapping</span>, and granular predictive alerts.
+            </p>
+
+            {/* Feature pills */}
+            <div className="flex flex-wrap justify-center gap-3 mt-8">
+              {[
+                { icon: 'route', label: 'Pareto-Optimal Routing' },
+                { icon: 'speed', label: 'Real-Time Optimization' },
+                { icon: 'eco', label: 'Carbon-Aware' },
+              ].map((feature, i) => (
+                <div
+                  key={feature.label}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
+                  style={{ animationDelay: `${0.5 + i * 0.15}s`, animationFillMode: 'backwards' }}
+                >
+                  <span className="material-symbols-outlined text-primary text-sm">{feature.icon}</span>
+                  {feature.label}
+                </div>
+              ))}
+            </div>
           </div>
+          
           <InputForm />
+          
+          {/* Bottom decorative element */}
+          <div className="text-center mt-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}>
+            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">Powered by Advanced Graph Optimization</p>
+          </div>
         </div>
       </div>
     );
