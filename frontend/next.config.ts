@@ -5,8 +5,13 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        // Use 127.0.0.1 instead of localhost to prevent IPv6/IPv4 binding issues with Uvicorn
-        destination: 'http://127.0.0.1:8000/:path*', 
+        // Proxy to FastAPI backend
+        destination: 'http://127.0.0.1:8000/:path*',
+      },
+      {
+        source: '/railradar/:path*',
+        // Proxy to RailRadar API (avoids CORS for live-map calls)
+        destination: 'https://api.railradar.org/api/v1/:path*',
       },
     ];
   },
