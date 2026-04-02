@@ -70,7 +70,7 @@ function StationInput({
   const [focused, setFocused] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const setStationSuggestions = useLogiFlowStore(s => s.setStationSuggestions);
-  const { results, search, clear } = useStationSearch(setStationSuggestions);
+  const { results, loading, search, clear } = useStationSearch(setStationSuggestions);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,51 +90,88 @@ function StationInput({
   };
 
   const selectStation = (station: StationSearchResult) => {
-    onChange(station.name);
+    onChange(`${station.name}`);
     clear();
     setShowDropdown(false);
   };
 
   return (
-    <div ref={wrapperRef} className="relative group">
-      <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+    <div ref={wrapperRef} className="relative z-[9999]">
+      <label className="block text-[11px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-2 ml-1 flex items-center gap-2">
         {label}
+        {loading && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
       </label>
-      <div className={`relative transition-all duration-300 ${focused ? 'scale-[1.02]' : ''}`}>
-        <div className={`absolute -inset-0.5 rounded-xl transition-opacity duration-300 ${focused ? 'opacity-100 bg-gradient-to-r from-primary/30 to-tertiary/30 blur-sm' : 'opacity-0'}`} />
-        <div className="relative flex items-center">
-          <div className={`absolute left-3 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${focused ? `bg-${iconColor.replace('text-', '')}/20` : 'bg-surface-container'}`}>
-            <span className={`material-symbols-outlined text-sm transition-colors duration-300 ${focused ? iconColor : 'text-outline'}`}>{icon}</span>
+      
+      <div className="relative group">
+        <div className={`absolute -inset-0.5 rounded-xl transition-all duration-500 ease-out ${
+          focused 
+            ? 'opacity-100 bg-gradient-to-r from-primary/40 via-tertiary/40 to-primary/40 blur-md' 
+            : 'opacity-0 bg-transparent blur-none'
+        }`} />
+        
+        <div className={`relative flex items-center bg-[#0d1117] border rounded-xl overflow-hidden transition-all duration-300 ${
+          focused ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]' : 'border-outline-variant/30 hover:border-outline-variant/60'
+        }`}>
+          <div className="pl-4 pr-3 flex items-center justify-center">
+             <span className={`material-symbols-outlined text-xl transition-all duration-500 ${
+               focused ? `${iconColor} scale-110 drop-shadow-md` : 'text-outline scale-100'
+             }`}>
+               {icon}
+             </span>
           </div>
+
           <input
             type="text"
             value={value}
             onChange={e => handleChange(e.target.value)}
             onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
             onBlur={() => setFocused(false)}
-            className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none placeholder:text-outline/50 text-sm"
+            className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
             placeholder={placeholder}
           />
+          
+          {value && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); focus(); }}
+              className="absolute right-3 p-1 rounded-full text-outline-variant hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Dropdown */}
       {showDropdown && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl overflow-hidden animate-fade-in">
-          {results.map((s, i) => (
-            <button
-              key={`${s.code}-${i}`}
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-container transition-colors text-left"
-              onClick={() => selectStation(s)}
-            >
-              <span className="material-symbols-outlined text-primary text-sm">train</span>
-              <div>
-                <span className="text-sm font-medium text-on-surface">{s.name}</span>
-                <span className="text-xs text-outline ml-2 mono">{s.code}</span>
-              </div>
-            </button>
-          ))}
+        <div className="absolute z-[99999] top-full left-0 right-0 mt-2 bg-[#12161d]/95 backdrop-blur-xl border border-white/10 border-b-white/5 rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden animate-slide-up origin-top">
+          <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            {results.map((s, i) => (
+              <button
+                key={`${s.code}-${i}`}
+                type="button"
+                className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
+                onMouseDown={(e) => {
+                  e.preventDefault(); 
+                  selectStation(s);
+                }}
+              >
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/5 flex items-center justify-center group-hover:bg-primary/20 group-hover:border-primary/30 transition-all">
+                  <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-lg">train</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors truncate">
+                    {s.name}
+                  </div>
+                  <div className="text-[11px] text-white/40 font-mono mt-0.5 tracking-wider">
+                    {s.code}
+                  </div>
+                </div>
+                <div className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 pr-2 text-primary">
+                  <span className="material-symbols-outlined text-sm">subdirectory_arrow_left</span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -212,8 +249,8 @@ export default function InputForm() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Source & Destination with autocomplete */}
-            <div className={`transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+            <div className={`relative z-[100] transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100]">
                 <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
                   <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
                     <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>

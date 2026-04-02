@@ -81,7 +81,7 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
   const {
     liveTrains,
     stationCoords,
-    showLiveTrains,
+    liveMapMode,
     fetchStationCoord,
     trainDelayDetail,
     mapFocusedTrainNumber,
@@ -141,10 +141,16 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
     if (!trainLayerRef.current || !mapRef.current) return;
     trainLayerRef.current.clearLayers();
 
-    if (!showLiveTrains || !liveTrains.length) return;
+    if (liveMapMode === 'hidden' || !liveTrains.length) return;
+
+    let filteredTrains = liveTrains;
+    if (liveMapMode === 'route') {
+      const activeTrainNo = selectedRec?.train_number || selectedOption?.train_number;
+      filteredTrains = activeTrainNo ? liveTrains.filter(t => t.train_number === activeTrainNo) : [];
+    }
 
     const bounds = mapRef.current.getBounds();
-    const visibleTrains = liveTrains.filter(
+    const visibleTrains = filteredTrains.filter(
       t => t.current_lat && t.current_lng && bounds.contains([t.current_lat, t.current_lng])
     );
 
@@ -174,7 +180,7 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
 
       trainLayerRef.current!.addLayer(marker);
     });
-  }, [liveTrains, showLiveTrains, mapTick, animPhase, mapFocusedTrainNumber, setMapFocusedTrain]);
+  }, [liveTrains, liveMapMode, mapTick, animPhase, mapFocusedTrainNumber, setMapFocusedTrain, selectedRec, selectedOption]);
 
   // ── Delay lookup for station popups (RailRadar per-station breakdown) ──
   const delayForCode = useCallback(

@@ -49,7 +49,7 @@ interface LogiFlowState {
   // Map data
   liveTrains: LiveTrainPosition[];
   stationCoords: Record<string, StationCoord>;
-  showLiveTrains: boolean;
+  liveMapMode: 'all' | 'route' | 'hidden';
 
   /** Per-station delay breakdown + live status for the selected / focused train */
   trainDelayDetail: TrainDelayData | null;
@@ -80,7 +80,7 @@ interface LogiFlowState {
   setDeadlineHours: (val: number) => void;
   setSelectedOptionIndex: (idx: number) => void;
   setActiveView: (view: 'recommendations' | 'all_options') => void;
-  setShowLiveTrains: (val: boolean) => void;
+  setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
   handleOptimize: () => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
@@ -109,7 +109,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   liveTrains: [],
   stationCoords: {},
-  showLiveTrains: true,
+  liveMapMode: 'all',
 
   trainDelayDetail: null,
   selectedTrainLive: null,
@@ -135,7 +135,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
   setActiveView: (view) => set({ activeView: view }),
-  setShowLiveTrains: (val) => set({ showLiveTrains: val }),
+  setLiveMapMode: (mode) => set({ liveMapMode: mode }),
 
   resetSearch: () => set({
     hasSearched: false,

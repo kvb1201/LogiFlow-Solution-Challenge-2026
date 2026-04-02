@@ -441,8 +441,8 @@ export default function Dashboard() {
     hasSearched,
     activeView,
     setActiveView,
-    showLiveTrains,
-    setShowLiveTrains,
+    liveMapMode,
+    setLiveMapMode,
     fetchLiveTrains,
     fetchTrainDelayAndLive,
     trainDelayDetail,
@@ -549,18 +549,33 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Live trains toggle */}
-          <button
-            onClick={() => setShowLiveTrains(!showLiveTrains)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-              showLiveTrains
-                ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
-                : 'bg-surface-container border-outline-variant/10 text-outline'
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${showLiveTrains ? 'bg-tertiary animate-pulse' : 'bg-outline'}`} />
-            Live Trains
-          </button>
+          {/* Live map options */}
+          <div className="flex bg-surface-container rounded-full p-1 border border-outline-variant/10">
+            <button
+              onClick={() => setLiveMapMode('all')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'all' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              All India
+            </button>
+            <button
+              onClick={() => setLiveMapMode('route')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'route' ? 'bg-tertiary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              Route Focus
+            </button>
+            <button
+              onClick={() => setLiveMapMode('hidden')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'hidden' ? 'bg-surface-container-highest text-on-surface shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              Hide Live
+            </button>
+          </div>
         </div>
       </header>
 
