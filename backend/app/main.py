@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.optimize import router as optimize_router
+from app.routes.rail_routes import router as rail_router
 
-app = FastAPI()
+app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
 # CORS (IMPORTANT for frontend)
 app.add_middleware(
@@ -14,3 +15,4 @@ app.add_middleware(
 )
 
 app.include_router(optimize_router)
+app.include_router(rail_router)

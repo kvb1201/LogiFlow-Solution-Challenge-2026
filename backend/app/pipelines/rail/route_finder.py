@@ -1,0 +1,216 @@
+"""
+Route finder for the Railway Cargo Decision Engine.
+PRIMARY: Uses RailRadar API for real train data between stations.
+FALLBACK: Uses CSV data_loader when API is unavailable.
+"""
+
+from app.pipelines.rail import railradar_client
+from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
+
+
+def _resolve_stations_via_api(city_name):
+    """
+    Resolve a city name to station codes using the RailRadar search API.
+    Returns list of station code strings.
+    """
+    results = railradar_client.search_stations(city_name)
+    if results:
+        return [s["code"] for s in results]
+    return []
+
+
+def _resolve_stations(city_name):
+    """
+    Resolve a city name to its station codes.
+    Tries: 1) config mapping, 2) RailRadar API search, 3) raw code.
+    """
+    # 1. Direct config lookup
+    city_key = city_name.strip()
+    for city, codes in CITY_TO_STATION.items():
+        if city.lower() == city_key.lower():
+            return codes
+
+    # 2. RailRadar API search
+    api_codes = _resolve_stations_via_api(city_key)
+    if api_codes:
+        return api_codes
+
+    # 3. Fuzzy config match
+    for city, codes in CITY_TO_STATION.items():
+        if city_key.lower() in city.lower() or city.lower() in city_key.lower():
+            return codes
+
+    # 4. Assume it's already a station code
+    return [city_key.upper()]
+
+
+def _minutes_to_time_str(minutes):
+    """Convert minutes-from-midnight to HH:MM string."""
+    if minutes is None:
+        return ""
+    h = int(minutes) // 60
+    m = int(minutes) % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def find_routes(source_city, dest_city, max_direct=15, max_transfer=5):
+    """
+    Find all cargo routes between two cities.
+    Uses RailRadar API as primary data source.
+
+    Args:
+        source_city: Name of origin city (e.g., "Mumbai")
+        dest_city: Name of destination city (e.g., "Delhi")
+        max_direct: Maximum direct routes to return
+        max_transfer: Maximum transfer routes to return
+
+    Returns:
+        list of route dicts, each containing:
+          - route_type: "direct" or "transfer"
+          - trains: list of train details
+          - total_distance_km, total_duration_minutes
+          - segments: structured segment list
+    """
+    from_stations = _resolve_stations(source_city)
+    to_stations = _resolve_stations(dest_city)
+
+    if not from_stations:
+        print(f"  [RouteFinder] Unknown source: {source_city}")
+        return []
+    if not to_stations:
+        print(f"  [RouteFinder] Unknown destination: {dest_city}")
+        return []
+
+    routes = []
+    seen_trains = set()
+
+    # ── Query RailRadar API for each station pair ─────────────────────
+    for fs in from_stations:
+        for ts in to_stations:
+            api_data = railradar_client.get_trains_between(fs, ts)
+            if not api_data or not api_data.get("trains"):
+                continue
+
+            for train in api_data["trains"]:
+                train_no = train.get("trainNumber", "")
+                if train_no in seen_trains:
+                    continue
+                seen_trains.add(train_no)
+
+                # Extract schedule for this segment
+                from_schedule = train.get("fromStationSchedule", {})
+                to_schedule = train.get("toStationSchedule", {})
+
+                dep_minutes = from_schedule.get("departureMinutes")
+                arr_minutes = to_schedule.get("arrivalMinutes")
+                dep_day = from_schedule.get("day", 1)
+                arr_day = to_schedule.get("day", 1)
+
+                # Duration calculation (across days)
+                if dep_minutes is not None and arr_minutes is not None:
+                    duration_min = arr_minutes - dep_minutes
+                    duration_min += (arr_day - dep_day) * 1440
+                    if duration_min <= 0:
+                        duration_min += 1440
+                else:
+                    duration_min = train.get("travelTimeMinutes", 0) or 0
+
+                distance_km = to_schedule.get(
+                    "distanceFromSourceKm",
+                    train.get("distanceKm", 0)
+                ) or 0
+                avg_speed = train.get("avgSpeedKmph", 0) or 0
+
+                # Running days
+                running_days = train.get("runningDays", {})
+                days_list = running_days.get("days", [])
+                all_days = running_days.get("allDays", False)
+
+                train_info = {
+                    "train_no": train_no,
+                    "train_name": train.get("trainName", ""),
+                    "train_type": train.get("type", ""),
+                    "from_station": fs,
+                    "to_station": ts,
+                    "from_station_name": train.get("sourceStationName", fs),
+                    "to_station_name": train.get("destinationStationName", ts),
+                    "departure_time": _minutes_to_time_str(dep_minutes),
+                    "arrival_time": _minutes_to_time_str(arr_minutes),
+                    "distance_km": round(distance_km, 1),
+                    "duration_minutes": duration_min,
+                    "avg_speed_kmph": avg_speed,
+                    "total_halts": train.get("totalHalts", 0),
+                    "running_days": days_list,
+                    "all_days": all_days,
+                    "data_source": "railradar_api",
+                    # These are used by ML/engineer downstream
+                    "stops_between": train.get("totalHalts", 0),
+                    "total_train_stops": train.get("totalHalts", 0) + 2,
+                    "total_train_distance": train.get("distanceKm", 0) or 0,
+                }
+
+                routes.append({
+                    "route_type": "direct",
+                    "trains": [train_info],
+                    "total_distance_km": round(distance_km, 1),
+                    "total_duration_minutes": duration_min,
+                    "total_duration_hours": round(duration_min / 60, 2) if duration_min > 0 else 0,
+                    "has_transfer": False,
+                    "transfer_details": [],
+                    "data_source": "railradar_api",
+                    "segments": [{
+                        "mode": "Rail",
+                        "from": fs,
+                        "to": ts,
+                        "from_name": train.get("sourceStationName", fs),
+                        "to_name": train.get("destinationStationName", ts),
+                        "train_no": train_no,
+                        "train_name": train.get("trainName", ""),
+                        "train_type": train.get("type", ""),
+                        "departure": _minutes_to_time_str(dep_minutes),
+                        "arrival": _minutes_to_time_str(arr_minutes),
+                        "distance_km": round(distance_km, 1),
+                        "duration_minutes": duration_min,
+                        "avg_speed_kmph": avg_speed,
+                        "running_days": days_list,
+                    }],
+                })
+
+    # ── Fallback to CSV if API returned nothing ───────────────────────
+    if not routes:
+        print(f"  [RouteFinder] API returned no routes, falling back to CSV data...")
+        try:
+            from app.pipelines.rail import data_loader
+            direct_trains = data_loader.get_trains_for_route(
+                from_stations, to_stations, max_results=max_direct
+            )
+            for t in direct_trains:
+                routes.append({
+                    "route_type": "direct",
+                    "trains": [t],
+                    "total_distance_km": t["distance_km"],
+                    "total_duration_minutes": t["duration_minutes"],
+                    "total_duration_hours": round(t["duration_minutes"] / 60, 2),
+                    "has_transfer": False,
+                    "transfer_details": [],
+                    "data_source": "csv_fallback",
+                    "segments": [{
+                        "mode": "Rail",
+                        "from": t["from_station"],
+                        "to": t["to_station"],
+                        "from_name": t.get("from_station_name", t["from_station"]),
+                        "to_name": t.get("to_station_name", t["to_station"]),
+                        "train_no": t["train_no"],
+                        "train_name": t["train_name"],
+                        "departure": t["departure_time"],
+                        "arrival": t["arrival_time"],
+                        "distance_km": t["distance_km"],
+                        "duration_minutes": t["duration_minutes"],
+                    }],
+                })
+        except Exception as e:
+            print(f"  [RouteFinder] CSV fallback also failed: {e}")
+
+    # Sort by duration
+    routes.sort(key=lambda x: x.get("total_duration_minutes", 9999))
+    return routes[:max_direct]
