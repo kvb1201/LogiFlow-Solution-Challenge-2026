@@ -13,19 +13,10 @@ _traffic_map = _artifact.get("traffic_map", {})
 
 def traffic_factor(hour: int, is_weekend: bool = False) -> float:
     """
-    Simple heuristic traffic model based on time of day and weekend.
-    Returns a multiplicative factor for travel time.
+    DEPRECATED: Do not use heuristic traffic.
+    Kept only for backward compatibility.
+    Always returns neutral factor.
     """
-    # Peak hours
-    if 8 <= hour <= 11:
-        return 1.3
-    if 17 <= hour <= 20:
-        return 1.4
-
-    # Weekend slightly higher leisure traffic (tunable)
-    if is_weekend:
-        return 1.1
-
     return 1.0
 
 
@@ -57,22 +48,17 @@ def weather_factor(weather: Dict) -> float:
     return factor
 
 
-def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, utilization: float, demand: float) -> float:
+def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_score: float, demand: float) -> float:
     """
     Build feature vector and predict delay probability using trained ML model.
     """
     if weather is None:
         weather = {}
 
-    # Map traffic based on heuristic hour
-    if 8 <= hour <= 11 or 17 <= hour <= 20:
-        traffic_label = "Heavy"
-    elif 12 <= hour <= 16:
-        traffic_label = "Moderate"
-    else:
-        traffic_label = "Clear"
-
-    traffic_score = _traffic_map.get(traffic_label, 1)
+    # Direct traffic usage (no heuristic)
+    # utilization is no longer used to infer traffic
+    # assume traffic_level already mapped before calling ML
+    # traffic_score = utilization  # now utilization carries traffic signal directly
 
     temp = weather.get("temp", 25)
     humidity = weather.get("humidity", 50)
@@ -81,7 +67,7 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, utilizatio
         "traffic_score": traffic_score,
         "Temperature": temp,
         "Humidity": humidity,
-        "Asset_Utilization": utilization,
+        "Asset_Utilization": demand,  # reuse as proxy if needed
         "Demand_Forecast": demand
     }
 
@@ -98,6 +84,8 @@ def predict_delay(
     demand: float = 70,
     current_dt: datetime | None = None,
     is_weekend: bool | None = None,
+    traffic: int | None = None,
+    traffic_level: float | None = None,
 ) -> Tuple[float, float, float]:
     """
     Combine traffic + weather to produce adjusted time.
@@ -111,14 +99,29 @@ def predict_delay(
     if is_weekend is None:
         is_weekend = now.weekday() >= 5  # 5=Sat, 6=Sun
 
-    t_factor = traffic_factor(hour, is_weekend)
+    # Use categorical traffic (0/1/2) when provided; otherwise use real traffic_level.
+    if traffic is not None:
+        t_factor = 1 + (0.15 * float(traffic))
+    elif traffic_level is not None:
+        t_factor = 1 + float(traffic_level)
+    else:
+        t_factor = traffic_factor(hour, is_weekend)
+
     w_factor = weather_factor(weather)
+
+    # Pass traffic into ML.
+    if traffic is not None:
+        traffic_input = float(traffic)
+    elif traffic_level is not None:
+        traffic_input = float(traffic_level)
+    else:
+        traffic_input = 0.5
 
     delay_prob = _ml_delay_probability(
         hour,
         weather,
         is_weekend,
-        utilization,
+        traffic_input,
         demand
     )
 
@@ -126,6 +129,10 @@ def predict_delay(
     ml_factor = 1 + min(delay_prob, 0.5) * 0.3
 
     # Avoid double counting traffic (handled inside ML)
-    adjusted_time = base_time_hours * w_factor * ml_factor
+    adjusted_time = base_time_hours * t_factor * w_factor * ml_factor
+
+    # Ensure traffic_factor is never the neutral default when traffic is known
+    if traffic is not None and t_factor == 1.0 and traffic > 0:
+        t_factor = 1 + (0.15 * float(traffic))
 
     return adjusted_time, t_factor, w_factor

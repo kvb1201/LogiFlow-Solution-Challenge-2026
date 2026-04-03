@@ -197,6 +197,8 @@ export default function InputForm() {
     avoidTolls, setAvoidTolls,
     avoidHighways, setAvoidHighways,
     trafficAware, setTrafficAware,
+    vehicleType, setVehicleType,
+    fuelPrice, setFuelPrice,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
@@ -480,6 +482,35 @@ export default function InputForm() {
                     />
                     <div className="text-right text-xs mono text-primary">{deadlineHours}h</div>
                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-5">
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Vehicle Type
+                  </label>
+                  <select
+                    value={vehicleType}
+                    onChange={(e) => setVehicleType(e.target.value as any)}
+                    className="w-full px-4 py-3 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                  >
+                    <option value="mini_truck">Mini Truck</option>
+                    <option value="truck">Truck</option>
+                    <option value="heavy_truck">Heavy Truck</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Fuel Price (₹/L)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={fuelPrice}
+                    onChange={(e) => setFuelPrice(Number(e.target.value))}
+                    className="w-full px-4 py-3 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                  />
                 </div>
               </div>
             </div>
