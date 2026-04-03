@@ -73,7 +73,8 @@ def get_routes(source, destination, payload=None):
         avoid_list.append("tollRoads")
 
     if avoid_list:
-        params["avoid"] = ",".join(avoid_list)
+        # TomTom expects repeated keys: avoid=motorways&avoid=tollRoads (not comma-separated)
+        params["avoid"] = avoid_list
 
     res = requests.get(url, params=params, timeout=10)
 
