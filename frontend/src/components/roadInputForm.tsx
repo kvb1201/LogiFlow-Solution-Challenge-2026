@@ -59,6 +59,7 @@ function LocationInput({
   icon,
   iconColor,
   placeholder,
+  hasError,
 }: {
   label: string;
   value: string;
@@ -66,6 +67,7 @@ function LocationInput({
   icon: string;
   iconColor: string;
   placeholder: string;
+  hasError?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -89,7 +91,7 @@ function LocationInput({
     setShowDropdown(true);
   };
 
-  const selectLocation = (location: any) => {
+  const selectLocation = (location: { name: string }) => {
     onChange(`${location.name}`);
     clear();
     setShowDropdown(false);
@@ -110,7 +112,11 @@ function LocationInput({
         }`} />
         
         <div className={`relative flex items-center bg-[#0d1117] border rounded-xl overflow-hidden transition-all duration-300 ${
-          focused ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]' : 'border-outline-variant/30 hover:border-outline-variant/60'
+          hasError
+            ? 'border-red-500/60'
+            : focused
+              ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]'
+              : 'border-outline-variant/30 hover:border-outline-variant/60'
         }`}>
           <div className="pl-4 pr-3 flex items-center justify-center">
              <span className={`material-symbols-outlined text-xl transition-all duration-500 ${
@@ -125,6 +131,7 @@ function LocationInput({
             value={value}
             onChange={e => handleChange(e.target.value)}
             onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
+            // Keep dropdown stable; outside click closes it.
             onBlur={() => setFocused(false)}
             className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
             placeholder={placeholder}
@@ -147,7 +154,7 @@ function LocationInput({
           <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {results.map((s, i) => (
               <button
-                key={`${s.code}-${i}`}
+                key={`${s.name}-${i}`}
                 type="button"
                 className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
                 onMouseDown={(e) => {
@@ -161,9 +168,6 @@ function LocationInput({
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors truncate">
                     {s.name}
-                  </div>
-                  <div className="text-[11px] text-white/40 font-mono mt-0.5 tracking-wider">
-                    {s.code}
                   </div>
                 </div>
                 <div className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 pr-2 text-primary">
@@ -199,6 +203,8 @@ export default function InputForm() {
 
   const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const timers = [
@@ -213,8 +219,23 @@ export default function InputForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!source.trim() || !destination.trim()) return;
-    if (cargoWeight <= 0 || deadlineHours <= 0) return;
+    if (!source.trim() || !destination.trim()) {
+      setError('Source and destination are required');
+      return;
+    }
+    if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
+      setError('Source and destination cannot be the same');
+      return;
+    }
+    if (cargoWeight <= 0) {
+      setError('Cargo weight must be greater than 0');
+      return;
+    }
+    if (deadlineHours <= 0) {
+      setError('Delivery deadline must be greater than 0');
+      return;
+    }
+    setError(null);
     handleOptimize({ mode: 'road' });
   };
 
@@ -256,9 +277,18 @@ export default function InputForm() {
             <div className={`relative z-[100] transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100]">
                 <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
-                  <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
+                  <button
+                    type="button"
+                    disabled={!source.trim() && !destination.trim()}
+                    onClick={() => {
+                      const temp = source;
+                      setSource(destination);
+                      setDestination(temp);
+                    }}
+                    className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg transition-transform hover:scale-105 disabled:opacity-50"
+                  >
                     <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>
-                  </div>
+                  </button>
                 </div>
 
                 <LocationInput
@@ -268,6 +298,7 @@ export default function InputForm() {
                   icon="my_location"
                   iconColor="text-primary"
                   placeholder="Search city..."
+                  hasError={!!error && !source.trim()}
                 />
                 <LocationInput
                   label="Delivery Location"
@@ -276,8 +307,15 @@ export default function InputForm() {
                   icon="flag"
                   iconColor="text-tertiary"
                   placeholder="Search city..."
+                  hasError={!!error && !destination.trim()}
                 />
               </div>
+              <p className="text-[11px] text-on-surface-variant mt-2">
+                Select different pickup and delivery locations
+              </p>
+              {error && (
+                <p className="text-[12px] text-red-400 mt-1">{error}</p>
+              )}
             </div>
 
             {/* Cargo Weight & Type */}
@@ -313,6 +351,7 @@ export default function InputForm() {
                     </div>
                     <input
                       type="date"
+                      min={today}
                       value={departureDate}
                       onChange={e => setDepartureDate(e.target.value)}
                       className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
