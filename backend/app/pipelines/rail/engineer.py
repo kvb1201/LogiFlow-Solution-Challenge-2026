@@ -1,41 +1,26 @@
 """
 Cargo-specific feature engineering for the Railway Decision Engine.
 Uses REAL data from RailRadar API for delay/risk calculations.
-Cost uses published Indian Railways parcel tariff formula.
+Cost uses official IRCA tariff tables (slab-based, not formula).
 """
 
 from datetime import datetime
 from app.pipelines.rail.config import (
-    PARCEL_RATE_TIERS,
     RISK_MULTIPLIERS,
     CARGO_CONSTRAINTS,
 )
+from app.pipelines.rail.tariff import (
+    calc_parcel_cost,
+    determine_scale,
+    get_tariff_breakdown,
+)
 
 
-def calc_parcel_cost(distance_km, weight_kg):
-    """
-    Calculate Indian Railways parcel cost.
-    Based on published IR parcel tariff (slab-based pricing):
-      cost = (rate_per_km × distance / 100) + (per_kg_charge × weight)
-
-    Source: Indian Railways Parcel Directorate rate schedule.
-    Calibrated: 300kg, 1384km (Mumbai→Delhi) ≈ ₹8,900
-
-    Args:
-        distance_km: Route distance in kilometers
-        weight_kg: Cargo weight in kilograms
-
-    Returns:
-        Total parcel cost in INR (rupees)
-    """
-    tier = next(
-        (t for t in PARCEL_RATE_TIERS if weight_kg <= t["max_kg"]),
-        PARCEL_RATE_TIERS[-1]
-    )
-    distance_charge = (distance_km * tier["rate_per_km_paise"]) / 100
-    weight_charge = weight_kg * tier["per_kg_charge"]
-    raw_cost = distance_charge + weight_charge
-    return round(max(raw_cost, tier["min_charge_rs"]), 2)
+# calc_parcel_cost is now imported from tariff.py
+# It uses official IRCA slab-based tables instead of the old formula.
+# Signature: calc_parcel_cost(distance_km, weight_kg, train_name, train_type, scale, ...)
+# For backward compatibility, it still works with just (distance_km, weight_kg).
+# See tariff.py for full documentation.
 
 
 def get_real_delay_data(train_number):
@@ -272,8 +257,28 @@ def engineer_features(routes, payload):
 
         route["real_delay_data"] = real_delay
 
-        # ── Calculate features ────────────────────────────────────────
-        parcel_cost = calc_parcel_cost(distance, weight)
+        # ── Determine tariff scale from train info ────────────────────
+        first_train = route.get("trains", [{}])[0] if route.get("trains") else {}
+        t_name = first_train.get("train_name", "")
+        t_type = first_train.get("train_type", "")
+        t_number = first_train.get("train_no", "")
+        scale = determine_scale(t_name, t_type, t_number)
+
+        # ── Calculate features (using official IRCA tariff tables) ────
+        parcel_cost = calc_parcel_cost(
+            distance_km=distance,
+            weight_kg=weight,
+            train_name=t_name,
+            train_type=t_type,
+            scale=scale,
+        )
+        tariff_detail = get_tariff_breakdown(
+            distance_km=distance,
+            weight_kg=weight,
+            train_name=t_name,
+            train_type=t_type,
+            scale=scale,
+        )
         risk = calc_risk_score(route, date_str)
         ease = calc_booking_ease(route)
         eff_duration = route.get("total_duration_hours", 0)
@@ -294,6 +299,8 @@ def engineer_features(routes, payload):
         enriched_route = {
             **route,
             "parcel_cost_inr": parcel_cost,
+            "tariff_scale": scale,
+            "tariff_breakdown": tariff_detail,
             "risk_score": risk,
             "booking_ease": ease,
             "effective_hours": eff_duration,

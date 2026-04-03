@@ -6,7 +6,8 @@ and decision engine into the BasePipeline interface.
 
 from app.pipelines.base import BasePipeline
 from app.pipelines.rail.route_finder import find_routes
-from app.pipelines.rail.engineer import engineer_features, calc_parcel_cost
+from app.pipelines.rail.engineer import engineer_features
+from app.pipelines.rail.tariff import calc_parcel_cost
 from app.pipelines.rail.engine import decide
 from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
 
@@ -100,6 +101,8 @@ class RailPipeline(BasePipeline):
                     "parcel_van_type": r.get("parcel_van_type", "SLR"),
                     "punctuality_pct": r.get("punctuality_pct", 60),
                     "booking_ease": r.get("booking_ease", 0.5),
+                    "tariff_scale": r.get("tariff_scale", "S"),
+                    "tariff_breakdown": r.get("tariff_breakdown", {}),
                 },
             })
 

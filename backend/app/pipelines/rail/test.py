@@ -106,24 +106,118 @@ def test_route_finder():
 
 
 def test_feature_engineering():
-    separator("TEST 3: Feature Engineering (Real Delay Data)")
+    separator("TEST 3: Feature Engineering (IRCA Tariff + Real Delay)")
+    from app.pipelines.rail.tariff import (
+        calc_parcel_cost, determine_scale, get_tariff_breakdown,
+        lookup_tariff,
+    )
     from app.pipelines.rail.engineer import (
-        calc_parcel_cost, get_real_delay_data, calc_risk_score,
+        get_real_delay_data, calc_risk_score,
         check_cargo_feasibility,
     )
 
-    # Parcel costs
-    costs = [
-        (500, 50, "500km × 50kg"),
-        (1000, 100, "1000km × 100kg"),
-        (1384, 300, "1384km × 300kg (Mumbai→Delhi)"),
-        (2000, 500, "2000km × 500kg"),
+    # ── Scale detection from all data sources ────────────────────────
+    print("  Scale detection (API codes + train names + numbers):")
+    # (train_name, train_type, train_number, expected_scale)
+    scale_tests = [
+        # RailRadar API type codes
+        ("MUMBAI RAJDHANI",       "RAJ",   "12951", "R"),
+        ("NDLS CDG SHATABDI",     "SHTB",  "12046", "R"),
+        ("DURONTO EXPRESS",       "DRNT",  "12284", "R"),
+        ("MUMBAI SF EXPRESS",     "SF",    "12137", "P"),
+        ("VANDE BHARAT EXPRESS",  "Vande Bharat", "", "P"),
+        ("TEJAS EXPRESS",         "Tejas", "",      "P"),
+        # CSV train names (no type field)
+        ("KARNATAKA EXPRESS",     "",      "12627", "P"),
+        ("DECCAN QUEEN",          "",      "12124", "P"),
+        ("LOCAL PASSENGER",       "",      "51015", "S"),
+        # Train number fallback only
+        ("",                      "",      "12951", "R"),
+        ("",                      "",      "12046", "R"),
+        ("",                      "",      "51015", "S"),
     ]
-    for dist, weight, label in costs:
-        cost = calc_parcel_cost(dist, weight)
-        print(f"  {label}: ₹{cost:,.0f}")
+    for t_name, t_type, t_num, expected in scale_tests:
+        got = determine_scale(t_name, t_type, t_num)
+        label = t_name or t_type or f"#{t_num}"
+        status = "✅" if got == expected else "❌"
+        print(f"    {status} {label[:28]:28s} → Scale-{got} (expected {expected})")
+        assert got == expected, f"Scale mismatch for {label}"
 
-    # Real delay data from API
+    # ── Parcel costs across all scales ────────────────────────────────
+    print("\n  Parcel costs (official IRCA slab tables):")
+    test_cases = [
+        (50,   10, "S", "50km × 10kg (Scale-S)"),
+        (500,  50, "S", "500km × 50kg (Scale-S)"),
+        (1000, 100, "S", "1000km × 100kg (Scale-S)"),
+        (1384, 300, "S", "1384km × 300kg Mumbai→Delhi (Scale-S)"),
+        (1384, 300, "R", "1384km × 300kg Mumbai→Delhi (Scale-R)"),
+        (1384, 300, "P", "1384km × 300kg Mumbai→Delhi (Scale-P)"),
+        (1384, 300, "L", "1384km × 300kg Mumbai→Delhi (Scale-L)"),
+        (2000, 500, "S", "2000km × 500kg (Scale-S)"),
+        (100,  25, "S", "100km × 25kg (Scale-S)"),
+    ]
+    for dist, weight, scale, label in test_cases:
+        cost = calc_parcel_cost(dist, weight, scale=scale)
+        print(f"    {label}: ₹{cost:,.2f}")
+        assert cost > 0, f"Cost should be > 0 for {label}"
+
+    # ── Verify against official PDF values (all scales) ─────────────
+    print("\n  Verifying against official PDF values:")
+    known_checks = [
+        # Scale-L (luggage_rates.pdf)
+        (50,  10,  "L", 4.73,   "L: 1-50km, 1-10kg"),
+        (50,  100, "L", 47.25,  "L: 1-50km, 91-100kg"),
+        (100, 10,  "L", 6.44,   "L: 91-100km, 1-10kg"),
+        (100, 100, "L", 64.35,  "L: 91-100km, 91-100kg"),
+        (140, 50,  "L", 38.70,  "L: 131-140km, 41-50kg"),
+        (290, 100, "L", 121.73, "L: 281-290km, 91-100kg"),
+        (927, 100, "L", 301.95, "L: 926-950km, 91-100kg"),
+        # Scale-S (Standered_rates.pdf)
+        (50,  10,  "S", 2.10,   "S: 1-50km, 1-10kg"),
+        (50,  100, "S", 20.93,  "S: 1-50km, 91-100kg"),
+        # Scale-P (Premier_rates.pdf)
+        (50,  10,  "P", 4.19,   "P: 1-50km, 1-10kg"),
+        (50,  100, "P", 41.84,  "P: 1-50km, 91-100kg"),
+    ]
+    for dist, weight, scale, expected, label in known_checks:
+        got = lookup_tariff(dist, weight, scale)
+        status = "✅" if abs(got - expected) < 0.02 else "❌"
+        print(f"    {status} {label}: ₹{got} (expected ₹{expected})")
+        assert abs(got - expected) < 0.02, f"Mismatch for {label}: {got} != {expected}"
+
+    # ── Ambedkar Express exact test (user's verified case) ───────────
+    print("\n  Ambedkar Express (14116), 927km, 300kg:")
+    cost_l = calc_parcel_cost(927, 300, scale="L")
+    print(f"    Scale-L: ₹{cost_l:.2f} (expected ₹905.85)")
+    assert abs(cost_l - 905.85) < 0.01, f"Ambedkar Express test failed: {cost_l} != 905.85"
+
+    # ── Minimum distance enforcement (50 km) ──────────────────────────
+    print("\n  Minimum distance enforcement:")
+    cost_10km = calc_parcel_cost(10, 50, scale="S")
+    cost_50km = calc_parcel_cost(50, 50, scale="S")
+    print(f"    10km × 50kg (Scale-S): ₹{cost_10km:,.2f} (charged as 50km)")
+    print(f"    50km × 50kg (Scale-S): ₹{cost_50km:,.2f}")
+    assert cost_10km == cost_50km, "10km should be charged as 50km minimum"
+
+    # ── Tariff breakdown ──────────────────────────────────────────────
+    print("\n  Tariff breakdown:")
+    breakdown = get_tariff_breakdown(1384, 300, train_name="RAJDHANI", train_type="Rajdhani Express")
+    print(f"    Scale: {breakdown['scale']} ({breakdown['scale_name']})")
+    print(f"    Distance slab: {breakdown['distance_slab']}")
+    print(f"    Base charge: ₹{breakdown['base_charge_inr']:,.2f}")
+    print(f"    2% surcharge: ₹{breakdown['dev_surcharge_2pct']:,.2f}")
+    print(f"    Total (w/ surcharge): ₹{breakdown['total_with_surcharge_inr']:,.2f}")
+    assert breakdown["scale"] == "R", "Rajdhani should be Scale-R"
+
+    # ── Heavy cargo (>100 kg) multi-block calculation ─────────────────
+    print("\n  Heavy cargo (multi-block):")
+    for weight in [150, 300, 500, 1000]:
+        cost_s = calc_parcel_cost(1384, weight, scale="S")
+        cost_r = calc_parcel_cost(1384, weight, scale="R")
+        print(f"    1384km × {weight}kg: Scale-S ₹{cost_s:,.2f} | Scale-R ₹{cost_r:,.2f}")
+        assert cost_r > cost_s, "Scale-R should always be more expensive than Scale-S"
+
+    # ── Real delay data from API ──────────────────────────────────────
     print("\n  Real delay data:")
     delay = get_real_delay_data("12951")
     if delay:

@@ -14,9 +14,7 @@ from functools import lru_cache
 
 # ── API Configuration ─────────────────────────────────────────────────
 RAILRADAR_BASE_URL = os.environ.get("RAILRADAR_BASE_URL", "https://api.railradar.org")
-RAILRADAR_API_KEY = os.environ.get(
-    "RAILRADAR_API_KEY"
-)
+RAILRADAR_API_KEY = os.environ.get("RAILRADAR_API_KEY", "")
 
 _session = requests.Session()
 _session.headers.update({

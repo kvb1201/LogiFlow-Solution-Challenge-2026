@@ -60,6 +60,8 @@ def _build_recommendation(route, priority, reason):
         "delay_info": delay_info,
         "predicted_delay_min": round(route.get("predicted_delay_min", 0), 1),
         "adjusted_duration_hours": round(route.get("adjusted_duration_hours", route.get("effective_hours", 0)), 1),
+        "tariff_scale": route.get("tariff_scale", "S"),
+        "tariff_breakdown": route.get("tariff_breakdown", {}),
         "data_source": route.get("data_source", "unknown"),
     }
     return rec
@@ -178,6 +180,7 @@ def decide(enriched_routes, payload):
             "delay_source": "railradar_api" if real_delay else "ml_prediction",
             "running_days": first_train.get("running_days", []),
             "segments": r.get("segments", []),
+            "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
         })
 
