@@ -1,5 +1,4 @@
 from app.pipelines.base import BasePipeline
-import random
 
 
 class RoadPipeline(BasePipeline):
@@ -151,63 +150,53 @@ class RoadPipeline(BasePipeline):
 
         cleaned_ranked = [_clean(r) for r in ranked]
 
+        def _priority_factor():
+            if priority == "cost":
+                return "Optimized for cost efficiency"
+            if priority == "time":
+                return "Optimized for fastest delivery"
+            if priority == "safe":
+                return "Optimized for safety"
+            return None
+
+        def _common_context(route):
+            factors = []
+            budget = payload.get("budget")
+            deadline = payload.get("deadline_hours")
+            if budget is not None and route["cost"] <= budget:
+                factors.append("Within budget constraint")
+            if deadline is not None and route["time"] <= deadline:
+                factors.append("Meets delivery deadline")
+            factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            return factors
+
         def _explain(route, label="best"):
-            reasons = []
+            factors = []
+            pf = _priority_factor()
+            if pf:
+                factors.append(pf)
 
-            # --- Single route edge case ---
-            if len(cleaned_ranked) == 1:
-                reasons.append("Only route available from provider")
-                label = "single"
-
-            # --- Primary reasoning based on label ---
-            if label == "single":
-                pass
-            elif label == "cheapest":
-                reasons.append("Lowest cost among all routes")
-            elif label == "fastest":
-                reasons.append("Fastest delivery time")
-            elif label == "safest":
-                reasons.append("Lowest risk route")
-            elif label == "alternative":
-                reasons.append("Alternative feasible route")
+            if label == "best":
+                if len(cleaned_ranked) > 1:
+                    alt = cleaned_ranked[1]
+                    if route["cost"] < alt["cost"]:
+                        factors.append("Cheaper than alternative routes")
+                    if route["time"] < alt["time"]:
+                        factors.append("Faster delivery than alternatives")
+                    if route["risk"] < alt["risk"]:
+                        factors.append("Safer route with lower risk")
+                    if route["time"] > alt["time"] and route["risk"] < alt["risk"]:
+                        factors.append("Slightly slower but significantly safer")
+                factors.append(f"Selected among {len(cleaned_ranked)} feasible routes")
             else:
-                reasons.append(
-                    f"Selected as best route with cost ₹{route['cost']}, time {route['time']} hrs, and risk {int(route['risk']*100)}%"
-                )
+                factors.append("Alternative feasible route")
 
-            # --- Comparative reasoning for BEST route ---
-            if label == "best" and len(cleaned_ranked) > 1:
-                alt_routes = cleaned_ranked[1:]
-
-                avg_cost = sum(r["cost"] for r in alt_routes) / len(alt_routes)
-                avg_time = sum(r["time"] for r in alt_routes) / len(alt_routes)
-                avg_risk = sum(r["risk"] for r in alt_routes) / len(alt_routes)
-
-                if route["cost"] < avg_cost:
-                    reasons.append(f"Cheaper than average alternative (₹{int(avg_cost)})")
-
-                if route["risk"] < avg_risk:
-                    reasons.append(f"Safer than average alternative ({int(avg_risk*100)}% risk)")
-
-                if route["time"] < avg_time:
-                    reasons.append(f"Faster than average alternative ({round(avg_time,2)} hrs)")
-                elif route["time"] > avg_time:
-                    reasons.append("Slightly slower but more economical/safer")
-
-            # --- Constraint reasoning ---
-            if payload.get("budget") is not None and route["cost"] <= payload.get("budget"):
-                reasons.append("Within budget constraint")
-
-            if payload.get("deadline_hours") is not None and route["time"] <= payload.get("deadline_hours"):
-                reasons.append("Meets delivery deadline")
-
-            # --- Risk summary ---
-            reasons.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            factors.extend(_common_context(route))
 
             return {
                 **route,
-                "reason": "; ".join(reasons),
-                "key_factors": reasons
+                "reason": factors[0] if factors else "Alternative feasible route",
+                "key_factors": factors,
             }
 
         explained_ranked = [

@@ -33,12 +33,16 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]
   const bestRoute = routes[selectedRoute];
   const bestCoords = convert(bestRoute.geometry);
   const center = bestCoords[0];
+  const allCoords = routes
+    .filter((route) => Array.isArray(route.geometry) && route.geometry.length > 0)
+    .flatMap((route) => convert(route.geometry));
 
   useEffect(() => {
     if (!mapRef.current) return;
-    const bounds = L.latLngBounds(bestCoords);
+    if (!allCoords.length) return;
+    const bounds = L.latLngBounds(allCoords);
     mapRef.current.fitBounds(bounds, { padding: [20, 20] });
-  }, [selectedRoute, routes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allCoords]);
 
   return (
     <div className="mt-6 h-[400px] w-full rounded-xl overflow-hidden border border-outline-variant/20">
@@ -62,19 +66,21 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]
               key={index}
               positions={convert(route.geometry)}
               pathOptions={{
-                color: index === selectedRoute ? '#00E5FF' : '#888',
+                color: index === selectedRoute ? '#3b82f6' : '#64748b',
                 weight: index === selectedRoute ? 6 : 3,
-                opacity: index === selectedRoute ? 1 : 0.4,
+                opacity: index === selectedRoute ? 1 : 0.5,
               }}
             >
-              <Popup>
-                <div>
-                  <b>{index === selectedRoute ? 'Selected Route' : 'Alternative'}</b><br/>
-                  Time: {route.time} hrs<br/>
-                  Cost: ₹{route.cost}<br/>
-                  Risk: {Math.round(route.risk * 100)}%
-                </div>
-              </Popup>
+              {index === selectedRoute && (
+                <Popup>
+                  <div>
+                    <b>Selected Route</b><br/>
+                    Time: {route.time} hrs<br/>
+                    Cost: ₹{route.cost}<br/>
+                    Risk: {Math.round(route.risk * 100)}%
+                  </div>
+                </Popup>
+              )}
             </Polyline>
           );
         })}
