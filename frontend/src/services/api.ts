@@ -206,9 +206,36 @@ export async function searchStations(query: string): Promise<StationSearchResult
   return data.stations || [];
 }
 
-export async function searchCities(query: string): Promise<StationSearchResult[]> {
-  void query;
-  return [];
+export async function searchCities(query: string): Promise<Array<{ name: string; lat?: number; lng?: number }>> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&q=${encodeURIComponent(q)}`,
+      {
+        headers: {
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const rows = (await res.json()) as Array<Record<string, unknown>>;
+    return rows
+      .map((r) => {
+        const name = String(r.display_name ?? '').split(',').slice(0, 2).join(',').trim();
+        const lat = Number(r.lat);
+        const lng = Number(r.lon);
+        if (!name) return null;
+        return {
+          name,
+          lat: Number.isNaN(lat) ? undefined : lat,
+          lng: Number.isNaN(lng) ? undefined : lng,
+        };
+      })
+      .filter((v): v is { name: string; lat?: number; lng?: number } => Boolean(v));
+  } catch {
+    return [];
+  }
 }
 
 export async function getTrainDelay(trainNumber: string): Promise<TrainDelayData | null> {
