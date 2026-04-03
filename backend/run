@@ -1,4 +1,12 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 source venv/bin/activate
+
+# Load environment variables from .env (if present)
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 uvicorn app.main:app --reload
