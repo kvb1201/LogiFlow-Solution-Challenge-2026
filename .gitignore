@@ -60,3 +60,4 @@ build/
 *.tmp
 *.bak
 backend/.env
+backend/.env

@@ -21,6 +21,8 @@ function RouteCard({
   const hasCheapest = factors.some((f) => /cost|cheaper/i.test(f));
   const hasFastest = factors.some((f) => /fast|faster/i.test(f));
   const hasSafest = factors.some((f) => /safe|safer|risk/i.test(f));
+  const ml = route.ml_summary;
+  const isBest = index === 0;
 
   return (
     <button
@@ -48,6 +50,9 @@ function RouteCard({
             <div className="text-xs font-label font-bold uppercase tracking-widest text-on-surface-variant">
               Route {index + 1}
             </div>
+            {isBest && (
+              <div className="text-[10px] text-emerald-300 mono">Recommended (Best Trade-off)</div>
+            )}
             {isSelected && (
               <div className="text-[10px] text-primary mono">Selected</div>
             )}
@@ -75,6 +80,47 @@ function RouteCard({
         </div>
       </div>
 
+      {ml && (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] mono">
+          <div className="px-2 py-1.5 rounded-lg bg-surface-container-low/50">
+            <div className="text-outline mb-0.5">TRAFFIC</div>
+            <span
+              className={[
+                'px-1.5 py-0.5 rounded font-semibold',
+                ml.traffic === 'high'
+                  ? 'bg-red-500/20 text-red-300'
+                  : ml.traffic === 'moderate'
+                  ? 'bg-amber-500/20 text-amber-300'
+                  : 'bg-emerald-500/20 text-emerald-300',
+              ].join(' ')}
+            >
+              {ml.traffic.toUpperCase()}
+            </span>
+          </div>
+          <div className="px-2 py-1.5 rounded-lg bg-surface-container-low/50">
+            <div className="text-outline mb-0.5">WEATHER</div>
+            <span
+              className={[
+                'px-1.5 py-0.5 rounded font-semibold',
+                ml.weather === 'bad'
+                  ? 'bg-red-500/20 text-red-300'
+                  : ml.weather === 'moderate'
+                  ? 'bg-amber-500/20 text-amber-300'
+                  : 'bg-emerald-500/20 text-emerald-300',
+              ].join(' ')}
+            >
+              {ml.weather.toUpperCase()}
+            </span>
+          </div>
+          <div className="px-2 py-1.5 rounded-lg bg-surface-container-low/50">
+            <div className="text-outline mb-0.5">DELAY</div>
+            <div className="text-on-surface font-medium">
+              {ml.delay_hours > 0.05 ? `+${ml.delay_hours.toFixed(1)}h` : 'On time'}
+            </div>
+          </div>
+        </div>
+      )}
+
       {(route.reason || factors.length > 0) && (
         <div className="mt-3 pt-3 border-t border-outline-variant/10">
           <div className="flex items-center gap-2 mb-2">
@@ -92,14 +138,14 @@ function RouteCard({
             )}
           </div>
           {route.reason && (
-            <div className="text-[11px] text-on-surface mb-1.5">{route.reason}</div>
+            <div className="text-[11px] text-on-surface mb-1.5 font-medium">{route.reason}</div>
           )}
           {factors.length > 0 && (
             <ul className="text-[11px] text-on-surface-variant space-y-1">
               {factors.map((factor, idx) => (
                 <li key={`${factor}-${idx}`} className="flex items-start gap-1.5">
                   <span className="text-primary leading-4">•</span>
-                  <span>{factor}</span>
+                  <span className={idx === 0 ? 'font-semibold text-on-surface' : ''}>{factor}</span>
                 </li>
               ))}
             </ul>
@@ -131,15 +177,35 @@ export default function RouteResults() {
           </div>
 
           <div className="space-y-3">
-            {routes.map((r, i) => (
-              <RouteCard
-                key={i}
-                route={r}
-                index={i}
-                isSelected={i === selectedRoute}
-                onSelect={() => setSelectedRoute(i)}
-              />
-            ))}
+            {routes.map((r, i) => {
+              const best = routes[0];
+              let worseBy: string | null = null;
+              if (i > 0 && best) {
+                const costDiff = Number(r.cost) - Number(best.cost);
+                const timeDiff = Number(r.time) - Number(best.time);
+                const riskDiff = (Number(r.risk) - Number(best.risk)) * 100;
+                const parts: string[] = [];
+                if (costDiff > 0) parts.push(`+₹${Math.round(costDiff)}`);
+                if (timeDiff > 0.1) parts.push(`+${timeDiff.toFixed(1)}h`);
+                if (riskDiff > 1) parts.push(`+${Math.round(riskDiff)}% risk`);
+                if (parts.length) worseBy = parts.join(' · ');
+              }
+              return (
+                <div key={i} className="space-y-1">
+                  <RouteCard
+                    route={r}
+                    index={i}
+                    isSelected={i === selectedRoute}
+                    onSelect={() => setSelectedRoute(i)}
+                  />
+                  {worseBy && (
+                    <div className="text-[10px] text-on-surface-variant mono pl-1">
+                      Worse than best: {worseBy}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

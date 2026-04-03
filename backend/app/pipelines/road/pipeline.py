@@ -186,6 +186,31 @@ class RoadPipeline(BasePipeline):
                 return "Optimized for safety"
             return None
 
+        def _ml_summary(route):
+            traffic_f = float(route.get("traffic_factor", 1.0))
+            weather_f = float(route.get("weather_factor", 1.0))
+            delay = float(route.get("predicted_delay", 0.0))
+
+            if traffic_f > 1.3:
+                traffic = "high"
+            elif traffic_f > 1.1:
+                traffic = "moderate"
+            else:
+                traffic = "low"
+
+            if weather_f > 1.2:
+                weather = "bad"
+            elif weather_f > 1.0:
+                weather = "moderate"
+            else:
+                weather = "good"
+
+            return {
+                "traffic": traffic,
+                "weather": weather,
+                "delay_hours": round(delay, 2),
+            }
+
         def _common_context(route):
             factors = []
             budget = payload.get("budget")
@@ -195,44 +220,83 @@ class RoadPipeline(BasePipeline):
             if deadline is not None and route["time"] <= deadline:
                 factors.append("Meets delivery deadline")
             factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
-            delay = route.get("predicted_delay", 0)
-            if delay > 0.5:
-                factors.append(f"Delay expected: +{delay:.1f} hrs due to traffic/weather")
+
+            delay = float(route.get("predicted_delay", 0.0))
+            if delay > 1.0:
+                factors.append(f"Significant delay expected (~{delay:.1f} hrs)")
+            elif 0.3 <= delay <= 1.0:
+                factors.append(f"Minor delay expected (~{delay:.1f} hrs)")
+            else:
+                factors.append("Minimal delay expected")
+
+            traffic_f = float(route.get("traffic_factor", 1.0))
+            if traffic_f > 1.3:
+                factors.append("Heavy traffic expected on this route")
+            elif traffic_f > 1.1:
+                factors.append("Moderate traffic conditions")
+            else:
+                factors.append("Low traffic expected")
+
+            weather_f = float(route.get("weather_factor", 1.0))
+            if weather_f > 1.2:
+                factors.append("Adverse weather may impact travel time")
+            elif weather_f > 1.0:
+                factors.append("Moderate weather impact")
+            else:
+                factors.append("Favorable weather conditions")
+
+            highway_ratio = float(route.get("highway_ratio", 0.7))
+            if highway_ratio < 0.5:
+                factors.append("Route includes more local roads (potential variability)")
+            elif highway_ratio > 0.7:
+                factors.append("Highway-dominated route (more stable travel)")
+
             return factors
 
         def _explain(route, label="best"):
             factors = []
+            seen = set()
+
+            def add_factor(text: str):
+                if text and text not in seen:
+                    seen.add(text)
+                    factors.append(text)
+
             pf = _priority_factor()
             if pf:
-                factors.append(pf)
+                add_factor(pf)
 
             if label == "best":
                 if len(cleaned_ranked) > 1:
                     alt = cleaned_ranked[1]
-                    if route["cost"] < alt["cost"]:
-                        factors.append("Cheaper than alternative routes")
-                    if route["time"] < alt["time"]:
-                        factors.append("Faster delivery than alternatives")
-                    if route["risk"] < alt["risk"]:
-                        factors.append("Safer route with lower risk")
-                    if route["time"] > alt["time"] and route["risk"] < alt["risk"]:
-                        factors.append("Slightly slower but significantly safer")
-                factors.append(f"Selected among {len(cleaned_ranked)} feasible routes")
+                    cost_diff = alt["cost"] - route["cost"]
+                    time_diff = alt["time"] - route["time"]
+                    delay_diff = float(alt.get("predicted_delay", 0.0)) - float(route.get("predicted_delay", 0.0))
+                    parts = []
+                    if cost_diff > 0:
+                        parts.append(f"₹{int(cost_diff)} cheaper")
+                    if time_diff > 0.1:
+                        parts.append(f"{time_diff:.1f} hrs faster")
+                    if delay_diff > 0.1:
+                        parts.append(f"{delay_diff:.1f} hrs lower expected delay")
+                    if parts:
+                        add_factor(", ".join(parts) + " than next best route")
+                    if route["risk"] < alt["risk"] and time_diff < 0:
+                        add_factor("Slightly slower but significantly safer than next best route")
+                add_factor(f"Selected among {len(cleaned_ranked)} feasible routes")
             else:
-                factors.append("Alternative feasible route")
+                add_factor("Alternative feasible route")
 
-            factors.extend(_common_context(route))
+            for f in _common_context(route):
+                add_factor(f)
 
-            if route.get("traffic_factor", 1) > 1.2:
-                factors.append("High traffic conditions expected")
-
-            if route.get("weather_factor", 1) > 1.1:
-                factors.append("Weather conditions may slow down travel")
+            ml_s = _ml_summary(route)
 
             return {
                 **route,
                 "reason": factors[0] if factors else "Alternative feasible route",
                 "key_factors": factors,
+                "ml_summary": ml_s,
             }
 
         explained_ranked = [
