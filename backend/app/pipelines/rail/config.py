@@ -1,17 +1,49 @@
 """
 Configuration constants for the Railway Cargo Decision Engine.
 Indian Railways parcel tariffs, station codes, cargo constraints, and risk factors.
+
+NOTE: Official IRCA tariff tables are in tariff.py (slab-based lookup).
+      The old formula-based PARCEL_RATE_TIERS has been replaced by the
+      exact distance×weight slab tables from Railway Board PDFs.
 """
 
-# ── Parcel rates (Indian Railways official tariff, approx) ─────────────
-# Slab-based formula: (rate_per_km × distance_km / 100) + (per_kg_charge × weight_kg)
-# Calibrated to real IR parcel rates: 300kg Mumbai→Delhi (~1384km) ≈ ₹8,000-12,000
+# ── Legacy compat — kept so old imports don't crash, but NOT used ──────
+# Actual tariff calculations now use app.pipelines.rail.tariff module.
 PARCEL_RATE_TIERS = [
     {"max_kg": 50,   "rate_per_km_paise": 150, "per_kg_charge": 40.0, "min_charge_rs": 100},
     {"max_kg": 100,  "rate_per_km_paise": 120, "per_kg_charge": 35.0, "min_charge_rs": 250},
     {"max_kg": 500,  "rate_per_km_paise": 100, "per_kg_charge": 25.0, "min_charge_rs": 500},
     {"max_kg": 9999, "rate_per_km_paise": 80,  "per_kg_charge": 18.0, "min_charge_rs": 1000},
 ]
+
+# ── Train category → tariff scale classification ──────────────────────
+# Official IRCA rules (unchanged core structure since 2006 rationalization):
+#  - Scale-R: Rajdhani, Shatabdi, Duronto (regardless of utilization)
+#  - Scale-P: Notified Mail/Express with >60% brake van utilization
+#  - Scale-S: All other trains (ordinary passenger, unnotified Mail/Express)
+#  - Scale-L: Luggage booking on ALL trains (uniform)
+SCALE_CLASSIFICATION = {
+    "R": {
+        "name": "Rajdhani Parcel Service",
+        "train_types": ["Rajdhani", "Shatabdi", "Duronto"],
+        "notes": "Premium scale; +25% may apply for leased vans",
+    },
+    "P": {
+        "name": "Premier Parcel Service",
+        "train_types": ["Superfast", "Humsafar", "Tejas", "Gatimaan", "Vande Bharat"],
+        "notes": "For notified Mail/Express trains with >60% SLR utilization",
+    },
+    "S": {
+        "name": "Standard Parcel Service",
+        "train_types": ["Express", "Mail", "Passenger", "MEMU"],
+        "notes": "Base level for regular/unnotified trains",
+    },
+    "L": {
+        "name": "Luggage Parcel Service",
+        "train_types": ["ALL (luggage only)"],
+        "notes": "Uniform for passenger luggage; free allowance applies separately",
+    },
+}
 
 # ── City name → primary station code mapping ──────────────────────────
 CITY_TO_STATION = {
