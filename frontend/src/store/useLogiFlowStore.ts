@@ -1,99 +1,276 @@
 import { create } from 'zustand';
-import { fetchOptimizedRoute } from '@/services/api';
+import {
+  optimizeCargoRoute,
+  getLiveTrainMap,
+  getStationInfoDirect,
+  getTrainDelay,
+  getLiveTrainStatus,
+  type OptimizeResult,
+  type Recommendation,
+  type RankedOption,
+  type LiveTrainPosition,
+  type StationInfo,
+  type TrainDelayData,
+  type LiveTrainStatus,
+  type StationSearchResult,
+} from '@/services/api';
 
-interface RouteSegment {
-  mode: string;
-  from: string | { name: string; lat: number; lng: number };
-  to: string | { name: string; lat: number; lng: number };
-}
+// ── Types ────────────────────────────────────────────────────────────
 
-interface RouteOption {
-  type: string;
-  mode: string;
-  total_time?: number;
-  time?: number;
-  total_cost?: number;
-  cost?: number;
-  risk?: number;
-  segments?: RouteSegment[];
+interface StationCoord {
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 interface LogiFlowState {
+  // Core inputs
   source: string;
   destination: string;
   priority: string;
-  preferredMode: string;
-  excludedModes: string[];
-  budgetCap: number;
-  maxDelay: number;
-  carbonPriority: number;
-  selectedRouteIndex: number;
-  routes: RouteOption[];
+  cargoWeight: number;
+  cargoType: string;
+  departureDate: string;
+  budgetMax: number;
+  deadlineHours: number;
+
+  // Results
+  recommendations: {
+    cheapest: Recommendation | null;
+    fastest: Recommendation | null;
+    safest: Recommendation | null;
+  };
+  allOptions: RankedOption[];
+  selectedOptionIndex: number;
+  constraintsApplied: OptimizeResult['constraints_applied'] | null;
+  routeMetadata: OptimizeResult['route_metadata'] | null;
+
+  // Map data
+  liveTrains: LiveTrainPosition[];
+  stationCoords: Record<string, StationCoord>;
+  liveMapMode: 'all' | 'route' | 'hidden';
+
+  /** Per-station delay breakdown + live status for the selected / focused train */
+  trainDelayDetail: TrainDelayData | null;
+  selectedTrainLive: LiveTrainStatus | null;
+  /** Train number used for detail panel delay/live (route selection) */
+  detailTrainNumber: string | null;
+  /** Train focused from map live dots (for live panel) */
+  mapFocusedTrainNumber: string | null;
+
+  /** Latest autocomplete results (RailRadar search) */
+  stationSuggestions: StationSearchResult[];
+  setStationSuggestions: (rows: StationSearchResult[]) => void;
+
+  // UI state
   loading: boolean;
   hasSearched: boolean;
-  
+  activeView: 'recommendations' | 'all_options';
+  error: string | null;
+
+  // Actions
   setSource: (val: string) => void;
   setDestination: (val: string) => void;
   setPriority: (val: string) => void;
-  setPreferredMode: (val: string) => void;
-  setExcludedModes: (val: string[]) => void;
-  setBudgetCap: (val: number) => void;
-  setMaxDelay: (val: number) => void;
-  setCarbonPriority: (val: number) => void;
-  setSelectedRouteIndex: (idx: number) => void;
-  setRoutes: (routes: RouteOption[]) => void;
-  setLoading: (loading: boolean) => void;
-  handleRecalculate: () => Promise<void>;
+  setCargoWeight: (val: number) => void;
+  setCargoType: (val: string) => void;
+  setDepartureDate: (val: string) => void;
+  setBudgetMax: (val: number) => void;
+  setDeadlineHours: (val: number) => void;
+  setSelectedOptionIndex: (idx: number) => void;
+  setActiveView: (view: 'recommendations' | 'all_options') => void;
+  setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
+  handleOptimize: () => Promise<void>;
+  fetchLiveTrains: () => Promise<void>;
+  fetchStationCoord: (code: string) => Promise<StationCoord | null>;
+  /** Load RailRadar delay + live for a train (route card or map) */
+  fetchTrainDelayAndLive: (trainNumber: string) => Promise<void>;
+  setMapFocusedTrain: (trainNumber: string | null) => void;
+  resetSearch: () => void;
 }
 
 export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
+  // Defaults
   source: '',
   destination: '',
-  priority: 'Fast',
-  preferredMode: 'Any',
-  excludedModes: [],
-  budgetCap: 120000,
-  maxDelay: 6,
-  carbonPriority: 50,
-  selectedRouteIndex: 0,
-  routes: [],
+  priority: 'cost',
+  cargoWeight: 100,
+  cargoType: 'General',
+  departureDate: new Date().toISOString().split('T')[0],
+  budgetMax: 50000,
+  deadlineHours: 48,
+
+  recommendations: { cheapest: null, fastest: null, safest: null },
+  allOptions: [],
+  selectedOptionIndex: 0,
+  constraintsApplied: null,
+  routeMetadata: null,
+
+  liveTrains: [],
+  stationCoords: {},
+  liveMapMode: 'all',
+
+  trainDelayDetail: null,
+  selectedTrainLive: null,
+  detailTrainNumber: null,
+  mapFocusedTrainNumber: null,
+
+  stationSuggestions: [],
+  setStationSuggestions: (rows) => set({ stationSuggestions: rows }),
+
   loading: false,
   hasSearched: false,
-  
+  activeView: 'recommendations',
+  error: null,
+
+  // Setters
   setSource: (val) => set({ source: val }),
   setDestination: (val) => set({ destination: val }),
   setPriority: (val) => set({ priority: val }),
-  setPreferredMode: (val) => set({ preferredMode: val }),
-  setExcludedModes: (val) => set({ excludedModes: val }),
-  setBudgetCap: (val) => set({ budgetCap: val }),
-  setMaxDelay: (val) => set({ maxDelay: val }),
-  setCarbonPriority: (val) => set({ carbonPriority: val }),
-  setSelectedRouteIndex: (idx) => set({ selectedRouteIndex: idx }),
-  setRoutes: (routes) => set({ routes }),
-  setLoading: (loading) => set({ loading }),
-  
-  handleRecalculate: async () => {
-    const { source, destination, priority, preferredMode, excludedModes } = get();
-    if (!source || !destination) return;
-    
-    set({ loading: true, hasSearched: true });
+  setCargoWeight: (val) => set({ cargoWeight: val }),
+  setCargoType: (val) => set({ cargoType: val }),
+  setDepartureDate: (val) => set({ departureDate: val }),
+  setBudgetMax: (val) => set({ budgetMax: val }),
+  setDeadlineHours: (val) => set({ deadlineHours: val }),
+  setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
+  setActiveView: (view) => set({ activeView: view }),
+  setLiveMapMode: (mode) => set({ liveMapMode: mode }),
+
+  resetSearch: () => set({
+    hasSearched: false,
+    recommendations: { cheapest: null, fastest: null, safest: null },
+    allOptions: [],
+    selectedOptionIndex: 0,
+    error: null,
+    trainDelayDetail: null,
+    selectedTrainLive: null,
+    detailTrainNumber: null,
+    mapFocusedTrainNumber: null,
+    stationSuggestions: [],
+  }),
+
+  // ── Main optimize call ─────────────────────────────────────────────
+  handleOptimize: async () => {
+    const { source, destination, priority, cargoWeight, cargoType, departureDate, budgetMax, deadlineHours } = get();
+    if (!source.trim() || !destination.trim()) return;
+
+    set({ loading: true, hasSearched: true, error: null });
+
     try {
-      const data = await fetchOptimizedRoute(
-        source, 
-        destination, 
-        priority, 
-        { preferred_mode: preferredMode === 'Any' ? null : preferredMode.toLowerCase() }, 
-        { excluded_modes: excludedModes }
-      );
-      if (data?.best_route && data?.alternatives) {
-        set({ routes: [data.best_route, ...data.alternatives], selectedRouteIndex: 0 });
-      } else {
-        set({ routes: [] });
-      }
-    } catch (err) {
-      console.warn('Could not fetch optimized route.', err);
+      const result = await optimizeCargoRoute({
+        origin_city: source.trim(),
+        destination_city: destination.trim(),
+        cargo_weight_kg: cargoWeight,
+        cargo_type: cargoType,
+        budget_max_inr: budgetMax,
+        deadline_hours: deadlineHours,
+        priority,
+        departure_date: departureDate,
+      });
+
+      set({
+        recommendations: {
+          cheapest: result.cheapest,
+          fastest: result.fastest,
+          safest: result.safest,
+        },
+        allOptions: result.all_options || [],
+        constraintsApplied: result.constraints_applied,
+        routeMetadata: result.route_metadata,
+        selectedOptionIndex: 0,
+      });
+
+      // Fetch station coordinates for map (from segments)
+      const allSegments = [
+        ...(result.cheapest?.segments || []),
+        ...(result.fastest?.segments || []),
+        ...(result.safest?.segments || []),
+      ];
+      const codes = new Set<string>();
+      allSegments.forEach(seg => {
+        if (seg.from && typeof seg.from === 'string') codes.add(seg.from);
+        if (seg.to && typeof seg.to === 'string') codes.add(seg.to);
+      });
+
+      // Fetch coords in parallel
+      const coordPromises = Array.from(codes).map(code => get().fetchStationCoord(code));
+      await Promise.allSettled(coordPromises);
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to optimize';
+      set({ error: msg });
+      console.error('Optimize error:', err);
     } finally {
       set({ loading: false });
     }
-  }
+  },
+
+  // ── Live train positions ───────────────────────────────────────────
+  fetchLiveTrains: async () => {
+    try {
+      const trains = await getLiveTrainMap();
+      set({ liveTrains: trains });
+    } catch (err) {
+      console.warn('Failed to fetch live trains:', err);
+    }
+  },
+
+  // ── Station coordinate lookup ──────────────────────────────────────
+  fetchStationCoord: async (code: string): Promise<StationCoord | null> => {
+    const existing = get().stationCoords[code];
+    if (existing) return existing;
+
+    try {
+      const info = await getStationInfoDirect(code);
+      if (info && info.lat && info.lng) {
+        const coord: StationCoord = {
+          code: info.code || code,
+          name: info.name || code,
+          lat: info.lat,
+          lng: info.lng,
+        };
+        set(state => ({
+          stationCoords: { ...state.stationCoords, [code]: coord },
+        }));
+        return coord;
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  },
+
+  fetchTrainDelayAndLive: async (trainNumber: string) => {
+    const no = trainNumber.trim();
+    if (!no) return;
+    set({ detailTrainNumber: no });
+    try {
+      const [delay, live] = await Promise.all([
+        getTrainDelay(no),
+        getLiveTrainStatus(no),
+      ]);
+      set({
+        trainDelayDetail: delay,
+        selectedTrainLive: live,
+      });
+    } catch (e) {
+      console.warn('Train detail fetch failed:', e);
+      set({ trainDelayDetail: null, selectedTrainLive: null });
+    }
+  },
+
+  /** Live map dot: only refresh live JSON — keep route delay breakdown intact */
+  setMapFocusedTrain: (trainNumber) => {
+    set({ mapFocusedTrainNumber: trainNumber });
+    if (!trainNumber) return;
+    void (async () => {
+      try {
+        const live = await getLiveTrainStatus(trainNumber);
+        set({ selectedTrainLive: live });
+      } catch (e) {
+        console.warn('Live status fetch failed:', e);
+      }
+    })();
+  },
 }));
