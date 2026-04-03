@@ -1,55 +1,201 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { searchStations, type StationSearchResult } from '@/services/api';
 
-/**
- * Animated counter component for visual number transitions.
- */
-function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string }) {
-  const [display, setDisplay] = useState(value);
-  useEffect(() => {
-    const diff = value - display;
-    if (diff === 0) return;
-    const step = diff > 0 ? Math.max(1, Math.floor(diff / 10)) : Math.min(-1, Math.ceil(diff / 10));
-    const timer = setTimeout(() => setDisplay(prev => {
-      const next = prev + step;
-      return diff > 0 ? Math.min(next, value) : Math.max(next, value);
-    }), 20);
-    return () => clearTimeout(timer);
-  }, [value, display]);
-  return <span className="mono tabular-nums">{display.toLocaleString()}{suffix}</span>;
+// ── Debounced station search ─────────────────────────────────────────
+
+function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
+  const [results, setResults] = useState<StationSearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const search = useCallback((query: string) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (!query || query.length < 2) {
+      setResults([]);
+      setGlobalSuggestions([]);
+      return;
+    }
+
+    setLoading(true);
+    timeoutRef.current = setTimeout(async () => {
+      const data = await searchStations(query);
+      setResults(data);
+      setGlobalSuggestions(data);
+      setLoading(false);
+    }, 300);
+  }, [setGlobalSuggestions]);
+
+  const clear = useCallback(() => {
+    setResults([]);
+    setGlobalSuggestions([]);
+  }, [setGlobalSuggestions]);
+
+  return { results, loading, search, clear };
 }
 
-const MODE_OPTIONS = [
-  { value: 'Any', label: 'Any Mode', icon: 'hub', desc: 'All transport types' },
-  { value: 'Road', label: 'Road', icon: 'local_shipping', desc: 'Truck & ground' },
-  { value: 'Rail', label: 'Rail', icon: 'train', desc: 'Freight trains' },
-  { value: 'Water', label: 'Water', icon: 'sailing', desc: 'Maritime freight' },
-  { value: 'Hybrid', label: 'Hybrid', icon: 'swap_calls', desc: 'Multi-modal mix' },
+// ── Constants ────────────────────────────────────────────────────────
+
+const CARGO_TYPES = [
+  { value: 'General', icon: 'inventory_2', desc: 'Standard goods' },
+  { value: 'Fragile', icon: 'local_shipping', desc: 'Handle with care' },
+  { value: 'Perishable', icon: 'ac_unit', desc: 'Cold chain' },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'Fast', label: 'Fastest', icon: 'bolt', color: 'from-amber-500/20 to-amber-600/5 border-amber-500/30', iconColor: 'text-amber-400' },
-  { value: 'Cheap', label: 'Cheapest', icon: 'savings', color: 'from-emerald-500/20 to-emerald-600/5 border-emerald-500/30', iconColor: 'text-emerald-400' },
-  { value: 'Safe', label: 'Safest', icon: 'verified_user', color: 'from-blue-500/20 to-blue-600/5 border-blue-500/30', iconColor: 'text-blue-400' },
+  { value: 'cost', label: 'Cheapest', icon: 'savings', color: 'from-emerald-500/20 to-emerald-600/5 border-emerald-500/30', iconColor: 'text-emerald-400' },
+  { value: 'time', label: 'Fastest', icon: 'bolt', color: 'from-amber-500/20 to-amber-600/5 border-amber-500/30', iconColor: 'text-amber-400' },
+  { value: 'safe', label: 'Safest', icon: 'verified_user', color: 'from-blue-500/20 to-blue-600/5 border-blue-500/30', iconColor: 'text-blue-400' },
 ];
+
+// ── Autocomplete Input ───────────────────────────────────────────────
+
+function StationInput({
+  label,
+  value,
+  onChange,
+  icon,
+  iconColor,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  icon: string;
+  iconColor: string;
+  placeholder: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const setStationSuggestions = useLogiFlowStore(s => s.setStationSuggestions);
+  const { results, loading, search, clear } = useStationSearch(setStationSuggestions);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleChange = (val: string) => {
+    onChange(val);
+    search(val);
+    setShowDropdown(true);
+  };
+
+  const selectStation = (station: StationSearchResult) => {
+    onChange(`${station.name}`);
+    clear();
+    setShowDropdown(false);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative z-[9999]">
+      <label className="block text-[11px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-2 ml-1 flex items-center gap-2">
+        {label}
+        {loading && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
+      </label>
+      
+      <div className="relative group">
+        <div className={`absolute -inset-0.5 rounded-xl transition-all duration-500 ease-out ${
+          focused 
+            ? 'opacity-100 bg-gradient-to-r from-primary/40 via-tertiary/40 to-primary/40 blur-md' 
+            : 'opacity-0 bg-transparent blur-none'
+        }`} />
+        
+        <div className={`relative flex items-center bg-[#0d1117] border rounded-xl overflow-hidden transition-all duration-300 ${
+          focused ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]' : 'border-outline-variant/30 hover:border-outline-variant/60'
+        }`}>
+          <div className="pl-4 pr-3 flex items-center justify-center">
+             <span className={`material-symbols-outlined text-xl transition-all duration-500 ${
+               focused ? `${iconColor} scale-110 drop-shadow-md` : 'text-outline scale-100'
+             }`}>
+               {icon}
+             </span>
+          </div>
+
+          <input
+            type="text"
+            value={value}
+            onChange={e => handleChange(e.target.value)}
+            onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
+            onBlur={() => setFocused(false)}
+            className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
+            placeholder={placeholder}
+          />
+          
+          {value && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); focus(); }}
+              className="absolute right-3 p-1 rounded-full text-outline-variant hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showDropdown && results.length > 0 && (
+        <div className="absolute z-[99999] top-full left-0 right-0 mt-2 bg-[#12161d]/95 backdrop-blur-xl border border-white/10 border-b-white/5 rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden animate-slide-up origin-top">
+          <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            {results.map((s, i) => (
+              <button
+                key={`${s.code}-${i}`}
+                type="button"
+                className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
+                onMouseDown={(e) => {
+                  e.preventDefault(); 
+                  selectStation(s);
+                }}
+              >
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/5 flex items-center justify-center group-hover:bg-primary/20 group-hover:border-primary/30 transition-all">
+                  <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-lg">train</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors truncate">
+                    {s.name}
+                  </div>
+                  <div className="text-[11px] text-white/40 font-mono mt-0.5 tracking-wider">
+                    {s.code}
+                  </div>
+                </div>
+                <div className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 pr-2 text-primary">
+                  <span className="material-symbols-outlined text-sm">subdirectory_arrow_left</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Form ────────────────────────────────────────────────────────
 
 export default function InputForm() {
   const {
     source, setSource,
     destination, setDestination,
     priority, setPriority,
-    preferredMode, setPreferredMode,
-    excludedModes, setExcludedModes,
-    handleRecalculate,
-    loading
+    cargoWeight, setCargoWeight,
+    cargoType, setCargoType,
+    departureDate, setDepartureDate,
+    budgetMax, setBudgetMax,
+    deadlineHours, setDeadlineHours,
+    handleOptimize,
+    loading,
   } = useLogiFlowStore();
 
-  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [formStep, setFormStep] = useState(0); // for staggered reveal
-  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     const timers = [
@@ -57,64 +203,38 @@ export default function InputForm() {
       setTimeout(() => setFormStep(2), 250),
       setTimeout(() => setFormStep(3), 400),
       setTimeout(() => setFormStep(4), 550),
+      setTimeout(() => setFormStep(5), 700),
     ];
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const handleExcludeToggle = (mode: string) => {
-    if (excludedModes.includes(mode)) {
-      setExcludedModes(excludedModes.filter((m: string) => m !== mode));
-    } else {
-      setExcludedModes([...excludedModes, mode]);
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!source.trim() || !destination.trim()) {
-      alert('Please enter both source and destination locations');
-      return;
-    }
-    handleRecalculate();
+    if (!source.trim() || !destination.trim()) return;
+    handleOptimize();
   };
-
-  const handleStrictMode = (val: string) => {
-    if (val === 'Any') {
-      setExcludedModes([]);
-      setPreferredMode('Any');
-    } else {
-      const all = ['road', 'rail', 'water', 'hybrid'];
-      const keep = val.toLowerCase();
-      setExcludedModes(all.filter((m) => m !== keep));
-      setPreferredMode(val);
-    }
-  };
-
-  const showConstraintWarning = preferredMode !== 'Any' && excludedModes.includes(preferredMode.toLowerCase());
 
   return (
     <div className="form-container-glow relative">
-      {/* Ambient glow behind the form */}
       <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-tertiary/10 to-primary/20 rounded-3xl blur-xl opacity-50 animate-pulse-slow pointer-events-none" />
-      
+
       <div className="relative bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-hidden">
-        {/* Animated top accent bar */}
         <div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent animate-shimmer" />
-        
+
         <div className="p-8">
           {/* Header */}
           <div className={`flex items-center justify-between mb-8 transition-all duration-700 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             <div className="flex items-center gap-3">
               <div className="relative">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border border-primary/20">
-                  <span className="material-symbols-outlined text-primary text-xl">route</span>
+                  <span className="material-symbols-outlined text-primary text-xl">train</span>
                 </div>
                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full animate-ping opacity-75" />
                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full" />
               </div>
               <div>
-                <h2 className="text-xl font-headline font-bold text-on-surface tracking-tight">Route Parameters</h2>
-                <p className="text-xs text-on-surface-variant font-body mt-0.5">Configure your logistics optimization</p>
+                <h2 className="text-xl font-headline font-bold text-on-surface tracking-tight">Railway Cargo</h2>
+                <p className="text-xs text-on-surface-variant font-body mt-0.5">Powered by RailRadar · Live Indian Railways Data</p>
               </div>
             </div>
             <button
@@ -123,238 +243,203 @@ export default function InputForm() {
               className="flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-surface-container border border-transparent hover:border-outline-variant/20"
             >
               <span className="material-symbols-outlined text-sm">{showAdvanced ? 'unfold_less' : 'tune'}</span>
-              {showAdvanced ? 'Less options' : 'Advanced'}
+              {showAdvanced ? 'Less' : 'Advanced'}
             </button>
           </div>
 
-          <form ref={formRef} onSubmit={handleSubmit} className="space-y-7">
-            {/* ── Source & Destination ── */}
-            <div className={`transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-                {/* Connection line between fields */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Source & Destination with autocomplete */}
+            <div className={`relative z-[100] transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100]">
                 <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
                   <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
                     <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>
                   </div>
                 </div>
 
-                {/* Source Field */}
-                <div className="relative group">
+                <StationInput
+                  label="Origin"
+                  value={source}
+                  onChange={setSource}
+                  icon="my_location"
+                  iconColor="text-primary"
+                  placeholder="Search city or station..."
+                />
+                <StationInput
+                  label="Destination"
+                  value={destination}
+                  onChange={setDestination}
+                  icon="flag"
+                  iconColor="text-tertiary"
+                  placeholder="Search city or station..."
+                />
+              </div>
+            </div>
+
+            {/* Cargo Weight & Type */}
+            <div className={`transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Origin
+                    Cargo Weight
                   </label>
-                  <div className={`relative transition-all duration-300 ${focusedField === 'source' ? 'scale-[1.02]' : ''}`}>
-                    <div className={`absolute -inset-0.5 rounded-xl transition-opacity duration-300 ${focusedField === 'source' ? 'opacity-100 bg-gradient-to-r from-primary/30 to-tertiary/30 blur-sm' : 'opacity-0'}`} />
-                    <div className="relative flex items-center">
-                      <div className={`absolute left-3 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${focusedField === 'source' ? 'bg-primary/20' : 'bg-surface-container'}`}>
-                        <span className={`material-symbols-outlined text-sm transition-colors duration-300 ${focusedField === 'source' ? 'text-primary' : 'text-outline'}`}>my_location</span>
-                      </div>
-                      <input
-                        type="text"
-                        value={source}
-                        onChange={(e) => setSource(e.target.value)}
-                        onFocus={() => setFocusedField('source')}
-                        onBlur={() => setFocusedField(null)}
-                        className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none placeholder:text-outline/50 text-sm"
-                        placeholder="Enter origin city..."
-                      />
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center">
+                      <span className="material-symbols-outlined text-sm text-outline">scale</span>
                     </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={cargoWeight}
+                      onChange={e => setCargoWeight(Number(e.target.value))}
+                      className="w-full pl-14 pr-12 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                    />
+                    <span className="absolute right-4 text-xs text-outline mono">kg</span>
                   </div>
                 </div>
 
-                {/* Destination Field */}
-                <div className="relative group">
+                <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Destination
+                    Departure Date
                   </label>
-                  <div className={`relative transition-all duration-300 ${focusedField === 'destination' ? 'scale-[1.02]' : ''}`}>
-                    <div className={`absolute -inset-0.5 rounded-xl transition-opacity duration-300 ${focusedField === 'destination' ? 'opacity-100 bg-gradient-to-r from-tertiary/30 to-primary/30 blur-sm' : 'opacity-0'}`} />
-                    <div className="relative flex items-center">
-                      <div className={`absolute left-3 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${focusedField === 'destination' ? 'bg-tertiary/20' : 'bg-surface-container'}`}>
-                        <span className={`material-symbols-outlined text-sm transition-colors duration-300 ${focusedField === 'destination' ? 'text-tertiary' : 'text-outline'}`}>flag</span>
-                      </div>
-                      <input
-                        type="text"
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                        onFocus={() => setFocusedField('destination')}
-                        onBlur={() => setFocusedField(null)}
-                        className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-tertiary/50 focus:ring-2 focus:ring-tertiary/20 text-on-surface transition-all outline-none placeholder:text-outline/50 text-sm"
-                        placeholder="Enter destination city..."
-                      />
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center">
+                      <span className="material-symbols-outlined text-sm text-outline">calendar_today</span>
                     </div>
+                    <input
+                      type="date"
+                      value={departureDate}
+                      onChange={e => setDepartureDate(e.target.value)}
+                      className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                    />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ── Optimization Priority ── */}
-            <div className={`transition-all duration-700 delay-150 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            {/* Cargo Type */}
+            <div className={`transition-all duration-700 delay-150 ${formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
-                Optimization Priority
+                Cargo Type
               </label>
-              <div className="grid grid-cols-3 gap-3">
-                {PRIORITY_OPTIONS.map((opt) => (
+              <div className="grid grid-cols-3 gap-2">
+                {CARGO_TYPES.map(ct => (
                   <button
-                    key={opt.value}
+                    key={ct.value}
                     type="button"
-                    onClick={() => setPriority(opt.value)}
-                    className={`relative group/prio flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden ${
-                      priority === opt.value
-                        ? `bg-gradient-to-b ${opt.color} border-current shadow-lg scale-[1.02]`
+                    onClick={() => setCargoType(ct.value)}
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-300 cursor-pointer ${
+                      cargoType === ct.value
+                        ? 'bg-primary/15 border-primary/40 shadow-md shadow-primary/10'
                         : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-outline-variant/30 hover:bg-surface-container/50'
                     }`}
                   >
-                    {priority === opt.value && (
-                      <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/5 pointer-events-none" />
-                    )}
-                    <span className={`material-symbols-outlined text-2xl transition-all duration-300 ${
-                      priority === opt.value ? opt.iconColor : 'text-outline group-hover/prio:text-on-surface-variant'
-                    } ${priority === opt.value ? 'scale-110' : 'group-hover/prio:scale-105'}`}>
-                      {opt.icon}
+                    <span className={`material-symbols-outlined text-lg ${cargoType === ct.value ? 'text-primary' : 'text-outline'}`}>
+                      {ct.icon}
                     </span>
-                    <span className={`text-sm font-semibold transition-colors duration-300 ${
-                      priority === opt.value ? 'text-on-surface' : 'text-on-surface-variant'
-                    }`}>
-                      {opt.label}
+                    <span className={`text-xs font-medium ${cargoType === ct.value ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                      {ct.value}
                     </span>
-                    {priority === opt.value && (
-                      <div className="absolute top-2 right-2">
-                        <span className="material-symbols-outlined text-xs text-primary">check_circle</span>
-                      </div>
-                    )}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* ── Transport Mode Selector ── */}
-            <div className={`transition-all duration-700 delay-200 ${formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            {/* Priority */}
+            <div className={`transition-all duration-700 delay-200 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
-                Preferred Transport Mode
+                Optimization Priority
               </label>
-              <div className="flex flex-wrap gap-2">
-                {MODE_OPTIONS.map((mode) => {
-                  const isSelected = preferredMode === mode.value;
-                  const isExcluded = excludedModes.includes(mode.value.toLowerCase());
-                  return (
-                    <button
-                      key={mode.value}
-                      type="button"
-                      onClick={() => handleStrictMode(mode.value)}
-                      className={`relative flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all duration-300 cursor-pointer group/mode ${
-                        isSelected
-                          ? 'bg-primary/15 border-primary/40 shadow-md shadow-primary/10 text-on-surface'
-                          : isExcluded
-                          ? 'bg-surface-container-lowest/20 border-outline-variant/5 text-outline/50 opacity-50'
-                          : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container/40 text-on-surface-variant'
-                      }`}
-                    >
-                      <span className={`material-symbols-outlined text-lg transition-all duration-300 ${
-                        isSelected ? 'text-primary' : 'text-outline group-hover/mode:text-on-surface-variant'
-                      }`}>
-                        {mode.icon}
-                      </span>
-                      <div className="text-left">
-                        <span className="text-sm font-semibold block leading-tight">{mode.label}</span>
-                        <span className="text-[10px] text-on-surface-variant/70 font-body">{mode.desc}</span>
-                      </div>
-                      {isSelected && (
-                        <span className="material-symbols-outlined text-primary text-xs ml-1 animate-fade-in">check</span>
-                      )}
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-3 gap-3">
+                {PRIORITY_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPriority(opt.value)}
+                    className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden ${
+                      priority === opt.value
+                        ? `bg-gradient-to-b ${opt.color} border-current shadow-lg scale-[1.02]`
+                        : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-outline-variant/30'
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-2xl ${priority === opt.value ? opt.iconColor : 'text-outline'}`}>
+                      {opt.icon}
+                    </span>
+                    <span className={`text-sm font-semibold ${priority === opt.value ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                      {opt.label}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* ── Advanced Options (Collapsible) ── */}
-            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${showAdvanced ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}>
-              <div className="pt-2 space-y-5">
-                {/* Excluded Modes */}
+            {/* Advanced — Budget & Deadline */}
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${showAdvanced ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="grid grid-cols-2 gap-4 pt-2">
                 <div>
-                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
-                    Exclude Transport Modes
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Budget Cap
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {['Road', 'Rail', 'Water', 'Hybrid'].map((mode) => {
-                      const isExcluded = excludedModes.includes(mode.toLowerCase());
-                      return (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => handleExcludeToggle(mode.toLowerCase())}
-                          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg border text-sm font-medium transition-all duration-300 ${
-                            isExcluded
-                              ? 'bg-error/10 border-error/30 text-error line-through'
-                              : 'bg-surface-container-lowest/30 border-outline-variant/10 text-on-surface-variant hover:border-outline-variant/30'
-                          }`}
-                        >
-                          <span className={`material-symbols-outlined text-sm transition-transform duration-300 ${isExcluded ? 'rotate-45' : ''}`}>
-                            {isExcluded ? 'close' : 'add'}
-                          </span>
-                          {mode}
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-2">
+                    <input
+                      type="range" min={5000} max={100000} step={1000}
+                      value={budgetMax}
+                      onChange={e => setBudgetMax(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="text-right text-xs mono text-primary">₹{budgetMax.toLocaleString()}</div>
                   </div>
-                  {showConstraintWarning && (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-secondary bg-secondary/10 px-3 py-2 rounded-lg border border-secondary/20 animate-fade-in">
-                      <span className="material-symbols-outlined text-sm">warning</span>
-                      Your preferred mode is excluded. Preference will be ignored.
-                    </div>
-                  )}
+                </div>
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Deadline
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="range" min={4} max={96} step={2}
+                      value={deadlineHours}
+                      onChange={e => setDeadlineHours(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="text-right text-xs mono text-primary">{deadlineHours}h</div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* ── Submit Button ── */}
-            <div className={`transition-all duration-700 delay-300 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={loading || !source.trim() || !destination.trim()}
-                  className="group/btn relative w-full py-4 font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
-                >
-                  {/* Button background layers */}
-                  <div className={`absolute inset-0 transition-all duration-500 ${
-                    loading 
-                      ? 'bg-surface-container' 
-                      : 'bg-gradient-to-r from-primary via-primary-container to-primary group-hover/btn:shadow-[0_0_30px_rgba(47,129,247,0.4)]'
-                  }`} />
-                  
-                  {/* Animated shine effect */}
-                  {!loading && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
-                  )}
-                  
-                  {/* Pulse ring on hover */}
-                  {!loading && source.trim() && destination.trim() && (
-                    <div className="absolute inset-0 rounded-xl border-2 border-primary/0 group-hover/btn:border-primary/30 transition-all duration-300" />
-                  )}
-
-                  <div className="relative flex items-center gap-2">
-                    <span className={`material-symbols-outlined text-xl ${loading ? 'animate-spin text-outline' : 'text-on-primary-container group-hover/btn:rotate-12 transition-transform duration-300'}`}>
-                      {loading ? 'progress_activity' : 'rocket_launch'}
-                    </span>
-                    <span className={`text-sm tracking-wider uppercase ${loading ? 'text-outline' : 'text-on-primary-container'}`}>
-                      {loading ? 'Optimizing Routes...' : 'Find Optimal Routes'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* Helper text */}
-                {!source.trim() || !destination.trim() ? (
-                  <p className="text-center text-[11px] text-outline mt-3 animate-fade-in">
-                    Enter origin and destination to begin optimization
-                  </p>
-                ) : (
-                  <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 flex items-center justify-center gap-1.5 animate-fade-in">
-                    <span className="material-symbols-outlined text-tertiary text-xs">check_circle</span>
-                    Ready to optimize <span className="mono text-primary">{source}</span> → <span className="mono text-tertiary">{destination}</span>
-                  </p>
+            {/* Submit */}
+            <div className={`transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <button
+                type="submit"
+                disabled={loading || !source.trim() || !destination.trim()}
+                className="group/btn relative w-full py-4 font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
+              >
+                <div className={`absolute inset-0 transition-all duration-500 ${
+                  loading
+                    ? 'bg-surface-container'
+                    : 'bg-gradient-to-r from-primary via-primary-container to-primary group-hover/btn:shadow-[0_0_30px_rgba(47,129,247,0.4)]'
+                }`} />
+                {!loading && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
                 )}
-              </div>
+                <div className="relative flex items-center gap-2">
+                  <span className={`material-symbols-outlined text-xl ${loading ? 'animate-spin text-outline' : 'text-on-primary-container'}`}>
+                    {loading ? 'progress_activity' : 'train'}
+                  </span>
+                  <span className={`text-sm tracking-wider uppercase ${loading ? 'text-outline' : 'text-on-primary-container'}`}>
+                    {loading ? 'Finding Routes...' : 'Find Optimal Routes'}
+                  </span>
+                </div>
+              </button>
+
+              {source.trim() && destination.trim() && !loading && (
+                <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 flex items-center justify-center gap-1.5 animate-fade-in">
+                  <span className="material-symbols-outlined text-tertiary text-xs">check_circle</span>
+                  Ready: <span className="mono text-primary">{source}</span> → <span className="mono text-tertiary">{destination}</span>
+                  · {cargoWeight}kg {cargoType}
+                </p>
+              )}
             </div>
           </form>
         </div>

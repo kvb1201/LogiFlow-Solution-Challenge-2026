@@ -1,90 +1,497 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
+import type { Recommendation, RankedOption } from '@/services/api';
 
 const MapView = dynamic(() => import('@/components/Map'), { ssr: false });
 
-const calculateDistance = (segments: any[]) => {
-  if (!segments || segments.length === 0) return 0;
-  let totalDistance = 0;
-  
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  
-  segments.forEach(seg => {
-    if (seg.from?.lat && seg.from?.lng && seg.to?.lat && seg.to?.lng) {
-      const R = 6371; // km
-      const dLat = toRad(seg.to.lat - seg.from.lat);
-      const dLon = toRad(seg.to.lng - seg.from.lng);
-      const lat1 = toRad(seg.from.lat);
-      const lat2 = toRad(seg.to.lat);
+// ── Recommendation Card ──────────────────────────────────────────────
 
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      totalDistance += R * c;
+function RecCard({
+  rec,
+  label,
+  icon,
+  color,
+  isActive,
+  onClick,
+}: {
+  rec: Recommendation;
+  label: string;
+  icon: string;
+  color: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const delay = rec.delay_info;
+  return (
+    <div
+      onClick={onClick}
+      className={`p-4 rounded-xl border cursor-pointer transition-all duration-300 ${
+        isActive
+          ? `bg-gradient-to-br ${color} border-current shadow-lg scale-[1.01]`
+          : 'bg-surface-container-lowest/50 border-outline-variant/10 hover:border-outline-variant/30 hover:bg-surface-container/30'
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span className="material-symbols-outlined text-lg">{icon}</span>
+        <span className="text-[10px] font-label font-bold uppercase tracking-widest text-on-surface-variant">{label}</span>
+      </div>
+
+      <div className="flex justify-between items-baseline mb-2">
+        <span className="text-sm font-bold text-on-surface truncate max-w-[65%]">{rec.train_name}</span>
+        <span className="mono text-sm font-bold text-primary">₹{rec.parcel_cost_inr?.toLocaleString()}</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-[10px] mono">
+        <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
+          <div className="text-outline mb-0.5">TIME</div>
+          <div className="text-on-surface font-medium">{rec.duration_hours}h</div>
+        </div>
+        <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
+          <div className="text-outline mb-0.5">RISK</div>
+          <div className="text-on-surface font-medium">{rec.risk_pct}</div>
+        </div>
+        <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
+          <div className="text-outline mb-0.5">DELAY</div>
+          <div className="text-on-surface font-medium">
+            {delay?.avg_delay_minutes?.toFixed(0) || '?'}m
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mt-2 text-[9px] text-on-surface-variant">
+        <span className="material-symbols-outlined text-xs text-primary">train</span>
+        <span className="mono">{rec.train_number}</span>
+        <span>·</span>
+        <span>{rec.train_type}</span>
+        {rec.running_days?.length > 0 && (
+          <>
+            <span>·</span>
+            <span>{rec.running_days.length === 7 ? 'Daily' : rec.running_days.join(',')}</span>
+          </>
+        )}
+      </div>
+
+      {rec.data_source && (
+        <div className="mt-1.5 text-[9px] text-outline mono truncate" title={rec.data_source}>
+          Source: {rec.data_source}
+        </div>
+      )}
+
+      {delay?.delay_data_source === 'railradar_api_real' && (
+        <div className="flex items-center gap-1 mt-2 text-[9px] text-tertiary">
+          <span className="material-symbols-outlined text-[10px]">verified</span>
+          Real delay data ({delay.stations_measured} stations)
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Ranked Option Row ────────────────────────────────────────────────
+
+function OptionRow({
+  opt,
+  isActive,
+  onClick,
+}: {
+  opt: RankedOption;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
+        isActive
+          ? 'bg-surface-container border-primary/30 shadow-md'
+          : 'bg-surface-container-lowest/30 border-transparent hover:bg-surface-container/50 hover:border-outline-variant/10'
+      }`}
+    >
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold mono ${
+        isActive ? 'bg-primary text-on-primary' : 'bg-surface-container text-outline'
+      }`}>
+        {opt.rank}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-on-surface truncate">{opt.train_name}</div>
+        <div className="text-[10px] text-on-surface-variant mono">
+          {opt.train_number} · {opt.train_type}
+          {opt.running_days?.length > 0 && ` · ${opt.running_days.length === 7 ? 'Daily' : opt.running_days.slice(0, 3).join(',')}`}
+        </div>
+      </div>
+
+      <div className="text-right shrink-0">
+        <div className="text-sm font-bold mono text-primary">₹{opt.parcel_cost_inr?.toLocaleString()}</div>
+        <div className="text-[10px] text-on-surface-variant mono">{opt.effective_hours}h · risk:{(opt.risk_score * 100).toFixed(0)}%</div>
+      </div>
+
+      <div className="shrink-0 text-right">
+        <div className={`text-[9px] mono px-1.5 py-0.5 rounded ${
+          opt.delay_source === 'railradar_api'
+            ? 'bg-tertiary/10 text-tertiary'
+            : 'bg-surface-container text-outline'
+        }`}>
+          {opt.avg_delay_min?.toFixed(0)}m delay
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Detail Panel ─────────────────────────────────────────────────────
+
+function formatLiveLine(key: string, val: unknown): string | null {
+  if (val == null || val === '') return null;
+  if (typeof val === 'object') return `${key}: ${JSON.stringify(val)}`;
+  return `${key}: ${String(val)}`;
+}
+
+function DetailPanel({
+  rec,
+  ranked,
+  trainDelayDetail,
+  selectedTrainLive,
+  mapFocusedTrainNumber,
+}: {
+  rec: Recommendation | null;
+  ranked: RankedOption | null;
+  trainDelayDetail: import('@/services/api').TrainDelayData | null;
+  selectedTrainLive: Record<string, unknown> | null;
+  mapFocusedTrainNumber: string | null;
+}) {
+  const base = rec ?? ranked;
+  if (!base) {
+    return (
+      <div className="flex items-center justify-center h-full text-on-surface-variant text-sm px-4 text-center">
+        Select a recommendation or a ranked route to view delay breakdown and live status
+      </div>
+    );
+  }
+
+  const isRec = !!rec;
+  const delay = isRec ? rec!.delay_info : null;
+  const segments = (isRec ? rec!.segments : ranked!.segments) || [];
+
+  const trainNo = isRec ? rec!.train_number : ranked!.train_number;
+  const trainName = isRec ? rec!.train_name : ranked!.train_name;
+  const trainType = isRec ? rec!.train_type : ranked!.train_type;
+  const parcelCost = isRec ? rec!.parcel_cost_inr : ranked!.parcel_cost_inr;
+  const durationH = isRec ? rec!.duration_hours : ranked!.effective_hours;
+  const riskPct = isRec ? rec!.risk_pct : `${(ranked!.risk_score * 100).toFixed(0)}%`;
+  const riskScore = isRec ? rec!.risk_score : ranked!.risk_score;
+  const avgDelay = isRec ? delay?.avg_delay_minutes : ranked!.avg_delay_min;
+  const delaySrc = isRec ? delay?.delay_data_source : ranked!.delay_source;
+
+  const liveEntries = useMemo(() => {
+    if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
+    const preferred = [
+      'currentStationName',
+      'currentStation',
+      'nextStationName',
+      'nextStation',
+      'delayMinutes',
+      'delay',
+      'status',
+      'position',
+      'speed',
+    ];
+    const rows: string[] = [];
+    const seen = new Set<string>();
+    for (const k of preferred) {
+      if (k in selectedTrainLive) {
+        const line = formatLiveLine(k, (selectedTrainLive as Record<string, unknown>)[k]);
+        if (line) {
+          rows.push(line);
+          seen.add(k);
+        }
+      }
     }
-  });
-  
-  return Math.round(totalDistance);
-};
+    for (const [k, v] of Object.entries(selectedTrainLive)) {
+      if (seen.has(k) || k === 'success') continue;
+      const line = formatLiveLine(k, v);
+      if (line && rows.length < 14) rows.push(line);
+    }
+    return rows;
+  }, [selectedTrainLive]);
+
+  return (
+    <div className="space-y-6">
+      {mapFocusedTrainNumber && (
+        <div className="text-[10px] text-tertiary bg-tertiary/10 border border-tertiary/20 rounded-lg px-3 py-2">
+          Map focus: live data for train <span className="mono font-semibold">{mapFocusedTrainNumber}</span>
+          {trainNo && mapFocusedTrainNumber !== trainNo && (
+            <span className="text-outline"> — route delay below is for {trainNo}</span>
+          )}
+        </div>
+      )}
+
+      {/* Train Info */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-primary text-sm">train</span>
+          <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Train Details</h3>
+        </div>
+        <div className="bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10 space-y-2">
+          <div className="flex justify-between gap-2">
+            <span className="text-xs text-outline shrink-0">Train</span>
+            <span className="text-sm font-medium mono text-right">{trainNo} {trainName}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-xs text-outline">Type</span>
+            <span className="text-sm">{trainType}</span>
+          </div>
+          {isRec && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-xs text-outline">Schedule</span>
+                <span className="text-sm mono">{rec!.departure} → {rec!.arrival}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-outline">Speed</span>
+                <span className="text-sm mono">{rec!.avg_speed_kmph} km/h</span>
+              </div>
+            </>
+          )}
+          <div className="flex justify-between">
+            <span className="text-xs text-outline">Runs</span>
+            <span className="text-sm">
+              {(isRec ? rec!.running_days : ranked!.running_days)?.length === 7
+                ? 'Daily'
+                : (isRec ? rec!.running_days : ranked!.running_days)?.join(', ')}
+            </span>
+          </div>
+          {isRec && (
+            <div className="flex justify-between">
+              <span className="text-xs text-outline">Van</span>
+              <span className="text-sm">{rec!.parcel_van_type}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-xs text-outline">Source</span>
+            <span className="text-[10px] mono text-tertiary text-right">
+              {isRec ? rec!.data_source : ranked!.data_source}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Cost */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-primary text-sm">payments</span>
+          <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Parcel tariff</h3>
+        </div>
+        <div className="bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10">
+          <div className="flex justify-between items-baseline">
+            <span className="text-xs text-outline">Total (parcel)</span>
+            <span className="mono text-lg font-bold text-primary">₹{parcelCost?.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between mt-2 text-[10px] text-on-surface-variant">
+            <span>Distance: {isRec ? rec!.distance_km : ranked!.distance_km} km</span>
+            <span>Duration: {durationH}h</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Real Delay Data */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-primary text-sm">schedule</span>
+          <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Delay Analysis</h3>
+        </div>
+        <div className="bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10 space-y-2">
+          <div className="flex justify-between">
+            <span className="text-xs text-outline">Avg Delay</span>
+            <span className="mono text-sm font-medium">
+              {avgDelay != null ? `${Number(avgDelay).toFixed(1)} min` : '?'}
+            </span>
+          </div>
+          {isRec && delay?.max_delay_minutes !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-xs text-outline">Max Delay</span>
+              <span className="mono text-sm">{delay.max_delay_minutes} min</span>
+            </div>
+          )}
+          {isRec && delay?.stations_measured !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-xs text-outline">Measured At</span>
+              <span className="text-sm">{delay.stations_measured} stations</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-xs text-outline">Data Source</span>
+            <span className={`text-[10px] mono px-2 py-0.5 rounded ${
+              (isRec && delay?.delay_data_source === 'railradar_api_real') || (!isRec && delaySrc === 'railradar_api')
+                ? 'bg-tertiary/10 text-tertiary'
+                : 'bg-surface-container text-outline'
+            }`}>
+              {isRec ? delay?.delay_data_source || 'N/A' : delaySrc || 'N/A'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Station-by-station delay (RailRadar) */}
+      {trainDelayDetail?.route && trainDelayDetail.route.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-primary text-sm">timeline</span>
+            <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Station delays</h3>
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+            {trainDelayDetail.route.slice(0, 40).map((row, i) => (
+              <div
+                key={`${row.stationCode}-${i}`}
+                className="flex justify-between text-[11px] mono bg-surface-container/40 rounded-lg px-2 py-1.5 border border-outline-variant/10"
+              >
+                <span className="text-on-surface truncate mr-2">{row.stationCode}</span>
+                <span className="text-on-surface-variant shrink-0">
+                  arr {row.arrivalDelayMinutes}m · dep {row.departureDelayMinutes}m
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Live tracking */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-primary text-sm">my_location</span>
+          <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Live tracking</h3>
+        </div>
+        <div className="bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10">
+          {liveEntries.length > 0 ? (
+            <ul className="space-y-1.5 text-[11px] mono text-on-surface-variant break-words">
+              {liveEntries.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-outline">No live JSON yet — select a route or tap a train on the map.</p>
+          )}
+        </div>
+      </section>
+
+      {/* Risk */}
+      <section className="bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-outline">RISK</span>
+          <span className="mono text-lg font-bold">{riskPct}</span>
+        </div>
+        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              width: `${Math.min(100, riskScore * 100)}%`,
+              background: riskScore < 0.2 ? '#10b981' : riskScore < 0.4 ? '#f59e0b' : '#ef4444',
+            }}
+          />
+        </div>
+        <div className="flex justify-between mt-1 text-[9px] text-outline mono">
+          <span>LOW</span>
+          <span>HIGH</span>
+        </div>
+      </section>
+
+      {/* Route Segments */}
+      {segments.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-primary text-sm">route</span>
+            <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Route</h3>
+          </div>
+          <div className="space-y-2">
+            {segments.map((seg, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm">
+                <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-on-surface">{seg.from_name || seg.from}</span>
+                  <span className="text-outline mx-2">→</span>
+                  <span className="text-on-surface">{seg.to_name || seg.to}</span>
+                </div>
+                {seg.distance_km != null && (
+                  <span className="text-xs mono text-on-surface-variant shrink-0">{seg.distance_km} km</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── Main Dashboard ───────────────────────────────────────────────────
 
 export default function Dashboard() {
   const {
     source,
     destination,
-    budgetCap,
-    maxDelay,
-    carbonPriority,
-    routes,
-    selectedRouteIndex,
+    recommendations,
+    allOptions,
+    selectedOptionIndex,
+    setSelectedOptionIndex,
     loading,
     hasSearched,
-    setSelectedRouteIndex,
-    setBudgetCap,
-    setMaxDelay,
-    setCarbonPriority,
-    handleRecalculate
+    activeView,
+    setActiveView,
+    liveMapMode,
+    setLiveMapMode,
+    fetchLiveTrains,
+    fetchTrainDelayAndLive,
+    trainDelayDetail,
+    selectedTrainLive,
+    mapFocusedTrainNumber,
+    error,
+    resetSearch,
   } = useLogiFlowStore();
 
-  const activeRoute = routes[selectedRouteIndex] || null;
+  const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
 
+  // Fetch live trains on mount and every 30s
+  useEffect(() => {
+    fetchLiveTrains();
+    const interval = setInterval(fetchLiveTrains, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLiveTrains]);
+
+  const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
+  const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
+
+  const trainNoForDetail = activeRec?.train_number || activeOption?.train_number;
+
+  useEffect(() => {
+    if (!trainNoForDetail) return;
+    void fetchTrainDelayAndLive(trainNoForDetail);
+  }, [trainNoForDetail, fetchTrainDelayAndLive]);
+
+  // ── LANDING PAGE ───────────────────────────────────────────────────
   if (!hasSearched) {
     return (
       <div className="bg-[#080b12] text-[var(--color-on-surface)] min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        {/* ── Animated Mesh Gradient Background ── */}
+        {/* Background */}
         <div className="absolute inset-0 z-0">
-          {/* Base dark layer */}
           <div className="absolute inset-0 bg-[#080b12]" />
-          
-          {/* Animated mesh gradient blobs */}
           <div className="absolute w-[600px] h-[600px] rounded-full opacity-[0.12] blur-[100px] bg-[#498fff] animate-mesh-1 top-[-10%] left-[-5%]" />
           <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.08] blur-[90px] bg-[#67df70] animate-mesh-2 bottom-[-5%] right-[-5%]" />
           <div className="absolute w-[400px] h-[400px] rounded-full opacity-[0.06] blur-[80px] bg-[#acc7ff] animate-mesh-3 top-[40%] left-[50%]" />
           <div className="absolute w-[350px] h-[350px] rounded-full opacity-[0.05] blur-[70px] bg-[#ffb689] animate-mesh-4 top-[10%] right-[20%]" />
-          
-          {/* Subtle dot grid pattern */}
           <div className="absolute inset-0 hero-dot-grid opacity-[0.35]" />
-          
-          {/* Top edge highlight */}
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
-          
-          {/* Noise texture overlay for depth */}
-          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")' }} />
-          
-          {/* Vignette */}
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_#080b12_80%)]" />
         </div>
-        
+
         <div className="w-full max-w-[900px] z-10 animate-slide-up">
-          {/* Hero Header */}
           <div className="text-center mb-12">
-            {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full mb-6 animate-fade-in">
               <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-              <span className="text-[11px] font-semibold tracking-widest uppercase text-primary">AI-Powered Logistics Intelligence</span>
+              <span className="text-[11px] font-semibold tracking-widest uppercase text-primary">Railway Cargo Intelligence · Powered by RailRadar</span>
             </div>
 
             <h1 className="text-6xl md:text-7xl font-black font-headline tracking-tighter mb-5">
@@ -92,15 +499,16 @@ export default function Dashboard() {
               <span className="text-on-surface">Flow</span>
             </h1>
             <p className="text-on-surface-variant max-w-2xl mx-auto font-body text-base leading-relaxed">
-              Optimize your supply chain routing with <span className="text-primary font-medium">multimodal intelligence</span>, <span className="text-tertiary font-medium">dynamic risk mapping</span>, and granular predictive alerts.
+              Optimize railway cargo routing with <span className="text-primary font-medium">real Indian Railways data</span>,{' '}
+              <span className="text-tertiary font-medium">live train tracking</span>, and{' '}
+              <span className="text-secondary font-medium">ML-powered delay prediction</span>.
             </p>
 
-            {/* Feature pills */}
             <div className="flex flex-wrap justify-center gap-3 mt-8">
               {[
-                { icon: 'route', label: 'Pareto-Optimal Routing' },
-                { icon: 'speed', label: 'Real-Time Optimization' },
-                { icon: 'eco', label: 'Carbon-Aware' },
+                { icon: 'train', label: 'Real Schedule Data' },
+                { icon: 'speed', label: 'Live Train Tracking' },
+                { icon: 'analytics', label: 'ML Delay Prediction' },
               ].map((feature, i) => (
                 <div
                   key={feature.label}
@@ -113,291 +521,199 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          
+
           <InputForm />
-          
-          {/* Bottom decorative element */}
+
           <div className="text-center mt-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}>
-            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">Powered by Advanced Graph Optimization</p>
+            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">Powered by RailRadar API · Real Indian Railways Data</p>
           </div>
         </div>
       </div>
     );
   }
 
+  // ── RESULTS DASHBOARD ──────────────────────────────────────────────
   return (
     <div className="bg-[var(--color-background)] text-[var(--color-on-surface)] font-body overflow-hidden h-screen flex flex-col">
-      {/* TopNavBar Component */}
-      <header className="bg-[var(--color-surface)] border-b border-outline-variant/10 flex justify-between items-center w-full px-6 h-16 shrink-0 relative z-20">
-        <div className="flex items-center gap-8">
-          <span className="text-xl font-bold tracking-tighter text-primary cursor-pointer" onClick={() => window.location.reload()}>LogiFlow</span>
-          <div className="flex items-center gap-2 text-on-surface-variant bg-surface-container-low px-4 py-1.5 rounded-full border border-outline-variant/10">
+      {/* Top Nav */}
+      <header className="bg-[var(--color-surface)] border-b border-outline-variant/10 flex justify-between items-center w-full px-6 h-14 shrink-0 relative z-20">
+        <div className="flex items-center gap-6">
+          <span className="text-lg font-bold tracking-tighter text-primary cursor-pointer" onClick={resetSearch}>LogiFlow</span>
+          <div className="flex items-center gap-2 text-on-surface-variant bg-surface-container-low px-3 py-1 rounded-full border border-outline-variant/10">
+            <span className="material-symbols-outlined text-xs text-primary">train</span>
             <span className="text-sm font-medium">{source}</span>
             <span className="material-symbols-outlined text-xs text-primary">arrow_forward</span>
             <span className="text-sm font-medium">{destination}</span>
-            <button className="material-symbols-outlined text-xs ml-3 text-outline hover:text-primary transition-colors" onClick={() => window.location.reload()}>edit</button>
+            <button className="material-symbols-outlined text-xs ml-2 text-outline hover:text-primary transition-colors" onClick={resetSearch}>edit</button>
           </div>
         </div>
-        <nav className="flex items-center bg-surface-container-low p-1 rounded-full space-x-1">
-          <button className="px-4 py-1.5 rounded-full text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Road</button>
-          <button className="px-4 py-1.5 rounded-full text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Rail</button>
-          <button className="px-4 py-1.5 rounded-full text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all">Air</button>
-          <button className="px-4 py-1.5 rounded-full text-sm font-semibold text-primary bg-surface-container border border-primary/30 transition-all">Combined</button>
-        </nav>
-        <div className="flex items-center gap-4">
-          <button className="material-symbols-outlined text-on-surface-variant hover:text-on-surface transition-colors">settings</button>
-          <div className="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20">
-            <img alt="User" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBG46pWvhOxxWiobtQLQlNR6e7Ams31T7a-MKnvWqtANlsbkJqe20ajV5slpYYKPo1WzYO1lQeBT67DllBjB60IcESJN2ttIhiTSwcnSmlCDPplTFykIxRFHRl7MsNS1k9hGWzO-A0P_XaM61hCLJBhs4h9FCMxz5PfxMkQ6jhGL483bylQ6P83alfoRrsjxhkKkazzobdN2GLqOufk3cIggclyVgTo_3Uc-BYSi9RG3MXvZl00ZLifMxfyApIN340rmKNJBvhPtGk" />
+
+        <div className="flex items-center gap-3">
+          {/* Live map options */}
+          <div className="flex bg-surface-container rounded-full p-1 border border-outline-variant/10">
+            <button
+              onClick={() => setLiveMapMode('all')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'all' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              All India
+            </button>
+            <button
+              onClick={() => setLiveMapMode('route')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'route' ? 'bg-tertiary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              Route Focus
+            </button>
+            <button
+              onClick={() => setLiveMapMode('hidden')}
+              className={`px-3 py-1 text-[11px] font-semibold rounded-full transition-all uppercase tracking-wider ${
+                liveMapMode === 'hidden' ? 'bg-surface-container-highest text-on-surface shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              Hide Live
+            </button>
           </div>
         </div>
       </header>
 
+      {error && (
+        <div className="bg-error/10 border-b border-error/20 px-6 py-2 text-sm text-error flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">error</span>
+          {error}
+        </div>
+      )}
+
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Column: Route List (25%) */}
-        <aside className="w-1/4 bg-surface-container-low flex flex-col border-r border-outline-variant/5">
-          <div className="p-6 border-b border-outline-variant/10">
-            <div className="flex justify-between items-baseline mb-4">
-              <h2 className="headline-sm text-lg font-semibold">{routes.length} options found</h2>
-              <span className="font-label text-xs text-on-surface-variant flex items-center gap-1">SORTED BY: <span className="text-primary">COST ↑</span></span>
+        {/* ── Left: Recommendations + Options ── */}
+        <aside className="w-[28%] bg-surface-container-low flex flex-col border-r border-outline-variant/5">
+          {/* View Toggle */}
+          <div className="px-4 pt-4 pb-2">
+            <div className="flex bg-surface-container rounded-lg p-1">
+              <button
+                onClick={() => setActiveView('recommendations')}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all ${
+                  activeView === 'recommendations' ? 'bg-primary text-on-primary shadow' : 'text-on-surface-variant'
+                }`}
+              >
+                Top Picks
+              </button>
+              <button
+                onClick={() => setActiveView('all_options')}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all ${
+                  activeView === 'all_options' ? 'bg-primary text-on-primary shadow' : 'text-on-surface-variant'
+                }`}
+              >
+                All ({allOptions.length})
+              </button>
             </div>
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {routes.map((route, idx) => {
-              const isActive = idx === selectedRouteIndex;
-              const cost = route.total_cost || route.cost || 0;
-              const time = route.total_time || route.time || 0;
-              const risk = route.risk || 0;
-              
-              return (
-                <div 
-                  key={idx} 
-                  onClick={() => setSelectedRouteIndex(idx)}
-                  className={`border-l-4 p-4 rounded-r-lg cursor-pointer transition-colors ${isActive ? 'bg-surface-container border-primary shadow-xl' : 'bg-surface-container-lowest border-transparent hover:bg-surface-container border border-outline-variant/10 group'}`}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex gap-3">
-                      <span className={`material-symbols-outlined ${isActive ? 'text-primary' : 'text-on-surface-variant group-hover:text-primary transition-colors'}`}>
-                        {route.mode?.toLowerCase() === 'road' ? 'local_shipping' : route.mode?.toLowerCase() === 'rail' ? 'train' : 'hub'}
-                      </span>
-                      <div>
-                        <p className="text-sm font-bold">{route.type || 'Standard Ground'}</p>
-                        <p className="font-label text-xs text-on-surface-variant uppercase">{route.mode}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className={`mono font-bold ${isActive ? 'text-primary' : 'text-on-surface font-medium'}`}>₹{cost.toLocaleString()}</span>
-                      <span className="font-label text-xs text-tertiary">{time}h</span>
-                    </div>
-                  </div>
-                  
-                  {isActive && (
-                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                      <div className="flex justify-between bg-surface-container-low p-2 rounded">
-                        <span className="text-outline">Risk</span>
-                        <span className="mono text-on-surface">{(risk * 100).toFixed(0)}%</span>
-                      </div>
-                      <div className="flex justify-between bg-surface-container-low p-2 rounded">
-                        <span className="text-outline">Stops</span>
-                        <span className="mono text-on-surface">{route.segments?.length || 0}</span>
-                      </div>
-                    </div>
-                  )}
 
-                  <div className="flex items-center gap-2">
-                    <span className="font-label text-[10px] text-on-surface-variant">PARETO SCORE</span>
-                    <div className="flex-1 h-1.5 bg-surface-container-highest rounded-full overflow-hidden flex gap-0.5">
-                      <div className="h-full w-1/5 bg-tertiary"></div>
-                      <div className="h-full w-1/5 bg-tertiary"></div>
-                      <div className="h-full w-1/5 bg-tertiary"></div>
-                      <div className="h-full w-1/5 bg-tertiary"></div>
-                      <div className="h-full w-1/5 bg-surface-variant"></div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+                <span className="text-sm text-on-surface-variant">Finding optimal routes...</span>
+              </div>
+            )}
+
+            {!loading && activeView === 'recommendations' && (
+              <>
+                {recommendations.cheapest && (
+                  <RecCard
+                    rec={recommendations.cheapest}
+                    label="Cheapest"
+                    icon="savings"
+                    color="from-emerald-500/15 to-emerald-600/5 border-emerald-500/30"
+                    isActive={selectedRecType === 'cheapest'}
+                    onClick={() => setSelectedRecType('cheapest')}
+                  />
+                )}
+                {recommendations.fastest && (
+                  <RecCard
+                    rec={recommendations.fastest}
+                    label="Fastest"
+                    icon="bolt"
+                    color="from-amber-500/15 to-amber-600/5 border-amber-500/30"
+                    isActive={selectedRecType === 'fastest'}
+                    onClick={() => setSelectedRecType('fastest')}
+                  />
+                )}
+                {recommendations.safest && (
+                  <RecCard
+                    rec={recommendations.safest}
+                    label="Safest"
+                    icon="shield"
+                    color="from-blue-500/15 to-blue-600/5 border-blue-500/30"
+                    isActive={selectedRecType === 'safest'}
+                    onClick={() => setSelectedRecType('safest')}
+                  />
+                )}
+              </>
+            )}
+
+            {!loading && activeView === 'all_options' && allOptions.map((opt, i) => (
+              <OptionRow
+                key={`${opt.train_number}-${i}`}
+                opt={opt}
+                isActive={i === selectedOptionIndex}
+                onClick={() => {
+                  setSelectedOptionIndex(i);
+                }}
+              />
+            ))}
           </div>
         </aside>
 
-        {/* Center Column: Map (45%) */}
+        {/* ── Center: Map ── */}
         <section className="flex-1 relative bg-surface-container-lowest">
           <div className="absolute inset-0 z-0 bg-[#0d1117]">
-             <MapView segments={activeRoute?.segments || []} sourceName={source} destName={destination} />
+            <MapView
+              selectedRec={activeRec}
+              selectedOption={activeOption}
+              highlightType={activeView === 'all_options' ? 'selected' : selectedRecType}
+            />
           </div>
-          
-          <div className="absolute top-6 left-6 z-10 pointer-events-none">
-            <div className="bg-surface-container-highest/80 backdrop-blur-xl p-4 rounded-xl border border-outline-variant/20 shadow-2xl w-64 pointer-events-auto">
-              <h3 className="font-label text-xs text-primary mb-2">SELECTED ROUTE SUMMARY</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-on-surface-variant text-xs">Total Distance</span>
-                  <span className="mono text-sm">{calculateDistance(activeRoute?.segments || [])} km</span>
-                </div>
-                <div className="flex justify-between items-baseline">
-                  <span className="text-on-surface-variant text-xs">Transit Time</span>
-                  <span className="mono text-sm">{activeRoute?.total_time || activeRoute?.time || 0}h</span>
-                </div>
-                <div className="flex justify-between items-baseline">
-                  <span className="text-on-surface-variant text-xs">Stops</span>
-                  <span className="mono text-sm">{activeRoute?.segments?.length || '0'}</span>
+
+          {/* Map overlay: selected route summary */}
+          {(activeRec || activeOption) && (
+            <div className="absolute top-4 left-4 z-10">
+              <div className="bg-surface-container-highest/85 backdrop-blur-xl p-3 rounded-xl border border-outline-variant/20 shadow-2xl min-w-[200px]">
+                <h3 className="font-label text-[10px] text-primary mb-2 uppercase tracking-widest">Selected Route</h3>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-outline">Train</span>
+                    <span className="mono font-medium">{activeRec?.train_number || activeOption?.train_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-outline">Distance</span>
+                    <span className="mono">{activeRec?.distance_km || activeOption?.distance_km} km</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-outline">Duration</span>
+                    <span className="mono">{activeRec?.duration_hours || activeOption?.effective_hours}h</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-outline">Avg Speed</span>
+                    <span className="mono">{activeRec?.avg_speed_kmph || activeOption?.avg_speed_kmph} km/h</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-4">
-            <div className="flex items-center gap-2 bg-surface-container-high/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-outline-variant/20 shadow-lg cursor-pointer hover:bg-surface-container-highest transition-colors">
-              <span className="material-symbols-outlined text-xs text-secondary">bolt</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#dfe2eb]">Weather Warning</span>
-            </div>
-            <div className="flex items-center gap-2 bg-surface-container-high/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-outline-variant/20 shadow-lg cursor-pointer hover:bg-surface-container-highest transition-colors">
-              <span className="material-symbols-outlined text-xs text-primary">toll</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#dfe2eb]">₹1,250 Toll Est.</span>
-            </div>
-          </div>
+          )}
         </section>
 
-        {/* Right Column: Detail Panels & Controls (30%) */}
-        <aside className="w-[30%] bg-surface-container-lowest overflow-y-auto border-l border-outline-variant/5 text-sm p-6 space-y-8">
-          {/* Cost Breakdown */}
-          <section>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Cost Breakdown</h3>
-              <span className="bg-tertiary/10 text-tertiary px-2 py-0.5 rounded text-[10px] font-bold tracking-wider">WITHIN BUDGET</span>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] mono">
-                  <span className="text-outline">FUEL &amp; TRANSPORT</span>
-                  <span>₹48,500</span>
-                </div>
-                <div className="w-full h-1.5 bg-surface-container rounded-full">
-                  <div className="h-full w-[58%] bg-primary-container rounded-full"></div>
-                </div>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] mono">
-                  <span className="text-outline">TOLLS &amp; TAXES</span>
-                  <span>₹12,400</span>
-                </div>
-                <div className="w-full h-1.5 bg-surface-container rounded-full">
-                  <div className="h-full w-[15%] bg-primary-container rounded-full"></div>
-                </div>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] mono">
-                  <span className="text-outline">LABOR &amp; LOADING</span>
-                  <span>₹15,000</span>
-                </div>
-                <div className="w-full h-1.5 bg-surface-container rounded-full">
-                  <div className="h-full w-[18%] bg-primary-container rounded-full"></div>
-                </div>
-              </div>
-              
-              <div className="pt-2 border-t border-outline-variant/10 flex justify-between items-baseline mt-4">
-                <span className="text-xs font-semibold">TOTAL ESTIMATE</span>
-                <span className="mono text-lg font-bold text-primary">₹{(activeRoute?.total_cost || activeRoute?.cost || 82400).toLocaleString()}</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Risk Assessment */}
-          <section className="grid grid-cols-2 gap-6 bg-surface-container/30 p-4 rounded-xl border border-outline-variant/10">
-            <div className="flex flex-col items-center justify-center border-r border-outline-variant/10">
-              <div className="relative w-20 h-20 flex items-center justify-center">
-                <svg className="w-full h-full -rotate-90">
-                  <circle className="text-surface-container-high" cx="40" cy="40" fill="transparent" r="35" stroke="currentColor" strokeWidth="6"></circle>
-                  <circle className="text-tertiary transition-all duration-1000" cx="40" cy="40" fill="transparent" r="35" stroke="currentColor" strokeDasharray="220" strokeDashoffset={220 - (220 * (activeRoute?.risk || 0.12))} strokeWidth="6"></circle>
-                </svg>
-                <span className="absolute mono text-sm font-bold">{((activeRoute?.risk || 0.12) * 100).toFixed(0)}%</span>
-              </div>
-              <span className="font-label text-[10px] text-outline mt-2 uppercase tracking-wide">TOTAL RISK</span>
-            </div>
-            
-            <div className="space-y-3 py-2 flex justify-center flex-col">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] mono uppercase">
-                  <span>Security</span>
-                  <span className="text-tertiary">Low</span>
-                </div>
-                <div className="h-1 bg-surface-container rounded-full overflow-hidden">
-                  <div className="h-full w-1/4 bg-tertiary"></div>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] mono uppercase">
-                  <span>Perishability</span>
-                  <span className="text-secondary">Mid</span>
-                </div>
-                <div className="h-1 bg-surface-container rounded-full overflow-hidden">
-                  <div className="h-full w-2/3 bg-secondary"></div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Optimization Sliders */}
-          <section className="space-y-6">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-sm">tune</span>
-              <h3 className="font-headline text-sm font-semibold uppercase tracking-wider text-on-surface-variant">Optimization Weights</h3>
-            </div>
-            
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <div className="flex justify-between font-label text-xs">
-                  <span className="text-outline">BUDGET CAP</span>
-                  <span className="mono text-on-surface">₹{(budgetCap).toLocaleString()}</span>
-                </div>
-                <input 
-                  type="range" min="10000" max="500000" step="5000"
-                  value={budgetCap} 
-                  onChange={(e) => setBudgetCap(Number(e.target.value))} 
-                  className="w-full"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between font-label text-xs">
-                  <span className="text-outline">MAX DELAY TOLERANCE</span>
-                  <span className="mono text-on-surface">{maxDelay} Hours</span>
-                </div>
-                <input 
-                  type="range" min="0" max="48" step="1"
-                  value={maxDelay} 
-                  onChange={(e) => setMaxDelay(Number(e.target.value))} 
-                  className="w-full"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between font-label text-xs">
-                  <span className="text-outline">CARBON QUALITY</span>
-                  <span className="mono text-on-surface">{carbonPriority}% Impact</span>
-                </div>
-                <input 
-                  type="range" min="0" max="100" step="1"
-                  value={carbonPriority} 
-                  onChange={(e) => setCarbonPriority(Number(e.target.value))} 
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </section>
-
-          <div className="pt-4">
-            <button 
-              onClick={handleRecalculate}
-              className={`w-full py-4 text-on-primary-container font-bold rounded-xl shadow-[0_0_20px_rgba(47,129,247,0.3)] transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 bg-surface-container cursor-not-allowed text-outline' : 'bg-gradient-to-br from-primary to-primary-container hover:brightness-110 active:scale-[0.98]'}`}
-            >
-              <span className={`material-symbols-outlined text-xl ${loading ? 'animate-spin' : ''}`}>refresh</span>
-              {loading ? 'RECALCULATING...' : 'RECALCULATE ROUTES'}
-            </button>
-          </div>
+        {/* ── Right: Detail Panel ── */}
+        <aside className="w-[28%] bg-surface-container-lowest overflow-y-auto border-l border-outline-variant/5 p-5">
+          <DetailPanel
+            rec={activeRec}
+            ranked={activeOption}
+            trainDelayDetail={trainDelayDetail}
+            selectedTrainLive={selectedTrainLive as Record<string, unknown> | null}
+            mapFocusedTrainNumber={mapFocusedTrainNumber}
+          />
         </aside>
       </main>
     </div>
