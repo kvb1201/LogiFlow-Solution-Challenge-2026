@@ -1,3 +1,5 @@
+import random
+
 from app.pipelines.base import BasePipeline
 
 
@@ -27,7 +29,7 @@ class RoadPipeline(BasePipeline):
         from app.services.weather_service import get_weather
         weight = payload.get("cargo_weight_kg", 100)
 
-        for r in routes:
+        for route_idx, r in enumerate(routes):
             # Base time
             base_time = r["base_duration_hr"]
 
@@ -83,33 +85,21 @@ class RoadPipeline(BasePipeline):
 
             effective_time = adjusted_time
 
-            # Cost (realistic model)
             distance_km = float(r.get("distance_km", 0))
 
-            # Fuel model
-            fuel_price = 100  # ₹/liter (fallback)
-            mileage = 12      # km/l (truck avg)
-            fuel_cost = (distance_km / mileage) * fuel_price
-
-            # Traffic increases fuel burn
-            fuel_cost *= (1 + traffic_level * 0.3)
-
-            # Driver cost
-            driver_cost = max(effective_time, 0) * 150
-            if effective_time > 10:
-                driver_cost *= 1.2  # fatigue / long-haul penalty
-
-            # Weight cost (slab based)
-            if weight < 500:
-                weight_cost = 500
-            elif weight < 2000:
-                weight_cost = 1500
-            else:
-                weight_cost = 3000
-
-            toll_cost = float(r.get("toll_cost", 0))
-
-            total_cost = fuel_cost + driver_cost + toll_cost + weight_cost
+            # Freight-style logistics pricing (deterministic per route alternative)
+            seed = (route_idx * 1_000_003 + int(distance_km * 1_000) * 7_919 + int(weight)) % (2**32)
+            rng = random.Random(seed)
+            rate_per_km_per_ton = 8 + rng.random() * 4  # ₹/km/ton, 8–12
+            tons = max(float(weight), 0) / 1000.0
+            freight = distance_km * rate_per_km_per_ton * tons
+            toll = distance_km * 0.8
+            handling = 200 + rng.random() * 200
+            gst = 0.05 * freight
+            documentation = 100 + rng.random() * 100
+            total_cost = freight + toll + handling + gst + documentation
+            cost_low = total_cost * 0.9
+            cost_high = total_cost * 1.2
 
             # Risk based on predicted delay (more realistic)
             delay = max(effective_time - base_time, 0)
@@ -128,12 +118,17 @@ class RoadPipeline(BasePipeline):
                 "type": "Road",
                 "mode": "road",
                 "time": round(effective_time, 2),
-                "cost": int(total_cost),
+                "cost": int(round(total_cost)),
+                "cost_range": {
+                    "low": int(round(cost_low)),
+                    "high": int(round(cost_high)),
+                },
                 "cost_breakdown": {
-                    "fuel": int(fuel_cost),
-                    "driver": int(driver_cost),
-                    "toll": int(toll_cost),
-                    "weight": int(weight_cost)
+                    "freight": int(round(freight)),
+                    "toll": int(round(toll)),
+                    "handling": int(round(handling)),
+                    "gst": int(round(gst)),
+                    "documentation": int(round(documentation)),
                 },
                 "risk": round(risk, 3),
                 "distance_km": round(float(r.get("distance_km", 0)), 1),
