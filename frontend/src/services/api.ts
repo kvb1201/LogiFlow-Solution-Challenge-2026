@@ -23,6 +23,21 @@ export interface CargoPayload {
   departure_date: string;
 }
 
+export interface RoadPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  budget?: number;
+  deadline_hours?: number;
+  cargo_weight_kg: number;
+  cargo_type: string;
+  avoid_tolls: boolean;
+  avoid_highways: boolean;
+  traffic_aware: boolean;
+  vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
+  fuel_price?: number;
+}
+
 export interface DelayInfo {
   avg_delay_minutes: number;
   max_delay_minutes?: number;
@@ -172,12 +187,57 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
   return res.json();
 }
 
+export async function fetchRoadRoutes(payload: RoadPayload) {
+  const res = await fetch(`${BACKEND_BASE}/road/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Road optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
   const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.stations || [];
+}
+
+export async function searchCities(query: string): Promise<Array<{ name: string; lat?: number; lng?: number }>> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&q=${encodeURIComponent(q)}`,
+      {
+        headers: {
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const rows = (await res.json()) as Array<Record<string, unknown>>;
+    return rows
+      .map((r) => {
+        const name = String(r.display_name ?? '').split(',').slice(0, 2).join(',').trim();
+        const lat = Number(r.lat);
+        const lng = Number(r.lon);
+        if (!name) return null;
+        return {
+          name,
+          lat: Number.isNaN(lat) ? undefined : lat,
+          lng: Number.isNaN(lng) ? undefined : lng,
+        };
+      })
+      .filter((v): v is { name: string; lat?: number; lng?: number } => Boolean(v));
+  } catch {
+    return [];
+  }
 }
 
 export async function getTrainDelay(trainNumber: string): Promise<TrainDelayData | null> {

@@ -10,10 +10,7 @@ from app.pipelines.road import RoadPipeline
 def test():
     pipeline = RoadPipeline()
     city_pairs = [
-        ("Delhi", "Jaipur"),
         ("Bangalore", "Chennai"),
-        ("Mumbai", "Pune"),
-        ("Ahmedabad", "Udaipur")
     ]
 
     for source, destination in city_pairs:
@@ -70,7 +67,15 @@ def test():
             print()
 
         print("Full JSON Output:\n")
-        print(json.dumps(result, indent=2))
+        clean_result = json.loads(json.dumps(result))
+
+        for r in clean_result.get("all", []):
+            r.pop("geometry", None)
+
+        if "best" in clean_result:
+            clean_result["best"].pop("geometry", None)
+
+        print(json.dumps(clean_result, indent=2))
 
 
 if __name__ == "__main__":

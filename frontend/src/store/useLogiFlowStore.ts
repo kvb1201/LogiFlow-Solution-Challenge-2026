@@ -5,6 +5,7 @@ import {
   getStationInfoDirect,
   getTrainDelay,
   getLiveTrainStatus,
+  fetchRoadRoutes,
   type OptimizeResult,
   type Recommendation,
   type RankedOption,
@@ -23,6 +24,36 @@ interface StationCoord {
   lat: number;
   lng: number;
 }
+
+export type RoadRoute = {
+  geometry: [number, number][];
+  time: number;
+  cost: number;
+  risk: number;
+  distance_km?: number;
+  traffic_factor?: number;
+  cost_breakdown?: {
+    fuel?: number;
+    driver?: number;
+    toll?: number;
+    weight?: number;
+  };
+  reason?: string;
+  key_factors?: string[];
+  ml_summary?: {
+    traffic: 'high' | 'moderate' | 'low';
+    weather: 'good' | 'moderate' | 'bad';
+    delay_hours: number;
+  };
+};
+
+type RoadOptimizeResponse = {
+  all: RoadRoute[];
+  best?: RoadRoute;
+  cheapest?: RoadRoute;
+  fastest?: RoadRoute;
+  safest?: RoadRoute;
+};
 
 interface LogiFlowState {
   // Core inputs
@@ -45,6 +76,17 @@ interface LogiFlowState {
   selectedOptionIndex: number;
   constraintsApplied: OptimizeResult['constraints_applied'] | null;
   routeMetadata: OptimizeResult['route_metadata'] | null;
+
+  // Road results
+  routes: RoadRoute[];
+  selectedRoute: number;
+
+  // Road preferences
+  avoidTolls: boolean;
+  avoidHighways: boolean;
+  trafficAware: boolean;
+  vehicleType: 'mini_truck' | 'truck' | 'heavy_truck';
+  fuelPrice: number;
 
   // Map data
   liveTrains: LiveTrainPosition[];
@@ -81,7 +123,20 @@ interface LogiFlowState {
   setSelectedOptionIndex: (idx: number) => void;
   setActiveView: (view: 'recommendations' | 'all_options') => void;
   setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
-  handleOptimize: () => Promise<void>;
+  setSelectedRoute: (idx: number) => void;
+
+  setAvoidTolls: (val: boolean) => void;
+  setAvoidHighways: (val: boolean) => void;
+  setTrafficAware: (val: boolean) => void;
+  setVehicleType: (val: 'mini_truck' | 'truck' | 'heavy_truck') => void;
+  setFuelPrice: (val: number) => void;
+
+  handleOptimize: (opts?: {
+    mode?: 'rail' | 'road';
+    avoidTolls?: boolean;
+    avoidHighways?: boolean;
+    trafficAware?: boolean;
+  }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
   /** Load RailRadar delay + live for a train (route card or map) */
@@ -106,6 +161,15 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   selectedOptionIndex: 0,
   constraintsApplied: null,
   routeMetadata: null,
+
+  routes: [],
+  selectedRoute: 0,
+
+  avoidTolls: false,
+  avoidHighways: false,
+  trafficAware: true,
+  vehicleType: 'truck',
+  fuelPrice: 100,
 
   liveTrains: [],
   stationCoords: {},
@@ -136,12 +200,21 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
   setActiveView: (view) => set({ activeView: view }),
   setLiveMapMode: (mode) => set({ liveMapMode: mode }),
+  setSelectedRoute: (idx) => set({ selectedRoute: idx }),
+
+  setAvoidTolls: (val) => set({ avoidTolls: val }),
+  setAvoidHighways: (val) => set({ avoidHighways: val }),
+  setTrafficAware: (val) => set({ trafficAware: val }),
+  setVehicleType: (val) => set({ vehicleType: val }),
+  setFuelPrice: (val) => set({ fuelPrice: val }),
 
   resetSearch: () => set({
     hasSearched: false,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
     selectedOptionIndex: 0,
+    routes: [],
+    selectedRoute: 0,
     error: null,
     trainDelayDetail: null,
     selectedTrainLive: null,
@@ -151,13 +224,54 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   }),
 
   // ── Main optimize call ─────────────────────────────────────────────
-  handleOptimize: async () => {
-    const { source, destination, priority, cargoWeight, cargoType, departureDate, budgetMax, deadlineHours } = get();
+  handleOptimize: async (opts) => {
+    const {
+      source,
+      destination,
+      priority,
+      cargoWeight,
+      cargoType,
+      departureDate,
+      budgetMax,
+      deadlineHours,
+      vehicleType,
+      fuelPrice,
+    } = get();
     if (!source.trim() || !destination.trim()) return;
 
     set({ loading: true, hasSearched: true, error: null });
 
     try {
+      if (opts?.mode === 'road') {
+        const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
+        const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
+        const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
+        console.log("ROAD PAYLOAD:", {
+          avoidTolls,
+          avoidHighways,
+          trafficAware,
+        });
+        const raw = (await fetchRoadRoutes({
+          source: source.trim(),
+          destination: destination.trim(),
+          priority,
+          budget: budgetMax,
+          deadline_hours: deadlineHours,
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          avoid_tolls: avoidTolls,
+          avoid_highways: avoidHighways,
+          traffic_aware: trafficAware,
+          vehicle_type: vehicleType,
+          fuel_price: fuelPrice,
+        })) as RoadOptimizeResponse;
+        const all = Array.isArray(raw?.all) ? raw.all : [];
+        set({
+          routes: all,
+          selectedRoute: 0,
+        });
+        return;
+      }
       const result = await optimizeCargoRoute({
         origin_city: source.trim(),
         destination_city: destination.trim(),
@@ -199,7 +313,11 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
-      set({ error: msg });
+      set({
+        error: msg,
+        routes: [],
+        selectedRoute: 0,
+      });
       console.error('Optimize error:', err);
     } finally {
       set({ loading: false });
