@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from pathlib import Path
 import openrouteservice
+from openrouteservice import convert
 import os
 import requests
 import math
@@ -118,7 +119,8 @@ def get_routes(source, destination, payload=None):
                 coordinates=[src, dst],
                 profile="driving-car",
                 format='json',
-                options=strat["params"]
+                options=strat["params"],
+                geometry=True
             )
 
             if res and "routes" in res:
@@ -137,7 +139,8 @@ def get_routes(source, destination, payload=None):
             res = client.directions(
                 coordinates=[src, wp, dst],
                 profile="driving-car",
-                format='json'
+                format='json',
+                geometry=True
             )
 
             if res and "routes" in res:
@@ -177,7 +180,14 @@ def get_routes(source, destination, payload=None):
         duration_hr = round(max(summary["duration"] / 3600, 0), 2)
 
         geometry = route.get("geometry")
-        coords = geometry.get("coordinates") if isinstance(geometry, dict) else None
+        coords = None
+
+        if geometry:
+            try:
+                decoded = convert.decode_polyline(geometry)
+                coords = decoded.get("coordinates")
+            except:
+                coords = None
 
         result.append({
             "route_id": f"ors_{i}",

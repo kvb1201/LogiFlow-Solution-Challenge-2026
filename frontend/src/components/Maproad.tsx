@@ -21,10 +21,16 @@ function useCitySearch(setGlobalSuggestions: (rows: any[]) => void) {
 
     setLoading(true);
     timeoutRef.current = setTimeout(async () => {
-      const data = await searchCities(query);
-      setResults(data);
-      setGlobalSuggestions(data);
-      setLoading(false);
+      try {
+        const data = await searchCities(query);
+        setResults(data);
+        setGlobalSuggestions(data);
+      } catch (e) {
+        setResults([]);
+        setGlobalSuggestions([]);
+      } finally {
+        setLoading(false);
+      }
     }, 300);
   }, [setGlobalSuggestions]);
 
@@ -125,7 +131,7 @@ function LocationInput({
             value={value}
             onChange={e => handleChange(e.target.value)}
             onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
-            onBlur={() => setFocused(false)}
+            // removed onBlur to prevent dropdown flicker
             className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
             placeholder={placeholder}
           />
@@ -133,7 +139,7 @@ function LocationInput({
           {value && (
             <button
               type="button"
-              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); focus(); }}
+              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); }}
               className="absolute right-3 p-1 rounded-full text-outline-variant hover:text-white hover:bg-white/10 transition-colors"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
@@ -147,7 +153,7 @@ function LocationInput({
           <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {results.map((s, i) => (
               <button
-                key={`${s.code}-${i}`}
+                key={`${s.name}-${i}`}
                 type="button"
                 className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
                 onMouseDown={(e) => {
@@ -196,9 +202,11 @@ export default function InputForm() {
     handleOptimize,
     loading,
   } = useLogiFlowStore();
+  const routes = useLogiFlowStore(s => s.routes);
 
   const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const timers = [
@@ -213,12 +221,20 @@ export default function InputForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!source.trim() || !destination.trim()) return;
+    if (!source.trim() || !destination.trim()) {
+      setError('Please select both source and destination');
+      return;
+    }
+    if (source.trim() === destination.trim()) {
+      setError('Source and destination cannot be same');
+      return;
+    }
+    setError(null);
     handleOptimize({
       mode: 'road',
-      avoid_tolls: avoidTolls,
-      avoid_highways: avoidHighways,
-      traffic_aware: trafficAware,
+      avoidTolls,
+      avoidHighways,
+      trafficAware,
     });
   };
 
@@ -260,9 +276,17 @@ export default function InputForm() {
             <div className={`relative z-[100] transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100]">
                 <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
-                  <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const temp = source;
+                      setSource(destination);
+                      setDestination(temp);
+                    }}
+                    className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg hover:scale-105 transition"
+                  >
                     <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>
-                  </div>
+                  </button>
                 </div>
 
                 <LocationInput
@@ -454,9 +478,14 @@ export default function InputForm() {
 
             {/* Submit */}
             <div className={`transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              {error && (
+                <div className="text-red-400 text-xs text-center mb-2">
+                  {error}
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={loading || !source.trim() || !destination.trim()}
+                disabled={loading || !source.trim() || !destination.trim() || source === destination}
                 className="group/btn relative w-full py-4 font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
               >
                 <div className={`absolute inset-0 transition-all duration-500 ${
@@ -488,6 +517,14 @@ export default function InputForm() {
           </form>
         </div>
       </div>
+      {routes && routes.length > 0 && (
+        <div className="mt-6 text-xs text-on-surface-variant text-center">
+          {routes.length} route(s) generated
+          <div className="mt-2 text-primary">
+            Best: ₹{routes[0].cost} · {routes[0].time}h · Risk {Math.round(routes[0].risk * 100)}%
+          </div>
+        </div>
+      )}
     </div>
   );
 }

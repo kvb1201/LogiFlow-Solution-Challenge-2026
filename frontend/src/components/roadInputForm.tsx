@@ -193,6 +193,9 @@ export default function InputForm() {
     handleOptimize,
     loading,
   } = useLogiFlowStore();
+  const [avoidTolls, setAvoidTolls] = useState(false);
+  const [avoidHighways, setAvoidHighways] = useState(false);
+  const [trafficAware, setTrafficAware] = useState(false);
 
   const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -211,7 +214,12 @@ export default function InputForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) return;
-    handleOptimize();
+    handleOptimize({
+      mode: 'road',
+      avoidTolls,
+      avoidHighways,
+      trafficAware,
+    });
   };
 
   return (
@@ -371,6 +379,39 @@ export default function InputForm() {
                     </span>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Route Preferences */}
+            <div className={`transition-all duration-700 delay-250 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
+                Route Preferences
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={avoidTolls}
+                    onChange={(e) => setAvoidTolls(e.target.checked)}
+                  />
+                  <span className="text-xs">Avoid Tolls</span>
+                </label>
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={avoidHighways}
+                    onChange={(e) => setAvoidHighways(e.target.checked)}
+                  />
+                  <span className="text-xs">Avoid Highways</span>
+                </label>
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trafficAware}
+                    onChange={(e) => setTrafficAware(e.target.checked)}
+                  />
+                  <span className="text-xs">Traffic Aware Routing</span>
+                </label>
               </div>
             </div>
 

@@ -23,6 +23,19 @@ export interface CargoPayload {
   departure_date: string;
 }
 
+export interface RoadPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  budget?: number;
+  deadline_hours?: number;
+  cargo_weight_kg: number;
+  cargo_type: string;
+  avoid_tolls: boolean;
+  avoid_highways: boolean;
+  traffic_aware: boolean;
+}
+
 export interface DelayInfo {
   avg_delay_minutes: number;
   max_delay_minutes?: number;
@@ -172,12 +185,30 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
   return res.json();
 }
 
+export async function fetchRoadRoutes(payload: RoadPayload) {
+  const res = await fetch(`${BACKEND_BASE}/road/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Road optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
   const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.stations || [];
+}
+
+export async function searchCities(query: string): Promise<StationSearchResult[]> {
+  void query;
+  return [];
 }
 
 export async function getTrainDelay(trainNumber: string): Promise<TrainDelayData | null> {
