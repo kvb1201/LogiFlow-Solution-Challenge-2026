@@ -190,12 +190,12 @@ export default function InputForm() {
     departureDate, setDepartureDate,
     budgetMax, setBudgetMax,
     deadlineHours, setDeadlineHours,
+    avoidTolls, setAvoidTolls,
+    avoidHighways, setAvoidHighways,
+    trafficAware, setTrafficAware,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
-  const [avoidTolls, setAvoidTolls] = useState(false);
-  const [avoidHighways, setAvoidHighways] = useState(false);
-  const [trafficAware, setTrafficAware] = useState(false);
 
   const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -214,12 +214,8 @@ export default function InputForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) return;
-    handleOptimize({
-      mode: 'road',
-      avoidTolls,
-      avoidHighways,
-      trafficAware,
-    });
+    if (cargoWeight <= 0 || deadlineHours <= 0) return;
+    handleOptimize({ mode: 'road' });
   };
 
   return (
@@ -434,11 +430,11 @@ export default function InputForm() {
                 </div>
                 <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Deadline
+                    Delivery Deadline
                   </label>
                   <div className="space-y-2">
                     <input
-                      type="range" min={4} max={96} step={2}
+                      type="range" min={4} max={72} step={2}
                       value={deadlineHours}
                       onChange={e => setDeadlineHours(Number(e.target.value))}
                       className="w-full"
@@ -451,9 +447,14 @@ export default function InputForm() {
 
             {/* Submit */}
             <div className={`transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="text-[11px] text-on-surface-variant mb-2">
+                Budget: <span className="mono text-primary">₹{budgetMax.toLocaleString()}</span>
+                {' | '}
+                Deadline: <span className="mono text-primary">{deadlineHours} hrs</span>
+              </div>
               <button
                 type="submit"
-                disabled={loading || !source.trim() || !destination.trim()}
+                disabled={loading || !source.trim() || !destination.trim() || cargoWeight <= 0 || deadlineHours <= 0}
                 className="group/btn relative w-full py-4 font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
               >
                 <div className={`absolute inset-0 transition-all duration-500 ${
