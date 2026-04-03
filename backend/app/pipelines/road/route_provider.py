@@ -13,16 +13,26 @@ if not TOMTOM_API_KEY:
 
 
 def geocode_city(city: str):
-    url = f"https://api.tomtom.com/search/2/geocode/{city}.json"
+    import urllib.parse
+    encoded_city = urllib.parse.quote(city)
+    url = f"https://api.tomtom.com/search/2/geocode/{encoded_city}.json"
     params = {"key": TOMTOM_API_KEY}
 
-    res = requests.get(url, params=params, timeout=5).json()
+    try:
+        res = requests.get(url, params=params, timeout=5).json()
+        if not res.get("results"):
+            # Fallback: if "City, District" fails, try just "City"
+            if "," in city:
+                fallback_city = city.split(",")[0].strip()
+                print(f"Geocoding failed for '{city}', trying fallback: '{fallback_city}'")
+                return geocode_city(fallback_city)
+            raise Exception(f"Geocoding failed for {city}")
 
-    if not res.get("results"):
-        raise Exception(f"Geocoding failed for {city}")
-
-    pos = res["results"][0]["position"]
-    return pos["lat"], pos["lon"]
+        pos = res["results"][0]["position"]
+        return pos["lat"], pos["lon"]
+    except Exception as e:
+        print(f"DEBUG: Geocode error for '{city}': {str(e)}")
+        raise e
 
 
 def classify_traffic(delay_hr, duration_hr):
