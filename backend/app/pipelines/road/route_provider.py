@@ -1,195 +1,134 @@
 from dotenv import load_dotenv
 from pathlib import Path
-import openrouteservice
 import os
 import requests
-import math
 
 # Load .env
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-ORS_API_KEY = os.getenv("ORS_API_KEY")
+TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
 
-if not ORS_API_KEY:
-    raise Exception("ORS_API_KEY not set in environment")
-
-client = openrouteservice.Client(key=ORS_API_KEY)
+if not TOMTOM_API_KEY:
+    raise Exception("TOMTOM_API_KEY not set in environment")
 
 
-def geocode(source, destination):
-    url = "https://api.openrouteservice.org/geocode/search"
+def geocode_city(city: str):
+    url = f"https://api.tomtom.com/search/2/geocode/{city}.json"
+    params = {"key": TOMTOM_API_KEY}
 
-    def get_coord(place):
-        res = requests.get(url, params={
-            "api_key": ORS_API_KEY,
-            "text": place
-        }, timeout=5).json()
+    res = requests.get(url, params=params, timeout=5).json()
 
-        features = res.get("features", [])
-        if not features:
-            raise Exception(f"Geocoding failed for: {place}")
-        coords = features[0]["geometry"]["coordinates"]
-        return coords
+    if not res.get("results"):
+        raise Exception(f"Geocoding failed for {city}")
 
-    return [get_coord(source), get_coord(destination)]
+    pos = res["results"][0]["position"]
+    return pos["lat"], pos["lon"]
 
 
-def estimate_toll(distance_km):
-    return int(distance_km * 1.5)
+def classify_traffic(delay_hr, duration_hr):
+    # Prevent division issues
+    duration_hr = max(duration_hr, 1e-3)
+
+    ratio = delay_hr / duration_hr
+
+    # Real-world baseline traffic (never 0)
+    base_traffic = 0.25
+
+    # Scale traffic more aggressively from delay
+    traffic_level = base_traffic + ratio * 2.5
+
+    # Clamp between realistic bounds
+    traffic_level = min(max(traffic_level, 0.25), 1.0)
+
+    return round(traffic_level, 2)
 
 
-def estimate_traffic(duration_hr):
-    return min(duration_hr / 10, 1)
-
-
-# Snap a coordinate to the nearest road using ORS
-def snap_to_road(coord):
-    try:
-        res = client.nearest(
-            coordinates=[coord],
-            profile="driving-car"
-        )
-        return res["features"][0]["geometry"]["coordinates"]
-    except:
-        # 🔥 fallback: return original coord instead of dropping route
-        return coord
-
-
-# Helper functions for generating waypoint-based routes
-def midpoint(a, b):
-    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-
-
-def generate_waypoints(src, dst, n=3, offset_km=40):
-    waypoints = []
-
-    mid = midpoint(src, dst)
-
-    dx = dst[0] - src[0]
-    dy = dst[1] - src[1]
-
-    perp = [-dy, dx]
-
-    length = math.sqrt(perp[0]**2 + perp[1]**2)
-    if length == 0:
-        return []
-
-    perp = [perp[0] / length, perp[1] / length]
-
-    offset = offset_km / 111
-
-    for i in range(-n//2, n//2 + 1):
-        if i == 0:
-            continue
-
-        wp = [
-            mid[0] + perp[0] * offset * i,
-            mid[1] + perp[1] * offset * i
-        ]
-
-        wp = snap_to_road(wp)
-        waypoints.append(wp)
-
-    return waypoints
+def estimate_toll(distance_km, highway_ratio):
+    base = distance_km * 1.2
+    highway_bonus = highway_ratio * distance_km * 0.8
+    return int(base + highway_bonus)
 
 
 def get_routes(source, destination, payload=None):
     payload = payload or {}
-    coords = geocode(source, destination)
 
-    routes = []
+    lat1, lon1 = geocode_city(source)
+    lat2, lon2 = geocode_city(destination)
 
-    src, dst = coords
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 
-    option_sets = []
+    params = {
+        "key": TOMTOM_API_KEY,
+        "traffic": "true",
+        "maxAlternatives": 3,
+    }
 
-    option_sets.append({"name": "default", "params": {}})
+    # Apply constraints (clean handling)
+    avoid_list = []
 
     if payload.get("avoid_highways"):
-        option_sets.append({"name": "no_highways", "params": {"avoid_features": ["highways"]}})
+        avoid_list.append("motorways")
 
     if payload.get("avoid_tolls"):
-        option_sets.append({"name": "no_tolls", "params": {"avoid_features": ["tollways"]}})
+        avoid_list.append("tollRoads")
 
-    # 1. Direct routes (with constraints)
-    for strat in option_sets:
-        try:
-            res = client.directions(
-                coordinates=[src, dst],
-                profile="driving-car",
-                format='json',
-                options=strat["params"]
-            )
+    if avoid_list:
+        # TomTom expects repeated keys: avoid=motorways&avoid=tollRoads (not comma-separated)
+        params["avoid"] = avoid_list
 
-            if res and "routes" in res:
-                for r in res["routes"]:
-                    r["strategy"] = strat["name"]
-                    routes.append(r)
+    res = requests.get(url, params=params, timeout=10)
 
-        except:
-            continue
+    if res.status_code != 200:
+        raise Exception(f"TomTom API failed: {res.text}")
 
-    # 2. Waypoint-based routes (REAL diversity)
-    waypoints = generate_waypoints(src, dst)
+    res = res.json()
 
-    for i, wp in enumerate(waypoints):
-        try:
-            res = client.directions(
-                coordinates=[src, wp, dst],
-                profile="driving-car",
-                format='json'
-            )
-
-            if res and "routes" in res:
-                r = res["routes"][0]
-                r["strategy"] = f"waypoint_{i}"
-                routes.append(r)
-
-        except:
-            continue
-
-    if not routes:
-        raise Exception("ORS returned no routes")
-
-    # remove near-duplicate routes (distance + duration rounded)
-    unique = []
-    seen = set()
-
-    for r in routes:
-        summary = r.get("summary", {})
-        key = (
-            round(summary.get("distance", 0), 0),  # 🔥 ~1m precision
-            round(summary.get("duration", 0), 0)   # 🔥 ~1s precision
-        )
-
-        if key not in seen:
-            seen.add(key)
-            unique.append(r)
-
-    routes = unique
+    if "routes" not in res:
+        raise Exception("TomTom returned no routes")
 
     result = []
 
-    for i, route in enumerate(routes):
-        summary = route["summary"]
+    for i, r in enumerate(res["routes"]):
+        summary = r["summary"]
 
-        distance_km = round(summary["distance"] / 1000, 2)
-        duration_hr = round(max(summary["duration"] / 3600, 0), 2)
+        distance_km = summary["lengthInMeters"] / 1000
+        duration_hr = summary["travelTimeInSeconds"] / 3600
+        traffic_delay_hr = summary.get("trafficDelayInSeconds", 0) / 3600
 
-        geometry = route.get("geometry")
-        coords = geometry.get("coordinates") if isinstance(geometry, dict) else None
+        traffic_level = classify_traffic(traffic_delay_hr, duration_hr)
+        print("DEBUG route traffic → delay_hr:", traffic_delay_hr, "duration_hr:", duration_hr, "traffic_level:", traffic_level)
+
+        # Derive highway ratio from average speed
+        avg_speed = distance_km / max(duration_hr, 1e-3)
+
+        if avg_speed > 70:
+            highway_ratio = 0.8
+        elif avg_speed > 50:
+            highway_ratio = 0.6
+        else:
+            highway_ratio = 0.4
+
+        # Geometry extraction (lat, lon pairs)
+        coords = []
+        try:
+            for leg in r.get("legs", []):
+                for point in leg.get("points", []):
+                    coords.append([point["longitude"], point["latitude"]])
+        except:
+            coords = None
 
         result.append({
-            "route_id": f"ors_{i}",
-            "distance_km": distance_km,
-            "base_duration_hr": duration_hr,
-            "toll_cost": estimate_toll(distance_km),
-            "traffic_level": max(0, min(1, estimate_traffic(duration_hr))),
-            "highway_ratio": 0.7,
+            "route_id": f"tomtom_{i}",
+            "distance_km": round(distance_km, 2),
+            "base_duration_hr": round(duration_hr, 2),
+            "traffic_delay_hr": round(traffic_delay_hr, 2),
+            "traffic_level": traffic_level,
+            "toll_cost": estimate_toll(distance_km, highway_ratio),
+            "highway_ratio": highway_ratio,
             "road_type": "mixed",
-            "weather_impact": 0.05,
-            "num_stops": int(distance_km // 100),
-            "road_quality": 0.8,
+            "weather_impact": None,
+            "num_stops": int(distance_km // 120),
+            "road_quality": 0.85,
             "night_travel": False,
             "geometry": coords,
         })
