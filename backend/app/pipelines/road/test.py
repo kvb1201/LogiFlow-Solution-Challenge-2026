@@ -67,9 +67,15 @@ def test():
             print()
 
         print("Full JSON Output:\n")
-        print(json.dumps(result, indent=2))
-        print(result["all"][0]["segments"])
-        print(len(result["all"][0]["geometry"]))
+        clean_result = json.loads(json.dumps(result))
+
+        for r in clean_result.get("all", []):
+            r.pop("geometry", None)
+
+        if "best" in clean_result:
+            clean_result["best"].pop("geometry", None)
+
+        print(json.dumps(clean_result, indent=2))
 
 
 if __name__ == "__main__":
