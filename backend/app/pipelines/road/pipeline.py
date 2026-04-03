@@ -3,26 +3,18 @@ import random
 
 
 class RoadPipeline(BasePipeline):
-    CITY_DISTANCES = {
-        ("Surat", "Mumbai"): 300,
-        ("Mumbai", "Surat"): 300,
-        ("Surat", "Delhi"): 1100,
-        ("Delhi", "Surat"): 1100,
-        ("Mumbai", "Delhi"): 1400,
-        ("Delhi", "Mumbai"): 1400,
-    }
     mode = "road"
     name = "Road Transport"
 
     # --- STEP 1: Simulate routes ---
-    def _get_routes(self, source, destination):
+    def _get_routes(self, source, destination, payload):
         """
         Route provider abstraction.
         STRICT: Only uses real provider. No simulation fallback.
         """
         from app.pipelines.road.route_provider import get_routes
 
-        routes = get_routes(source, destination)
+        routes = get_routes(source, destination, payload)
 
         if not routes or not isinstance(routes, list):
             raise Exception("Route provider returned no valid routes")
@@ -49,7 +41,7 @@ class RoadPipeline(BasePipeline):
                 r["traffic_level"] * 0.4 +
                 (1 - r["highway_ratio"]) * 0.2 +
                 r.get("weather_impact", 0) * 0.3 +
-                random.random() * 0.1
+                ((hash((r["distance_km"], r["base_duration_hr"])) % 10) / 100)
             )
 
             enriched.append({
@@ -58,6 +50,7 @@ class RoadPipeline(BasePipeline):
                 "time": round(effective_time, 2),
                 "cost": int(total_cost),
                 "risk": round(max(0, min(1, risk)), 3),
+                "geometry": r.get("geometry"),
                 "segments": [
                     {
                         "mode": "Road",
@@ -70,68 +63,6 @@ class RoadPipeline(BasePipeline):
             })
 
         return enriched
-
-    # --- STEP 2.3: Strategy Generation (for single route case) ---
-    def _generate_strategies(self, route, payload):
-        def _clamp(v, low=0, high=1):
-            return max(low, min(high, v))
-
-        base = route.copy()
-        strategies = []
-
-        # ⚡ FAST (prioritize time)
-        fast = base.copy()
-        fast["time"] = round(base["time"] * 0.8, 2)
-        fast["cost"] = int(base["cost"] * 1.25)
-        fast["risk"] = round(_clamp(base["risk"] * 0.9), 3)
-        fast["strategy"] = "fast"
-        fast["segments"][0]["duration_minutes"] = int(fast["time"] * 60)
-        strategies.append(fast)
-
-        # 💰 CHEAP (prioritize cost)
-        cheap = base.copy()
-        cheap["time"] = round(base["time"] * 1.25, 2)
-        cheap["cost"] = int(base["cost"] * 0.75)
-        cheap["risk"] = round(_clamp(base["risk"] * 1.1), 3)
-        cheap["strategy"] = "cheap"
-        cheap["segments"][0]["duration_minutes"] = int(cheap["time"] * 60)
-        strategies.append(cheap)
-
-        # 🛡 SAFE (prioritize risk)
-        safe = base.copy()
-        safe["time"] = round(base["time"] * 1.1, 2)
-        safe["cost"] = int(base["cost"] * 1.1)
-        safe["risk"] = round(_clamp(base["risk"] * 0.6), 3)
-        safe["strategy"] = "safe"
-        safe["segments"][0]["duration_minutes"] = int(safe["time"] * 60)
-        strategies.append(safe)
-
-        # ⚖️ BALANCED (original)
-        base["strategy"] = "balanced"
-        base["segments"][0]["duration_minutes"] = int(base["time"] * 60)
-        strategies.append(base)
-
-        return strategies
-
-    def _are_routes_similar(self, routes):
-        """
-        Check if all routes are essentially the same (within tolerance)
-        """
-        if not routes or len(routes) == 1:
-            return True
-
-        base = routes[0]
-
-        for r in routes[1:]:
-            # relative tolerances (5% time, 5% cost, 10% risk) + small absolutes
-            if (
-                abs(r["time"] - base["time"]) > max(0.05 * base["time"], 0.2) or
-                abs(r["cost"] - base["cost"]) > max(0.05 * base["cost"], 100) or
-                abs(r["risk"] - base["risk"]) > max(0.1 * base["risk"], 0.05)
-            ):
-                return False
-
-        return True
 
     # --- STEP 2.5: Constraints Filtering ---
     def _apply_constraints(self, routes, payload):
@@ -192,11 +123,10 @@ class RoadPipeline(BasePipeline):
         payload = payload or {}
         priority = payload.get("priority", "balanced")
 
-        routes = self._get_routes(source, destination)
+        routes = self._get_routes(source, destination, payload)
         enriched = self._engineer(routes, source, destination, payload)
 
-        # 🚫 Removed fake strategy generation
-        # If only one route (or similar routes), we keep the real route(s) as-is
+        # 🚫 Removed fallback strategy block
 
         filtered = self._apply_constraints(enriched, payload)
 
@@ -226,7 +156,7 @@ class RoadPipeline(BasePipeline):
 
             # --- Single route edge case ---
             if len(cleaned_ranked) == 1:
-                reasons.append("Only route satisfying budget and deadline constraints")
+                reasons.append("Only route available from provider")
                 label = "single"
 
             # --- Primary reasoning based on label ---
@@ -273,9 +203,6 @@ class RoadPipeline(BasePipeline):
 
             # --- Risk summary ---
             reasons.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
-
-            if "strategy" in route:
-                reasons.append(f"Strategy applied: {route['strategy']}")
 
             return {
                 **route,
