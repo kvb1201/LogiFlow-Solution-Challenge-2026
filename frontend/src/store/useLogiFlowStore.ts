@@ -107,6 +107,7 @@ interface LogiFlowState {
 
   // UI state
   loading: boolean;
+  loadingMode: 'rail' | 'road' | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -184,6 +185,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setStationSuggestions: (rows) => set({ stationSuggestions: rows }),
 
   loading: false,
+  loadingMode: null,
   hasSearched: false,
   activeView: 'recommendations',
   error: null,
@@ -210,6 +212,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   resetSearch: () => set({
     hasSearched: false,
+    loading: false,
+    loadingMode: null,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
     selectedOptionIndex: 0,
@@ -238,8 +242,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       fuelPrice,
     } = get();
     if (!source.trim() || !destination.trim()) return;
-
-    set({ loading: true, hasSearched: true, error: null });
+    const mode = opts?.mode || 'rail';
+    set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
 
     try {
       if (opts?.mode === 'road') {
@@ -320,7 +324,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       });
       console.error('Optimize error:', err);
     } finally {
-      set({ loading: false });
+      set({ loading: false, loadingMode: null });
     }
   },
 
