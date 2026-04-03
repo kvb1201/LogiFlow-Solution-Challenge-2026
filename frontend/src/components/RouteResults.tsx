@@ -36,19 +36,49 @@ function delayHrs(route: RoadRoute): number {
   return 0;
 }
 
-function computeConfidence(routes: RoadRoute[]): number {
-  if (routes.length < 2) return 68;
-  const costs = routes.map((r) => Number(r.cost));
-  const times = routes.map((r) => Number(r.time));
-  const risks = routes.map((r) => Number(r.risk));
-  const mc = Math.max(...costs);
-  const mt = Math.max(...times);
-  const mr = Math.max(...risks);
-  const rc = mc > 0 ? (Math.max(...costs) - Math.min(...costs)) / mc : 0;
-  const rt = mt > 0 ? (Math.max(...times) - Math.min(...times)) / mt : 0;
-  const rr = mr > 0 ? (Math.max(...risks) - Math.min(...risks)) / mr : 0;
-  const spread = (rc + rt + rr) / 3;
-  return Math.round(52 + Math.min(43, spread * 110));
+/**
+ * Per-route confidence vs ranked best (index 0). Penalties use normalized gaps so
+ * `confidence = 1 - penalty` stays on a sensible 0–1 scale before delay + clamp.
+ */
+function computeConfidence(route: RoadRoute, allRoutes: RoadRoute[], routeIndex: number): number {
+  if (!allRoutes.length) return 68;
+
+  const best = allRoutes[0];
+  const bc = Number(best.cost);
+  const bt = Number(best.time);
+  const br = Number(best.risk);
+
+  const cost = Number(route.cost);
+  const time = Number(route.time);
+  const risk = Number(route.risk);
+
+  const rawCostDiff = Math.max(0, cost - bc);
+  const rawTimeDiff = Math.max(0, time - bt);
+  const rawRiskDiff = Math.max(0, risk - br);
+
+  const costs = allRoutes.map((r) => Number(r.cost));
+  const times = allRoutes.map((r) => Number(r.time));
+  const risks = allRoutes.map((r) => Number(r.risk));
+
+  const spanC = Math.max(Math.max(...costs) - Math.min(...costs), 1);
+  const spanT = Math.max(Math.max(...times) - Math.min(...times), 1e-6);
+  const spanR = Math.max(Math.max(...risks) - Math.min(...risks), 1e-6);
+
+  const costDiff = rawCostDiff / spanC;
+  const timeDiff = rawTimeDiff / spanT;
+  const riskDiff = rawRiskDiff / spanR;
+
+  const penalty = costDiff + timeDiff + riskDiff;
+  let confidence = 1 - penalty;
+
+  const delay = delayHrs(route);
+  if (delay > 4) confidence -= 0.2;
+  if (delay > 2) confidence -= 0.1;
+
+  confidence -= routeIndex * 0.012;
+
+  const clamped = Math.max(0.3, Math.min(0.95, confidence));
+  return Math.round(clamped * 100);
 }
 
 function sanitizeInsights(reason: string | undefined, factors: string[]): string[] {
@@ -467,7 +497,7 @@ function RecommendationPanel({
   if (routes.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-outline-variant/15 bg-surface-container/25 p-4 mb-4">
+    <div className="rounded-2xl border border-outline-variant/15 bg-surface-container/25 p-4 shrink-0">
       <div className="text-[10px] font-label font-bold uppercase tracking-widest text-outline mb-2">Recommendation</div>
       <ul className="space-y-2 text-[12px] text-on-surface-variant leading-relaxed">
         {lines.map((line) => (
@@ -489,8 +519,6 @@ export default function RouteResults() {
   const destination = useLogiFlowStore((s) => s.destination);
   const cargoWeight = useLogiFlowStore((s) => s.cargoWeight);
 
-  const confidence = useMemo(() => computeConfidence(routes), [routes]);
-
   if (!routes || routes.length === 0) return null;
 
   const minCost = Math.min(...routes.map((r) => Number(r.cost)));
@@ -499,52 +527,54 @@ export default function RouteResults() {
 
   return (
     <section className="mt-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        <div className="lg:col-span-5 xl:col-span-4 space-y-4">
-          <div className="flex items-end justify-between gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-1 max-h-[80vh] overflow-y-auto overflow-x-hidden scroll-smooth space-y-4 pr-2 overscroll-y-contain [scrollbar-gutter:stable]">
+          <div className="flex items-end justify-between gap-2 shrink-0">
             <div>
               <div className="text-[10px] font-label font-bold uppercase tracking-widest text-outline">Analysis</div>
               <div className="text-sm font-semibold text-on-surface mt-0.5">Route comparison</div>
             </div>
-            <div className="text-[10px] mono text-on-surface-variant">{routes.length} leg{routes.length !== 1 ? 's' : ''}</div>
+            <div className="text-[10px] mono text-on-surface-variant">
+              {routes.length} leg{routes.length !== 1 ? 's' : ''}
+            </div>
           </div>
 
           <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
 
-          <div className="space-y-4">
-            {routes.map((r, i) => (
-              <RouteCard
-                key={i}
-                route={r}
-                index={i}
-                isSelected={i === selectedRoute}
-                onSelect={() => setSelectedRoute(i)}
-                isCheapest={Number(r.cost) === minCost}
-                isFastest={Number(r.time) === minTime}
-                isSafest={Number(r.risk) === minRisk}
-                source={source}
-                destination={destination}
-                cargoKg={cargoWeight}
-                routes={routes}
-                confidence={confidence}
-              />
-            ))}
-          </div>
+          {routes.map((r, i) => (
+            <RouteCard
+              key={i}
+              route={r}
+              index={i}
+              isSelected={i === selectedRoute}
+              onSelect={() => setSelectedRoute(i)}
+              isCheapest={Number(r.cost) === minCost}
+              isFastest={Number(r.time) === minTime}
+              isSafest={Number(r.risk) === minRisk}
+              source={source}
+              destination={destination}
+              cargoKg={cargoWeight}
+              routes={routes}
+              confidence={computeConfidence(r, routes, i)}
+            />
+          ))}
         </div>
 
-        <div className="lg:col-span-7 xl:col-span-8">
-          <div className="bg-surface-container-lowest/35 border border-outline-variant/12 rounded-2xl p-4 h-full min-h-[420px]">
-            <div className="flex items-center justify-between mb-1">
+        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[320px] h-[70vh] lg:h-[80vh]">
+          <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/35 border border-outline-variant/12 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2 shrink-0 pb-3 border-b border-outline-variant/10">
               <span className="text-[10px] font-label font-bold uppercase tracking-widest text-outline flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-base">map</span>
                 Live map
               </span>
-              <span className="text-[10px] mono text-on-surface-variant">
-                Focus: R{selectedRoute + 1} · {formatCostCompact(routes[selectedRoute]?.cost ?? 0)} ·{' '}
+              <span className="text-[10px] mono text-on-surface-variant text-right truncate">
+                R{selectedRoute + 1} · {formatCostCompact(routes[selectedRoute]?.cost ?? 0)} ·{' '}
                 {Number(routes[selectedRoute]?.time ?? 0).toFixed(1)}h
               </span>
             </div>
-            <MapView routes={routes} selectedRoute={selectedRoute} />
+            <div className="flex-1 min-h-0 pt-3">
+              <MapView routes={routes} selectedRoute={selectedRoute} />
+            </div>
           </div>
         </div>
       </div>
