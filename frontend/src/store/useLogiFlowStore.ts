@@ -32,6 +32,11 @@ export type RoadRoute = {
   risk: number;
   reason?: string;
   key_factors?: string[];
+  ml_summary?: {
+    traffic: 'high' | 'moderate' | 'low';
+    weather: 'good' | 'moderate' | 'bad';
+    delay_hours: number;
+  };
 };
 
 type RoadOptimizeResponse = {

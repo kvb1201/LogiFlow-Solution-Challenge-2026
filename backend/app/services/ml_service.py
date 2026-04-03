@@ -67,6 +67,8 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, utilizatio
     # Map traffic based on heuristic hour
     if 8 <= hour <= 11 or 17 <= hour <= 20:
         traffic_label = "Heavy"
+    elif 12 <= hour <= 16:
+        traffic_label = "Moderate"
     else:
         traffic_label = "Clear"
 
@@ -92,6 +94,8 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, utilizatio
 def predict_delay(
     base_time_hours: float,
     weather: Dict,
+    utilization: float = 70,
+    demand: float = 70,
     current_dt: datetime | None = None,
     is_weekend: bool | None = None,
 ) -> Tuple[float, float, float]:
@@ -110,11 +114,6 @@ def predict_delay(
     t_factor = traffic_factor(hour, is_weekend)
     w_factor = weather_factor(weather)
 
-    # fallback dynamic values if not provided
-    utilization = 70
-    demand = 70
-
-    # ML-based delay probability
     delay_prob = _ml_delay_probability(
         hour,
         weather,
@@ -123,9 +122,10 @@ def predict_delay(
         demand
     )
 
-    # Convert probability to delay multiplier
-    ml_factor = 1 + delay_prob * 0.6
+    # Cap ML influence to avoid unrealistic delays
+    ml_factor = 1 + min(delay_prob, 0.5) * 0.3
 
-    adjusted_time = base_time_hours * t_factor * w_factor * ml_factor
+    # Avoid double counting traffic (handled inside ML)
+    adjusted_time = base_time_hours * w_factor * ml_factor
 
     return adjusted_time, t_factor, w_factor
