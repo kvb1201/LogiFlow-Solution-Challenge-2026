@@ -23,32 +23,56 @@ class RoadPipeline(BasePipeline):
     # --- STEP 2: Feature Engineering ---
     def _engineer(self, routes, source, destination, payload):
         enriched = []
+        from app.services.ml_service import predict_delay
+        from app.services.weather_service import get_weather
         weight = payload.get("cargo_weight_kg", 100)
 
         for r in routes:
-            # Time
-            effective_time = r["base_duration_hr"] * (1 + r["traffic_level"] + r.get("weather_impact", 0))
+            # Base time
+            base_time = r["base_duration_hr"]
+
+            # Fetch weather
+            weather = get_weather(source) or {}
+            # Basic guard to ensure dict shape
+            if not isinstance(weather, dict):
+                weather = {}
+
+            # Derive dynamic ML features
+            utilization = payload.get("cargo_weight_kg", 100) / 2
+            demand = max(len(routes) * 10, 10)
+
+            # ML-based delay prediction (with dynamic features)
+            adjusted_time, traffic_f, weather_f = predict_delay(
+                base_time,
+                weather,
+                utilization=utilization,
+                demand=demand
+            )
+
+            effective_time = adjusted_time
 
             # Cost
-            fuel_cost = r["distance_km"] * 6
-            driver_cost = effective_time * 200
+            fuel_cost = r.get("distance_km", 0) * 6
+            driver_cost = max(effective_time, 0) * 200
             weight_cost = weight * 2
-            total_cost = fuel_cost + driver_cost + r["toll_cost"] + weight_cost
+            total_cost = fuel_cost + driver_cost + r.get("toll_cost", 0) + weight_cost
 
-            # Risk
+            # Risk (ML-based only, no legacy signals)
             risk = (
-                r["traffic_level"] * 0.4 +
-                (1 - r["highway_ratio"]) * 0.2 +
-                r.get("weather_impact", 0) * 0.3 +
-                ((hash((r["distance_km"], r["base_duration_hr"])) % 10) / 100)
+                (traffic_f - 1) * 0.5 +
+                (weather_f - 1) * 0.3 +
+                (1 - float(r.get("highway_ratio", 1))) * 0.2
             )
+
+            # Clamp
+            risk = max(0, min(1, risk))
 
             enriched.append({
                 "type": "Road",
                 "mode": "road",
                 "time": round(effective_time, 2),
                 "cost": int(total_cost),
-                "risk": round(max(0, min(1, risk)), 3),
+                "risk": round(risk, 3),
                 "geometry": r.get("geometry"),
                 "segments": [
                     {
@@ -58,7 +82,10 @@ class RoadPipeline(BasePipeline):
                         "distance_km": r["distance_km"],
                         "duration_minutes": int(max(effective_time, 0) * 60)
                     }
-                ]
+                ],
+                "traffic_factor": round(traffic_f, 3),
+                "weather_factor": round(weather_f, 3),
+                "predicted_delay": round(max(effective_time - base_time, 0), 2),
             })
 
         return enriched
@@ -87,9 +114,9 @@ class RoadPipeline(BasePipeline):
 
     # --- STEP 3: Decision Engine ---
     def _score_routes(self, routes, priority="balanced"):
-        max_time = max(r["time"] for r in routes)
-        max_cost = max(r["cost"] for r in routes)
-        max_risk = max(r["risk"] for r in routes)
+        max_time = max(r["time"] for r in routes) or 1
+        max_cost = max(r["cost"] for r in routes) or 1
+        max_risk = max(r["risk"] for r in routes) or 1
         max_penalty = max(r.get("constraint_penalty", 0) for r in routes)
         if max_penalty == 0:
             max_penalty = 1
@@ -168,6 +195,9 @@ class RoadPipeline(BasePipeline):
             if deadline is not None and route["time"] <= deadline:
                 factors.append("Meets delivery deadline")
             factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            delay = route.get("predicted_delay", 0)
+            if delay > 0.5:
+                factors.append(f"Delay expected: +{delay:.1f} hrs due to traffic/weather")
             return factors
 
         def _explain(route, label="best"):
@@ -192,6 +222,12 @@ class RoadPipeline(BasePipeline):
                 factors.append("Alternative feasible route")
 
             factors.extend(_common_context(route))
+
+            if route.get("traffic_factor", 1) > 1.2:
+                factors.append("High traffic conditions expected")
+
+            if route.get("weather_factor", 1) > 1.1:
+                factors.append("Weather conditions may slow down travel")
 
             return {
                 **route,
