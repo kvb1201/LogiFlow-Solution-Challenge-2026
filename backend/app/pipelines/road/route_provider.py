@@ -40,48 +40,72 @@ def estimate_toll(distance_km):
 def estimate_traffic(duration_hr):
     return min(duration_hr / 10, 1)
 
+
+# Snap a coordinate to the nearest road using ORS
+def snap_to_road(coord):
+    try:
+        res = client.nearest(
+            coordinates=[coord],
+            profile="driving-car"
+        )
+        return res["features"][0]["geometry"]["coordinates"]
+    except:
+        # 🔥 fallback: return original coord instead of dropping route
+        return coord
+
+
+import math
+
+
 def get_routes(source, destination):
     coords = geocode(source, destination)
 
     routes = []
 
+    src, dst = coords
+
+    waypoint_sets = []
+
+    # direct route always
+    waypoint_sets.append([src, dst])
+
+    # 🔥 strategy-based routing instead of random waypoints
     strategies = [
-        ("driving-car", {}),
-        ("driving-car", {"options": {"avoid_features": ["highways"]}}),
-        ("driving-car", {"options": {"avoid_features": ["tollways"]}}),
-        # slight coordinate perturbation for diversity
-        ("driving-car", {"radiuses": [2000, 2000]}),
+        {"name": "fast", "params": {}},
+        {"name": "no_highways", "params": {"avoid_features": ["highways"]}},
+        {"name": "no_tolls", "params": {"avoid_features": ["tollways"]}}
     ]
 
-    for idx, (profile, extra) in enumerate(strategies):
+    for idx, strat in enumerate(strategies):
         try:
             res = client.directions(
-                coordinates=coords,
-                profile=profile,
+                coordinates=[src, dst],
+                profile="driving-car",
                 format='json',
-                **extra
+                options=strat["params"]
             )
 
             if res and "routes" in res:
                 for r in res["routes"]:
+                    r["strategy"] = strat["name"]
                     routes.append(r)
 
         except Exception as e:
-            print(f"Route fetch failed for strategy {idx}: {e}")
+            print(f"Route fetch failed for strategy {strat['name']}: {e}")
             continue
 
     if not routes:
         raise Exception("ORS returned no routes")
 
-    # remove duplicate routes (same distance + duration)
+    # remove duplicate routes (same distance + duration, with coarser rounding)
     unique = []
     seen = set()
 
     for r in routes:
         summary = r.get("summary", {})
         key = (
-            round(summary.get("distance", 0), 0),
-            round(summary.get("duration", 0), 0)
+            round(summary.get("distance", 0), -3),  # 🔥 ~1km precision
+            round(summary.get("duration", 0), -2)   # 🔥 ~1 min precision
         )
 
         if key not in seen:
@@ -96,7 +120,7 @@ def get_routes(source, destination):
         summary = route["summary"]
 
         distance_km = round(summary["distance"] / 1000, 2)
-        duration_hr = round(summary["duration"] / 3600, 2)
+        duration_hr = round(max(summary["duration"] / 3600, 0), 2)
 
         result.append({
             "route_id": f"ors_{i}",

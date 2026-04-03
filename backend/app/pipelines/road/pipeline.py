@@ -195,9 +195,8 @@ class RoadPipeline(BasePipeline):
         routes = self._get_routes(source, destination)
         enriched = self._engineer(routes, source, destination, payload)
 
-        # 🔥 Strategy mode: if routes are essentially same (duplicate real routes)
-        if self._are_routes_similar(enriched):
-            enriched = self._generate_strategies(enriched[0], payload)
+        # 🚫 Removed fake strategy generation
+        # If only one route (or similar routes), we keep the real route(s) as-is
 
         filtered = self._apply_constraints(enriched, payload)
 
