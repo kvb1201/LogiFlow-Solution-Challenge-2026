@@ -17,6 +17,11 @@ function RouteCard({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
+  const hasCheapest = factors.some((f) => /cost|cheaper/i.test(f));
+  const hasFastest = factors.some((f) => /fast|faster/i.test(f));
+  const hasSafest = factors.some((f) => /safe|safer|risk/i.test(f));
+
   return (
     <button
       type="button"
@@ -69,6 +74,38 @@ function RouteCard({
           <div className="text-on-surface font-medium">{Math.round(Number(route.risk) * 100)}%</div>
         </div>
       </div>
+
+      {(route.reason || factors.length > 0) && (
+        <div className="mt-3 pt-3 border-t border-outline-variant/10">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-[10px] uppercase tracking-widest text-on-surface-variant font-label">
+              Why this route?
+            </div>
+            {hasCheapest && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Cheapest</span>
+            )}
+            {hasFastest && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Fastest</span>
+            )}
+            {hasSafest && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">Safest</span>
+            )}
+          </div>
+          {route.reason && (
+            <div className="text-[11px] text-on-surface mb-1.5">{route.reason}</div>
+          )}
+          {factors.length > 0 && (
+            <ul className="text-[11px] text-on-surface-variant space-y-1">
+              {factors.map((factor, idx) => (
+                <li key={`${factor}-${idx}`} className="flex items-start gap-1.5">
+                  <span className="text-primary leading-4">•</span>
+                  <span>{factor}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </button>
   );
 }

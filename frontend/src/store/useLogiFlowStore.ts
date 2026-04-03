@@ -30,6 +30,8 @@ export type RoadRoute = {
   time: number;
   cost: number;
   risk: number;
+  reason?: string;
+  key_factors?: string[];
 };
 
 type RoadOptimizeResponse = {
