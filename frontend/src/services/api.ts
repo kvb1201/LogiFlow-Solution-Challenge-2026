@@ -6,12 +6,9 @@
 const BACKEND_BASE = '/api';
 const RAILRADAR_BASE = '/railradar';
 
-/** Client-side key for RailRadar via Next rewrite. Prefer `frontend/.env.local` (see NEXT_PUBLIC_RAILRADAR_API_KEY). Production builds must set this in the host environment; no fallback is bundled in production. */
+/** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
 const RAILRADAR_API_KEY =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_RAILRADAR_API_KEY?.trim()) ||
-  (process.env.NODE_ENV !== 'production'
-    ? 'rr_9sin19cmlpkreju3t8svyxizrnz0c2b6'
-    : '');
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_RAILRADAR_API_KEY?.trim()) || '';
 
 // ── Types ────────────────────────────────────────────────────────────
 
