@@ -150,7 +150,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   avoidTolls: false,
   avoidHighways: false,
-  trafficAware: false,
+  trafficAware: true,
 
   liveTrains: [],
   stationCoords: {},
