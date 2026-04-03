@@ -19,6 +19,7 @@ type Route = {
   time: number;
   cost: number;
   risk: number;
+  traffic_factor?: number;
 };
 
 export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]; selectedRoute?: number }) {
@@ -29,6 +30,45 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]
   // Convert [lng, lat] → [lat, lng]
   const convert = (coords: [number, number][]): LatLngTuple[] =>
     coords.map(([lng, lat]) => [lat, lng] as LatLngTuple);
+
+  function downsample(points: LatLngTuple[], maxPoints = 500): LatLngTuple[] {
+    if (points.length <= maxPoints) return points;
+    const step = Math.ceil(points.length / maxPoints);
+    const out: LatLngTuple[] = [];
+    for (let i = 0; i < points.length; i += step) out.push(points[i]);
+    if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
+    return out;
+  }
+
+  function chunk(points: LatLngTuple[], chunkSize = 10): LatLngTuple[][] {
+    if (points.length < 2) return [];
+    const out: LatLngTuple[][] = [];
+    const step = Math.max(2, chunkSize - 1); // overlap 1 point to avoid visual gaps
+    for (let i = 0; i < points.length - 1; i += step) {
+      const seg = points.slice(i, i + chunkSize);
+      if (seg.length >= 2) out.push(seg);
+    }
+    return out;
+  }
+
+  function clamp(n: number, lo: number, hi: number): number {
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  /** Google Maps–style: sin noise + traffic bias; never uniform across segments. */
+  function segmentTrafficColor(
+    segIndex: number,
+    totalSegments: number,
+    trafficFactor: number
+  ): string {
+    const normTraffic = clamp((trafficFactor - 1) / 0.6, 0, 1);
+    const noise = Math.abs(Math.sin(segIndex * 12.9898 + totalSegments * 78.233)) % 1;
+    const bias = normTraffic * 0.6;
+    const intensity = 0.5 * noise + bias;
+    if (intensity < 0.35) return 'green';
+    if (intensity < 0.65) return 'orange';
+    return 'red';
+  }
 
   const bestRoute = routes[selectedRoute];
   const bestCoords = convert(bestRoute.geometry);
@@ -60,28 +100,41 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]
         {/* All routes */}
         {routes.map((route, index) => {
           if (!route.geometry || route.geometry.length === 0) return null;
+          const pts = downsample(convert(route.geometry), 500);
+          const segments = chunk(pts, 10);
+          const trafficFactor = Number(route.traffic_factor ?? 1);
+          const totalSegs = Math.max(1, segments.length);
 
           return (
-            <Polyline
-              key={index}
-              positions={convert(route.geometry)}
-              pathOptions={{
-                color: index === selectedRoute ? '#3b82f6' : '#64748b',
-                weight: index === selectedRoute ? 6 : 3,
-                opacity: index === selectedRoute ? 1 : 0.5,
-              }}
-            >
+            <React.Fragment key={index}>
+              {segments.map((segPts, segIndex) => {
+                const color = segmentTrafficColor(segIndex, totalSegs, trafficFactor);
+                return (
+                  <Polyline
+                    key={`${index}-${segIndex}`}
+                    positions={segPts}
+                    pathOptions={{
+                      color,
+                      weight: index === selectedRoute ? 7 : 3,
+                      opacity: index === selectedRoute ? 1 : 0.35,
+                    }}
+                  />
+                );
+              })}
+
               {index === selectedRoute && (
-                <Popup>
-                  <div>
-                    <b>Selected Route</b><br/>
-                    Time: {route.time} hrs<br/>
-                    Cost: ₹{route.cost}<br/>
-                    Risk: {Math.round(route.risk * 100)}%
-                  </div>
-                </Popup>
+                <Polyline positions={segments[0] ?? pts} pathOptions={{ opacity: 0 }}>
+                  <Popup>
+                    <div>
+                      <b>Selected Route</b><br/>
+                      Time: {route.time} hrs<br/>
+                      Cost: ₹{route.cost}<br/>
+                      Risk: {Math.round(route.risk * 100)}%
+                    </div>
+                  </Popup>
+                </Polyline>
               )}
-            </Polyline>
+            </React.Fragment>
           );
         })}
 

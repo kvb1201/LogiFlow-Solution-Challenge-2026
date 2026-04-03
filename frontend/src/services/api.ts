@@ -34,6 +34,8 @@ export interface RoadPayload {
   avoid_tolls: boolean;
   avoid_highways: boolean;
   traffic_aware: boolean;
+  vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
+  fuel_price?: number;
 }
 
 export interface DelayInfo {

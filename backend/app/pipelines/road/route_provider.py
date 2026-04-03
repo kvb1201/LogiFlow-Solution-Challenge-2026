@@ -26,18 +26,27 @@ def geocode_city(city: str):
 
 
 def classify_traffic(delay_hr, duration_hr):
-    ratio = delay_hr / max(duration_hr, 1e-3)
+    # Prevent division issues
+    duration_hr = max(duration_hr, 1e-3)
 
-    if ratio > 0.25:
-        return 0.9  # heavy
-    elif ratio > 0.1:
-        return 0.6  # moderate
-    else:
-        return 0.3  # light
+    ratio = delay_hr / duration_hr
+
+    # Real-world baseline traffic (never 0)
+    base_traffic = 0.25
+
+    # Scale traffic more aggressively from delay
+    traffic_level = base_traffic + ratio * 2.5
+
+    # Clamp between realistic bounds
+    traffic_level = min(max(traffic_level, 0.25), 1.0)
+
+    return round(traffic_level, 2)
 
 
-def estimate_toll(distance_km):
-    return int(distance_km * 1.5)
+def estimate_toll(distance_km, highway_ratio):
+    base = distance_km * 1.2
+    highway_bonus = highway_ratio * distance_km * 0.8
+    return int(base + highway_bonus)
 
 
 def get_routes(source, destination, payload=None):
@@ -66,7 +75,12 @@ def get_routes(source, destination, payload=None):
     if avoid_list:
         params["avoid"] = ",".join(avoid_list)
 
-    res = requests.get(url, params=params, timeout=10).json()
+    res = requests.get(url, params=params, timeout=10)
+
+    if res.status_code != 200:
+        raise Exception(f"TomTom API failed: {res.text}")
+
+    res = res.json()
 
     if "routes" not in res:
         raise Exception("TomTom returned no routes")
@@ -81,6 +95,17 @@ def get_routes(source, destination, payload=None):
         traffic_delay_hr = summary.get("trafficDelayInSeconds", 0) / 3600
 
         traffic_level = classify_traffic(traffic_delay_hr, duration_hr)
+        print("DEBUG route traffic → delay_hr:", traffic_delay_hr, "duration_hr:", duration_hr, "traffic_level:", traffic_level)
+
+        # Derive highway ratio from average speed
+        avg_speed = distance_km / max(duration_hr, 1e-3)
+
+        if avg_speed > 70:
+            highway_ratio = 0.8
+        elif avg_speed > 50:
+            highway_ratio = 0.6
+        else:
+            highway_ratio = 0.4
 
         # Geometry extraction (lat, lon pairs)
         coords = []
@@ -97,10 +122,10 @@ def get_routes(source, destination, payload=None):
             "base_duration_hr": round(duration_hr, 2),
             "traffic_delay_hr": round(traffic_delay_hr, 2),
             "traffic_level": traffic_level,
-            "toll_cost": estimate_toll(distance_km),
-            "highway_ratio": 0.7,
+            "toll_cost": estimate_toll(distance_km, highway_ratio),
+            "highway_ratio": highway_ratio,
             "road_type": "mixed",
-            "weather_impact": 0.05,
+            "weather_impact": None,
             "num_stops": int(distance_km // 120),
             "road_quality": 0.85,
             "night_travel": False,

@@ -4,13 +4,22 @@ from .config import FUEL_COST_PER_KM, DRIVER_COST_PER_HOUR
 def engineer_routes(routes, payload):
     # Fetch ML + weather context once (avoid repeated calls)
     from app.services.weather_service import get_weather
-    weather_data = get_weather(payload.get("origin_city")) or {}
+    weather_data = get_weather(payload.get("origin_city")) or {
+        "temperature": 30,
+        "humidity": 50,
+        "rain": 0
+    }
 
     enriched = []
 
     for r in routes:
         raw_traffic = r.get("traffic_level")
-        traffic = min(max(raw_traffic if raw_traffic is not None else 0, 0), 1)
+
+        if raw_traffic is None:
+            raise Exception("traffic_level missing in route_provider output")
+
+        traffic = min(max(float(raw_traffic), 0), 1)
+        print("DEBUG traffic_level →", traffic)
         highway_ratio = min(max(r.get("highway_ratio", 1), 0), 1)
         raw_weather = r.get("weather_impact")
         weather = min(max(raw_weather if raw_weather is not None else 0, 0), 1)
@@ -25,12 +34,18 @@ def engineer_routes(routes, payload):
         # ML-based delay prediction
         adjusted_time, traffic_factor, weather_factor = predict_delay(
             max(base_time, 0),
-            weather_data
+            weather_data,
+            traffic=0 if traffic < 0.4 else 1 if traffic < 0.7 else 2,
+            traffic_level=traffic
         )
+
+        # Safety: ensure traffic_factor reflects traffic_level
+        if traffic_factor == 1.0 and traffic > 0:
+            traffic_factor = 1 + traffic
 
         # Guard against ML returning None
         if traffic_factor is None:
-            traffic_factor = 1.0
+            raise Exception("ML did not return traffic_factor")
         if weather_factor is None:
             weather_factor = 1.0
 
@@ -46,18 +61,17 @@ def engineer_routes(routes, payload):
         total_cost = max(total_cost, 0)
 
         # --- RISK ---
+        delay = max(effective_time - base_time, 0)
+        delay_ratio = delay / max(base_time, 1e-3)
+
         risk = (
-            (traffic_factor - 1) * 0.5 +
-            (weather_factor - 1) * 0.3 +
-            (1 - float(highway_ratio)) * 0.2
+            traffic * 0.5 +
+            (1 - highway_ratio) * 0.2 +
+            min(1.0, delay_ratio) * 0.3
         )
         risk = min(max(risk, 0), 1)
 
-        booking_ease = (
-            1
-            - (traffic_factor - 1) * 0.6
-            - (weather_factor - 1) * 0.2
-        )
+        booking_ease = 1 - (traffic * 0.6 + (1 - highway_ratio) * 0.4)
         booking_ease = min(max(booking_ease, 0), 1)
 
         enriched.append({

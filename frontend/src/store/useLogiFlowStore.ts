@@ -30,6 +30,14 @@ export type RoadRoute = {
   time: number;
   cost: number;
   risk: number;
+  distance_km?: number;
+  traffic_factor?: number;
+  cost_breakdown?: {
+    fuel?: number;
+    driver?: number;
+    toll?: number;
+    weight?: number;
+  };
   reason?: string;
   key_factors?: string[];
   ml_summary?: {
@@ -77,6 +85,8 @@ interface LogiFlowState {
   avoidTolls: boolean;
   avoidHighways: boolean;
   trafficAware: boolean;
+  vehicleType: 'mini_truck' | 'truck' | 'heavy_truck';
+  fuelPrice: number;
 
   // Map data
   liveTrains: LiveTrainPosition[];
@@ -118,6 +128,8 @@ interface LogiFlowState {
   setAvoidTolls: (val: boolean) => void;
   setAvoidHighways: (val: boolean) => void;
   setTrafficAware: (val: boolean) => void;
+  setVehicleType: (val: 'mini_truck' | 'truck' | 'heavy_truck') => void;
+  setFuelPrice: (val: number) => void;
 
   handleOptimize: (opts?: {
     mode?: 'rail' | 'road';
@@ -156,6 +168,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   avoidTolls: false,
   avoidHighways: false,
   trafficAware: true,
+  vehicleType: 'truck',
+  fuelPrice: 100,
 
   liveTrains: [],
   stationCoords: {},
@@ -191,6 +205,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setAvoidTolls: (val) => set({ avoidTolls: val }),
   setAvoidHighways: (val) => set({ avoidHighways: val }),
   setTrafficAware: (val) => set({ trafficAware: val }),
+  setVehicleType: (val) => set({ vehicleType: val }),
+  setFuelPrice: (val) => set({ fuelPrice: val }),
 
   resetSearch: () => set({
     hasSearched: false,
@@ -209,7 +225,18 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   // ── Main optimize call ─────────────────────────────────────────────
   handleOptimize: async (opts) => {
-    const { source, destination, priority, cargoWeight, cargoType, departureDate, budgetMax, deadlineHours } = get();
+    const {
+      source,
+      destination,
+      priority,
+      cargoWeight,
+      cargoType,
+      departureDate,
+      budgetMax,
+      deadlineHours,
+      vehicleType,
+      fuelPrice,
+    } = get();
     if (!source.trim() || !destination.trim()) return;
 
     set({ loading: true, hasSearched: true, error: null });
@@ -235,6 +262,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           avoid_tolls: avoidTolls,
           avoid_highways: avoidHighways,
           traffic_aware: trafficAware,
+          vehicle_type: vehicleType,
+          fuel_price: fuelPrice,
         })) as RoadOptimizeResponse;
         const all = Array.isArray(raw?.all) ? raw.all : [];
         set({

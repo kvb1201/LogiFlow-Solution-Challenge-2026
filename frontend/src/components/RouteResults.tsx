@@ -1,35 +1,45 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React from 'react';
+import React, { useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
+
+function formatCurrency(val: unknown) {
+  const n = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(n)) return '0';
+  return new Intl.NumberFormat('en-IN').format(Math.round(n));
+}
 
 function RouteCard({
   route,
   index,
   isSelected,
   onSelect,
+  isCheapest,
+  isFastest,
+  isSafest,
 }: {
   route: RoadRoute;
   index: number;
   isSelected: boolean;
   onSelect: () => void;
+  isCheapest: boolean;
+  isFastest: boolean;
+  isSafest: boolean;
 }) {
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
-  const hasCheapest = factors.some((f) => /cost|cheaper/i.test(f));
-  const hasFastest = factors.some((f) => /fast|faster/i.test(f));
-  const hasSafest = factors.some((f) => /safe|safer|risk/i.test(f));
   const ml = route.ml_summary;
   const isBest = index === 0;
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const breakdown = route.cost_breakdown;
 
   return (
-    <button
-      type="button"
+    <div
       onClick={onSelect}
       className={[
-        'w-full text-left p-4 rounded-xl border transition-all duration-200',
+        'w-full text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer',
         'bg-surface-container-lowest/30 hover:bg-surface-container/40',
         isSelected
           ? 'border-primary/50 bg-primary/10 shadow-[0_0_0_1px_rgba(47,129,247,0.25)]'
@@ -60,24 +70,65 @@ function RouteCard({
         </div>
 
         <div className="text-right shrink-0">
-          <div className="text-sm font-bold mono text-primary">₹{Number(route.cost).toLocaleString()}</div>
+          <div className="text-sm font-bold mono text-primary">₹{formatCurrency(route.cost)}</div>
           <div className="text-[10px] text-on-surface-variant mono">{Number(route.time).toFixed(1)}h</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-[10px] mono">
+      <div className="grid grid-cols-4 gap-2 text-[10px] mono">
         <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
           <div className="text-outline mb-0.5">TIME</div>
           <div className="text-on-surface font-medium">{Number(route.time).toFixed(1)}h</div>
         </div>
         <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
           <div className="text-outline mb-0.5">COST</div>
-          <div className="text-on-surface font-medium">₹{Number(route.cost).toLocaleString()}</div>
+          <div className="text-on-surface font-medium">₹{formatCurrency(route.cost)}</div>
         </div>
         <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
           <div className="text-outline mb-0.5">RISK</div>
           <div className="text-on-surface font-medium">{Math.round(Number(route.risk) * 100)}%</div>
         </div>
+        <div className="bg-surface-container-low/50 px-2 py-1.5 rounded-lg text-center">
+          <div className="text-outline mb-0.5">DISTANCE</div>
+          <div className="text-on-surface font-medium">{Number(route.distance_km ?? 0).toFixed(1)} km</div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowBreakdown((v) => !v);
+          }}
+          className="text-[11px] text-on-surface-variant hover:text-on-surface transition-colors"
+        >
+          {showBreakdown ? 'Hide breakdown' : 'Show breakdown'}
+        </button>
+
+        {showBreakdown && (
+          <div className="mt-2 text-[12px] text-on-surface-variant">
+            <p className="font-semibold text-on-surface mb-1">Cost Breakdown</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <p className="flex items-center justify-between gap-2">
+                <span>Fuel</span>
+                <span className="mono text-on-surface">₹{formatCurrency(breakdown?.fuel)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span>Driver</span>
+                <span className="mono text-on-surface">₹{formatCurrency(breakdown?.driver)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span>Toll</span>
+                <span className="mono text-on-surface">₹{formatCurrency(breakdown?.toll)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span>Weight</span>
+                <span className="mono text-on-surface">₹{formatCurrency(breakdown?.weight)}</span>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {ml && (
@@ -127,13 +178,13 @@ function RouteCard({
             <div className="text-[10px] uppercase tracking-widest text-on-surface-variant font-label">
               Why this route?
             </div>
-            {hasCheapest && (
+            {isCheapest && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Cheapest</span>
             )}
-            {hasFastest && (
+            {isFastest && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Fastest</span>
             )}
-            {hasSafest && (
+            {isSafest && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">Safest</span>
             )}
           </div>
@@ -152,7 +203,7 @@ function RouteCard({
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -162,6 +213,10 @@ export default function RouteResults() {
   const setSelectedRoute = useLogiFlowStore((s) => s.setSelectedRoute);
 
   if (!routes || routes.length === 0) return null;
+
+  const minCost = Math.min(...routes.map((r) => Number(r.cost)));
+  const minTime = Math.min(...routes.map((r) => Number(r.time)));
+  const minRisk = Math.min(...routes.map((r) => Number(r.risk)));
 
   return (
     <section className="mt-6">
@@ -197,6 +252,9 @@ export default function RouteResults() {
                     index={i}
                     isSelected={i === selectedRoute}
                     onSelect={() => setSelectedRoute(i)}
+                    isCheapest={Number(r.cost) === minCost}
+                    isFastest={Number(r.time) === minTime}
+                    isSafest={Number(r.risk) === minRisk}
                   />
                   {worseBy && (
                     <div className="text-[10px] text-on-surface-variant mono pl-1">
