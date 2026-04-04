@@ -126,19 +126,26 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
 
   return (
     <div className="h-full w-full min-h-[260px] rounded-xl overflow-hidden border border-outline-variant/20">
-    <div className="h-full w-full min-h-[260px] rounded-xl overflow-hidden border border-outline-variant/20">
       <MapContainer
         ref={mapRef}
         center={center}
         zoom={7}
         style={{ height: '100%', width: '100%' }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        />
+        <TileLayer attribution="© OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* All routes */}
+        {routeLabelMarkers.map((item) =>
+          item ? (
+            <Marker
+              key={`lbl-${item.index}`}
+              position={item.position}
+              icon={item.icon}
+              interactive={false}
+              zIndexOffset={400 + item.index}
+            />
+          ) : null
+        )}
+
         {routes.map((route, index) => {
           if (!route.geometry || route.geometry.length === 0) return null;
           const pts = downsample(convert(route.geometry), 500);
