@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
+import RailwayLoading from '@/components/RailwayLoading';
 import type { Recommendation, RankedOption } from '@/services/api';
 
 const MapView = dynamic(() => import('@/components/Map'), { ssr: false });
@@ -438,6 +439,7 @@ export default function Dashboard() {
     selectedOptionIndex,
     setSelectedOptionIndex,
     loading,
+    loadingMode,
     hasSearched,
     activeView,
     setActiveView,
@@ -471,61 +473,67 @@ export default function Dashboard() {
     void fetchTrainDelayAndLive(trainNoForDetail);
   }, [trainNoForDetail, fetchTrainDelayAndLive]);
 
+  // Handle Full-Screen Loading for Railways
+  const showRailLoading = loading && loadingMode === 'rail';
+
   // ── LANDING PAGE ───────────────────────────────────────────────────
   if (!hasSearched) {
     return (
-      <div className="bg-[#080b12] text-[var(--color-on-surface)] min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        {/* Background */}
-        <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-[#080b12]" />
-          <div className="absolute w-[600px] h-[600px] rounded-full opacity-[0.12] blur-[100px] bg-[#498fff] animate-mesh-1 top-[-10%] left-[-5%]" />
-          <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.08] blur-[90px] bg-[#67df70] animate-mesh-2 bottom-[-5%] right-[-5%]" />
-          <div className="absolute w-[400px] h-[400px] rounded-full opacity-[0.06] blur-[80px] bg-[#acc7ff] animate-mesh-3 top-[40%] left-[50%]" />
-          <div className="absolute w-[350px] h-[350px] rounded-full opacity-[0.05] blur-[70px] bg-[#ffb689] animate-mesh-4 top-[10%] right-[20%]" />
-          <div className="absolute inset-0 hero-dot-grid opacity-[0.35]" />
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_#080b12_80%)]" />
-        </div>
-
-        <div className="w-full max-w-[900px] z-10 animate-slide-up">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full mb-6 animate-fade-in">
-              <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-              <span className="text-[11px] font-semibold tracking-widest uppercase text-primary">Railway Cargo Intelligence · Powered by RailRadar</span>
-            </div>
-
-            <h1 className="text-6xl md:text-7xl font-black font-headline tracking-tighter mb-5">
-              <span className="bg-gradient-to-r from-primary via-primary-fixed-dim to-primary bg-clip-text text-transparent animate-gradient-shift" style={{ backgroundSize: '200% auto' }}>Logi</span>
-              <span className="text-on-surface">Flow</span>
-            </h1>
-            <p className="text-on-surface-variant max-w-2xl mx-auto font-body text-base leading-relaxed">
-              Optimize railway cargo routing with <span className="text-primary font-medium">real Indian Railways data</span>,{' '}
-              <span className="text-tertiary font-medium">live train tracking</span>, and{' '}
-              <span className="text-secondary font-medium">ML-powered delay prediction</span>.
-            </p>
-
-            <div className="flex flex-wrap justify-center gap-3 mt-8">
-              {[
-                { icon: 'train', label: 'Real Schedule Data' },
-                { icon: 'speed', label: 'Live Train Tracking' },
-                { icon: 'analytics', label: 'ML Delay Prediction' },
-              ].map((feature, i) => (
-                <div
-                  key={feature.label}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{ animationDelay: `${0.5 + i * 0.15}s`, animationFillMode: 'backwards' }}
-                >
-                  <span className="material-symbols-outlined text-primary text-sm">{feature.icon}</span>
-                  {feature.label}
-                </div>
-              ))}
-            </div>
+      <div className="w-full min-h-screen flex flex-1 flex-col overflow-x-hidden">
+        {showRailLoading && <RailwayLoading />}
+        <div className="bg-[#080b12] text-[var(--color-on-surface)] w-full flex-1 flex flex-col items-center justify-start pt-20 pb-10 px-6 relative overflow-x-hidden overflow-y-auto">
+          {/* Background */}
+          <div className="absolute inset-0 z-0">
+            <div className="absolute inset-0 bg-[#080b12]" />
+            <div className="absolute w-[600px] h-[600px] rounded-full opacity-[0.12] blur-[100px] bg-[#498fff] animate-mesh-1 top-[-10%] left-[-5%]" />
+            <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.08] blur-[90px] bg-[#67df70] animate-mesh-2 bottom-[-5%] right-[-5%]" />
+            <div className="absolute w-[400px] h-[400px] rounded-full opacity-[0.06] blur-[80px] bg-[#acc7ff] animate-mesh-3 top-[40%] left-[50%]" />
+            <div className="absolute w-[350px] h-[350px] rounded-full opacity-[0.05] blur-[70px] bg-[#ffb689] animate-mesh-4 top-[10%] right-[20%]" />
+            <div className="absolute inset-0 hero-dot-grid opacity-[0.35]" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_#080b12_80%)]" />
           </div>
 
-          <InputForm />
+          <div className="w-full max-w-[900px] z-10 animate-slide-up">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 border border-primary/20 rounded-full mb-6 animate-fade-in">
+                <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+                <span className="text-[11px] font-semibold tracking-widest uppercase text-primary">Railway Cargo Intelligence · Powered by RailRadar</span>
+              </div>
 
-          <div className="text-center mt-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}>
-            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">Powered by RailRadar API · Real Indian Railways Data</p>
+              <h1 className="text-6xl md:text-7xl font-black font-headline tracking-tighter mb-5">
+                <span className="bg-gradient-to-r from-primary via-primary-fixed-dim to-primary bg-clip-text text-transparent animate-gradient-shift" style={{ backgroundSize: '200% auto' }}>Logi</span>
+                <span className="text-on-surface">Flow</span>
+              </h1>
+              <p className="text-on-surface-variant max-w-2xl mx-auto font-body text-base leading-relaxed">
+                Optimize railway cargo routing with <span className="text-primary font-medium">real Indian Railways data</span>,{' '}
+                <span className="text-tertiary font-medium">live train tracking</span>, and{' '}
+                <span className="text-secondary font-medium">ML-powered delay prediction</span>.
+              </p>
+
+              <div className="flex flex-wrap justify-center gap-3 mt-8">
+                {[
+                  { icon: 'train', label: 'Real Schedule Data' },
+                  { icon: 'speed', label: 'Live Train Tracking' },
+                  { icon: 'analytics', label: 'ML Delay Prediction' },
+                ].map((feature, i) => (
+                  <div
+                    key={feature.label}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
+                    style={{ animationDelay: `${0.5 + i * 0.15}s`, animationFillMode: 'backwards' }}
+                  >
+                    <span className="material-symbols-outlined text-primary text-sm">{feature.icon}</span>
+                    {feature.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <InputForm />
+
+            <div className="text-center mt-8 animate-fade-in" style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}>
+              <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">Powered by RailRadar API · Real Indian Railways Data</p>
+            </div>
           </div>
         </div>
       </div>
@@ -534,7 +542,8 @@ export default function Dashboard() {
 
   // ── RESULTS DASHBOARD ──────────────────────────────────────────────
   return (
-    <div className="bg-[var(--color-background)] text-[var(--color-on-surface)] font-body overflow-hidden h-screen flex flex-col">
+    <div className="bg-[var(--color-background)] text-[var(--color-on-surface)] font-body flex w-full flex-1 min-h-0 flex-col overflow-x-hidden">
+       {showRailLoading && <RailwayLoading />}
       {/* Top Nav */}
       <header className="bg-[var(--color-surface)] border-b border-outline-variant/10 flex justify-between items-center w-full px-6 h-14 shrink-0 relative z-20">
         <div className="flex items-center gap-6">
@@ -586,7 +595,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex w-full min-h-0 overflow-y-auto overflow-x-hidden">
         {/* ── Left: Recommendations + Options ── */}
         <aside className="w-[28%] bg-surface-container-low flex flex-col border-r border-outline-variant/5">
           {/* View Toggle */}
@@ -612,10 +621,17 @@ export default function Dashboard() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {loading && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
+            {loading && loadingMode === 'rail' && (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
                 <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
-                <span className="text-sm text-on-surface-variant">Finding optimal routes...</span>
+                <span className="text-sm text-on-surface-variant">Optimizing topological routes...</span>
+              </div>
+            )}
+            
+            {loading && loadingMode === 'road' && (
+              <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                <span className="material-symbols-outlined text-3xl text-secondary animate-spin">progress_activity</span>
+                <span className="text-sm text-on-surface-variant">Calculating road paths...</span>
               </div>
             )}
 
