@@ -85,7 +85,7 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: Route[]
   }, [allCoords]);
 
   return (
-    <div className="mt-6 h-[400px] w-full rounded-xl overflow-hidden border border-outline-variant/20">
+    <div className="h-full w-full min-h-[260px] rounded-xl overflow-hidden border border-outline-variant/20">
       <MapContainer
         ref={mapRef}
         center={center}
