@@ -32,11 +32,15 @@ export type RoadRoute = {
   risk: number;
   distance_km?: number;
   traffic_factor?: number;
+  highway_ratio?: number;
+  predicted_delay?: number;
+  cost_range?: { low: number; high: number };
   cost_breakdown?: {
-    fuel?: number;
-    driver?: number;
+    freight?: number;
     toll?: number;
-    weight?: number;
+    handling?: number;
+    gst?: number;
+    documentation?: number;
   };
   reason?: string;
   key_factors?: string[];
