@@ -17,3 +17,4 @@ scikit-learn
 joblib
 python-dotenv
 requests
+catboost

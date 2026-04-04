@@ -1,3 +1,5 @@
+import random
+
 from app.pipelines.base import BasePipeline
 
 
@@ -27,7 +29,7 @@ class RoadPipeline(BasePipeline):
         from app.services.weather_service import get_weather
         weight = payload.get("cargo_weight_kg", 100)
 
-        for r in routes:
+        for route_idx, r in enumerate(routes):
             # Base time
             base_time = r["base_duration_hr"]
 
@@ -83,33 +85,21 @@ class RoadPipeline(BasePipeline):
 
             effective_time = adjusted_time
 
-            # Cost (realistic model)
             distance_km = float(r.get("distance_km", 0))
 
-            # Fuel model
-            fuel_price = 100  # ₹/liter (fallback)
-            mileage = 12      # km/l (truck avg)
-            fuel_cost = (distance_km / mileage) * fuel_price
-
-            # Traffic increases fuel burn
-            fuel_cost *= (1 + traffic_level * 0.3)
-
-            # Driver cost
-            driver_cost = max(effective_time, 0) * 150
-            if effective_time > 10:
-                driver_cost *= 1.2  # fatigue / long-haul penalty
-
-            # Weight cost (slab based)
-            if weight < 500:
-                weight_cost = 500
-            elif weight < 2000:
-                weight_cost = 1500
-            else:
-                weight_cost = 3000
-
-            toll_cost = float(r.get("toll_cost", 0))
-
-            total_cost = fuel_cost + driver_cost + toll_cost + weight_cost
+            # Freight-style logistics pricing (deterministic per route alternative)
+            seed = (route_idx * 1_000_003 + int(distance_km * 1_000) * 7_919 + int(weight)) % (2**32)
+            rng = random.Random(seed)
+            rate_per_km_per_ton = 8 + rng.random() * 4  # ₹/km/ton, 8–12
+            tons = max(float(weight), 0) / 1000.0
+            freight = distance_km * rate_per_km_per_ton * tons
+            toll = distance_km * 0.8
+            handling = 200 + rng.random() * 200
+            gst = 0.05 * freight
+            documentation = 100 + rng.random() * 100
+            total_cost = freight + toll + handling + gst + documentation
+            cost_low = total_cost * 0.9
+            cost_high = total_cost * 1.2
 
             # Risk based on predicted delay (more realistic)
             delay = max(effective_time - base_time, 0)
@@ -128,12 +118,17 @@ class RoadPipeline(BasePipeline):
                 "type": "Road",
                 "mode": "road",
                 "time": round(effective_time, 2),
-                "cost": int(total_cost),
+                "cost": int(round(total_cost)),
+                "cost_range": {
+                    "low": int(round(cost_low)),
+                    "high": int(round(cost_high)),
+                },
                 "cost_breakdown": {
-                    "fuel": int(fuel_cost),
-                    "driver": int(driver_cost),
-                    "toll": int(toll_cost),
-                    "weight": int(weight_cost)
+                    "freight": int(round(freight)),
+                    "toll": int(round(toll)),
+                    "handling": int(round(handling)),
+                    "gst": int(round(gst)),
+                    "documentation": int(round(documentation)),
                 },
                 "risk": round(risk, 3),
                 "distance_km": round(float(r.get("distance_km", 0)), 1),
@@ -164,25 +159,47 @@ class RoadPipeline(BasePipeline):
 
     # --- STEP 2.5: Constraints Filtering ---
     def _apply_constraints(self, routes, payload):
+        """
+        Hard filter: keep routes with cost <= budget (if set) AND time <= deadline (if set).
+        If none qualify, return all routes ordered by smallest constraint violation (fallback).
+        Returns (routes, note) where note is set only for fallback.
+        """
         budget = payload.get("budget")
         deadline = payload.get("deadline_hours")
 
-        # Do NOT filter out routes; instead attach penalty scores
-        penalized = []
-        for r in routes:
-            penalty = 0.0
+        def _with_zero_penalty(rlist):
+            out = []
+            for r in rlist:
+                c = r.copy()
+                c["constraint_penalty"] = 0.0
+                out.append(c)
+            return out
 
+        if budget is None and deadline is None:
+            return _with_zero_penalty(routes), None
+
+        def _feasible(r):
             if budget is not None and r["cost"] > budget:
-                penalty += (r["cost"] - budget) / max(budget, 1)
-
+                return False
             if deadline is not None and r["time"] > deadline:
-                penalty += (r["time"] - deadline) / max(deadline, 1)
+                return False
+            return True
 
-            r_copy = r.copy()
-            r_copy["constraint_penalty"] = round(penalty, 4)
-            penalized.append(r_copy)
+        feasible = [r for r in routes if _feasible(r)]
+        if feasible:
+            return _with_zero_penalty(feasible), None
 
-        return penalized
+        def _violation_score(r):
+            s = 0.0
+            if budget is not None and r["cost"] > budget:
+                s += (r["cost"] - budget) / max(budget, 1)
+            if deadline is not None and r["time"] > deadline:
+                s += (r["time"] - deadline) / max(deadline, 1e-6)
+            return s
+
+        fallback_order = sorted(routes, key=_violation_score)
+        note = "No routes fully satisfy constraints. Showing closest alternatives."
+        return _with_zero_penalty(fallback_order), note
 
     # --- STEP 3: Decision Engine ---
     def _score_routes(self, routes, priority="balanced"):
@@ -203,7 +220,15 @@ class RoadPipeline(BasePipeline):
             weights = {"cost": 0.45, "time": 0.2, "risk": 0.2, "penalty": 0.15}
         elif priority == "time":
             weights = {"cost": 0.2, "time": 0.45, "risk": 0.2, "penalty": 0.15}
+        elif priority == "safe":
+            weights = {
+                "cost": 0.15,
+                "time": 0.2,
+                "risk": 0.5,
+                "penalty": 0.15,
+            }
         else:
+            # balanced (default) and any unknown priority
             weights = {"cost": 0.35, "time": 0.25, "risk": 0.25, "penalty": 0.15}
 
         for r in routes:
@@ -224,9 +249,7 @@ class RoadPipeline(BasePipeline):
         routes = self._get_routes(source, destination, payload)
         enriched = self._engineer(routes, source, destination, payload)
 
-        # 🚫 Removed fallback strategy block
-
-        filtered = self._apply_constraints(enriched, payload)
+        filtered, constraint_note = self._apply_constraints(enriched, payload)
 
         def _clean(route):
             route = route.copy()
@@ -351,6 +374,9 @@ class RoadPipeline(BasePipeline):
                     seen.add(text)
                     factors.append(text)
 
+            if label == "best" and constraint_note:
+                add_factor(constraint_note)
+
             if label == "best":
                 pf = _priority_factor()
                 if pf:
@@ -418,6 +444,7 @@ class RoadPipeline(BasePipeline):
                 "deadline_hours": payload.get("deadline_hours"),
                 "routes_before": len(enriched),
                 "routes_after": len(filtered),
-                "note": "Only one route satisfied constraints" if len(filtered) == 1 else None
+                "note": constraint_note,
+                "constraints_relaxed": constraint_note is not None,
             }
         }
