@@ -101,14 +101,19 @@ class RoadPipeline(BasePipeline):
             cost_low = total_cost * 0.9
             cost_high = total_cost * 1.2
 
-            # Risk based on predicted delay (more realistic)
+            # Risk based on predicted delay + incidents (more realistic)
             delay = max(effective_time - base_time, 0)
             delay_prob = delay / max(base_time, 1e-3)
+
+            incident_count = r.get("incident_count", 0)
+            incident_penalty = min(incident_count * 0.03, 0.3)
+
             risk = (
-                0.15 +
-                delay_prob * 0.5 +
+                0.1 +
+                delay_prob * 0.45 +
                 traffic_level * 0.25 +
-                (1 - float(r.get("highway_ratio", 0.7))) * 0.2
+                (1 - float(r.get("highway_ratio", 0.7))) * 0.15 +
+                incident_penalty
             )
 
             # Clamp
@@ -363,6 +368,9 @@ class RoadPipeline(BasePipeline):
             elif highway_ratio > 0.7:
                 factors.append("Highway-dominated route (more stable travel)")
 
+            incident_count = route.get("incident_count", 0)
+            if incident_count > 0:
+                factors.append(f"{incident_count} traffic incidents detected on this route")
             return factors
 
         def _explain(route, label="best"):

@@ -64,11 +64,18 @@ def engineer_routes(routes, payload):
         delay = max(effective_time - base_time, 0)
         delay_ratio = delay / max(base_time, 1e-3)
 
+        incident_count = r.get("incident_count", 0)
+
+        # Incident penalty (capped to avoid extreme spikes)
+        incident_penalty = min(incident_count * 0.03, 0.3)
+
         risk = (
-            traffic * 0.5 +
+            traffic * 0.4 +
             (1 - highway_ratio) * 0.2 +
-            min(1.0, delay_ratio) * 0.3
+            min(1.0, delay_ratio) * 0.25 +
+            incident_penalty
         )
+
         risk = min(max(risk, 0), 1)
 
         booking_ease = 1 - (traffic * 0.6 + (1 - highway_ratio) * 0.4)
