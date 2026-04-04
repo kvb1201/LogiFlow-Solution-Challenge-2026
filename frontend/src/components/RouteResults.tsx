@@ -220,63 +220,63 @@ export default function RouteResults() {
 
   return (
     <section className="mt-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        <div className="lg:col-span-5 xl:col-span-4 space-y-3">
-          <div className="flex items-center justify-between">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-1 max-h-[80vh] overflow-y-auto overflow-x-hidden scroll-smooth space-y-4 pr-2 overscroll-y-contain [scrollbar-gutter:stable]">
+          <div className="flex items-center justify-between shrink-0">
             <div className="text-xs font-label font-bold uppercase tracking-widest text-on-surface-variant">
               Routes ({routes.length})
             </div>
-            <div className="text-[10px] mono text-outline">
-              Click a card to focus on the map
-            </div>
+            <div className="text-[10px] mono text-outline">Scroll · click to focus map</div>
           </div>
 
-          <div className="space-y-3">
-            {routes.map((r, i) => {
-              const best = routes[0];
-              let worseBy: string | null = null;
-              if (i > 0 && best) {
-                const costDiff = Number(r.cost) - Number(best.cost);
-                const timeDiff = Number(r.time) - Number(best.time);
-                const riskDiff = (Number(r.risk) - Number(best.risk)) * 100;
-                const parts: string[] = [];
-                if (costDiff > 0) parts.push(`+₹${Math.round(costDiff)}`);
-                if (timeDiff > 0.1) parts.push(`+${timeDiff.toFixed(1)}h`);
-                if (riskDiff > 1) parts.push(`+${Math.round(riskDiff)}% risk`);
-                if (parts.length) worseBy = parts.join(' · ');
-              }
-              return (
-                <div key={i} className="space-y-1">
-                  <RouteCard
-                    route={r}
-                    index={i}
-                    isSelected={i === selectedRoute}
-                    onSelect={() => setSelectedRoute(i)}
-                    isCheapest={Number(r.cost) === minCost}
-                    isFastest={Number(r.time) === minTime}
-                    isSafest={Number(r.risk) === minRisk}
-                  />
-                  {worseBy && (
-                    <div className="text-[10px] text-on-surface-variant mono pl-1">
-                      Worse than best: {worseBy}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {routes.map((r, i) => {
+            const best = routes[0];
+            let worseBy: string | null = null;
+            if (i > 0 && best) {
+              const costDiff = Number(r.cost) - Number(best.cost);
+              const timeDiff = Number(r.time) - Number(best.time);
+              const riskDiff = (Number(r.risk) - Number(best.risk)) * 100;
+              const parts: string[] = [];
+              if (costDiff > 0) parts.push(`+₹${Math.round(costDiff)}`);
+              if (timeDiff > 0.1) parts.push(`+${timeDiff.toFixed(1)}h`);
+              if (riskDiff > 1) parts.push(`+${Math.round(riskDiff)}% risk`);
+              if (parts.length) worseBy = parts.join(' · ');
+            }
+            return (
+              <div key={i} className="space-y-1">
+                <RouteCard
+                  route={r}
+                  index={i}
+                  isSelected={i === selectedRoute}
+                  onSelect={() => setSelectedRoute(i)}
+                  isCheapest={Number(r.cost) === minCost}
+                  isFastest={Number(r.time) === minTime}
+                  isSafest={Number(r.risk) === minRisk}
+                />
+                {worseBy && (
+                  <div className="text-[10px] text-on-surface-variant mono pl-1">
+                    Worse than best: {worseBy}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        <div className="lg:col-span-7 xl:col-span-8">
-          <div className="bg-surface-container-lowest/30 border border-outline-variant/10 rounded-2xl p-3 h-full">
-            <div className="text-xs font-label font-bold uppercase tracking-widest text-on-surface-variant mb-2 ml-1 flex items-center justify-between">
-              <span className="flex items-center gap-2">
+        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[320px] h-[70vh] lg:h-[80vh]">
+          <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/30 border border-outline-variant/10 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2 shrink-0 pb-3 border-b border-outline-variant/10">
+              <span className="text-xs font-label font-bold uppercase tracking-widest text-on-surface-variant flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-sm">map</span>
-                Map View
+                Map view
               </span>
-              <span className="text-[10px] mono text-outline">Selected: {selectedRoute + 1}</span>
+              <span className="text-[10px] mono text-outline truncate">
+                Selected: {selectedRoute + 1}
+              </span>
             </div>
-            <MapView routes={routes} selectedRoute={selectedRoute} />
+            <div className="flex-1 min-h-0 pt-3">
+              <MapView routes={routes} selectedRoute={selectedRoute} />
+            </div>
           </div>
         </div>
       </div>
