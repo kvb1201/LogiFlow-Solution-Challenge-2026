@@ -479,9 +479,9 @@ export default function Dashboard() {
   // ── LANDING PAGE ───────────────────────────────────────────────────
   if (!hasSearched) {
     return (
-      <>
+      <div className="w-full min-h-screen flex flex-1 flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
-        <div className="bg-[#080b12] text-[var(--color-on-surface)] min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="bg-[#080b12] text-[var(--color-on-surface)] w-full flex-1 flex flex-col items-center justify-start pt-20 pb-10 px-6 relative overflow-x-hidden overflow-y-auto">
           {/* Background */}
           <div className="absolute inset-0 z-0">
             <div className="absolute inset-0 bg-[#080b12]" />
@@ -536,13 +536,13 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
   // ── RESULTS DASHBOARD ──────────────────────────────────────────────
   return (
-    <div className="bg-[var(--color-background)] text-[var(--color-on-surface)] font-body overflow-hidden h-screen flex flex-col">
+    <div className="bg-[var(--color-background)] text-[var(--color-on-surface)] font-body flex w-full flex-1 min-h-0 flex-col overflow-x-hidden">
        {showRailLoading && <RailwayLoading />}
       {/* Top Nav */}
       <header className="bg-[var(--color-surface)] border-b border-outline-variant/10 flex justify-between items-center w-full px-6 h-14 shrink-0 relative z-20">
@@ -595,7 +595,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex w-full min-h-0 overflow-y-auto overflow-x-hidden">
         {/* ── Left: Recommendations + Options ── */}
         <aside className="w-[28%] bg-surface-container-low flex flex-col border-r border-outline-variant/5">
           {/* View Toggle */}
