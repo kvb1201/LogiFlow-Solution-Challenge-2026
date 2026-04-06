@@ -21,38 +21,7 @@ class OptimizeRequest(BaseModel):
     constraints: Optional[Constraints] = Constraints()
 
 # ------------------ Coordinates Mapping ------------------
-
-city_coords = {
-    "Surat": (21.1702, 72.8311),
-    "Mumbai": (19.0760, 72.8777),
-    "Vadodara": (22.3072, 73.1812),
-    "Midpoint": (21.5, 73.0),
-    "Port": (21.3, 72.9),
-}
-
-def get_coords(name: str):
-    return city_coords.get(name, (20.5937, 78.9629))
-
-def enrich_segment(segment):
-    frm = segment["from"]
-    to = segment["to"]
-
-    frm_lat, frm_lng = get_coords(frm)
-    to_lat, to_lng = get_coords(to)
-
-    return {
-        "mode": segment["mode"],
-        "from": {
-            "name": frm,
-            "lat": frm_lat,
-            "lng": frm_lng
-        },
-        "to": {
-            "name": to,
-            "lat": to_lat,
-            "lng": to_lng
-        }
-    }
+from app.services.enricher import enrich_segment
 
 # ------------------ Mock Route Generator ------------------
 
