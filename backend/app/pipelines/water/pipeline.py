@@ -6,6 +6,8 @@ class WaterPipeline(BasePipeline):
     name = "Water Transport"
 
     def generate(self, source: str, destination: str):
+        dynamic_port = "Jawaharlal Nehru Port"
+        
         return [
             {
                 "type": "Water",
@@ -14,8 +16,8 @@ class WaterPipeline(BasePipeline):
                 "cost": 1500,
                 "risk": 0.5,
                 "segments": [
-                    {"mode": "Water", "from": source, "to": "Port"},
-                    {"mode": "Water", "from": "Port", "to": destination},
+                    {"mode": "Water", "from": source, "to": dynamic_port},
+                    {"mode": "Water", "from": dynamic_port, "to": destination},
                 ],
             }
         ]

@@ -1,4 +1,5 @@
 from app.pipelines.base import BasePipeline
+from app.utils.coordinates import get_dynamic_midpoint
 
 
 class HybridPipeline(BasePipeline):
@@ -6,6 +7,8 @@ class HybridPipeline(BasePipeline):
     name = "Hybrid Transport"
 
     def generate(self, source: str, destination: str):
+        dynamic_midpoint = get_dynamic_midpoint(source, destination)
+        
         return [
             {
                 "type": "Hybrid",
@@ -14,8 +17,8 @@ class HybridPipeline(BasePipeline):
                 "cost": 2500,
                 "risk": 0.4,
                 "segments": [
-                    {"mode": "Road", "from": source, "to": "Midpoint"},
-                    {"mode": "Rail", "from": "Midpoint", "to": destination},
+                    {"mode": "Road", "from": source, "to": dynamic_midpoint},
+                    {"mode": "Rail", "from": dynamic_midpoint, "to": destination},
                 ],
             }
         ]

@@ -2,12 +2,12 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import { searchStations, type StationSearchResult } from '@/services/api';
+import { searchCities } from '@/services/api';
 
-// ── Debounced station search ─────────────────────────────────────────
+// ── Debounced city search ─────────────────────────────────────────
 
-function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
-  const [results, setResults] = useState<StationSearchResult[]>([]);
+function useCitySearch(setGlobalSuggestions: (rows: any[]) => void) {
+  const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -21,7 +21,7 @@ function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) =>
 
     setLoading(true);
     timeoutRef.current = setTimeout(async () => {
-      const data = await searchStations(query);
+      const data = await searchCities(query);
       setResults(data);
       setGlobalSuggestions(data);
       setLoading(false);
@@ -52,13 +52,14 @@ const PRIORITY_OPTIONS = [
 
 // ── Autocomplete Input ───────────────────────────────────────────────
 
-function StationInput({
+function LocationInput({
   label,
   value,
   onChange,
   icon,
   iconColor,
   placeholder,
+  hasError,
 }: {
   label: string;
   value: string;
@@ -66,11 +67,12 @@ function StationInput({
   icon: string;
   iconColor: string;
   placeholder: string;
+  hasError?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const setStationSuggestions = useLogiFlowStore(s => s.setStationSuggestions);
-  const { results, loading, search, clear } = useStationSearch(setStationSuggestions);
+  const { results, loading, search, clear } = useCitySearch(setStationSuggestions);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,8 +91,8 @@ function StationInput({
     setShowDropdown(true);
   };
 
-  const selectStation = (station: StationSearchResult) => {
-    onChange(`${station.name}`);
+  const selectLocation = (location: { name: string }) => {
+    onChange(`${location.name}`);
     clear();
     setShowDropdown(false);
   };
@@ -110,7 +112,11 @@ function StationInput({
         }`} />
         
         <div className={`relative flex items-center bg-[#0d1117] border rounded-xl overflow-hidden transition-all duration-300 ${
-          focused ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]' : 'border-outline-variant/30 hover:border-outline-variant/60'
+          hasError
+            ? 'border-red-500/60'
+            : focused
+              ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]'
+              : 'border-outline-variant/30 hover:border-outline-variant/60'
         }`}>
           <div className="pl-4 pr-3 flex items-center justify-center">
              <span className={`material-symbols-outlined text-xl transition-all duration-500 ${
@@ -125,6 +131,7 @@ function StationInput({
             value={value}
             onChange={e => handleChange(e.target.value)}
             onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
+            // Keep dropdown stable; outside click closes it.
             onBlur={() => setFocused(false)}
             className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
             placeholder={placeholder}
@@ -133,7 +140,7 @@ function StationInput({
           {value && (
             <button
               type="button"
-              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); }}
+              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); focus(); }}
               className="absolute right-3 p-1 rounded-full text-outline-variant hover:text-white hover:bg-white/10 transition-colors"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
@@ -147,23 +154,20 @@ function StationInput({
           <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {results.map((s, i) => (
               <button
-                key={`${s.code}-${i}`}
+                key={`${s.name}-${i}`}
                 type="button"
                 className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
                 onMouseDown={(e) => {
                   e.preventDefault(); 
-                  selectStation(s);
+                  selectLocation(s);
                 }}
               >
                 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/5 flex items-center justify-center group-hover:bg-primary/20 group-hover:border-primary/30 transition-all">
-                  <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-lg">train</span>
+                  <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-lg">local_shipping</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors truncate">
                     {s.name}
-                  </div>
-                  <div className="text-[11px] text-white/40 font-mono mt-0.5 tracking-wider">
-                    {s.code}
                   </div>
                 </div>
                 <div className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 pr-2 text-primary">
@@ -190,12 +194,19 @@ export default function InputForm() {
     departureDate, setDepartureDate,
     budgetMax, setBudgetMax,
     deadlineHours, setDeadlineHours,
+    avoidTolls, setAvoidTolls,
+    avoidHighways, setAvoidHighways,
+    trafficAware, setTrafficAware,
+    vehicleType, setVehicleType,
+    fuelPrice, setFuelPrice,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
 
   const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const timers = [
@@ -210,33 +221,47 @@ export default function InputForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!source.trim() || !destination.trim()) return;
-    handleOptimize();
+    if (!source.trim() || !destination.trim()) {
+      setError('Source and destination are required');
+      return;
+    }
+    if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
+      setError('Source and destination cannot be the same');
+      return;
+    }
+    if (cargoWeight <= 0) {
+      setError('Cargo weight must be greater than 0');
+      return;
+    }
+    if (deadlineHours <= 0) {
+      setError('Delivery deadline must be greater than 0');
+      return;
+    }
+    setError(null);
+    handleOptimize({ mode: 'road' });
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 overflow-x-hidden min-h-fit">
-    <div className="form-container-glow relative w-full">
+    <div className="form-container-glow relative">
       <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-tertiary/10 to-primary/20 rounded-3xl blur-xl opacity-50 animate-pulse-slow pointer-events-none" />
 
-      <div className="relative flex flex-col max-h-[85vh] min-h-0 bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-x-hidden">
-        <div className="h-1 w-full shrink-0 bg-gradient-to-r from-transparent via-primary to-transparent animate-shimmer" />
+      <div className="relative bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent animate-shimmer" />
 
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden rounded-b-2xl">
-        <div className="flex flex-col flex-1 min-h-0 p-4 sm:p-6 md:p-8 pb-0 pt-4 sm:pt-6 md:pt-8">
+        <div className="p-8">
           {/* Header */}
-          <div className={`shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6 transition-all duration-700 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <div className={`flex items-center justify-between mb-8 transition-all duration-700 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             <div className="flex items-center gap-3">
               <div className="relative">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border border-primary/20">
-                  <span className="material-symbols-outlined text-primary text-xl">train</span>
+                  <span className="material-symbols-outlined text-primary text-xl">local_shipping</span>
                 </div>
                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full animate-ping opacity-75" />
                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full" />
               </div>
               <div>
-                <h2 className="text-xl font-headline font-bold text-on-surface tracking-tight">Railway Cargo</h2>
-                <p className="text-xs text-on-surface-variant font-body mt-0.5">Powered by RailRadar · Live Indian Railways Data</p>
+                <h2 className="text-xl font-headline font-bold text-on-surface tracking-tight">Road Logistics</h2>
+                <p className="text-xs text-on-surface-variant font-body mt-0.5">Powered by LogiFlow · Smart Road Routing</p>
               </div>
             </div>
             <button
@@ -249,85 +274,101 @@ export default function InputForm() {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 mt-2">
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 pb-24 scroll-smooth overscroll-y-contain">
-            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Source & Destination with autocomplete */}
-            <div className={`relative z-[100] md:col-span-2 lg:col-span-3 transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100] w-full">
-                <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10 pointer-events-none">
-                  <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
+            <div className={`relative z-[100] transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100]">
+                <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10">
+                  <button
+                    type="button"
+                    disabled={!source.trim() && !destination.trim()}
+                    onClick={() => {
+                      const temp = source;
+                      setSource(destination);
+                      setDestination(temp);
+                    }}
+                    className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg transition-transform hover:scale-105 disabled:opacity-50"
+                  >
                     <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>
-                  </div>
+                  </button>
                 </div>
 
-                <div className="w-full min-w-0">
-                <StationInput
-                  label="Origin"
+                <LocationInput
+                  label="Pickup Location"
                   value={source}
                   onChange={setSource}
                   icon="my_location"
                   iconColor="text-primary"
-                  placeholder="Search city or station..."
+                  placeholder="Search city..."
+                  hasError={!!error && !source.trim()}
                 />
-                </div>
-                <div className="w-full min-w-0">
-                <StationInput
-                  label="Destination"
+                <LocationInput
+                  label="Delivery Location"
                   value={destination}
                   onChange={setDestination}
                   icon="flag"
                   iconColor="text-tertiary"
-                  placeholder="Search city or station..."
+                  placeholder="Search city..."
+                  hasError={!!error && !destination.trim()}
                 />
-                </div>
               </div>
+              <p className="text-[11px] text-on-surface-variant mt-2">
+                Select different pickup and delivery locations
+              </p>
+              {error && (
+                <p className="text-[12px] text-red-400 mt-1">{error}</p>
+              )}
             </div>
 
-            {/* Cargo Weight & Date */}
-            <div className={`md:col-span-1 lg:col-span-1 transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                  Cargo Weight
-                </label>
-                <div className="relative flex items-center w-full">
-                  <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-sm text-outline">scale</span>
+            {/* Cargo Weight & Type */}
+            <div className={`transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Cargo Weight
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center">
+                      <span className="material-symbols-outlined text-sm text-outline">scale</span>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={cargoWeight}
+                      onChange={e => setCargoWeight(Number(e.target.value))}
+                      className="w-full pl-14 pr-12 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                    />
+                    <span className="absolute right-4 text-xs text-outline mono">kg</span>
                   </div>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5000}
-                    value={cargoWeight}
-                    onChange={e => setCargoWeight(Number(e.target.value))}
-                    className="w-full min-w-0 pl-14 pr-12 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
-                  />
-                  <span className="absolute right-4 text-xs text-outline mono">kg</span>
                 </div>
-            </div>
 
-            <div className={`md:col-span-1 lg:col-span-1 transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+                <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
                     Departure Date
                   </label>
-                  <div className="relative flex items-center w-full">
-                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center">
                       <span className="material-symbols-outlined text-sm text-outline">calendar_today</span>
                     </div>
                     <input
                       type="date"
+                      min={today}
                       value={departureDate}
                       onChange={e => setDepartureDate(e.target.value)}
-                      className="w-full min-w-0 pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                      className="w-full pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
                     />
                   </div>
+                </div>
+              </div>
             </div>
 
             {/* Cargo Type */}
-            <div className={`md:col-span-2 lg:col-span-3 transition-all duration-700 delay-150 ${formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            <div className={`transition-all duration-700 delay-150 ${formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
                 Cargo Type
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full">
+              <div className="grid grid-cols-3 gap-2">
                 {CARGO_TYPES.map(ct => (
                   <button
                     key={ct.value}
@@ -351,17 +392,17 @@ export default function InputForm() {
             </div>
 
             {/* Priority */}
-            <div className={`md:col-span-2 lg:col-span-3 transition-all duration-700 delay-200 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            <div className={`transition-all duration-700 delay-200 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
               <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
                 Optimization Priority
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+              <div className="grid grid-cols-3 gap-3">
                 {PRIORITY_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
                     type="button"
                     onClick={() => setPriority(opt.value)}
-                    className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden w-full min-w-0 ${
+                    className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden ${
                       priority === opt.value
                         ? `bg-gradient-to-b ${opt.color} border-current shadow-lg scale-[1.02]`
                         : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-outline-variant/30'
@@ -378,9 +419,42 @@ export default function InputForm() {
               </div>
             </div>
 
+            {/* Route Preferences */}
+            <div className={`transition-all duration-700 delay-250 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
+                Route Preferences
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={avoidTolls}
+                    onChange={(e) => setAvoidTolls(e.target.checked)}
+                  />
+                  <span className="text-xs">Avoid Tolls</span>
+                </label>
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={avoidHighways}
+                    onChange={(e) => setAvoidHighways(e.target.checked)}
+                  />
+                  <span className="text-xs">Avoid Highways</span>
+                </label>
+                <label className="p-3 rounded-xl border bg-surface-container-lowest/30 border-outline-variant/10 flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trafficAware}
+                    onChange={(e) => setTrafficAware(e.target.checked)}
+                  />
+                  <span className="text-xs">Traffic Aware Routing</span>
+                </label>
+              </div>
+            </div>
+
             {/* Advanced — Budget & Deadline */}
-            <div className={`md:col-span-2 lg:col-span-3 min-h-0 overflow-hidden transition-[max-height,opacity] duration-500 ease-in-out ${showAdvanced ? 'max-h-[min(380px,70vh)] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 w-full overflow-y-auto">
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${showAdvanced ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="grid grid-cols-2 gap-4 pt-2">
                 <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
                     Budget Cap
@@ -397,11 +471,11 @@ export default function InputForm() {
                 </div>
                 <div>
                   <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Deadline
+                    Delivery Deadline
                   </label>
                   <div className="space-y-2">
                     <input
-                      type="range" min={4} max={96} step={2}
+                      type="range" min={4} max={72} step={2}
                       value={deadlineHours}
                       onChange={e => setDeadlineHours(Number(e.target.value))}
                       className="w-full"
@@ -410,43 +484,78 @@ export default function InputForm() {
                   </div>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-5">
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Vehicle Type
+                  </label>
+                  <select
+                    value={vehicleType}
+                    onChange={(e) => setVehicleType(e.target.value as any)}
+                    className="w-full px-4 py-3 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                  >
+                    <option value="mini_truck">Mini Truck</option>
+                    <option value="truck">Truck</option>
+                    <option value="heavy_truck">Heavy Truck</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
+                    Fuel Price (₹/L)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={fuelPrice}
+                    onChange={(e) => setFuelPrice(Number(e.target.value))}
+                    className="w-full px-4 py-3 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                  />
+                </div>
+              </div>
             </div>
 
-            </div>
-            </div>
-            {/* End scrollable fields */}
-
-            <div
-              className={`shrink-0 border-t border-outline-variant/15 bg-surface-container-lowest/95 backdrop-blur-md p-4 -mx-4 sm:-mx-6 md:-mx-8 mt-0 pb-[max(env(safe-area-inset-bottom),1rem)] transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-            >
+            {/* Submit */}
+            <div className={`transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <div className="text-[11px] text-on-surface-variant mb-2">
+                Budget: <span className="mono text-primary">₹{budgetMax.toLocaleString()}</span>
+                {' | '}
+                Deadline: <span className="mono text-primary">{deadlineHours} hrs</span>
+              </div>
               <button
                 type="submit"
-                disabled={loading || !source.trim() || !destination.trim()}
-                className="group/btn relative w-full py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed bg-primary text-white font-semibold hover:opacity-95 shadow-lg shadow-primary/20"
+                disabled={loading || !source.trim() || !destination.trim() || cargoWeight <= 0 || deadlineHours <= 0}
+                className="group/btn relative w-full py-4 font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
               >
-                <span className={`material-symbols-outlined text-xl shrink-0 text-white ${loading ? 'animate-spin' : ''}`}>
-                  {loading ? 'progress_activity' : 'train'}
-                </span>
-                <span className="text-sm tracking-wide font-semibold text-white">
-                  {loading ? 'Finding Routes...' : 'Optimize Route'}
-                </span>
+                <div className={`absolute inset-0 transition-all duration-500 ${
+                  loading
+                    ? 'bg-surface-container'
+                    : 'bg-gradient-to-r from-primary via-primary-container to-primary group-hover/btn:shadow-[0_0_30px_rgba(47,129,247,0.4)]'
+                }`} />
+                {!loading && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
+                )}
+                <div className="relative flex items-center gap-2">
+                  <span className={`material-symbols-outlined text-xl ${loading ? 'animate-spin text-outline' : 'text-on-primary-container'}`}>
+                    {loading ? 'progress_activity' : 'local_shipping'}
+                  </span>
+                  <span className={`text-sm tracking-wider uppercase ${loading ? 'text-outline' : 'text-on-primary-container'}`}>
+                    {loading ? 'Finding Routes...' : 'Find Optimal Routes'}
+                  </span>
+                </div>
               </button>
 
               {source.trim() && destination.trim() && !loading && (
-                <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 flex flex-wrap items-center justify-center gap-1.5 px-1 animate-fade-in">
-                  <span className="material-symbols-outlined text-tertiary text-xs shrink-0">check_circle</span>
-                  <span>
-                    Ready: <span className="mono text-primary break-all">{source}</span> →{' '}
-                    <span className="mono text-tertiary break-all">{destination}</span> · {cargoWeight}kg {cargoType}
-                  </span>
+                <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 flex items-center justify-center gap-1.5 animate-fade-in">
+                  <span className="material-symbols-outlined text-tertiary text-xs">check_circle</span>
+                  Ready: <span className="mono text-primary">{source}</span> → <span className="mono text-tertiary">{destination}</span>
+                  · {cargoWeight}kg {cargoType}
                 </p>
               )}
             </div>
           </form>
         </div>
-        </div>
       </div>
-    </div>
     </div>
   );
 }

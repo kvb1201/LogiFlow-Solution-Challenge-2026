@@ -1,2 +1,1 @@
-from .pipeline import RailPipeline
-
+from .pipeline import RailPipeline, RailCargoOptimizer
