@@ -4,9 +4,14 @@ import urllib.parse
 
 # Cache to prevent spamming the geocoding API
 city_coords_cache = {
+    "Delhi": (28.6139, 77.2090),
     "Mumbai": (19.0760, 72.8777),
     "Surat": (21.1702, 72.8311),
     "Vadodara": (22.3072, 73.1812),
+    "Bengaluru": (12.9716, 77.5946),
+    "Chennai": (13.0827, 80.2707),
+    "Hyderabad": (17.3850, 78.4867),
+    "Kolkata": (22.5726, 88.3639),
     "Midpoint": (21.5, 73.0),
     "Port": (21.3, 72.9)
 }
