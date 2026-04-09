@@ -1,8 +1,8 @@
 import csv
 import math
 import os
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -49,6 +49,9 @@ def resolve_city_to_airport(city: str) -> dict:
     canonical = normalize_city(city)
     static = CITY_TO_AIRPORT.get(canonical)
     if static:
+        details = get_airport_by_iata(static["code"])
+        if details:
+            return {**details, **static}
         return static
 
     nearest = find_nearest_airport_for_city(canonical)
@@ -56,6 +59,13 @@ def resolve_city_to_airport(city: str) -> dict:
         return nearest
 
     return {"code": canonical[:3].upper(), "name": canonical}
+
+
+def get_airport_by_iata(iata_code: str) -> Optional[dict]:
+    if not iata_code:
+        return None
+
+    return _load_ourairports_by_iata().get(iata_code.strip().upper())
 
 
 def find_nearest_airport_for_city(city: str) -> Optional[dict]:
@@ -132,6 +142,22 @@ def _load_ourairports() -> List[dict]:
         return []
 
     return airports
+
+
+@lru_cache(maxsize=1)
+def _load_ourairports_by_iata() -> dict:
+    by_code = {}
+    for airport in _load_ourairports():
+        code = airport.get("iata_code")
+        if code:
+            by_code[code.upper()] = {
+                "code": code.upper(),
+                "name": airport["name"],
+                "city_name": airport.get("municipality") or "",
+                "lat": airport.get("lat"),
+                "lng": airport.get("lng"),
+            }
+    return by_code
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

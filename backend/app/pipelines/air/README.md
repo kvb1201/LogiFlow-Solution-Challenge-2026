@@ -20,6 +20,7 @@ The current version uses a free-stack architecture:
 
 - `Nominatim` for city geocoding
 - `OurAirports CSV` for airport lookup
+- `OpenFlights routes.dat` for direct and one-stop route support
 - `OpenWeather` for live weather enrichment
 - internal fallback route generation for air route candidates
 - internal scoring engine for route ranking
@@ -45,7 +46,8 @@ The air pipeline currently follows this flow:
    - if `airports.csv` is present, find the nearest airport from the OurAirports dataset
 
 3. Generate candidate routes:
-   - if a curated mock route exists for a lane, use it
+   - if `routes.dat` contains a direct airport pair, build a dataset-backed direct route
+   - if `routes.dat` supports a one-stop airport chain, build dataset-backed one-stop routes
    - otherwise create fallback synthetic air routes using the resolved airport pair
 
 4. Enrich routes with operational signals:
@@ -130,15 +132,16 @@ This gives an ML-style delay estimate without needing a paid historical flight A
 
 ### `app/services/air_data_service.py`
 
-This file is now a free-stack placeholder.
+This file is now the free-stack route-support adapter.
 
 Its job is to expose the same interface the pipeline expects while avoiding any paid provider dependency.
 
 Current behavior:
 
 - `is_configured()` returns `False`
-- `get_live_air_routes()` returns an empty list
-- this intentionally pushes the pipeline into the free-stack fallback path
+- `get_live_air_routes()` reads `backend/data/routes.dat`
+- it returns direct and one-stop candidates when OpenFlights supports the airport pair
+- if no route support exists, it intentionally pushes the pipeline into the fallback path
 
 This means the air pipeline stays modular and can later be reconnected to a live schedule provider without changing the main scoring code.
 
@@ -217,6 +220,20 @@ Why:
 - gives route-relevant operational signals
 - useful for estimating risk and delay probability
 
+### 4. OpenFlights `routes.dat`
+
+Used for:
+
+- direct airport-pair validation
+- one-stop route support through known hubs
+- supporting-airline hints in API responses
+
+Why:
+
+- free local dataset
+- better than blindly assuming every airport pair has a valid flight
+- keeps the project demo-safe without paid API dependencies
+
 ## Data Source Labels in Responses
 
 The pipeline now labels route origin clearly:
@@ -226,6 +243,9 @@ The pipeline now labels route origin clearly:
 
 - `free_stack_dynamic_fallback`
   - route was generated dynamically after airport resolution
+
+- `openflights_routes.dat`
+  - route is backed by the checked-in OpenFlights route snapshot
 
 These labels make it easy to explain to teammates or judges where the route came from.
 
@@ -277,6 +297,7 @@ The pipeline will run even without:
 
 - OpenWeather key
 - OurAirports CSV
+- OpenFlights routes data
 
 because all services have safe fallbacks.
 
@@ -286,7 +307,11 @@ because all services have safe fallbacks.
 
 `backend/data/airports.csv`
 
-2. Optionally add:
+2. Put `routes.dat` in:
+
+`backend/data/routes.dat`
+
+3. Optionally add:
 
 `OPENWEATHER_API_KEY=...`
 
@@ -297,6 +322,10 @@ to `backend/.env`
 If you want to store the CSV somewhere else, set:
 
 `OURAIRPORTS_CSV_PATH=absolute_path_to_airports.csv`
+
+If you want to store the routes snapshot somewhere else, set:
+
+`OPENFLIGHTS_ROUTES_PATH=absolute_path_to_routes.dat`
 
 ## How to Test
 

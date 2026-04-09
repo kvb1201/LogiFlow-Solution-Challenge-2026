@@ -145,7 +145,10 @@ class AirPipeline(BasePipeline):
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
                 "data_source": route.get("data_source", "mock"),
-                "segments": [
+                "route_support_type": route.get("route_support_type", "inferred"),
+                "supported_by": route.get("supported_by", "internal_fallback"),
+                "segments": route.get("segments")
+                or [
                     {
                         "mode": "Air",
                         "from": source,
@@ -163,6 +166,10 @@ class AirPipeline(BasePipeline):
                     "cargo_weight": cargo_weight,
                     "source_airport": source_airport,
                     "destination_airport": destination_airport,
+                    "hub_airport": route.get("hub_airport"),
+                    "route_support_type": route.get("route_support_type", "inferred"),
+                    "supported_by": route.get("supported_by", "internal_fallback"),
+                    "supporting_airlines": route.get("supporting_airlines", []),
                     "weather_context": weather_context,
                 },
             })
@@ -194,9 +201,15 @@ class AirPipeline(BasePipeline):
             reasons.append("Balanced time, cost, and risk across air routes")
 
         if route["stops"] == 0:
-            reasons.append("Direct flight reduces handling and transfer delay")
+            if route.get("route_support_type") == "direct":
+                reasons.append("Direct airport pair is validated from the OpenFlights route snapshot")
+            else:
+                reasons.append("Direct flight reduces handling and transfer delay")
         else:
-            reasons.append(f"{route['stops']} stop route trades speed for lower fare")
+            if route.get("route_support_type") == "one_stop":
+                reasons.append("One-stop airport chain is validated from the OpenFlights route snapshot")
+            else:
+                reasons.append(f"{route['stops']} stop route trades speed for lower fare")
 
         reasons.append(f"Predicted delay probability: {int(route['delay_prob'] * 100)}%")
         reasons.append(f"Airline reliability score: {route['reliability']:.2f}")
