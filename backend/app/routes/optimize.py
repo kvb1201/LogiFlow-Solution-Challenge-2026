@@ -25,6 +25,7 @@ class OptimizeRequest(BaseModel):
     source: str
     destination: str
     priority: str
+    departure_date: Optional[str] = None
     cargo: Optional[Cargo] = Cargo()
     preferences: Optional[Preferences] = Preferences()
     constraints: Optional[Constraints] = Constraints()

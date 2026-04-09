@@ -4,6 +4,9 @@ from app.pipelines.air.config import CITY_TO_AIRPORT, MOCK_ROUTES
 from app.pipelines.air.engine import score_routes
 from app.pipelines.air.ml_models import predict_delay_probability
 from app.pipelines.base import BasePipeline
+from app.services.air_data_service import get_live_air_routes
+from app.services.airport_locator_service import resolve_city_to_airport
+from app.services.air_weather_service import get_route_weather_context
 
 
 class AirPipeline(BasePipeline):
@@ -31,16 +34,35 @@ class AirPipeline(BasePipeline):
             "cargo_type": str(cargo.get("type", "general")).lower(),
             "max_stops": constraints.get("max_stops"),
             "budget_limit": constraints.get("budget_limit"),
+            "departure_date": payload.get("departure_date"),
         }
 
-    def _fetch_routes(self, source, destination):
+    def _get_departure_date(self, payload):
+        departure_date = payload.get("departure_date")
+        if departure_date:
+            return departure_date
+        return "2026-04-10"
+
+    def _fetch_routes(self, source, destination, payload):
+        departure_date = self._get_departure_date(payload)
+        live_routes = get_live_air_routes(source, destination, departure_date)
+        if live_routes:
+            return live_routes
+
         key = (source, destination)
         routes = MOCK_ROUTES.get(key)
         if routes:
-            return deepcopy(routes)
+            mocked = deepcopy(routes)
+            source_airport = resolve_city_to_airport(source)
+            destination_airport = resolve_city_to_airport(destination)
+            for route in mocked:
+                route["source_airport"] = source_airport
+                route["destination_airport"] = destination_airport
+                route["data_source"] = "free_stack_mock_catalog"
+            return mocked
 
-        source_airport = CITY_TO_AIRPORT.get(source, {"code": source[:3].upper(), "name": source})
-        destination_airport = CITY_TO_AIRPORT.get(destination, {"code": destination[:3].upper(), "name": destination})
+        source_airport = resolve_city_to_airport(source)
+        destination_airport = resolve_city_to_airport(destination)
 
         return [
             {
@@ -53,6 +75,7 @@ class AirPipeline(BasePipeline):
                 "cargo_types": ["general", "fragile", "perishable"],
                 "source_airport": source_airport,
                 "destination_airport": destination_airport,
+                "data_source": "free_stack_dynamic_fallback",
             },
             {
                 "airline": "Air India",
@@ -64,6 +87,7 @@ class AirPipeline(BasePipeline):
                 "cargo_types": ["general", "fragile"],
                 "source_airport": source_airport,
                 "destination_airport": destination_airport,
+                "data_source": "free_stack_dynamic_fallback",
             },
         ]
 
@@ -71,17 +95,35 @@ class AirPipeline(BasePipeline):
         engineered = []
         cargo_weight = payload["cargo_weight"]
         cargo_type = payload["cargo_type"]
+        departure_date = self._get_departure_date(payload)
+        weather_context = get_route_weather_context(source, destination)
 
         for route in routes:
             supported = [item.lower() for item in route.get("cargo_types", ["general"])]
             if cargo_type not in supported:
                 continue
 
-            delay_prob, weather_risk, reliability = predict_delay_probability(route, source, destination)
+            delay_prob, weather_risk, reliability, congestion_risk = predict_delay_probability(
+                route,
+                source,
+                destination,
+                departure_date,
+                weather_context=weather_context,
+            )
             stops = int(route.get("stops", 0))
             time = float(route.get("duration", 0))
             cost = round(float(route.get("cost_per_kg", 0)) * cargo_weight, 2)
-            risk = round(min(1.0, float(route.get("delay_risk", 0)) + stops * 0.1 + (1 - reliability) * 0.15), 3)
+            risk = round(
+                min(
+                    1.0,
+                    float(route.get("delay_risk", 0))
+                    + stops * 0.1
+                    + (1 - reliability) * 0.15
+                    + weather_risk * 0.6
+                    + congestion_risk * 0.4,
+                ),
+                3,
+            )
 
             source_airport = route.get("source_airport") or CITY_TO_AIRPORT.get(source, {"code": source[:3].upper(), "name": source})
             destination_airport = route.get("destination_airport") or CITY_TO_AIRPORT.get(destination, {"code": destination[:3].upper(), "name": destination})
@@ -98,9 +140,11 @@ class AirPipeline(BasePipeline):
                 "distance": route.get("distance", 0),
                 "cost_per_kg": route.get("cost_per_kg", 0),
                 "weather_risk": weather_risk,
+                "congestion_risk": congestion_risk,
                 "reliability": round(reliability, 3),
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
+                "data_source": route.get("data_source", "mock"),
                 "segments": [
                     {
                         "mode": "Air",
@@ -113,11 +157,13 @@ class AirPipeline(BasePipeline):
                     "stops": stops,
                     "delay_prob": delay_prob,
                     "weather_risk": weather_risk,
+                    "congestion_risk": congestion_risk,
                     "reliability": round(reliability, 3),
                     "cargo_type": cargo_type,
                     "cargo_weight": cargo_weight,
                     "source_airport": source_airport,
                     "destination_airport": destination_airport,
+                    "weather_context": weather_context,
                 },
             })
 
@@ -154,6 +200,7 @@ class AirPipeline(BasePipeline):
 
         reasons.append(f"Predicted delay probability: {int(route['delay_prob'] * 100)}%")
         reasons.append(f"Airline reliability score: {route['reliability']:.2f}")
+        reasons.append(f"Data source: {route.get('data_source', 'mock')}")
 
         route["reason"] = reasons[0]
         route["key_factors"] = reasons
@@ -162,7 +209,7 @@ class AirPipeline(BasePipeline):
 
     def generate(self, source, destination, payload=None):
         normalized = self._get_payload(payload)
-        routes = self._fetch_routes(source, destination)
+        routes = self._fetch_routes(source, destination, normalized)
         engineered = self._engineer_features(routes, source, destination, normalized)
         filtered = self._apply_constraints(engineered, normalized)
 

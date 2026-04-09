@@ -10,6 +10,7 @@ class AirCargoPayload(BaseModel):
     source: str
     destination: str
     priority: str = "balanced"
+    departure_date: Optional[str] = None
     cargo_weight_kg: float = 100
     cargo_type: str = "general"
     max_stops: Optional[int] = None
@@ -27,6 +28,7 @@ def optimize_air(payload: AirCargoPayload):
             payload.destination,
             {
                 "priority": payload.priority,
+                "departure_date": payload.departure_date,
                 "cargo": {
                     "weight": payload.cargo_weight_kg,
                     "type": payload.cargo_type,

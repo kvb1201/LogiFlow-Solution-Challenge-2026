@@ -11,6 +11,7 @@ def _build_pipeline_payload(data):
 
     return {
         "priority": getattr(data, "priority", "balanced"),
+        "departure_date": getattr(data, "departure_date", None),
         "preferences": data.preferences.dict() if getattr(data, "preferences", None) else {},
         "constraints": constraints.dict() if constraints else {},
         "cargo": cargo.dict() if cargo else {},
