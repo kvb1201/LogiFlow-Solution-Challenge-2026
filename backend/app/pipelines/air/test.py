@@ -2,6 +2,7 @@ from pprint import pprint
 
 from app.pipelines.air import AirPipeline
 from app.routes.optimize import Cargo, Constraints, OptimizeRequest
+from app.services.air_data_service import get_live_air_routes
 from app.services.optimizer import optimize_routes
 
 
@@ -55,6 +56,22 @@ def run_full_optimizer():
     pprint(result)
 
 
+def run_openflights_dataset_checks():
+    print("\n" + "=" * 60)
+    print("OPENFLIGHTS ROUTE SUPPORT CHECKS")
+    print("=" * 60)
+
+    direct_routes = get_live_air_routes("Delhi", "Mumbai", "2026-04-10")
+    assert any(route.get("route_support_type") == "direct" for route in direct_routes), "Expected DEL -> BOM direct support"
+
+    one_stop_routes = get_live_air_routes("Delhi", "Tirupati", "2026-04-10")
+    assert any(route.get("route_support_type") == "one_stop" for route in one_stop_routes), "Expected DEL -> TIR one-stop support"
+
+    print(f"Direct DEL -> BOM candidates : {len(direct_routes)}")
+    print(f"One-stop DEL -> TIR candidates: {len(one_stop_routes)}")
+
+
 if __name__ == "__main__":
+    run_openflights_dataset_checks()
     run_pipeline_only()
     run_full_optimizer()
