@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
@@ -166,28 +167,6 @@ function DetailPanel({
   mapFocusedTrainNumber: string | null;
 }) {
   const base = rec ?? ranked;
-  if (!base) {
-    return (
-      <div className="flex items-center justify-center h-full text-on-surface-variant text-sm px-4 text-center">
-        Select a recommendation or a ranked route to view delay breakdown and live status
-      </div>
-    );
-  }
-
-  const isRec = !!rec;
-  const delay = isRec ? rec!.delay_info : null;
-  const segments = (isRec ? rec!.segments : ranked!.segments) || [];
-
-  const trainNo = isRec ? rec!.train_number : ranked!.train_number;
-  const trainName = isRec ? rec!.train_name : ranked!.train_name;
-  const trainType = isRec ? rec!.train_type : ranked!.train_type;
-  const parcelCost = isRec ? rec!.parcel_cost_inr : ranked!.parcel_cost_inr;
-  const durationH = isRec ? rec!.duration_hours : ranked!.effective_hours;
-  const riskPct = isRec ? rec!.risk_pct : `${(ranked!.risk_score * 100).toFixed(0)}%`;
-  const riskScore = isRec ? rec!.risk_score : ranked!.risk_score;
-  const avgDelay = isRec ? delay?.avg_delay_minutes : ranked!.avg_delay_min;
-  const delaySrc = isRec ? delay?.delay_data_source : ranked!.delay_source;
-
   const liveEntries = useMemo(() => {
     if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
     const preferred = [
@@ -219,6 +198,27 @@ function DetailPanel({
     }
     return rows;
   }, [selectedTrainLive]);
+  if (!base) {
+    return (
+      <div className="flex items-center justify-center h-full text-on-surface-variant text-sm px-4 text-center">
+        Select a recommendation or a ranked route to view delay breakdown and live status
+      </div>
+    );
+  }
+
+  const isRec = !!rec;
+  const delay = isRec ? rec!.delay_info : null;
+  const segments = (isRec ? rec!.segments : ranked!.segments) || [];
+
+  const trainNo = isRec ? rec!.train_number : ranked!.train_number;
+  const trainName = isRec ? rec!.train_name : ranked!.train_name;
+  const trainType = isRec ? rec!.train_type : ranked!.train_type;
+  const parcelCost = isRec ? rec!.parcel_cost_inr : ranked!.parcel_cost_inr;
+  const durationH = isRec ? rec!.duration_hours : ranked!.effective_hours;
+  const riskPct = isRec ? rec!.risk_pct : `${(ranked!.risk_score * 100).toFixed(0)}%`;
+  const riskScore = isRec ? rec!.risk_score : ranked!.risk_score;
+  const avgDelay = isRec ? delay?.avg_delay_minutes : ranked!.avg_delay_min;
+  const delaySrc = isRec ? delay?.delay_data_source : ranked!.delay_source;
 
   return (
     <div className="space-y-6">
@@ -465,6 +465,9 @@ export default function Dashboard() {
 
   const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
   const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
+  const hasRailResults = Boolean(
+    recommendations.cheapest || recommendations.fastest || recommendations.safest || allOptions.length
+  );
 
   const trainNoForDetail = activeRec?.train_number || activeOption?.train_number;
 
@@ -526,6 +529,20 @@ export default function Dashboard() {
                     {feature.label}
                   </div>
                 ))}
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-3 mt-6">
+                <span className="inline-flex items-center gap-2 px-3.5 py-2 bg-secondary/10 border border-secondary/20 rounded-lg text-xs text-secondary">
+                  <span className="material-symbols-outlined text-sm">flight</span>
+                  Air mode is now available
+                </span>
+                <Link
+                  href="/air"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container border border-outline-variant/15 text-xs font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/30 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm text-secondary">open_in_new</span>
+                  Open Air Cargo
+                </Link>
               </div>
             </div>
 
@@ -632,6 +649,12 @@ export default function Dashboard() {
               <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
                 <span className="material-symbols-outlined text-3xl text-secondary animate-spin">progress_activity</span>
                 <span className="text-sm text-on-surface-variant">Calculating road paths...</span>
+              </div>
+            )}
+
+            {!loading && !hasRailResults && (
+              <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-lowest/35 p-4 text-sm text-on-surface-variant leading-relaxed">
+                No routes are visible yet. Try selecting station suggestions from the dropdown, then submit again. If the lane is unsupported, the error banner above should explain why.
               </div>
             )}
 
