@@ -1,5 +1,3 @@
-
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -20,6 +18,10 @@ class RoadPayload(BaseModel):
     avoid_tolls: Optional[bool] = False
     avoid_highways: Optional[bool] = False
     traffic_aware: Optional[bool] = True
+
+    # Simulation mode
+    simulation_mode: Optional[bool] = False
+    simulation: Optional[dict] = None
 
 
 # Main optimization endpoint
@@ -42,6 +44,8 @@ def optimize_road(payload: RoadPayload):
                 "avoid_tolls": payload.avoid_tolls,
                 "avoid_highways": payload.avoid_highways,
                 "traffic_aware": payload.traffic_aware,
+                "simulation_mode": payload.simulation_mode,
+                "simulation": payload.simulation,
             }
         )
 
