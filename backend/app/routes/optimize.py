@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.services.optimizer import optimize_routes
 
@@ -11,14 +11,20 @@ class Preferences(BaseModel):
     preferred_mode: Optional[str] = None
 
 class Constraints(BaseModel):
-    excluded_modes: List[str] = []
+    excluded_modes: List[str] = Field(default_factory=list)
+    risk_threshold: Optional[float] = None
+    delay_tolerance_hours: Optional[float] = None
+    max_transshipments: Optional[int] = None
+    budget_max_inr: Optional[float] = None
 
 class OptimizeRequest(BaseModel):
     source: str
     destination: str
     priority: str
-    preferences: Optional[Preferences] = Preferences()
-    constraints: Optional[Constraints] = Constraints()
+    cargo_weight_kg: float = 100
+    cargo_type: str = "General"
+    preferences: Optional[Preferences] = Field(default_factory=Preferences)
+    constraints: Optional[Constraints] = Field(default_factory=Constraints)
 
 # ------------------ Coordinates Mapping ------------------
 from app.services.enricher import enrich_segment
@@ -95,4 +101,9 @@ def score_route(route, priority, preferred_mode):
 
 @router.post("/optimize")
 def optimize(data: OptimizeRequest):
+    # Normalize priority aliases to what scorer expects.
+    p = (data.priority or "").strip()
+    p_l = p.lower()
+    if p_l in {"fast", "cheap", "safe"}:
+        data.priority = p_l.capitalize()  # fast->Fast, cheap->Cheap, safe->Safe
     return optimize_routes(data)
