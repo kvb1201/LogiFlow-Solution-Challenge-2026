@@ -38,6 +38,18 @@ export interface RoadPayload {
   fuel_price?: number;
 }
 
+export interface AirPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg: number;
+  cargo_type: string;
+  max_stops?: number;
+  budget_limit?: number;
+  deadline_hours?: number;
+}
+
 export interface DelayInfo {
   avg_delay_minutes: number;
   max_delay_minutes?: number;
@@ -172,6 +184,79 @@ export interface TrainDelayData {
   route: TrainDelayStation[];
 }
 
+export interface AirCostBreakdown {
+  base_freight: number;
+  fuel_surcharge: number;
+  terminal_fee: number;
+  handling_fee: number;
+  cargo_markup: number;
+  heavy_lift_fee: number;
+  total: number;
+  currency: string;
+  pricing_basis: string;
+}
+
+export interface AirAirportInfo {
+  code: string;
+  name: string;
+  city_name?: string;
+}
+
+export interface AirRoute {
+  type: string;
+  mode: string;
+  time: number;
+  cost: number;
+  risk: number;
+  delay_prob: number;
+  airline: string;
+  stops: number;
+  distance: number;
+  cost_per_kg: number;
+  weather_risk: number;
+  congestion_risk: number;
+  reliability: number;
+  cargo_type: string;
+  cargo_weight: number;
+  data_source: string;
+  route_support_type: string;
+  supported_by: string;
+  confidence_score: number;
+  confidence_label: string;
+  confidence_reasons: string[];
+  cost_breakdown: AirCostBreakdown;
+  business_rules_applied: string[];
+  reason: string;
+  key_factors: string[];
+  eta: string;
+  score?: number;
+  segments: RouteSegment[];
+  air_details: {
+    source_airport: AirAirportInfo;
+    destination_airport: AirAirportInfo;
+    hub_airport?: AirAirportInfo | null;
+    supporting_airlines?: string[];
+    confidence_reasons?: string[];
+    business_rules_applied?: string[];
+    cost_breakdown?: AirCostBreakdown;
+  };
+}
+
+export interface AirOptimizeResult {
+  mode: 'air';
+  best_route: AirRoute | null;
+  alternatives: AirRoute[];
+  ranked_routes: AirRoute[];
+  total_routes: number;
+  constraints_applied: {
+    budget_limit: number | null;
+    deadline_hours: number | null;
+    max_stops: number | null;
+    cargo_type: string;
+    cargo_weight_kg: number;
+  };
+}
+
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
@@ -196,6 +281,19 @@ export async function fetchRoadRoutes(payload: RoadPayload) {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Road optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimizeResult> {
+  const res = await fetch(`${BACKEND_BASE}/air/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Air optimize failed (${res.status}): ${text}`);
   }
   return res.json();
 }
