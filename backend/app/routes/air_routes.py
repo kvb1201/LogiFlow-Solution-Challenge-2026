@@ -15,6 +15,7 @@ class AirCargoPayload(BaseModel):
     cargo_type: str = "general"
     max_stops: Optional[int] = None
     budget_limit: Optional[float] = None
+    deadline_hours: Optional[float] = None
 
 
 @air_router.post("/optimize")
@@ -36,6 +37,7 @@ def optimize_air(payload: AirCargoPayload):
                 "constraints": {
                     "max_stops": payload.max_stops,
                     "budget_limit": payload.budget_limit,
+                    "deadline_hours": payload.deadline_hours,
                 },
             },
         )
@@ -44,7 +46,15 @@ def optimize_air(payload: AirCargoPayload):
             "mode": "air",
             "best_route": result[0] if result else None,
             "alternatives": result[1:] if len(result) > 1 else [],
+            "ranked_routes": result,
             "total_routes": len(result),
+            "constraints_applied": {
+                "budget_limit": payload.budget_limit,
+                "deadline_hours": payload.deadline_hours,
+                "max_stops": payload.max_stops,
+                "cargo_type": payload.cargo_type,
+                "cargo_weight_kg": payload.cargo_weight_kg,
+            },
         }
 
     except Exception as e:
