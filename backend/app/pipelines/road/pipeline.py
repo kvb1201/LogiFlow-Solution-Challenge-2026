@@ -38,14 +38,14 @@ class RoadPipeline(BasePipeline):
             distance = float(r.get("distance_km", 0))
             base_traffic = float(r.get("traffic_level", 0.3))
 
-            # Blend real + simulated traffic instead of hard override
+            # Strong but stable blending (simulation dominates but keeps realism)
             if simulation_mode and sim.get("traffic_level") is not None:
                 sim_traffic = float(sim.get("traffic_level"))
-                base_traffic = 0.5 * base_traffic + 0.5 * sim_traffic
+                base_traffic = 0.7 * sim_traffic + 0.3 * base_traffic
 
             # Add variation based on route characteristics
-            traffic_variation = (distance % 50) / 200   # small variation
-            traffic_level = min(1.0, max(0.2, base_traffic + traffic_variation))
+            traffic_variation = (distance % 50) / 300   # reduce artificial noise
+            traffic_level = min(1.0, max(0.05, base_traffic + traffic_variation))
 
             # Convert traffic_level → categorical (0/1/2)
             if traffic_level < 0.4:
@@ -109,15 +109,17 @@ class RoadPipeline(BasePipeline):
                   "util=", utilization,
                   "demand=", demand)
 
-            effective_time = adjusted_time
+            # Hybrid model: physics + ML refinement
+            traffic_multiplier = 1 + (traffic_level * 0.6)
+            effective_time = base_time * traffic_multiplier * traffic_f
 
             # Apply simulation effects (weather + incidents)
             if simulation_mode:
                 weather_level = float(sim.get("weather_level", 0))
                 incident_count_sim = int(sim.get("incident_count", 0))
 
-                # Blend weather impact (not full override)
-                weather_factor = 1 + weather_level * 0.3
+                # Stronger but controlled weather impact
+                weather_factor = 1 + weather_level * 0.5
 
                 # Incidents remain additive (realistic spikes)
                 incident_delay = incident_count_sim * 0.2
@@ -375,9 +377,11 @@ class RoadPipeline(BasePipeline):
             weather_f = float(route.get("weather_factor", 1.0))
             delay = float(route.get("predicted_delay", 0.0))
 
-            if traffic_f > 1.3:
+            # Prefer direct traffic_level if available (more stable than ML factor)
+            tl = float(route.get("traffic_level", 0.3))
+            if tl > 0.7:
                 traffic = "high"
-            elif traffic_f > 1.1:
+            elif tl > 0.4:
                 traffic = "moderate"
             else:
                 traffic = "low"
@@ -415,17 +419,12 @@ class RoadPipeline(BasePipeline):
             else:
                 factors.append("Minimal delay expected")
 
-            traffic_f = route.get("traffic_factor")
-            if traffic_f is None or float(traffic_f) == 1.0:
-                tl = float(route.get("traffic_level", 0.3))
-                traffic_f = 1 + tl
-            else:
-                traffic_f = float(traffic_f)
-            if traffic_f > 1.4:
+            tl = float(route.get("traffic_level", 0.3))
+            if tl > 0.8:
                 factors.append("Severe congestion expected")
-            elif traffic_f > 1.25:
+            elif tl > 0.6:
                 factors.append("Heavy traffic expected")
-            elif traffic_f > 1.1:
+            elif tl > 0.4:
                 factors.append("Moderate traffic conditions")
             else:
                 factors.append("Low traffic expected")
@@ -462,9 +461,17 @@ class RoadPipeline(BasePipeline):
                 add_factor(constraint_note)
 
             if label == "best":
-                pf = _priority_factor()
-                if pf:
-                    add_factor(pf)
+                # Priority-aware explanation
+                if priority == "cost":
+                    add_factor("Selected as most cost-efficient route")
+                elif priority == "time":
+                    add_factor("Selected as fastest available route")
+                elif priority == "safe":
+                    add_factor("Selected as lowest-risk route")
+                else:
+                    pf = _priority_factor()
+                    if pf:
+                        add_factor(pf)
                 if len(cleaned_ranked) > 1:
                     alt = cleaned_ranked[1]
                     cost_diff = alt["cost"] - route["cost"]
@@ -494,7 +501,10 @@ class RoadPipeline(BasePipeline):
                 elif float(route.get("highway_ratio", 0.7)) < 0.5:
                     add_factor("Includes local roads (possible delays)")
 
-                add_factor(f"Selected among {len(cleaned_ranked)} feasible routes")
+                if len(cleaned_ranked) == 1:
+                    add_factor("Only route satisfying constraints under current conditions")
+                else:
+                    add_factor(f"Selected among {len(cleaned_ranked)} feasible routes")
             else:
                 add_factor("Alternative feasible route")
 
