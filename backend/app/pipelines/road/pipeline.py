@@ -155,28 +155,27 @@ class RoadPipeline(BasePipeline):
             cost_high = total_cost * 1.2
 
             # Risk based on predicted delay + incidents (more realistic)
-            delay = max(effective_time - base_time, 0)
-            delay_prob = delay / max(base_time, 1e-3)
-
             incident_count = r.get("incident_count", 0)
-
             if simulation_mode:
                 incident_count = int(sim.get("incident_count", incident_count))
-
-            incident_penalty = min(incident_count * 0.03, 0.3)
-
+            # Delay includes weather + traffic slowdown + incidents, consistent with effective_time
+            base_delay = incident_count * (0.2 if simulation_mode else 0.1)
             weather_level = float(sim.get("weather_level", 0)) if simulation_mode else 0
-
+            weather_delay = (weather_level * 0.5 * base_time) if simulation_mode else 0
+            traffic_delay = traffic_level * 0.3 * base_time
+            delay = base_delay + weather_delay + traffic_delay
+            print("CONSISTENCY CHECK:", "time=", effective_time, "base=", base_time, "delay=", delay)
+            delay_prob = delay / max(base_time, 1e-3)
+            incident_penalty = min(incident_count * 0.03, 0.3)
             # Blend risk contribution instead of full override
             risk = (
                 0.05 +
-                delay_prob * 0.4 +
-                traffic_level * 0.3 +
-                (weather_level * 0.1) +
+                delay_prob * 0.35 +
+                traffic_level * 0.25 +
+                (weather_level * 0.2) +
                 (1 - float(r.get("highway_ratio", 0.7))) * 0.1 +
                 incident_penalty
             )
-
             # Clamp
             risk = max(0, min(1, risk))
 
@@ -211,7 +210,7 @@ class RoadPipeline(BasePipeline):
                 ],
                 "traffic_factor": round(traffic_f, 3),
                 "weather_factor": round(weather_f, 3),
-                "predicted_delay": round(max(effective_time - base_time, 0), 2),
+                "predicted_delay": round(delay, 2),
                 "traffic_level": traffic_level,
                 "weather_level": sim.get("weather_level") if simulation_mode else None,
                 "incident_count": incident_count,
@@ -322,7 +321,15 @@ class RoadPipeline(BasePipeline):
     # --- STEP 3: Pipeline Entry ---
     def generate(self, source: str, destination: str, payload=None):
         payload = payload or {}
-        simulation_mode = payload.get("mode") == "simulation"
+        mode = payload.get("mode", "realtime")
+
+        if mode not in ["realtime", "simulation"]:
+            raise ValueError(f"Invalid mode '{mode}'. Allowed values: 'realtime' or 'simulation'")
+
+        # Normalize mode back into payload to ensure consistency everywhere
+        payload["mode"] = mode
+
+        simulation_mode = mode == "simulation"
         priority = payload.get("priority", "balanced")
 
         routes = self._get_routes(source, destination, payload)
@@ -330,7 +337,6 @@ class RoadPipeline(BasePipeline):
         # Always compute realtime baseline first
         realtime_payload = payload.copy()
         realtime_payload["mode"] = "realtime"
-        realtime_payload["simulation_mode"] = False
 
         realtime_enriched = self._engineer(routes, source, destination, realtime_payload)
 
@@ -403,12 +409,27 @@ class RoadPipeline(BasePipeline):
             else:
                 traffic = "low"
 
-            if weather_f > 1.2:
-                weather = "bad"
-            elif weather_f > 1.0:
-                weather = "moderate"
+            # Weather classification: use simulation input if available
+            weather = "good"
+            weather_level = route.get("weather_level")
+            if weather_level is not None:
+                try:
+                    wl = float(weather_level)
+                    if wl > 0.7:
+                        weather = "bad"
+                    elif wl > 0.4:
+                        weather = "moderate"
+                    else:
+                        weather = "good"
+                except Exception:
+                    weather = "good"
             else:
-                weather = "good"
+                if weather_f > 1.2:
+                    weather = "bad"
+                elif weather_f > 1.0:
+                    weather = "moderate"
+                else:
+                    weather = "good"
 
             return {
                 "traffic": traffic,
@@ -555,7 +576,7 @@ class RoadPipeline(BasePipeline):
             "constraints_applied": {
                 "budget": payload.get("budget"),
                 "deadline_hours": payload.get("deadline_hours"),
-                "routes_before": len(simulated_enriched) if simulation_mode else len(realtime_enriched),
+                "routes_before": len(routes),
                 "routes_after": len(filtered),
                 "note": constraint_note,
                 "constraints_relaxed": constraint_note is not None,
