@@ -40,7 +40,7 @@ export default function AirInputForm() {
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 overflow-x-hidden min-h-fit">
+    <div className="w-full overflow-x-hidden min-h-fit">
       <div className="form-container-glow relative w-full">
         <div className="absolute -inset-1 bg-gradient-to-r from-secondary/20 via-primary/10 to-tertiary/20 rounded-3xl blur-xl opacity-50 pointer-events-none" />
         <div className="relative flex flex-col bg-surface-container-low/85 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-hidden">
