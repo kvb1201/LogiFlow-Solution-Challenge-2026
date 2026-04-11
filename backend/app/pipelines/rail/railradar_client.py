@@ -67,7 +67,10 @@ _session.headers.update({
 # Rate limiting (RapidAPI free tier is strict — ~1 req/sec)
 _last_request_times = {k: 0 for k in IRCTC_API_KEYS}
 _api_calls_made = {k: 0 for k in IRCTC_API_KEYS}
+_key_rate_limit_until = {k: 0 for k in IRCTC_API_KEYS}
+_connect_key_rate_limit_until = {k: 0 for k in IRCTC_CONNECT_KEYS}
 _MIN_INTERVAL = 1.1  # 1.1s per-key limits so we can multiplex keys
+_BAN_DURATION = 300  # 5 minutes ban on 429
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -299,6 +302,77 @@ def _get(endpoint, params=None, timeout=15):
 
     # ── 2. Circuit breaker gate ───────────────────────────────────────
     if not _cb_allow_request():
+        return None
+
+    # ── 3. Find available key (Skip rate-limited ones) ────────────────
+    n = len(IRCTC_API_KEYS)
+    api_key = None
+    
+    # Try all keys in round-robin fashion, but skip banned ones
+    for _ in range(n):
+        _current_key_idx = (_current_key_idx + 1) % n
+        candidate = IRCTC_API_KEYS[_current_key_idx]
+        
+        if _key_rate_limit_until.get(candidate, 0) > time.time():
+            continue
+            
+        api_key = candidate
+        break
+        
+    if not api_key:
+        print("  [IRCTC] ⚠️ All API keys are currently rate-limited (429).")
+        return None
+
+    # ── 4. Per-key rate limiting (interval) ──────────────────────────
+    now = time.time()
+    elapsed = now - _last_request_times.get(api_key, 0)
+    if elapsed < _MIN_INTERVAL:
+        time.sleep(_MIN_INTERVAL - elapsed)
+    
+    _last_request_times[api_key] = time.time()
+    _api_calls_made[api_key] += 1
+
+    # ── 5. Actual HTTP request ────────────────────────────────────────
+    url = f"{IRCTC_BASE_URL}{endpoint}"
+    headers = {
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": IRCTC_RAPIDAPI_HOST,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        resp = _session.get(url, headers=headers, params=params, timeout=timeout)
+        
+        if resp.status_code == 429:
+            print(f"  [IRCTC] 🔴 Key index {_current_key_idx} rate limited (429). Banning for {_BAN_DURATION}s.")
+            _key_rate_limit_until[api_key] = time.time() + _BAN_DURATION
+            # Immediately try another key
+            return _get(endpoint, params, timeout) 
+
+        if not resp.ok:
+            _cb_record_failure()
+            return None
+
+        # Success!
+        _cb_record_success()
+        data = resp.json()
+        
+        # RapidAPI sometimes wraps success data in a 'data' or 'body' field
+        if isinstance(data, dict) and "data" in data and len(data) == 1:
+            data = data["data"]
+
+        # Cache it
+        if ttl > 0:
+            key = _cache_key(endpoint, params)
+            _cache_set(key, data, ttl)
+
+        return data
+
+    except Exception as e:
+        print(f"  [IRCTC] Request error: {e}")
+        _cb_record_failure()
+        return None
+    if not _cb_allow_request():
         return None  # fast-fail → triggers CSV fallback upstream
 
     # Loop attempts begin below (rate limiting is now handled per-key)
@@ -520,6 +594,11 @@ def _irctc_connect_get(path, timeout=20):
     for attempt in range(n):
         _connect_key_idx = (_connect_key_idx + 1) % n
         key = IRCTC_CONNECT_KEYS[_connect_key_idx]
+
+        # Skip banned keys
+        if _connect_key_rate_limit_until.get(key, 0) > time.time():
+            continue
+
         now = time.time()
         elapsed = now - _connect_last_times.get(key, 0)
         if elapsed < _MIN_INTERVAL:
@@ -528,7 +607,13 @@ def _irctc_connect_get(path, timeout=20):
         url = f"{_connect_base}{path}"
         try:
             resp = requests.get(url, headers=_connect_headers("GET", path, key), timeout=timeout)
-            if resp.status_code in (401, 403, 429):
+            if resp.status_code == 429:
+                print(f"  [IRCTC Connect] 🔴 Key index {_connect_key_idx} rate limited (429). Banning for {_BAN_DURATION}s.")
+                _connect_key_rate_limit_until[key] = time.time() + _BAN_DURATION
+                if attempt < n - 1:
+                    continue
+                return None
+            if resp.status_code in (401, 403):
                 if attempt < n - 1:
                     print(f"  [IRCTC Connect] {resp.status_code} on key index {_connect_key_idx}, rotating…")
                     time.sleep(0.4)
@@ -605,6 +690,11 @@ def _trains_between_from_connect_rows(rows, from_code, to_code):
         avg_speed = round(distance_km / (dur_minutes / 60), 1) if dur_minutes > 0 else 0
         fs_name = t.get("source_stn_name") or t.get("from_stn_name") or fc
         ts_name = t.get("dstn_stn_name") or t.get("to_stn_name") or tc
+        
+        # Extract actual station codes (if available) to prevent cluster mismatches
+        actual_fs = str(t.get("from_stn_code") or t.get("source_stn_code") or fc).strip().upper()
+        actual_ts = str(t.get("to_stn_code") or t.get("dstn_stn_code") or tc).strip().upper()
+
         trains.append({
             "trainNumber": train_no,
             "trainName": train_name,
@@ -615,15 +705,19 @@ def _trains_between_from_connect_rows(rows, from_code, to_code):
             "totalHalts": halts,
             "sourceStationName": fs_name,
             "destinationStationName": ts_name,
+            "fromStationCode": actual_fs,
+            "toStationCode": actual_ts,
             "runningDays": {"days": run_days_list, "allDays": all_days},
             "fromStationSchedule": {
                 "departureMinutes": dep_minutes,
                 "day": dep_day,
+                "stationCode": actual_fs,
             },
             "toStationSchedule": {
                 "arrivalMinutes": arr_minutes,
                 "day": arr_day,
                 "distanceFromSourceKm": distance_km,
+                "stationCode": actual_ts,
             },
             "hasPantry": bool(t.get("has_pantry", False)),
             "classTypes": t.get("class_type") or t.get("class_types") or [],

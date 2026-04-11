@@ -91,7 +91,24 @@ def find_routes(source_city, dest_city, max_direct=15, max_transfer=5):
             if not api_data or not api_data.get("trains"):
                 continue
 
-            for train in api_data["trains"]:
+            for train in api_data.get("trains", []):
+                # STRICT VERIFICATION: Ensure the API didn't return a "nearby" station
+                # IRCTC API sometimes clusters Mumbai stations (BCT, MMCT, BSR, PNVL).
+                # We only want trains that actually stop at the station we queried.
+                actual_fs = train.get("fromStationCode", "").upper()
+                actual_ts = train.get("toStationCode", "").upper()
+                
+                # If the API explicitly returns a different station code, skip it
+                # unless it's an exact match of what we requested.
+                if actual_fs and actual_fs != fs.upper():
+                    # Special case: MMCT and BCT are often interchangeable
+                    mumbai_central = {"MMCT", "BCT"}
+                    if not (fs.upper() in mumbai_central and actual_fs in mumbai_central):
+                        continue
+                
+                if actual_ts and actual_ts != ts.upper():
+                    continue
+
                 train_no = train.get("trainNumber", "")
                 if train_no in seen_trains:
                     continue
