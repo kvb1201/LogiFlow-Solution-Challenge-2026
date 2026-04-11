@@ -225,6 +225,17 @@ def model_info():
         return {"error": str(e)}
 
 
+@router.get("/coords")
+def get_location_coords(name: str):
+    """
+    Get latitude/longitude for any location name (city/town/station).
+    Useful for centering the map when no routes are found.
+    """
+    from app.utils.coordinates import get_coords
+    lat, lng = get_coords(name)
+    return {"name": name, "lat": lat, "lng": lng}
+
+
 @router.get("/stats")
 def route_stats():
     """Get statistics about the loaded railway data."""

@@ -380,6 +380,18 @@ export async function getStationInfo(stationCode: string): Promise<StationInfo |
   return res.json();
 }
 
+/** Get coordinates for a city/town name from the backend. */
+export async function getLocationCoords(name: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/railway/coords?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { lat: data.lat, lng: data.lng };
+  } catch {
+    return null;
+  }
+}
+
 function num(v: unknown, fallback = 0): number {
   if (typeof v === 'number' && !Number.isNaN(v)) return v;
   if (typeof v === 'string' && v.trim() !== '') {

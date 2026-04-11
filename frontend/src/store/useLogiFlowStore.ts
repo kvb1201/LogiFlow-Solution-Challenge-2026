@@ -6,6 +6,7 @@ import {
   getStationInfoDirect,
   getTrainDelay,
   getLiveTrainStatus,
+  getLocationCoords,
   fetchRoadRoutes,
   type OptimizeResult,
   type Recommendation,
@@ -195,7 +196,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   liveTrains: [],
   stationCoords: {},
-  liveMapMode: 'all',
+  liveMapMode: 'route',
 
   trainDelayDetail: null,
   selectedTrainLive: null,
@@ -271,6 +272,33 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     const mode = opts?.mode || 'rail';
     set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
 
+    // ALWAYS fetch source/destination city coordinates for the map immediately
+    // to ensure user sees "dots" even if everything else fails.
+    void (async () => {
+      const src = source.trim();
+      const dst = destination.trim();
+      const [srcCoord, dstCoord] = await Promise.all([
+        getLocationCoords(src),
+        getLocationCoords(dst),
+      ]);
+      if (srcCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [src]: { code: src, name: src, lat: srcCoord.lat, lng: srcCoord.lng }
+          }
+        }));
+      }
+      if (dstCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [dst]: { code: dst, name: dst, lat: dstCoord.lat, lng: dstCoord.lng }
+          }
+        }));
+      }
+    })();
+
     try {
       if (opts?.mode === 'air') {
         const maxStops = cargoType === 'Perishable' ? 0 : cargoType === 'Fragile' ? 1 : 2;
@@ -321,7 +349,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
-          mode: opts?.simulation_mode ? 'simulation' : 'realtime',
+          mode: (opts?.simulation_mode ? 'simulation' : 'realtime') as 'simulation' | 'realtime',
           simulation: opts?.simulation,
         };
 
