@@ -25,15 +25,20 @@ class RoadPipeline(BasePipeline):
     # --- STEP 2: Feature Engineering ---
     def _engineer(self, routes, source, destination, payload):
         enriched = []
-        simulation_mode = payload.get("mode") == "simulation" or payload.get("simulation_mode", False)
-        sim = payload.get("simulation", {}) if simulation_mode else {}
+        simulation_mode = payload.get("mode") == "simulation"
+        sim = payload.get("simulation") or {} if simulation_mode else {}
         from app.services.ml_service import predict_delay
         from app.services.weather_service import get_weather
         weight = payload.get("cargo_weight_kg", 100)
 
         for route_idx, r in enumerate(routes):
+            # Validate geometry early to prevent frontend/map crashes
+            geometry = r.get("geometry")
+            if not geometry or not isinstance(geometry, list) or len(geometry) < 2:
+                print(f"[ENGINEER] Dropping route {route_idx} due to invalid geometry")
+                continue
             # Base time
-            base_time = r["base_duration_hr"]
+            base_time = float(r.get("base_duration_hr") or r.get("duration_hr") or max(float(r.get("distance_km", 0)) / 60.0, 1.0))
 
             distance = float(r.get("distance_km", 0))
             base_traffic = float(r.get("traffic_level", 0.3))
@@ -56,9 +61,6 @@ class RoadPipeline(BasePipeline):
                 traffic_cat = 2
 
             weather = get_weather(source) or {}
-            if simulation_mode and sim.get("weather_level") is not None:
-                # keep real base weather but allow blending later
-                pass
             # Basic guard to ensure dict shape
             if not isinstance(weather, dict):
                 weather = {}
@@ -89,8 +91,8 @@ class RoadPipeline(BasePipeline):
             demand = 30 + traffic_level * 60 + (distance % 20)
 
             if simulation_mode:
-                utilization = float(sim.get("utilization", utilization))
-                demand = float(sim.get("demand", demand))
+                utilization = 0.7 * utilization + 0.3 * float(sim.get("utilization", utilization))
+                demand = 0.7 * demand + 0.3 * float(sim.get("demand", demand))
 
             # ML-based delay prediction (with dynamic features)
             print("ML INPUT:", traffic_cat, utilization, demand)
@@ -144,6 +146,11 @@ class RoadPipeline(BasePipeline):
             gst = 0.05 * freight
             documentation = 100 + rng.random() * 100
             total_cost = freight + toll + handling + gst + documentation
+            if simulation_mode:
+                congestion_cost = 1 + (traffic_level * 0.3)
+                weather_cost = 1 + (float(sim.get("weather_level", 0)) * 0.2)
+                incident_cost = 1 + (int(sim.get("incident_count", 0)) * 0.05)
+                total_cost *= (congestion_cost * weather_cost * incident_cost)
             cost_low = total_cost * 0.9
             cost_high = total_cost * 1.2
 
@@ -192,7 +199,7 @@ class RoadPipeline(BasePipeline):
                 },
                 "risk": round(risk, 3),
                 "distance_km": round(float(r.get("distance_km", 0)), 1),
-                "geometry": r.get("geometry"),
+                "geometry": r.get("geometry") or [],
                 "segments": [
                     {
                         "mode": "Road",
@@ -293,6 +300,15 @@ class RoadPipeline(BasePipeline):
             # balanced (default) and any unknown priority
             weights = {"cost": 0.35, "time": 0.25, "risk": 0.25, "penalty": 0.15}
 
+        simulation_mode = False
+        if routes and routes[0].get("weather_level") is not None:
+            simulation_mode = True
+
+        if simulation_mode:
+            weights["risk"] += 0.1
+            weights["time"] += 0.1
+            weights["cost"] -= 0.2
+
         for r in routes:
             r["score"] = (
                 r["norm_cost"] * weights["cost"] +
@@ -306,7 +322,7 @@ class RoadPipeline(BasePipeline):
     # --- STEP 3: Pipeline Entry ---
     def generate(self, source: str, destination: str, payload=None):
         payload = payload or {}
-        simulation_mode = payload.get("mode") == "simulation" or payload.get("simulation_mode", False)
+        simulation_mode = payload.get("mode") == "simulation"
         priority = payload.get("priority", "balanced")
 
         routes = self._get_routes(source, destination, payload)
@@ -323,13 +339,14 @@ class RoadPipeline(BasePipeline):
 
         best_realtime = realtime_ranked[0]
 
-        # If simulation mode → apply simulation ONLY on best realtime route
+        # If simulation mode → apply simulation to ALL routes
         if simulation_mode:
-            sim_routes = [best_realtime.copy()]
+            import copy
+            sim_routes = copy.deepcopy(routes)
 
             simulated_enriched = self._engineer(sim_routes, source, destination, payload)
-            simulated_filtered, constraint_note = self._apply_constraints(simulated_enriched, payload)
-            ranked = self._score_routes(simulated_filtered, priority)
+            filtered, constraint_note = self._apply_constraints(simulated_enriched, payload)
+            ranked = self._score_routes(filtered, priority)
         else:
             enriched = realtime_enriched
             filtered, constraint_note = self._apply_constraints(enriched, payload)
@@ -525,6 +542,7 @@ class RoadPipeline(BasePipeline):
             for i, r in enumerate(cleaned_ranked)
         ]
 
+        print(f"[PIPELINE OUTPUT] mode={payload.get('mode')} routes={len(explained_ranked)}")
         return {
             "simulation": simulation_mode,
             "best": _explain(cleaned_ranked[0], "best"),
@@ -537,8 +555,8 @@ class RoadPipeline(BasePipeline):
             "constraints_applied": {
                 "budget": payload.get("budget"),
                 "deadline_hours": payload.get("deadline_hours"),
-                "routes_before": len(realtime_enriched) if not simulation_mode else 1,
-                "routes_after": len(filtered) if not simulation_mode else len(simulated_filtered),
+                "routes_before": len(simulated_enriched) if simulation_mode else len(realtime_enriched),
+                "routes_after": len(filtered),
                 "note": constraint_note,
                 "constraints_relaxed": constraint_note is not None,
             }

@@ -53,35 +53,14 @@ def estimate_toll(distance_km, highway_ratio):
 def get_routes(source, destination, payload=None):
     payload = payload or {}
 
-    simulation_mode = payload.get("simulation_mode", False)
-    sim = payload.get("simulation", {}) if simulation_mode else {}
+    simulation_mode = payload.get("mode") == "simulation"
+    print(f"[ROUTE_PROVIDER] mode={payload.get('mode')} simulation_mode={simulation_mode}")
+    sim = payload.get("simulation") or {} if simulation_mode else {}
 
-    # If simulation mode → skip TomTom and return synthetic routes
+    # IMPORTANT: Do NOT generate synthetic routes in simulation mode.
+    # Always fetch real routes from TomTom and let downstream pipeline apply simulation.
     if simulation_mode:
-        base_traffic = float(sim.get("traffic_level", 0.5))
-        incident_count = int(sim.get("incident_count", 0))
-
-        routes = []
-        for i in range(3):
-            dist = 300 + i * 50
-            duration = dist / 55
-            routes.append({
-                "route_id": f"sim_{i}",
-                "distance_km": dist,
-                "base_duration_hr": round(duration, 2),
-                "traffic_delay_hr": round(duration * base_traffic * 0.5, 2),
-                "traffic_level": min(1, base_traffic + i * 0.05),
-                "toll_cost": int(dist * 0.6),
-                "highway_ratio": 0.6 + i * 0.1,
-                "road_type": "mixed",
-                "weather_impact": None,
-                "num_stops": int(dist // 120),
-                "road_quality": 0.85,
-                "night_travel": False,
-                "incident_count": incident_count,
-                "geometry": None,
-            })
-        return routes
+        print("[ROUTE_PROVIDER] Simulation mode active → using real routes (no synthetic generation)")
 
     lat1, lon1 = geocode_city(source)
     lat2, lon2 = geocode_city(destination)
@@ -188,11 +167,16 @@ def get_routes(source, destination, payload=None):
             for leg in r.get("legs", []):
                 for point in leg.get("points", []):
                     coords.append([point["longitude"], point["latitude"]])
-        except:
-            coords = None
+        except Exception as e:
+            print(f"[ROUTE_PROVIDER] Geometry extraction failed: {e}")
+            coords = []
 
-        if coords:
+        # Downsample if valid
+        if isinstance(coords, list) and len(coords) >= 2:
             coords = coords[::5]
+        else:
+            print(f"[ROUTE_PROVIDER] Invalid geometry for route {i}, dropping geometry")
+            coords = []
 
         result.append({
             "route_id": f"tomtom_{i}",

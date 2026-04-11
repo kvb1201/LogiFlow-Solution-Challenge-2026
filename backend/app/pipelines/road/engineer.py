@@ -11,8 +11,9 @@ def engineer_routes(routes, payload):
     }
 
     # Simulation / overrides
-    simulation_mode = payload.get("simulation_mode", False)
-    sim = payload.get("simulation", {}) if simulation_mode else {}
+    simulation_mode = payload.get("mode") == "simulation"
+    print(f"[ENGINEER] mode={payload.get('mode')} simulation_mode={simulation_mode}")
+    sim = payload.get("simulation") or {} if simulation_mode else {}
     cost_override = sim.get("cost_components", {}) if simulation_mode else {}
 
     enriched = []

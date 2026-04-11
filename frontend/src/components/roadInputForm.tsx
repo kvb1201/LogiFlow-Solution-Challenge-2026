@@ -252,6 +252,16 @@ export default function InputForm() {
       return;
     }
     setError(null);
+    console.log("[FORM SUBMIT]", {
+      mode: 'road',
+      simulationMode,
+      simTraffic,
+      simWeather,
+      simIncidents,
+      source,
+      destination,
+      priority,
+    });
     handleOptimize({
       mode: 'road',
       simulation_mode: simulationMode,
