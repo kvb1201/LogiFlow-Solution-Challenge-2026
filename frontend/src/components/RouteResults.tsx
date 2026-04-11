@@ -84,6 +84,20 @@ function whyNotThisRoute(best: RoadRoute, alt: RoadRoute): string[] {
   return lines;
 }
 
+function explainConfidence(confidence: number, route: RoadRoute): string {
+  const delay = delayHrs(route);
+  let s = `Estimated confidence is ${confidence}% for this option versus the leading route on cost, time, and risk.`;
+  if (delay > 2) s += ' Higher predicted delay reduces certainty slightly.';
+  return s;
+}
+
+function explainDataSource(route: RoadRoute): string {
+  const raw = route as Record<string, unknown>;
+  const ds = raw.data_source;
+  if (typeof ds === 'string' && ds.trim()) return `Source: ${ds}.`;
+  return 'Derived from the road optimization pipeline (geometry, traffic factors, and cost model).';
+}
+
 // ── Metric tile ───────────────────────────────────────────────────────
 
 function MetricTile({

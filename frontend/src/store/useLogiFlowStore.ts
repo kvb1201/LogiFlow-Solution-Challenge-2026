@@ -384,6 +384,9 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         error: msg,
         routes: [],
         selectedRoute: 0,
+        airRoutes: [],
+        selectedAirRouteIndex: 0,
+        airConstraintsApplied: null,
       });
       console.error('Optimize error:', err);
     } finally {
