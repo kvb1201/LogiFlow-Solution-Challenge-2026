@@ -148,6 +148,12 @@ interface LogiFlowState {
     avoidTolls?: boolean;
     avoidHighways?: boolean;
     trafficAware?: boolean;
+    simulation_mode?: boolean;
+    simulation?: {
+      traffic_level: number;
+      weather_level: number;
+      incident_count: number;
+    };
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
@@ -301,12 +307,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
         const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
-        console.log("ROAD PAYLOAD:", {
-          avoidTolls,
-          avoidHighways,
-          trafficAware,
-        });
-        const raw = (await fetchRoadRoutes({
+
+        const payload = {
           source: source.trim(),
           destination: destination.trim(),
           priority,
@@ -319,11 +321,27 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
-        })) as RoadOptimizeResponse;
+          mode: opts?.simulation_mode ? 'simulation' : 'realtime',
+          simulation: opts?.simulation,
+        };
+
+        console.log("[LogiFlow] REQUEST →", payload);
+
+        const raw = (await fetchRoadRoutes(payload)) as RoadOptimizeResponse;
+
+        console.log("[LogiFlow] RESPONSE →", raw?.all?.[0]?.time, raw?.all?.[0]?.risk);
+
         const all = Array.isArray(raw?.all) ? raw.all : [];
+
+        console.log("[LogiFlow] ZUSTAND SET →", {
+          routeCount: all.length,
+          firstRoute_time: all[0]?.time,
+          firstRoute_risk: all[0]?.risk,
+        });
+
         set({
           searchMode: 'road',
-          routes: all,
+          routes: all.map(r => ({ ...r })),
           selectedRoute: 0,
           recommendations: { cheapest: null, fastest: null, safest: null },
           allOptions: [],

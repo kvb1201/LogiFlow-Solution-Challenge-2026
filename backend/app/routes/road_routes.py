@@ -19,8 +19,7 @@ class RoadPayload(BaseModel):
     avoid_highways: Optional[bool] = False
     traffic_aware: Optional[bool] = True
 
-    # Simulation mode
-    simulation_mode: Optional[bool] = False
+    mode: Optional[str] = None
     simulation: Optional[dict] = None
 
 
@@ -32,10 +31,14 @@ def optimize_road(payload: RoadPayload):
 
         pipeline = RoadPipeline()
 
+        # Resolve mode (single source of truth)
+        mode = payload.mode or "realtime"
+
         result = pipeline.generate(
             payload.source,
             payload.destination,
             {
+                "mode": mode,
                 "priority": payload.priority,
                 "budget": payload.budget,
                 "deadline_hours": payload.deadline_hours,
@@ -44,7 +47,6 @@ def optimize_road(payload: RoadPayload):
                 "avoid_tolls": payload.avoid_tolls,
                 "avoid_highways": payload.avoid_highways,
                 "traffic_aware": payload.traffic_aware,
-                "simulation_mode": payload.simulation_mode,
                 "simulation": payload.simulation,
             }
         )

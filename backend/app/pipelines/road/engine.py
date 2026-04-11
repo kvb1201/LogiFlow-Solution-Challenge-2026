@@ -12,6 +12,7 @@ def decide(routes, payload):
         return {}
 
     priority = payload.get("priority", "cost")
+    simulation_mode = payload.get("mode") == "simulation"
 
     # sanitize inputs
     for r in routes:
@@ -35,10 +36,8 @@ def decide(routes, payload):
         filtered.append(r)
 
     if not filtered:
-        return {
-            "error": "No routes satisfy constraints",
-            "all_options": routes
-        }
+        print("[DECIDE] No routes satisfy constraints → relaxing constraints")
+        filtered = routes
 
     routes = filtered
 
@@ -54,13 +53,19 @@ def decide(routes, payload):
 
     # weights
     if priority == "cost":
-        weights = (0.5, 0.2, 0.2, 0.1)
+        weights = [0.5, 0.2, 0.2, 0.1]
     elif priority == "time":
-        weights = (0.2, 0.5, 0.2, 0.1)
+        weights = [0.2, 0.5, 0.2, 0.1]
     elif priority == "risk":
-        weights = (0.2, 0.2, 0.5, 0.1)
+        weights = [0.2, 0.2, 0.5, 0.1]
     else:  # balanced
-        weights = (0.35, 0.25, 0.25, 0.15)
+        weights = [0.35, 0.25, 0.25, 0.15]
+
+    # Simulation-aware adjustment
+    if simulation_mode:
+        weights[0] -= 0.15  # cost less important
+        weights[1] += 0.1   # time more important
+        weights[2] += 0.1   # risk more important
 
     scored = []
 
@@ -78,9 +83,12 @@ def decide(routes, payload):
 
     scored.sort(key=lambda x: x["total_score"])
 
-    # confidence based on score spread
-    spread = max(r["total_score"] for r in scored) - min(r["total_score"] for r in scored)
-    confidence = min(100, round(spread * 100))
+    # confidence based on score gap
+    if len(scored) > 1:
+        gap = scored[1]["total_score"] - scored[0]["total_score"]
+        confidence = min(100, round((1 - gap) * 100))
+    else:
+        confidence = 80
 
     if priority == "cost":
         best = min(scored, key=lambda x: x["parcel_cost_inr"])

@@ -36,6 +36,13 @@ export interface RoadPayload {
   traffic_aware: boolean;
   vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
   fuel_price?: number;
+  // simulation controls
+  mode?: 'realtime' | 'simulation';
+  simulation?: {
+    traffic_level: number;
+    weather_level: number;
+    incident_count: number;
+  };
 }
 
 export interface AirPayload {
@@ -273,16 +280,26 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
 }
 
 export async function fetchRoadRoutes(payload: RoadPayload) {
+  console.log('[API] ROAD REQUEST →', payload);
   const res = await fetch(`${BACKEND_BASE}/road/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+
+  const data = await res.json();
+
+  console.log('[API] ROAD RESPONSE →', {
+    routeCount: data?.all?.length,
+    firstRoute: data?.all?.[0],
+    simulation: data?.simulation,
+  });
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Road optimize failed (${res.status}): ${text}`);
+    throw new Error(`Road optimize failed (${res.status}): ${JSON.stringify(data)}`);
   }
-  return res.json();
+
+  return data;
 }
 
 export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimizeResult> {
