@@ -84,10 +84,14 @@ _CACHE_TTL = {
     "trainBetweenStations": 24 * 3600,         # 1 day   — schedule can change seasonally
     "getTrainSchedule":     7 * 24 * 3600,     # 7 days  — schedules are fairly stable
     "getFare":              3 * 24 * 3600,     # 3 days  — fares can be revised
-    "liveTrainStatus":      0,                 # NEVER cache — real-time data
-    "getLiveStation":       0,                 # NEVER cache — real-time data
+    "liveTrainStatus":      300,               # 5 Min   — buffer to prevent 429 spikes on team-wide polls
+    "getLiveStation":       600,               # 10 Min
+    "getTrainDelay":        300,               # 5 Min
     "default":              24 * 3600,         # 1 day fallback
 }
+
+# Feature Flag: If True, cache never expires (ignoring TTL on read)
+PERMANENT_CACHE = os.getenv("RAIL_PERMANENT_CACHE", "true").lower() == "true"
 
 # Redis connection
 _redis_client = None
@@ -100,11 +104,25 @@ def _init_redis():
     global _redis_client, _redis_available
     try:
         import redis
-        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client = redis.Redis(
+            host=os.getenv("REDIS_HOST", "localhost"),
+            port=int(os.getenv("REDIS_PORT", "6379")),
+            db=int(os.getenv("REDIS_DB", "0")),
+            decode_responses=True
+        )
         _redis_client.ping()
         _redis_available = True
         print("  [Cache] ✅ Redis connected")
+
+        # MIGRATION: If Permanent Cache is enabled, remove TTL from ALL existing keys
+        if PERMANENT_CACHE:
+            keys = _redis_client.keys(f"{_REDIS_PREFIX}*")
+            if keys:
+                p = _redis_client.pipeline()
+                for k in keys:
+                    p.persist(k)
+                p.execute()
+                print(f"  [Cache] 🔓 PERSISTED {len(keys)} existing Redis keys (Permanent Mode)")
     except Exception:
         _redis_available = False
         print("  [Cache] ⚠️ Redis unavailable — using in-memory cache")
@@ -159,31 +177,39 @@ def _cache_get(key):
 
     # In-memory fallback
     entry = _mem_cache.get(key)
-    if entry and entry["expires_at"] > time.time():
-        print(f"  [Cache] ⚡ HIT (Disk/Mem): {key}")
-        return entry["data"]
-    elif entry:
-        del _mem_cache[key]  # expired
-        _save_mem_cache()
-        
+    if entry:
+        # Check if expired, unless PERMANENT_CACHE is enabled
+        if PERMANENT_CACHE or entry["expires_at"] > time.time():
+            print(f"  [Cache] ⚡ HIT ({'Permanent' if PERMANENT_CACHE else 'Disk/Mem'}): {key}")
+            return entry["data"]
+        else:
+            del _mem_cache[key]  # expired
+            _save_mem_cache()
+            
     return None
 
 def _cache_set(key, data, ttl):
     """Write to cache. Writes to BOTH Redis and in-memory."""
-    if ttl <= 0:
-        return  # Don't cache real-time data
+    # If permanent cache is enabled, we use a very long TTL or 0 (forever)
+    effective_ttl = 30 * 24 * 3600 * 12 if PERMANENT_CACHE else ttl # 1 Year if "permanent"
+    
+    if effective_ttl <= 0 and not PERMANENT_CACHE:
+        return  # Don't cache real-time data unless permanent mode is on
 
     # Redis
     if _redis_available and _redis_client:
         try:
-            _redis_client.setex(key, ttl, json.dumps(data))
+            if PERMANENT_CACHE:
+                _redis_client.set(key, json.dumps(data)) # No expiration
+            else:
+                _redis_client.setex(key, effective_ttl, json.dumps(data))
         except Exception:
             pass
 
     # In-memory (always — serves as L1 / fallback)
     _mem_cache[key] = {
         "data": data,
-        "expires_at": time.time() + ttl,
+        "expires_at": time.time() + effective_ttl,
     }
 
     # Bounded cache to avoid overflow (rudimentary LRU/FIFO eviction)
