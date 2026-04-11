@@ -91,6 +91,10 @@ def _build_recommendation(route, priority, reason):
         "tariff_scale": route.get("tariff_scale", "S"),
         "tariff_breakdown": route.get("tariff_breakdown", {}),
         "data_source": route.get("data_source", "unknown"),
+        # Weather fields (from OpenWeather integration)
+        "weather_factor": route.get("weather_factor", 1.0),
+        "weather_risk": route.get("weather_risk", 0.0),
+        "weather_data": route.get("weather_data"),
     }
     return rec
 
@@ -190,35 +194,30 @@ def decide(enriched_routes, payload):
         real_delay = r.get("real_delay_data")
         avg_delay = real_delay.get("avg_arrival_delay_min", 0) if real_delay else r.get("predicted_delay_min", 0)
 
-        geometry = []
-        for t in r.get("trains", []):
-            t_no = t.get("train_no")
-            f_st = t.get("from_station")
-            t_st = t.get("to_station")
-            if t_no and f_st and t_st:
-                try:
-                    g = get_train_geometry(t_no, f_st, t_st)
-                    if g:
-                        geometry.extend(g)
-                except Exception:
-                    pass
-        if not geometry:
-            geometry = None
-
-        reason_text = "Alternative feasible route"
-        key_factors = []
-        if r.get("risk_score", 0) < 0.2:
-            key_factors.append("Very low risk profile")
-            reason_text = "Optimized for safety"
-        if avg_delay < 15:
-            key_factors.append("Highly punctual historically")
-        if r.get("has_transfer"):
-            key_factors.append("Includes station transfer")
+        # ── Generating Proper Reasoning ───────────────────────────────────
+        reasoning = []
+        if w_cost > 0.3 and norm_costs[i] <= 0.2:
+            reasoning.append(f"Highly cost-effective (₹{r.get('parcel_cost_inr', 0):.0f}) matching budget priority")
+        if w_time > 0.3 and norm_times[i] <= 0.2:
+            reasoning.append(f"Provides extremely fast transit ({r.get('effective_hours', 0):.1f}h) matching time priority")
+        if w_risk > 0.3 and norm_risks[i] <= 0.2:
+            reasoning.append(f"Offers optimal safety for physical cargo ({r.get('risk_score', 0)*100:.0f}% risk)")
+            
+        if not reasoning:
+            if norm_costs[i] < 0.3 and norm_times[i] < 0.3:
+                reasoning.append("Provides robust balance of speed and affordability")
+            elif norm_risks[i] < 0.2 and norm_eases[i] < 0.2:
+                reasoning.append("Highly reliable schedule with minimal booking delays")
+            elif norm_eases[i] < 0.1:
+                reasoning.append("Selected for its high booking availability context")
+            else:
+                reasoning.append("Meets standard cargo transport requirements")
+                
+        final_reason = " • ".join(reasoning)
 
         all_options.append({
             "rank": 0,
-            "reason": reason_text,
-            "key_factors": key_factors,
+            "selection_reason": final_reason,
             "train_number": first_train.get("train_no", ""),
             "train_name": first_train.get("train_name", ""),
             "train_type": first_train.get("train_type", ""),
@@ -238,6 +237,8 @@ def decide(enriched_routes, payload):
             "geometry": geometry,
             "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
+            "weather_factor": r.get("weather_factor", 1.0),
+            "weather_risk": r.get("weather_risk", 0.0),
         })
 
     all_options.sort(key=lambda x: x["total_score"])

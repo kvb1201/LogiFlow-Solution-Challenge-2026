@@ -21,7 +21,7 @@ class RailPipeline(BasePipeline):
     mode = "rail"
     name = "Rail Transport (Parcel by Train)"
 
-    def generate(self, source, destination):
+    def generate(self, source, destination, payload=None):
         """
         Generate rail cargo routes between source and destination cities.
 
@@ -52,7 +52,11 @@ class RailPipeline(BasePipeline):
             "cargo_weight_kg": 100,
             "departure_date": "2025-06-01",
             "cargo_type": "General",
+            "origin_city": source,
+            "destination_city": destination,
         }
+        if payload:
+            default_payload.update(payload)
 
         enriched = engineer_features(routes, default_payload)
 
@@ -195,5 +199,13 @@ class RailCargoOptimizer:
             "total_routes_found": len(routes),
             "feasible_routes": len(enriched),
         }
+
+        # Add weather context from the enriched routes
+        if enriched:
+            results["weather_context"] = {
+                "weather_data": enriched[0].get("weather_data"),
+                "weather_factor": enriched[0].get("weather_factor", 1.0),
+                "weather_risk": enriched[0].get("weather_risk", 0.0),
+            }
 
         return results

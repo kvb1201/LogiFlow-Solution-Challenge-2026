@@ -188,13 +188,13 @@ def lookup_tariff(
 # ═══════════════════════════════════════════════════════════════════════
 
 SCALE_R_KEYWORDS = {
-    "rajdhani", "shatabdi", "duronto",
-    "raj", "shtb", "drnt",
+    "rajdhani", "raj",
 }
 
 SCALE_P_KEYWORDS = {
+    "shatabdi", "shtb", "jan shatabdi", "duronto", "drnt",
     "superfast", "humsafar", "tejas", "gatimaan",
-    "vande bharat", "jan shatabdi",
+    "vande bharat",
     "sf", "sup", "hms",
     "sf exp", "s/f exp", "sf express", "s.f.exp",
     "s f exp", "sup exp", "sup express",
@@ -220,7 +220,7 @@ def _classify_by_train_number(train_no: str) -> str:
             return "R"
     for lo, hi in SHATABDI_NUMBER_RANGES:
         if lo <= num <= hi:
-            return "R"
+            return "P"
     if 20000 <= num <= 20999:
         return "R"
     if 22000 <= num <= 22999:

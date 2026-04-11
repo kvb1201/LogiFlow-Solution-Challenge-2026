@@ -122,8 +122,8 @@ def test_feature_engineering():
     scale_tests = [
         # RailRadar API type codes
         ("MUMBAI RAJDHANI",       "RAJ",   "12951", "R"),
-        ("NDLS CDG SHATABDI",     "SHTB",  "12046", "R"),
-        ("DURONTO EXPRESS",       "DRNT",  "12284", "R"),
+        ("NDLS CDG SHATABDI",     "SHTB",  "12046", "P"),
+        ("DURONTO EXPRESS",       "DRNT",  "12284", "P"),
         ("MUMBAI SF EXPRESS",     "SF",    "12137", "P"),
         ("VANDE BHARAT EXPRESS",  "Vande Bharat", "", "P"),
         ("TEJAS EXPRESS",         "Tejas", "",      "P"),
@@ -133,7 +133,7 @@ def test_feature_engineering():
         ("LOCAL PASSENGER",       "",      "51015", "S"),
         # Train number fallback only
         ("",                      "",      "12951", "R"),
-        ("",                      "",      "12046", "R"),
+        ("",                      "",      "12046", "P"),
         ("",                      "",      "51015", "S"),
     ]
     for t_name, t_type, t_num, expected in scale_tests:
@@ -350,10 +350,190 @@ def test_pipeline_integration():
     return True
 
 
+def test_weather_integration():
+    separator("TEST 6: Weather Integration & Circuit Breaker")
+
+    # ── Weather factor computation ────────────────────────────────────
+    from app.pipelines.rail.engineer import _compute_weather_factor
+
+    # Clear weather — no impact
+    factor, risk = _compute_weather_factor({"temp": 25, "rain": 0, "condition": "Clear"})
+    print(f"  Clear weather:  factor={factor}, risk={risk}")
+    assert factor == 1.0, f"Clear weather should have factor 1.0, got {factor}"
+    assert risk == 0.0, f"Clear weather should have risk 0.0, got {risk}"
+
+    # Heavy rain
+    factor, risk = _compute_weather_factor({"temp": 22, "rain": 12, "condition": "Rain"})
+    print(f"  Heavy rain:     factor={factor}, risk={risk}")
+    assert factor > 1.0, f"Heavy rain should increase factor, got {factor}"
+    assert risk > 0.0, f"Heavy rain should increase risk, got {risk}"
+
+    # Thunderstorm
+    factor, risk = _compute_weather_factor({"temp": 30, "rain": 8, "condition": "Thunderstorm"})
+    print(f"  Thunderstorm:   factor={factor}, risk={risk}")
+    assert factor >= 1.40, f"Thunderstorm should have factor >= 1.40, got {factor}"
+    assert risk >= 0.40, f"Thunderstorm should have risk >= 0.40, got {risk}"
+
+    # Fog
+    factor, risk = _compute_weather_factor({"temp": 5, "rain": 0, "condition": "Fog"})
+    print(f"  Fog:            factor={factor}, risk={risk}")
+    assert factor > 1.0, "Fog should increase factor"
+
+    # Extreme heat
+    factor, risk = _compute_weather_factor({"temp": 48, "rain": 0, "condition": "Clear"})
+    print(f"  Extreme heat:   factor={factor}, risk={risk}")
+    assert factor > 1.0, "Extreme heat should increase factor"
+
+    # None/empty weather (graceful fallback)
+    factor, risk = _compute_weather_factor(None)
+    assert factor == 1.0 and risk == 0.0, "None weather should return defaults"
+    factor, risk = _compute_weather_factor({})
+    assert factor == 1.0 and risk == 0.0, "Empty weather should return defaults"
+    print(f"  Null/empty:     factor={factor}, risk={risk} (safe defaults)")
+
+    # ── Circuit breaker status ────────────────────────────────────────
+    from app.pipelines.rail.railradar_client import get_circuit_status
+
+    status = get_circuit_status()
+    print(f"\n  Circuit breaker status: {status['state']}")
+    print(f"    consecutive_failures: {status['consecutive_failures']}")
+    print(f"    total_trips: {status['total_trips']}")
+    assert "state" in status, "Must have state"
+    assert status["state"] in ("closed", "open", "half-open"), \
+        f"Invalid state: {status['state']}"
+
+    # ── Weather-aware risk scoring ────────────────────────────────────
+    from app.pipelines.rail.engineer import calc_risk_score
+
+    mock_route = {
+        "trains": [{"train_type": "Rajdhani Express", "train_name": "Rajdhani"}],
+    }
+    risk_clear = calc_risk_score(mock_route, "2025-04-15",
+                                  weather_data={"temp": 25, "rain": 0, "condition": "Clear"})
+    risk_storm = calc_risk_score(mock_route, "2025-04-15",
+                                  weather_data={"temp": 28, "rain": 15, "condition": "Thunderstorm"})
+    print(f"\n  Risk (clear weather):  {risk_clear}")
+    print(f"  Risk (thunderstorm):  {risk_storm}")
+    assert risk_storm > risk_clear, \
+        f"Stormy weather should increase risk ({risk_storm} <= {risk_clear})"
+
+    print("\n  ✅ Weather integration tests PASSED")
+    return True
+
+
+def test_simulation_mode():
+    separator("TEST 7: Simulation Mode")
+    from app.pipelines.rail.simulator import simulate
+
+    # ── Basic simulation ──────────────────────────────────────────────
+    result = simulate({
+        "origin_city": "Mumbai",
+        "destination_city": "Delhi",
+        "cargo_weight_kg": 200,
+        "cargo_type": "General",
+        "priority": "balanced",
+        "weather": {"temp": 30, "rain": 0, "condition": "Clear"},
+        "congestion_level": 0.3,
+        "season": "normal",
+        "departure_hour": 12,
+    })
+
+    if "error" in result:
+        print(f"  ⚠️  {result['error']}")
+        return True
+
+    print(f"  Normal conditions: {result['total_routes']} routes simulated")
+    best = result.get("best", {})
+    print(f"    Best: {best.get('train_name', 'N/A')}")
+    print(f"      Cost:    ₹{best.get('cost_inr', 0):,.2f}")
+    print(f"      ETA:     {best.get('adjusted_eta_hours', 0):.1f}h")
+    print(f"      Delay:   {best.get('delay_hours', 0):.1f}h")
+    print(f"      Risk:    {best.get('risk_pct', 'N/A')}")
+    print(f"      Weather: {best.get('weather_factor', 1.0)}")
+    print(f"      Factors: {best.get('key_factors', [])}")
+
+    assert result["total_routes"] > 0, "Should find routes"
+    assert best["cost_inr"] > 0, "Cost should be positive"
+    assert best["risk_score"] > 0, "Risk should be positive"
+
+    # ── Monsoon + heavy rain simulation ───────────────────────────────
+    result_monsoon = simulate({
+        "origin_city": "Mumbai",
+        "destination_city": "Delhi",
+        "cargo_weight_kg": 200,
+        "cargo_type": "General",
+        "priority": "safe",
+        "weather": {"temp": 28, "rain": 15, "condition": "Thunderstorm"},
+        "congestion_level": 0.8,
+        "season": "monsoon",
+        "departure_hour": 8,
+    })
+
+    if "error" not in result_monsoon:
+        best_monsoon = result_monsoon.get("best", {})
+        print(f"\n  Monsoon + storm:")
+        print(f"    Best:  {best_monsoon.get('train_name', 'N/A')}")
+        print(f"    ETA:   {best_monsoon.get('adjusted_eta_hours', 0):.1f}h "
+              f"(vs {best.get('adjusted_eta_hours', 0):.1f}h normal)")
+        print(f"    Risk:  {best_monsoon.get('risk_pct', 'N/A')} "
+              f"(vs {best.get('risk_pct', 'N/A')} normal)")
+        print(f"    Delay: {best_monsoon.get('delay_hours', 0):.1f}h "
+              f"(vs {best.get('delay_hours', 0):.1f}h normal)")
+
+        # Monsoon should have higher delay and risk
+        assert best_monsoon["delay_hours"] >= best["delay_hours"], \
+            "Monsoon delay should be >= normal"
+        assert best_monsoon["risk_score"] >= best["risk_score"], \
+            "Monsoon risk should be >= normal"
+
+    # ── Priority comparison ───────────────────────────────────────────
+    print("\n  Priority comparison (same conditions):")
+    for priority in ["cost", "time", "safe"]:
+        r = simulate({
+            "origin_city": "Mumbai",
+            "destination_city": "Delhi",
+            "cargo_weight_kg": 100,
+            "weather": {"temp": 30, "rain": 3, "condition": "Rain"},
+            "congestion_level": 0.5,
+            "season": "monsoon",
+            "departure_hour": 14,
+            "priority": priority,
+        })
+        if "error" not in r:
+            b = r["best"]
+            print(f"    {priority:5s} → {b['train_name'][:25]:25s} "
+                  f"₹{b['cost_inr']:7.0f}  "
+                  f"{b['adjusted_eta_hours']:5.1f}h  "
+                  f"risk:{b['risk_pct']}")
+
+    # ── Edge cases ────────────────────────────────────────────────────
+    print("\n  Edge cases:")
+
+    # Missing cities
+    r = simulate({"origin_city": "", "destination_city": "Delhi"})
+    assert "error" in r, "Empty origin should error"
+    print(f"    Empty origin: {r['error']} ✅")
+
+    # Invalid cargo
+    r = simulate({
+        "origin_city": "Mumbai",
+        "destination_city": "Delhi",
+        "cargo_type": "Explosives",
+        "cargo_weight_kg": 100,
+        "weather": {"temp": 30, "rain": 0, "condition": "Clear"},
+    })
+    # Note: may or may not error depending on CARGO_CONSTRAINTS config
+    print(f"    Explosives cargo: {'error' if 'error' in r else 'allowed'}")
+
+    print("\n  ✅ Simulation mode tests PASSED")
+    return True
+
+
 def main():
     print("\n" + "═" * 60)
     print("  LOGIFLOW — RAILWAY CARGO ENGINE TEST SUITE")
     print("  Powered by RailRadar API (real Indian Railways data)")
+    print("  + OpenWeather Integration + Simulation Mode")
     print("═" * 60)
 
     tests = [
@@ -362,6 +542,8 @@ def main():
         ("Feature Engineering", test_feature_engineering),
         ("Decision Engine", test_decision_engine),
         ("Pipeline Integration", test_pipeline_integration),
+        ("Weather Integration", test_weather_integration),
+        ("Simulation Mode", test_simulation_mode),
     ]
 
     passed = 0
@@ -389,3 +571,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
