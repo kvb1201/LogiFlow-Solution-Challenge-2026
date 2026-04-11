@@ -39,28 +39,28 @@ def classify_traffic(delay_hr, duration_hr):
     # Prevent division issues
     duration_hr = max(duration_hr, 1e-3)
 
+    # Real traffic ratio from TomTom
     ratio = delay_hr / duration_hr
+    traffic_level = min(max(ratio * 2.5, 0.0), 1.0)
 
-    # Real-world baseline traffic (never 0)
-    base_traffic = 0.25
-
-    # Scale traffic more aggressively from delay
-    traffic_level = base_traffic + ratio * 2.5
-
-    # Clamp between realistic bounds
-    traffic_level = min(max(traffic_level, 0.25), 1.0)
-
-    return round(traffic_level, 2)
+    return round(traffic_level, 3)
 
 
 def estimate_toll(distance_km, highway_ratio):
-    base = distance_km * 1.2
-    highway_bonus = highway_ratio * distance_km * 0.8
-    return int(base + highway_bonus)
+    return int(highway_ratio * distance_km * 2.5)
 
 
 def get_routes(source, destination, payload=None):
     payload = payload or {}
+
+    simulation_mode = payload.get("mode") == "simulation"
+    print(f"[ROUTE_PROVIDER] mode={payload.get('mode')} simulation_mode={simulation_mode}")
+    sim = payload.get("simulation") or {} if simulation_mode else {}
+
+    # IMPORTANT: Do NOT generate synthetic routes in simulation mode.
+    # Always fetch real routes from TomTom and let downstream pipeline apply simulation.
+    if simulation_mode:
+        print("[ROUTE_PROVIDER] Simulation mode active → using real routes (no synthetic generation)")
 
     lat1, lon1 = geocode_city(source)
     lat2, lon2 = geocode_city(destination)
@@ -99,14 +99,50 @@ def get_routes(source, destination, payload=None):
     result = []
 
     for i, r in enumerate(res["routes"]):
+        # --- Fetch incidents for risk enhancement ---
+        incident_count = 0
+        try:
+            # Bounding box around route (simple min/max from geometry)
+            lats = []
+            lons = []
+            for leg in r.get("legs", []):
+                for point in leg.get("points", []):
+                    lats.append(point["latitude"])
+                    lons.append(point["longitude"])
+
+            if lats and lons:
+                lat_mid = sum(lats) / len(lats)
+                lon_mid = sum(lons) / len(lons)
+                bbox = f"{lat_mid-0.1},{lon_mid-0.1},{lat_mid+0.1},{lon_mid+0.1}"
+                incident_url = "https://api.tomtom.com/traffic/services/5/incidentDetails"
+                incident_params = {
+                    "key": TOMTOM_API_KEY,
+                    "bbox": bbox,
+                    "fields": "{incidents{type}}",
+                }
+                inc_res = requests.get(incident_url, params=incident_params, timeout=5).json()
+                incident_count = len(inc_res.get("incidents", []))
+        except Exception as e:
+            print("DEBUG incident fetch failed:", str(e))
+
         summary = r["summary"]
 
         distance_km = summary["lengthInMeters"] / 1000
         duration_hr = summary["travelTimeInSeconds"] / 3600
         traffic_delay_hr = summary.get("trafficDelayInSeconds", 0) / 3600
 
+        # Direct real traffic level from TomTom (no artificial baseline)
         traffic_level = classify_traffic(traffic_delay_hr, duration_hr)
-        print("DEBUG route traffic → delay_hr:", traffic_delay_hr, "duration_hr:", duration_hr, "traffic_level:", traffic_level)
+        import datetime
+        hour = datetime.datetime.now().hour
+        if 8 <= hour <= 11:
+            traffic_level *= 1.2
+        elif 17 <= hour <= 20:
+            traffic_level *= 1.3
+        traffic_level = min(1, traffic_level)
+        traffic_level = min(1, traffic_level + i * 0.05)
+
+        print(f"[ROUTE {i}] dist={distance_km}km delay={traffic_delay_hr}hr traffic={traffic_level}")
 
         # Derive highway ratio from average speed
         avg_speed = distance_km / max(duration_hr, 1e-3)
@@ -118,14 +154,29 @@ def get_routes(source, destination, payload=None):
         else:
             highway_ratio = 0.4
 
+        if highway_ratio > 0.7:
+            route_type = "highway"
+        elif highway_ratio > 0.5:
+            route_type = "mixed"
+        else:
+            route_type = "local"
+
         # Geometry extraction (lat, lon pairs)
         coords = []
         try:
             for leg in r.get("legs", []):
                 for point in leg.get("points", []):
                     coords.append([point["longitude"], point["latitude"]])
-        except:
-            coords = None
+        except Exception as e:
+            print(f"[ROUTE_PROVIDER] Geometry extraction failed: {e}")
+            coords = []
+
+        # Downsample if valid
+        if isinstance(coords, list) and len(coords) >= 2:
+            coords = coords[::5]
+        else:
+            print(f"[ROUTE_PROVIDER] Invalid geometry for route {i}, dropping geometry")
+            coords = []
 
         result.append({
             "route_id": f"tomtom_{i}",
@@ -136,10 +187,12 @@ def get_routes(source, destination, payload=None):
             "toll_cost": estimate_toll(distance_km, highway_ratio),
             "highway_ratio": highway_ratio,
             "road_type": "mixed",
+            "route_type": route_type,
             "weather_impact": None,
             "num_stops": int(distance_km // 120),
             "road_quality": 0.85,
             "night_travel": False,
+            "incident_count": incident_count,
             "geometry": coords,
         })
 

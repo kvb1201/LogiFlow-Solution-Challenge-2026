@@ -462,10 +462,19 @@ export default function RouteResults() {
   const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
 
   if (!routes || routes.length === 0) return null;
+  console.log('[RouteResults] RENDER →', routes.map((r, i) => ({
+    idx: i,
+    cost: r.cost,
+    time: r.time,
+    risk: r.risk,
+    delay: r.ml_summary?.delay_hours,
+    geometry_len: r.geometry?.length
+  })));
 
-  const minCost = Math.min(...routes.map(r => Number(r.cost)));
-  const minTime = Math.min(...routes.map(r => Number(r.time)));
-  const minRisk = Math.min(...routes.map(r => Number(r.risk)));
+  const safeIndex = Math.min(selectedRoute, routes.length - 1);
+  const minCost = Math.min(...routes.map((r) => Number(r.cost)));
+  const minTime = Math.min(...routes.map((r) => Number(r.time)));
+  const minRisk = Math.min(...routes.map((r) => Number(r.risk)));
 
   return (
     <section>
@@ -490,7 +499,7 @@ export default function RouteResults() {
           <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
           {routes.map((r, i) => (
             <RouteCard
-              key={i}
+              key={`${i}-${r.cost}-${r.time}-${r.risk}`}
               route={r}
               index={i}
               isSelected={i === selectedRoute}
@@ -520,13 +529,17 @@ export default function RouteResults() {
                 </span>
                 Live Map
               </span>
-              <span className="text-[10px] mono text-on-surface-variant">
-                R{selectedRoute + 1} · {formatCostCompact(routes[selectedRoute]?.cost ?? 0)} ·{' '}
-                {Number(routes[selectedRoute]?.time ?? 0).toFixed(1)}h
+              <span className="text-[10px] mono text-on-surface-variant text-right truncate">
+                R{safeIndex + 1} · {formatCostCompact(routes[safeIndex]?.cost ?? 0)} ·{' '}
+                {Number(routes[safeIndex]?.time ?? 0).toFixed(1)}h
               </span>
             </div>
             <div className="flex-1 min-h-0 pt-3">
-              <MapView routes={routes} selectedRoute={selectedRoute} />
+              <MapView
+                key={`map-${selectedRoute}-${routes.length}-${Math.round(routes[0]?.cost ?? 0)}`}
+                routes={routes}
+                selectedRoute={selectedRoute}
+              />
             </div>
           </div>
         </div>
