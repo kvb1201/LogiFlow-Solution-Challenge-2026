@@ -944,10 +944,10 @@ def get_train_geometry(train_no, from_station, to_station):
     fetches their coordinates utilizing the cache.
     """
     data = get_train_data(train_no, data_type="static")
-    if not data or "route" not in data:
+    if not data or "train" not in data or "route" not in data["train"]:
         return None
         
-    route = data["route"]
+    route = data["train"]["route"]
     
     start_idx, end_idx = -1, -1
     for i, stop in enumerate(route):

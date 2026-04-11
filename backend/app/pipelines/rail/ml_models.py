@@ -317,9 +317,12 @@ def _load_or_train():
             print("  [ML] Loaded cached models.")
             return
         except Exception as e:
-            print(f"  [ML] Cache load failed: {e}. Retraining...")
+            print(f"  [ML] Cache load failed: {e}.")
 
-    _train_models()
+    # DO NOT train models during a live request (too slow, hits rate limits)
+    # Instead, mark as loaded so we use fallback heuristics
+    print("  [ML] Models not found — using heuristic fallbacks (fast).")
+    _models_loaded = True
 
 
 def extract_route_features(route):
