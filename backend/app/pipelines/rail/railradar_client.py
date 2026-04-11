@@ -924,3 +924,65 @@ def get_fare(train_number, from_code, to_code):
         "toStationCode": to_code.upper(),
     })
     return data
+
+
+@lru_cache(maxsize=2000)
+def get_station_coords(station_code):
+    """
+    Helper to fetch and cache station coordinates to minimize API calls.
+    """
+    info = get_station_info(station_code)
+    if info and "latitude" in info and "longitude" in info:
+        return [info["longitude"], info["latitude"]]
+    return None
+
+@lru_cache(maxsize=100)
+def get_train_geometry(train_no, from_station, to_station):
+    """
+    Helper to get the geometry coordinates for a train route from A to B.
+    Extracts intermediate stations using the static schedule, then 
+    fetches their coordinates utilizing the cache.
+    """
+    data = get_train_data(train_no, data_type="static")
+    if not data or "route" not in data:
+        return None
+        
+    route = data["route"]
+    
+    start_idx, end_idx = -1, -1
+    for i, stop in enumerate(route):
+        code = stop.get("stationCode")
+        if not code:
+            continue
+        code = code.upper()
+        if code == from_station.upper():
+            start_idx = i
+        if code == to_station.upper():
+            end_idx = i
+            
+    if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
+        return None
+
+    # Limit to 10 intermediate points to avoid overloading API / rate limits
+    route_leg = route[start_idx:end_idx + 1]
+    
+    if len(route_leg) > 10:
+        # Sample evenly
+        indices = [0]
+        step = (len(route_leg) - 1) / 9.0
+        for i in range(1, 9):
+            indices.append(int(i * step))
+        indices.append(len(route_leg) - 1)
+        sampled_route = [route_leg[i] for i in sorted(list(set(indices)))]
+    else:
+        sampled_route = route_leg
+        
+    coords = []
+    for stop in sampled_route:
+        code = stop.get("stationCode")
+        if code:
+            coord = get_station_coords(code.upper())
+            if coord:
+                coords.append(coord)
+                
+    return coords if coords else None

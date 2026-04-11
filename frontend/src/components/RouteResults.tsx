@@ -147,6 +147,8 @@ function RouteCard({
   const best = routes[0];
   const insights = sanitizeInsights(route.reason, factors);
   const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
+  const confidenceNote = explainConfidence(confidence, route);
+  const dataSourceNote = explainDataSource(route);
 
   return (
     <div
@@ -284,6 +286,17 @@ function RouteCard({
             ))}
           </div>
         )}
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Confidence</div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">{confidenceNote}</p>
+          </div>
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Data source</div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">{dataSourceNote}</p>
+          </div>
+        </div>
 
         {/* Cost breakdown */}
         <div className="pt-3 border-t border-outline-variant/8">

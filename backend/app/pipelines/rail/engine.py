@@ -4,6 +4,8 @@ Produces three primary recommendations (cheapest, fastest, safest)
 and a balanced composite ranking of all feasible options.
 """
 
+from app.pipelines.rail.railradar_client import get_train_geometry
+
 
 def _normalize(values):
     """Min-max normalize a list of values to 0-1 range."""
@@ -36,9 +38,34 @@ def _build_recommendation(route, priority, reason):
             "delay_data_source": "ml_prediction",
         }
 
+    # Calculate geometry for mapping route
+    geometry = []
+    for t in route.get("trains", []):
+        t_no = t.get("train_no")
+        f_st = t.get("from_station")
+        t_st = t.get("to_station")
+        if t_no and f_st and t_st:
+            try:
+                g = get_train_geometry(t_no, f_st, t_st)
+                if g:
+                    geometry.extend(g)
+            except Exception:
+                pass
+    if not geometry:
+        geometry = None
+
+    key_factors = [reason]
+    if route.get("risk_score", 0) < 0.2:
+        key_factors.append("Very low risk profile")
+    if delay_info.get("avg_delay_minutes", 0) < 15:
+        key_factors.append("Highly punctual historically")
+    elif delay_info.get("avg_delay_minutes", 0) > 60:
+        key_factors.append("Significant historical delay expected")
+
     rec = {
         "priority": priority,
         "reason": reason,
+        "key_factors": key_factors,
         "route_type": route.get("route_type", "direct"),
         "train_number": first_train.get("train_no", ""),
         "train_name": first_train.get("train_name", ""),
@@ -57,6 +84,7 @@ def _build_recommendation(route, priority, reason):
         "avg_speed_kmph": route.get("avg_speed_kmph", 0),
         "running_days": first_train.get("running_days", []),
         "segments": route.get("segments", []),
+        "geometry": geometry,
         "delay_info": delay_info,
         "predicted_delay_min": round(route.get("predicted_delay_min", 0), 1),
         "adjusted_duration_hours": round(route.get("adjusted_duration_hours", route.get("effective_hours", 0)), 1),
@@ -206,6 +234,7 @@ def decide(enriched_routes, payload):
             "delay_source": "railradar_api" if real_delay else "ml_prediction",
             "running_days": first_train.get("running_days", []),
             "segments": r.get("segments", []),
+            "geometry": geometry,
             "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
             "weather_factor": r.get("weather_factor", 1.0),
