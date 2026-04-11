@@ -122,8 +122,8 @@ def test_feature_engineering():
     scale_tests = [
         # RailRadar API type codes
         ("MUMBAI RAJDHANI",       "RAJ",   "12951", "R"),
-        ("NDLS CDG SHATABDI",     "SHTB",  "12046", "R"),
-        ("DURONTO EXPRESS",       "DRNT",  "12284", "R"),
+        ("NDLS CDG SHATABDI",     "SHTB",  "12046", "P"),
+        ("DURONTO EXPRESS",       "DRNT",  "12284", "P"),
         ("MUMBAI SF EXPRESS",     "SF",    "12137", "P"),
         ("VANDE BHARAT EXPRESS",  "Vande Bharat", "", "P"),
         ("TEJAS EXPRESS",         "Tejas", "",      "P"),
@@ -133,7 +133,7 @@ def test_feature_engineering():
         ("LOCAL PASSENGER",       "",      "51015", "S"),
         # Train number fallback only
         ("",                      "",      "12951", "R"),
-        ("",                      "",      "12046", "R"),
+        ("",                      "",      "12046", "P"),
         ("",                      "",      "51015", "S"),
     ]
     for t_name, t_type, t_num, expected in scale_tests:

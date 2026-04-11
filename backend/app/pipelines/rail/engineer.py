@@ -341,6 +341,12 @@ def engineer_features(routes, payload, weather_override=None):
         t_name = first_train.get("train_name", "")
         t_type = first_train.get("train_type", "")
         t_number = first_train.get("train_no", "")
+        
+        # ── Filter Premium Passenger Trains (No Cargo Allowed) ────────
+        t_name_lower = t_name.lower()
+        if "vande bharat" in t_name_lower or "tejas" in t_name_lower:
+            continue
+
         scale = determine_scale(t_name, t_type, t_number)
 
         # ── Calculate features (using official IRCA tariff tables) ────

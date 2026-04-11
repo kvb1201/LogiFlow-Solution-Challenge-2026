@@ -107,16 +107,33 @@ def _init_redis():
         print("  [Cache] ⚠️ Redis unavailable — using in-memory cache")
 
 
-# In-memory fallback cache: {key: {"data": ..., "expires_at": float}}
+# Persistent Local fallback cache (mirrors Redis for standalone python scripts)
+_CACHE_FILE = os.path.join(os.path.dirname(__file__), "api_cache.json")
 _mem_cache = {}
 
+def _load_mem_cache():
+    global _mem_cache
+    if os.path.exists(_CACHE_FILE):
+        try:
+            with open(_CACHE_FILE, "r") as f:
+                _mem_cache = json.load(f)
+        except Exception:
+            _mem_cache = {}
+
+def _save_mem_cache():
+    try:
+        with open(_CACHE_FILE, "w") as f:
+            json.dump(_mem_cache, f)
+    except Exception:
+        pass
+
+_load_mem_cache()
 
 def _cache_key(endpoint, params):
     """Generate a deterministic cache key from endpoint + params."""
     param_str = json.dumps(params or {}, sort_keys=True)
     raw = f"{endpoint}|{param_str}"
     return _REDIS_PREFIX + hashlib.md5(raw.encode()).hexdigest()
-
 
 def _get_ttl_for_endpoint(endpoint):
     """Get the TTL for a given endpoint path."""
@@ -125,7 +142,6 @@ def _get_ttl_for_endpoint(endpoint):
             return ttl
     return _CACHE_TTL["default"]
 
-
 def _cache_get(key):
     """Read from cache. Tries Redis first, falls back to in-memory."""
     # Try Redis
@@ -133,6 +149,7 @@ def _cache_get(key):
         try:
             cached = _redis_client.get(key)
             if cached:
+                print(f"  [Cache] ⚡ HIT (Redis): {key}")
                 return json.loads(cached)
         except Exception:
             pass
@@ -140,12 +157,13 @@ def _cache_get(key):
     # In-memory fallback
     entry = _mem_cache.get(key)
     if entry and entry["expires_at"] > time.time():
+        print(f"  [Cache] ⚡ HIT (Disk/Mem): {key}")
         return entry["data"]
     elif entry:
         del _mem_cache[key]  # expired
-
+        _save_mem_cache()
+        
     return None
-
 
 def _cache_set(key, data, ttl):
     """Write to cache. Writes to BOTH Redis and in-memory."""
@@ -170,6 +188,8 @@ def _cache_set(key, data, ttl):
         # Delete the oldest 100 entries to reclaim memory
         for k in list(_mem_cache.keys())[:100]:
             del _mem_cache[k]
+
+    _save_mem_cache()
 
 
 def get_cache_stats():
@@ -383,6 +403,8 @@ def _get(endpoint, params=None, timeout=15):
 #  STATION ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════
 
+from app.pipelines.rail.fallback_stations import search_offline_stations
+
 def search_stations(query):
     """
     Search stations by name or code.
@@ -394,7 +416,14 @@ def search_stations(query):
     if cached is not None:
         return cached
 
-    # 2. Key-Rotated RapidAPI Call
+    # 2. Try Offline Fallback Dataset First (Saves 100% of RapidAPI Quota)
+    offline_results = search_offline_stations(query)
+    if offline_results:
+        print(f"  [Offline Data] Found {len(offline_results)} stations for: {query}")
+        _cache_set(key, offline_results, 30 * 24 * 3600)
+        return offline_results
+
+    # 3. Key-Rotated RapidAPI Call (Absolute Last Resort)
     data = _get("/api/v1/searchStation", {"query": query})
     if not data or not isinstance(data, list):
         return []
@@ -507,7 +536,7 @@ def _irctc_connect_get(path, timeout=20):
                 return None
             resp.raise_for_status()
             body = resp.json()
-            if isinstance(body, dict) and body.get("success") and isinstance(body.get("data"), list):
+            if isinstance(body, dict) and body.get("success") and isinstance(body.get("data"), (list, dict)):
                 return body["data"]
             return None
         except Exception as e:
@@ -714,11 +743,73 @@ def _time_str_to_minutes(time_str):
         return None
 
 
+def _format_connect_schedule_to_rapidapi(data):
+    """Reformats irctc-connect getTrainInfo JSON to standard structure."""
+    if not isinstance(data, dict):
+        return None
+    train_info = data.get("trainInfo", {})
+    route_in = data.get("route", [])
+    
+    route_out = []
+    for r in route_in:
+        s_code = r.get("station_code") or r.get("stationCode", "")
+        # Normalizing names
+        arr_min = _time_str_to_minutes(r.get("sta", r.get("arrival_time", "")))
+        dep_min = _time_str_to_minutes(r.get("std", r.get("departure_time", "")))
+        try: dist = int(float(r.get("distance_from_source") or r.get("distance", 0)))
+        except: dist = 0
+        try: day = int(r.get("day", 1))
+        except: day = 1
+        
+        route_out.append({
+            "station_code": s_code,
+            "station_name": r.get("station_name", s_code),
+            "arrival_time": r.get("sta", ""),
+            "departure_time": r.get("std", ""),
+            "arrival_minutes": arr_min,
+            "departure_minutes": dep_min,
+            "distance_from_source": dist,
+            "day": day,
+            "halt_minutes": r.get("halt_minutes", 0),
+        })
+        
+    runs_dict = {}
+    for d in _DAY_ABBR: runs_dict[d] = False
+    for d in (train_info.get("days") or train_info.get("running_days") or []):
+        if d in runs_dict: runs_dict[d] = True
+
+    return {
+        "trainNumber": train_info.get("train_no", train_info.get("trainNo", "")),
+        "trainName": train_info.get("name", train_info.get("train_name", "")),
+        "trainType": train_info.get("type", ""),
+        "runDays": runs_dict,
+        "route": route_out
+    }
+
+
 def get_train_schedule(train_number):
     """
     Get full schedule for a train with per-station details.
     Returns: {trainType, trainName, route: [{station_code, station_name, ...}]}
     """
+    # ── IRCTC Connect first (key pool), then RapidAPI ──────────────────
+    if IRCTC_CONNECT_KEYS and _connect_secret:
+        ttl = _get_ttl_for_endpoint("getTrainSchedule")
+        ck = None
+        if ttl > 0:
+            ck = _cache_key("irctc_connect_schedule", {"tn": str(train_number)})
+            cached = _cache_get(ck)
+            if cached is not None: return cached
+            
+        path = f"/api/getTrainInfo/{train_number}"
+        connect_data = _irctc_connect_get(path)
+        if connect_data:
+            formatted = _format_connect_schedule_to_rapidapi(connect_data)
+            if formatted and formatted.get("route"):
+                print(f"  [IRCTC Connect] Schedule fetched for {train_number}")
+                if ttl > 0 and ck: _cache_set(ck, formatted, ttl)
+                return formatted
+
     data = _get("/api/v1/getTrainSchedule", {"trainNo": str(train_number)})
     if not data or not isinstance(data, dict):
         return None

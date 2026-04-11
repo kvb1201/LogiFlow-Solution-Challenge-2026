@@ -166,8 +166,30 @@ def decide(enriched_routes, payload):
         real_delay = r.get("real_delay_data")
         avg_delay = real_delay.get("avg_arrival_delay_min", 0) if real_delay else r.get("predicted_delay_min", 0)
 
+        # ── Generating Proper Reasoning ───────────────────────────────────
+        reasoning = []
+        if w_cost > 0.3 and norm_costs[i] <= 0.2:
+            reasoning.append(f"Highly cost-effective (₹{r.get('parcel_cost_inr', 0):.0f}) matching budget priority")
+        if w_time > 0.3 and norm_times[i] <= 0.2:
+            reasoning.append(f"Provides extremely fast transit ({r.get('effective_hours', 0):.1f}h) matching time priority")
+        if w_risk > 0.3 and norm_risks[i] <= 0.2:
+            reasoning.append(f"Offers optimal safety for physical cargo ({r.get('risk_score', 0)*100:.0f}% risk)")
+            
+        if not reasoning:
+            if norm_costs[i] < 0.3 and norm_times[i] < 0.3:
+                reasoning.append("Provides robust balance of speed and affordability")
+            elif norm_risks[i] < 0.2 and norm_eases[i] < 0.2:
+                reasoning.append("Highly reliable schedule with minimal booking delays")
+            elif norm_eases[i] < 0.1:
+                reasoning.append("Selected for its high booking availability context")
+            else:
+                reasoning.append("Meets standard cargo transport requirements")
+                
+        final_reason = " • ".join(reasoning)
+
         all_options.append({
             "rank": 0,
+            "selection_reason": final_reason,
             "train_number": first_train.get("train_no", ""),
             "train_name": first_train.get("train_name", ""),
             "train_type": first_train.get("train_type", ""),

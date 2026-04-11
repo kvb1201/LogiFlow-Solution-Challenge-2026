@@ -1,20 +1,20 @@
-import { configure, searchTrainBetweenStations } from "irctc-connect";
+import { configure, getTrainInfo } from "irctc-connect";
 
 const origFetch = global.fetch;
 global.fetch = async (url, options) => {
   console.log("=== INTERCEPT ===");
   console.log("URL:", url);
   console.log("Method:", options.method);
-  console.log("Headers:", JSON.stringify(options.headers, null, 2));
   console.log("=================");
   return {
-    json: async () => ({ success: true, data: "intercepted" })
+    json: async () => ({ success: true, data: "intercepted" }),
+    ok: true
   };
 };
 
-const keys = (process.env.IRCTC_CONNECT_API_KEYS || "")
+const keys = (process.env.IRCTC_CONNECT_API_KEYS || "irctc_baf0f8f9c4002fedd8795de2fc09ea0f5cfcc00edf6a83df")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-configure(process.env.IRCTC_API_KEY || keys[0] || "");
-searchTrainBetweenStations("NDLS", "BCT").then(console.log).catch(console.log);
+configure(keys[0]);
+getTrainInfo("12283").then(r => console.log(r)).catch(console.log);
