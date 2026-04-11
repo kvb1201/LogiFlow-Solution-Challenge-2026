@@ -1,11 +1,12 @@
 """
 Dedicated Railway Cargo API routes.
 Powered by RailRadar API for real Indian Railways data.
+Includes Simulation Mode and Health monitoring.
 """
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 router = APIRouter(prefix="/railway", tags=["railway-cargo"])
 
@@ -23,11 +24,32 @@ class CargoPayload(BaseModel):
     special_notes: Optional[str] = None
 
 
+class WeatherParams(BaseModel):
+    """User-controlled weather parameters for simulation."""
+    temp: float = 30.0
+    rain: float = 0.0
+    condition: str = "Clear"
+
+
+class SimulationPayload(BaseModel):
+    """Request schema for the railway simulation endpoint."""
+    origin_city: str
+    destination_city: str
+    cargo_weight_kg: float = 100
+    cargo_type: str = "General"
+    priority: str = "balanced"
+    weather: WeatherParams = WeatherParams()
+    congestion_level: float = 0.3
+    season: str = "normal"
+    departure_hour: int = 12
+
+
 @router.post("/optimize")
 def optimize_cargo_route(payload: CargoPayload):
     """
     Main cargo optimization endpoint.
     Uses RailRadar API for real train data + real delay measurements.
+    Now includes OpenWeather data for weather-aware risk scoring.
 
     Returns 3 recommendations (cheapest/fastest/safest) + ranked list.
     """
@@ -47,6 +69,58 @@ def optimize_cargo_route(payload: CargoPayload):
         raise HTTPException(status_code=404, detail=results["error"])
 
     return results
+
+
+# ── Simulation Mode ───────────────────────────────────────────────────
+
+@router.post("/simulate")
+def simulate_cargo_route(payload: SimulationPayload):
+    """
+    Simulation endpoint — user controls ALL parameters.
+    Set weather, congestion, season, departure hour manually.
+    Returns deterministic delay, cost, risk, and ETA.
+
+    No external API calls for weather — uses user-provided values.
+    Routes still fetched from RailRadar/CSV.
+    """
+    from app.pipelines.rail.simulator import simulate
+
+    payload_dict = payload.dict()
+    results = simulate(payload_dict)
+
+    if "error" in results:
+        raise HTTPException(status_code=404, detail=results["error"])
+
+    return results
+
+
+# ── Health & Monitoring ───────────────────────────────────────────────
+
+@router.get("/health")
+def health_check():
+    """
+    Health endpoint exposing circuit breaker status and weather API status.
+    """
+    from app.pipelines.rail.railradar_client import get_circuit_status
+
+    circuit = get_circuit_status()
+
+    # Quick weather API probe
+    weather_status = "unknown"
+    try:
+        from app.services.weather_service import get_weather
+        w = get_weather("Delhi")
+        if w and w.get("temp") is not None:
+            weather_status = "ok"
+        else:
+            weather_status = "degraded"
+    except Exception:
+        weather_status = "error"
+
+    return {
+        "railradar_circuit_breaker": circuit,
+        "weather_api_status": weather_status,
+    }
 
 
 # ── RailRadar-powered endpoints ───────────────────────────────────────
@@ -159,3 +233,4 @@ def route_stats():
         return get_route_stats()
     except Exception as e:
         return {"error": str(e)}
+

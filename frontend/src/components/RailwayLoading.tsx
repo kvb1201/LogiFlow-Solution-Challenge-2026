@@ -2,14 +2,19 @@
 
 import React, { useEffect, useState } from 'react';
 
-/**
- * Premium Loading Screen for LogiFlow (Railways)
- * Concept: "Analyzing Digital Telemetry"
- * Uses Tailwind + Framer-inspired animations (via CSS)
- */
 export default function RailwayLoading() {
   const [dots, setDots] = useState('');
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState(0);
+
+  const phases = [
+    'Connecting to RailRadar...',
+    'Fetching live schedule data...',
+    'Running topological analysis...',
+    'Scoring routes by priority...',
+    'Building delay predictions...',
+    'Finalizing results...',
+  ];
 
   useEffect(() => {
     const dotInterval = setInterval(() => {
@@ -19,120 +24,97 @@ export default function RailwayLoading() {
     const progressInterval = setInterval(() => {
       setProgress(prev => {
         if (prev >= 98) return prev;
-        const inc = Math.random() * 15;
+        const inc = Math.random() * 12 + 2;
         return Math.min(prev + inc, 98);
       });
-    }, 800);
+    }, 700);
+
+    const phaseInterval = setInterval(() => {
+      setPhase(prev => (prev + 1) % phases.length);
+    }, 1800);
 
     return () => {
       clearInterval(dotInterval);
       clearInterval(progressInterval);
+      clearInterval(phaseInterval);
     };
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-[#0a0e14] flex flex-col items-center justify-center overflow-hidden">
-      {/* Background Atmosphere */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-[120px] animate-pulse-slow" />
-        <div className="absolute top-1/4 right-1/4 w-[400px] h-[400px] bg-tertiary/5 rounded-full blur-[100px] animate-mesh-1" />
-        <div className="absolute bottom-1/4 left-1/4 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[110px] animate-mesh-2" />
-        <div className="absolute inset-0 hero-dot-grid opacity-[0.2]" />
+    <div className="fixed inset-0 z-[10000] bg-[#080b12] flex flex-col items-center justify-center overflow-hidden">
+      {/* Background atmosphere */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] animate-pulse-slow" />
+        <div className="absolute top-1/4 right-1/4 w-[350px] h-[350px] bg-tertiary/5 rounded-full blur-[100px] animate-mesh-1" />
+        <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[400px] bg-primary/4 rounded-full blur-[110px] animate-mesh-2" />
+        <div className="absolute inset-0 hero-dot-grid opacity-[0.15]" />
       </div>
 
-      {/* Central Content */}
-      <div className="relative z-10 flex flex-col items-center w-full max-w-md px-6">
-        {/* Animated Icon */}
-        <div className="relative mb-12">
-          <div className="w-24 h-24 rounded-2xl bg-[#1c2026] border border-white/5 flex items-center justify-center shadow-2xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-tertiary/20 opacity-50" />
-            <div className="absolute inset-0 bg-shimmer animate-shimmer opacity-30" />
-            
-            <span className="material-symbols-outlined text-4xl text-primary animate-pulse-slow relative z-10">
+      {/* Decorative corners */}
+      <div className="absolute top-10 left-10 w-20 h-20 border-t border-l border-primary/15 rounded-tl-2xl" />
+      <div className="absolute bottom-10 right-10 w-20 h-20 border-b border-r border-tertiary/15 rounded-br-2xl" />
+
+      {/* Central content */}
+      <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">
+        {/* Icon */}
+        <div className="relative mb-10">
+          <div className="w-20 h-20 rounded-2xl bg-surface-container-low border border-white/5 flex items-center justify-center shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/15 via-transparent to-tertiary/15" />
+            <div className="absolute top-0 left-0 w-full h-0.5 bg-primary/50 blur-sm animate-scan" />
+            <span
+              className="material-symbols-outlined text-3xl text-primary relative z-10 animate-pulse-slow"
+              style={{ fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 48" }}
+            >
               train
             </span>
-            
-            {/* Scanned Light Effect */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-primary/60 blur-sm animate-scan" style={{ animationDuration: '2s' }} />
           </div>
-          
-          {/* Outer Ring */}
-          <div className="absolute inset-[-12px] border border-primary/20 rounded-[28px] animate-spin-slow pointer-events-none" />
-          <div className="absolute inset-[-24px] border border-white/5 rounded-[36px] animate-reverse-spin-slow pointer-events-none opacity-50" />
+          <div className="absolute inset-[-10px] border border-primary/15 rounded-[26px] animate-spin-slow pointer-events-none" />
+          <div className="absolute inset-[-20px] border border-white/4 rounded-[34px] animate-reverse-spin-slow pointer-events-none" />
         </div>
 
-        {/* Text Telemetry */}
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-headline font-black tracking-tight text-on-surface flex items-center justify-center gap-2">
-            OPTIMIZING TOPOLOGY<span className="w-8 text-left inline-block mono text-primary">{dots}</span>
+        {/* Text */}
+        <div className="text-center space-y-2 mb-10">
+          <h2 className="text-xl font-headline font-black tracking-tight text-on-surface">
+            OPTIMIZING ROUTES<span className="w-6 inline-block text-left text-primary mono">{dots}</span>
           </h2>
-          
-          <div className="flex flex-col gap-1">
-            <p className="text-[10px] font-label font-bold text-primary tracking-[0.3em] uppercase">
-              RailRadar Pipeline Active
-            </p>
-            <p className="text-[11px] font-mono text-outline/60 italic">
-              Accessing RTIS Satellite Data & IRCA API
-            </p>
-          </div>
+          <p className="text-[11px] font-mono text-on-surface-variant/70 min-h-[16px] transition-all duration-500">
+            {phases[phase]}
+          </p>
+          <p className="text-[10px] text-primary/60 tracking-[0.2em] uppercase font-semibold">
+            RailRadar Pipeline Active
+          </p>
         </div>
 
-        {/* Progress Bar Container */}
-        <div className="w-full mt-12 space-y-3">
-          <div className="flex justify-between items-end mb-1">
-            <span className="text-[10px] font-mono text-outline uppercase tracking-wider">Syncing Nodes</span>
-            <span className="text-xs font-mono text-primary">{Math.floor(progress)}%</span>
+        {/* Progress */}
+        <div className="w-full space-y-2">
+          <div className="flex justify-between items-center text-[10px]">
+            <span className="mono text-outline uppercase tracking-wider">Syncing Nodes</span>
+            <span className="mono text-primary font-semibold">{Math.floor(progress)}%</span>
           </div>
-          
-          <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-            <div 
-              className="h-full bg-gradient-to-r from-primary to-tertiary transition-all duration-700 ease-out shadow-[0_0_15px_rgba(47,129,247,0.5)]"
+          <div className="h-0.5 w-full bg-white/5 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-primary to-tertiary transition-all duration-700 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
 
-          {/* Random Status Items */}
-          <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-white/5">
-             <div className="space-y-1">
-                <p className="text-[9px] font-label text-outline uppercase tracking-widest">Network Load</p>
-                <p className="text-[11px] font-mono text-on-surface">NOMINAL (4.2ms)</p>
-             </div>
-             <div className="space-y-1 text-right">
-                <p className="text-[9px] font-label text-outline uppercase tracking-widest">ML Prediction</p>
-                <p className="text-[11px] font-mono text-tertiary">ENQUEUED</p>
-             </div>
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-white/5">
+            <div className="text-center">
+              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">API Latency</div>
+              <div className="text-[10px] mono text-on-surface font-semibold">4.2ms</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">ML Model</div>
+              <div className="text-[10px] mono text-tertiary font-semibold">ACTIVE</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">Source</div>
+              <div className="text-[10px] mono text-on-surface font-semibold">IRCA</div>
+            </div>
           </div>
         </div>
       </div>
-      
-      {/* Decorative Corners */}
-      <div className="absolute top-12 left-12 w-24 h-24 border-t-2 border-l-2 border-primary/20 rounded-tl-3xl opacity-40" />
-      <div className="absolute bottom-12 right-12 w-24 h-24 border-b-2 border-r-2 border-tertiary/20 rounded-br-3xl opacity-40" />
-      
-      <style jsx>{`
-        @keyframes scan {
-          0% { top: 0; }
-          50% { top: 100%; }
-          100% { top: 0; }
-        }
-        .animate-scan {
-          animation: scan 2s ease-in-out infinite;
-        }
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes reverse-spin-slow {
-          from { transform: rotate(360deg); }
-          to { transform: rotate(0deg); }
-        }
-        .animate-spin-slow {
-          animation: spin-slow 12s linear infinite;
-        }
-        .animate-reverse-spin-slow {
-          animation: reverse-spin-slow 20s linear infinite;
-        }
-      `}</style>
     </div>
   );
 }

@@ -18,3 +18,4 @@ joblib
 python-dotenv
 requests
 catboost
+redis>=5.0.0
