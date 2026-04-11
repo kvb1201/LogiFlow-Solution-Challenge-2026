@@ -1,12 +1,24 @@
 
-
 from app.services.pipeline_registry import PIPELINES
 from app.services.scorer import score_route
 from app.services.enricher import enrich_segment
 from app.services.validator import validate_route
 
 
-def generate_all_routes(source, destination, constraints):
+def _build_pipeline_payload(data):
+    cargo = getattr(data, "cargo", None)
+    constraints = getattr(data, "constraints", None)
+
+    return {
+        "priority": getattr(data, "priority", "balanced"),
+        "departure_date": getattr(data, "departure_date", None),
+        "preferences": data.preferences.dict() if getattr(data, "preferences", None) else {},
+        "constraints": constraints.dict() if constraints else {},
+        "cargo": cargo.dict() if cargo else {},
+    }
+
+
+def generate_all_routes(source, destination, constraints, pipeline_payload):
     routes = []
 
     excluded = constraints.get("excluded_modes", []) if constraints else []
@@ -15,17 +27,25 @@ def generate_all_routes(source, destination, constraints):
         if pipeline.mode in excluded:
             continue
 
-        routes.extend(pipeline.generate(source, destination))
+        try:
+            generated = pipeline.generate(source, destination, pipeline_payload)
+        except TypeError:
+            generated = pipeline.generate(source, destination)
+
+        routes.extend(generated)
 
     return routes
 
 
 def optimize_routes(data):
+    pipeline_payload = _build_pipeline_payload(data)
+
     # Generate routes using pipelines
     routes = generate_all_routes(
         data.source,
         data.destination,
         data.constraints.dict() if data.constraints else {},
+        pipeline_payload,
     )
 
     if not routes:
