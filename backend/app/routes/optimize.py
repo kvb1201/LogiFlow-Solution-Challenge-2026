@@ -10,13 +10,23 @@ router = APIRouter()
 class Preferences(BaseModel):
     preferred_mode: Optional[str] = None
 
+
+class Cargo(BaseModel):
+    weight: float = 100
+    type: str = "general"
+
+
 class Constraints(BaseModel):
     excluded_modes: List[str] = []
+    max_stops: Optional[int] = None
+    budget_limit: Optional[float] = None
 
 class OptimizeRequest(BaseModel):
     source: str
     destination: str
     priority: str
+    departure_date: Optional[str] = None
+    cargo: Optional[Cargo] = Cargo()
     preferences: Optional[Preferences] = Preferences()
     constraints: Optional[Constraints] = Constraints()
 

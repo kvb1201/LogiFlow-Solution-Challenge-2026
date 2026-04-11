@@ -219,11 +219,11 @@ export default function InputForm() {
     <div className="form-container-glow relative w-full">
       <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-tertiary/10 to-primary/20 rounded-3xl blur-xl opacity-50 animate-pulse-slow pointer-events-none" />
 
-      <div className="relative flex flex-col max-h-[85vh] min-h-0 bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-x-hidden">
+      <div className="relative flex flex-col bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-visible">
         <div className="h-1 w-full shrink-0 bg-gradient-to-r from-transparent via-primary to-transparent animate-shimmer" />
 
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden rounded-b-2xl">
-        <div className="flex flex-col flex-1 min-h-0 p-4 sm:p-6 md:p-8 pb-0 pt-4 sm:pt-6 md:pt-8">
+        <div className="flex flex-col rounded-b-2xl">
+        <div className="flex flex-col p-4 sm:p-6 md:p-8 pb-0 pt-4 sm:pt-6 md:pt-8">
           {/* Header */}
           <div className={`shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6 transition-all duration-700 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
             <div className="flex items-center gap-3">
@@ -249,8 +249,8 @@ export default function InputForm() {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 mt-2">
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 pb-24 scroll-smooth overscroll-y-contain">
+          <form onSubmit={handleSubmit} className="flex flex-col mt-2">
+            <div className="overflow-visible pr-1 pb-6">
             <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
             {/* Source & Destination with autocomplete */}
             <div className={`relative z-[100] md:col-span-2 lg:col-span-3 transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
@@ -417,7 +417,7 @@ export default function InputForm() {
             {/* End scrollable fields */}
 
             <div
-              className={`shrink-0 border-t border-outline-variant/15 bg-surface-container-lowest/95 backdrop-blur-md p-4 -mx-4 sm:-mx-6 md:-mx-8 mt-0 pb-[max(env(safe-area-inset-bottom),1rem)] transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+              className={`border-t border-outline-variant/15 bg-surface-container-lowest/95 backdrop-blur-md p-4 -mx-4 sm:-mx-6 md:-mx-8 mt-0 pb-[max(env(safe-area-inset-bottom),1rem)] transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
             >
               <button
                 type="submit"

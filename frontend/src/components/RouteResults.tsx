@@ -100,6 +100,18 @@ function sanitizeInsights(reason: string | undefined, factors: string[]): string
   return out;
 }
 
+function explainConfidence(confidence: number, route: RoadRoute): string {
+  if (confidence >= 85) return 'Strong trade-off against the current route set with low modeled delay pressure.';
+  if (confidence >= 72) return 'Competitive option with minor trade-offs in cost, time, or risk.';
+  if (delayHrs(route) > 2) return 'Confidence is reduced mainly by modeled delay exposure on this corridor.';
+  return 'Confidence is lower because this route trails the top-ranked option on multiple factors.';
+}
+
+function explainDataSource(route: RoadRoute): string {
+  if (route.ml_summary) return 'Road geometry, internal cost model, and ML traffic/weather delay signals.';
+  return 'Road geometry and internal cost model without an enriched ML delay summary.';
+}
+
 function buildComparisonStrip(routes: RoadRoute[], index: number): string | null {
   if (routes.length < 2) return null;
   const cur = routes[index];
@@ -179,6 +191,8 @@ function RouteCard({
   const insights = sanitizeInsights(route.reason, factors);
   const comparison = buildComparisonStrip(routes, index);
   const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
+  const confidenceNote = explainConfidence(confidence, route);
+  const dataSourceNote = explainDataSource(route);
 
   const dist = Number(route.distance_km ?? 0).toFixed(0);
   const tStr = Number(route.time).toFixed(1);
@@ -322,6 +336,17 @@ function RouteCard({
             <span className="mono text-on-surface/90">{comparison}</span>
           </div>
         )}
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Confidence</div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">{confidenceNote}</p>
+          </div>
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Data source</div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">{dataSourceNote}</p>
+          </div>
+        </div>
 
         {/* Cost breakdown */}
         <div className="mt-4 pt-3 border-t border-outline-variant/10">

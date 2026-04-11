@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   optimizeCargoRoute,
+  optimizeAirRoute,
   getLiveTrainMap,
   getStationInfoDirect,
   getTrainDelay,
@@ -10,10 +11,11 @@ import {
   type Recommendation,
   type RankedOption,
   type LiveTrainPosition,
-  type StationInfo,
   type TrainDelayData,
   type LiveTrainStatus,
   type StationSearchResult,
+  type AirRoute,
+  type AirOptimizeResult,
 } from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -71,12 +73,16 @@ interface LogiFlowState {
   deadlineHours: number;
 
   // Results
+  searchMode: 'rail' | 'road' | 'air';
   recommendations: {
     cheapest: Recommendation | null;
     fastest: Recommendation | null;
     safest: Recommendation | null;
   };
   allOptions: RankedOption[];
+  airRoutes: AirRoute[];
+  selectedAirRouteIndex: number;
+  airConstraintsApplied: AirOptimizeResult['constraints_applied'] | null;
   selectedOptionIndex: number;
   constraintsApplied: OptimizeResult['constraints_applied'] | null;
   routeMetadata: OptimizeResult['route_metadata'] | null;
@@ -111,7 +117,7 @@ interface LogiFlowState {
 
   // UI state
   loading: boolean;
-  loadingMode: 'rail' | 'road' | null;
+  loadingMode: 'rail' | 'road' | 'air' | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -126,6 +132,7 @@ interface LogiFlowState {
   setBudgetMax: (val: number) => void;
   setDeadlineHours: (val: number) => void;
   setSelectedOptionIndex: (idx: number) => void;
+  setSelectedAirRouteIndex: (idx: number) => void;
   setActiveView: (view: 'recommendations' | 'all_options') => void;
   setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
   setSelectedRoute: (idx: number) => void;
@@ -137,7 +144,7 @@ interface LogiFlowState {
   setFuelPrice: (val: number) => void;
 
   handleOptimize: (opts?: {
-    mode?: 'rail' | 'road';
+    mode?: 'rail' | 'road' | 'air';
     avoidTolls?: boolean;
     avoidHighways?: boolean;
     trafficAware?: boolean;
@@ -163,9 +170,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   recommendations: { cheapest: null, fastest: null, safest: null },
   allOptions: [],
+  airRoutes: [],
+  selectedAirRouteIndex: 0,
+  airConstraintsApplied: null,
   selectedOptionIndex: 0,
   constraintsApplied: null,
   routeMetadata: null,
+  searchMode: 'rail',
 
   routes: [],
   selectedRoute: 0,
@@ -204,6 +215,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setBudgetMax: (val) => set({ budgetMax: val }),
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
+  setSelectedAirRouteIndex: (idx) => set({ selectedAirRouteIndex: idx }),
   setActiveView: (view) => set({ activeView: view }),
   setLiveMapMode: (mode) => set({ liveMapMode: mode }),
   setSelectedRoute: (idx) => set({ selectedRoute: idx }),
@@ -220,9 +232,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     loadingMode: null,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
+    airRoutes: [],
+    selectedAirRouteIndex: 0,
+    airConstraintsApplied: null,
     selectedOptionIndex: 0,
     routes: [],
     selectedRoute: 0,
+    searchMode: 'rail',
     error: null,
     trainDelayDetail: null,
     selectedTrainLive: null,
@@ -250,6 +266,37 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
 
     try {
+      if (opts?.mode === 'air') {
+        const maxStops = cargoType === 'Perishable' ? 0 : cargoType === 'Fragile' ? 1 : 2;
+        const result = await optimizeAirRoute({
+          source: source.trim(),
+          destination: destination.trim(),
+          priority,
+          departure_date: departureDate,
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType.toLowerCase(),
+          max_stops: maxStops,
+          budget_limit: budgetMax,
+          deadline_hours: deadlineHours,
+        });
+        set({
+          searchMode: 'air',
+          airRoutes: result.ranked_routes || [],
+          selectedAirRouteIndex: 0,
+          airConstraintsApplied: result.constraints_applied,
+          recommendations: { cheapest: null, fastest: null, safest: null },
+          allOptions: [],
+          constraintsApplied: null,
+          routeMetadata: null,
+          routes: [],
+          selectedRoute: 0,
+          trainDelayDetail: null,
+          selectedTrainLive: null,
+          detailTrainNumber: null,
+          mapFocusedTrainNumber: null,
+        });
+        return;
+      }
       if (opts?.mode === 'road') {
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
@@ -275,8 +322,14 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         })) as RoadOptimizeResponse;
         const all = Array.isArray(raw?.all) ? raw.all : [];
         set({
+          searchMode: 'road',
           routes: all,
           selectedRoute: 0,
+          recommendations: { cheapest: null, fastest: null, safest: null },
+          allOptions: [],
+          airRoutes: [],
+          selectedAirRouteIndex: 0,
+          airConstraintsApplied: null,
         });
         return;
       }
@@ -292,15 +345,21 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       });
 
       set({
+        searchMode: 'rail',
         recommendations: {
           cheapest: result.cheapest,
           fastest: result.fastest,
           safest: result.safest,
         },
         allOptions: result.all_options || [],
+        airRoutes: [],
+        selectedAirRouteIndex: 0,
+        airConstraintsApplied: null,
         constraintsApplied: result.constraints_applied,
         routeMetadata: result.route_metadata,
         selectedOptionIndex: 0,
+        routes: [],
+        selectedRoute: 0,
       });
 
       // Fetch station coordinates for map (from segments)
