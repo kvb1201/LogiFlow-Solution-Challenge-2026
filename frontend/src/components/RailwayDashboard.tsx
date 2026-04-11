@@ -721,9 +721,9 @@ export default function RailwayDashboard() {
       )}
 
       {/* 3-col main layout */}
-      <main className="flex-1 flex min-h-0 overflow-hidden">
+      <main className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden lg:overflow-hidden overflow-y-auto lg:overflow-y-clip">
         {/* Left: route list */}
-        <aside className="w-[27%] flex flex-col border-r border-outline-variant/8 bg-surface-container-low/30 min-h-0">
+        <aside className="w-full lg:w-[27%] flex flex-col border-b lg:border-b-0 lg:border-r border-outline-variant/8 bg-surface-container-low/30 h-[40vh] lg:h-auto min-h-0 shrink-0 lg:shrink">
           {/* Toggle */}
           <div className="p-3 pb-2 shrink-0">
             <div className="flex bg-surface-container/50 rounded-lg p-0.5 border border-outline-variant/8">
@@ -813,7 +813,7 @@ export default function RailwayDashboard() {
         </aside>
 
         {/* Center: Map */}
-        <section className="flex-1 relative bg-[#0d1117] min-h-0">
+        <section className="flex-1 relative bg-[#0d1117] min-h-[450px] lg:min-h-0 border-b lg:border-b-0 border-outline-variant/8">
           <div className="absolute inset-0">
             <MapView
               selectedRec={activeRec}
@@ -848,7 +848,7 @@ export default function RailwayDashboard() {
         </section>
 
         {/* Right: detail panel */}
-        <aside className="w-[26%] bg-surface-container-lowest/40 border-l border-outline-variant/8 overflow-y-auto p-4 min-h-0">
+        <aside className="w-full lg:w-[26%] bg-surface-container-lowest/40 p-4 min-h-0 h-auto lg:h-auto overflow-y-auto shrink-0 lg:shrink border-t lg:border-t-0 border-outline-variant/8">
           <DetailPanel
             rec={activeRec}
             ranked={activeOption}

@@ -13,9 +13,17 @@ def _normalize(values):
         return []
     lo = min(values)
     hi = max(values)
-    if hi == lo:
+    if hi == lo or hi == float("inf") or lo == float("-inf"):
         return [0.5] * len(values)
-    return [(v - lo) / (hi - lo) for v in values]
+    
+    # Handle NaN or Inf in values
+    results = []
+    for v in values:
+        if v == float("inf") or v == float("-inf") or v != v:  # v != v is NaN check
+            results.append(1.0) # Assume worst for inf/NaN
+        else:
+            results.append((v - lo) / (hi - lo))
+    return results
 
 
 def _build_recommendation(route, priority, reason):
@@ -215,26 +223,49 @@ def decide(enriched_routes, payload):
                 
         final_reason = " • ".join(reasoning)
 
+        # Calculate geometry for mapping route
+        option_geometry = []
+        for t in r.get("trains", []):
+            t_no = t.get("train_no")
+            f_st = t.get("from_station")
+            t_st = t.get("to_station")
+            if t_no and f_st and t_st:
+                try:
+                    g = get_train_geometry(t_no, f_st, t_st)
+                    if g:
+                        option_geometry.extend(g)
+                except Exception:
+                    pass
+        if not option_geometry:
+            option_geometry = None
+
+        def _safe_float(v):
+            if v == float("inf") or v == float("-inf") or v != v:
+                return 0.0
+            return v
+
         all_options.append({
             "rank": 0,
             "selection_reason": final_reason,
             "train_number": first_train.get("train_no", ""),
             "train_name": first_train.get("train_name", ""),
+            "train_number": first_train.get("train_no", ""),
+            "train_name": first_train.get("train_name", ""),
             "train_type": first_train.get("train_type", ""),
             "route_type": r.get("route_type", "direct"),
-            "parcel_cost_inr": round(r.get("parcel_cost_inr", 0), 0),
-            "effective_hours": round(r.get("effective_hours", 0), 1),
-            "risk_score": r.get("risk_score", 0),
-            "booking_ease": r.get("booking_ease", 0.5),
+            "parcel_cost_inr": round(_safe_float(r.get("parcel_cost_inr", 0)), 0),
+            "effective_hours": round(_safe_float(r.get("effective_hours", 0)), 1),
+            "risk_score": _safe_float(r.get("risk_score", 0)),
+            "booking_ease": _safe_float(r.get("booking_ease", 0.5)),
             "has_transfer": r.get("has_transfer", False),
-            "total_score": round(total_score, 4),
+            "total_score": round(_safe_float(total_score), 4),
             "distance_km": r.get("total_distance_km", 0),
             "avg_speed_kmph": r.get("avg_speed_kmph", 0),
             "avg_delay_min": round(avg_delay, 1),
             "delay_source": "railradar_api" if real_delay else "ml_prediction",
             "running_days": first_train.get("running_days", []),
             "segments": r.get("segments", []),
-            "geometry": geometry,
+            "geometry": option_geometry,
             "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
             "weather_factor": r.get("weather_factor", 1.0),
@@ -242,6 +273,7 @@ def decide(enriched_routes, payload):
         })
 
     all_options.sort(key=lambda x: x["total_score"])
+    all_options = all_options[:15]  # Limit to top 15 to keep JSON size manageable
     for i, opt in enumerate(all_options):
         opt["rank"] = i + 1
 
