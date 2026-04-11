@@ -63,6 +63,10 @@ def _build_recommendation(route, priority, reason):
         "tariff_scale": route.get("tariff_scale", "S"),
         "tariff_breakdown": route.get("tariff_breakdown", {}),
         "data_source": route.get("data_source", "unknown"),
+        # Weather fields (from OpenWeather integration)
+        "weather_factor": route.get("weather_factor", 1.0),
+        "weather_risk": route.get("weather_risk", 0.0),
+        "weather_data": route.get("weather_data"),
     }
     return rec
 
@@ -182,6 +186,8 @@ def decide(enriched_routes, payload):
             "segments": r.get("segments", []),
             "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
+            "weather_factor": r.get("weather_factor", 1.0),
+            "weather_risk": r.get("weather_risk", 0.0),
         })
 
     all_options.sort(key=lambda x: x["total_score"])
