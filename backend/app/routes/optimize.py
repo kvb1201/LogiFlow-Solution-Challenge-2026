@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
-from app.services.optimizer import optimize_routes
+from app.pipelines.hybrid.pipeline import HybridPipeline
 
 router = APIRouter()
 
@@ -30,79 +30,19 @@ class OptimizeRequest(BaseModel):
     preferences: Optional[Preferences] = Preferences()
     constraints: Optional[Constraints] = Constraints()
 
-# ------------------ Coordinates Mapping ------------------
-from app.services.enricher import enrich_segment
-
-# ------------------ Mock Route Generator ------------------
-
-def generate_routes(source, destination):
-    return [
-        {
-            "type": "Road",
-            "mode": "road",
-            "time": 7,
-            "cost": 3000,
-            "risk": 0.6,
-            "segments": [
-                {"mode": "Road", "from": source, "to": destination}
-            ],
-        },
-        {
-            "type": "Rail",
-            "mode": "rail",
-            "time": 8,
-            "cost": 2000,
-            "risk": 0.3,
-            "segments": [
-                {"mode": "Rail", "from": source, "to": destination}
-            ],
-        },
-        {
-            "type": "Water",
-            "mode": "water",
-            "time": 10,
-            "cost": 1500,
-            "risk": 0.5,
-            "segments": [
-                {"mode": "Water", "from": source, "to": "Port"},
-                {"mode": "Water", "from": "Port", "to": destination},
-            ],
-        },
-        {
-            "type": "Hybrid",
-            "mode": "hybrid",
-            "time": 6,
-            "cost": 2500,
-            "risk": 0.4,
-            "segments": [
-                {"mode": "Road", "from": source, "to": "Midpoint"},
-                {"mode": "Rail", "from": "Midpoint", "to": destination},
-            ],
-        },
-    ]
-
-# ------------------ Decision Engine ------------------
-
-def score_route(route, priority, preferred_mode):
-    time = route["time"]
-    cost = route["cost"]
-    risk = route["risk"]
-
-    if priority == "Fast":
-        score = time * 0.6 + cost * 0.2 + risk * 0.2
-    elif priority == "Cheap":
-        score = time * 0.2 + cost * 0.6 + risk * 0.2
-    else:  # Safe
-        score = time * 0.2 + cost * 0.2 + risk * 0.6
-
-    # Preference boost
-    if preferred_mode and route["mode"] == preferred_mode:
-        score *= 0.85
-
-    return score
-
 # ------------------ API ------------------
 
 @router.post("/optimize")
 def optimize(data: OptimizeRequest):
-    return optimize_routes(data)
+    pipeline = HybridPipeline()
+
+    payload = {
+        "priority": data.priority.lower(),
+        "cargo_weight_kg": data.cargo.weight if data.cargo else 100,
+        "cargo_type": data.cargo.type if data.cargo else "general",
+        "budget": data.constraints.budget_limit if data.constraints else None,
+        "max_stops": data.constraints.max_stops if data.constraints else None,
+        "preferred_mode": data.preferences.preferred_mode if data.preferences else None
+    }
+
+    return pipeline.generate(data.source, data.destination, payload)
