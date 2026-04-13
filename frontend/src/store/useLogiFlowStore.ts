@@ -426,15 +426,27 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
+      const isNoRouteCase =
+        /no train routes found/i.test(msg) ||
+        /no feasible routes found/i.test(msg) ||
+        /route is not available right now/i.test(msg);
+      const friendlyNoRouteMessage =
+        'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       set({
-        error: msg,
+        error: isNoRouteCase ? friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         airRoutes: [],
         selectedAirRouteIndex: 0,
         airConstraintsApplied: null,
+        recommendations: { cheapest: null, fastest: null, safest: null },
+        allOptions: [],
+        constraintsApplied: null,
+        routeMetadata: null,
       });
-      console.error('Optimize error:', err);
+      if (!isNoRouteCase) {
+        console.error('Optimize error:', err);
+      }
     } finally {
       set({ loading: false, loadingMode: null });
     }

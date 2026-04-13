@@ -264,6 +264,36 @@ export interface AirOptimizeResult {
   };
 }
 
+export interface HybridComparisonRow {
+  mode: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  confidence?: number | null;
+}
+
+export interface HybridModeRoute {
+  mode?: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  train_name?: string | null;
+  airline?: string | null;
+  distance_km?: number | null;
+}
+
+export interface HybridOptimizeResult {
+  recommended_mode?: string | null;
+  reason?: string | null;
+  tradeoffs?: string[] | null;
+  comparison?: HybridComparisonRow[] | null;
+  best_per_mode?: {
+    road?: HybridModeRoute | null;
+    rail?: HybridModeRoute | null;
+    air?: HybridModeRoute | null;
+  } | null;
+}
+
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
@@ -273,8 +303,17 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Optimize failed (${res.status}): ${text}`);
+    let detail = '';
+    try {
+      const data = await res.json();
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      const text = await res.text();
+      detail = text.trim();
+    }
+    throw new Error(detail || `Optimize failed (${res.status})`);
   }
   return res.json();
 }
@@ -311,6 +350,23 @@ export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimize
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Air optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function optimizeHybridRoute(payload: {
+  source: string;
+  destination: string;
+  priority: string;
+}): Promise<HybridOptimizeResult> {
+  const res = await fetch(`${BACKEND_BASE}/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
   }
   return res.json();
 }
