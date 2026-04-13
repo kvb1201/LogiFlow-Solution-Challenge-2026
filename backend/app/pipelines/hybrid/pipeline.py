@@ -1,6 +1,5 @@
 from app.services.pipeline_registry import get_pipeline
 from .normalizer import normalize_road, normalize_rail, normalize_air
-from .comparator import score_routes
 from .explain import generate_tradeoffs, generate_mode_insights, generate_reason
 
 
@@ -113,8 +112,89 @@ class HybridPipeline:
             print(f"  raw results: {results}")
             return {"error": "No routes available"}
 
-        ranked = score_routes(normalized, priority)
-        best = ranked[0]
+
+        # --- NEW: relative normalization ---
+        candidates = normalized
+
+        best_time = min(c["time_hr"] for c in candidates)
+        best_cost = min(c["cost_inr"] for c in candidates)
+        best_risk = min(c["risk"] for c in candidates)
+
+        for c in candidates:
+            c["norm_time"] = c["time_hr"] / max(best_time, 1e-6)
+            c["norm_cost"] = c["cost_inr"] / max(best_cost, 1e-6)
+            c["norm_risk"] = c["risk"] / max(best_risk, 1e-6)
+
+        # --- NEW: dominance check ---
+        def dominates(a, b):
+            better_or_equal = (
+                a["time_hr"] <= b["time_hr"] and
+                a["cost_inr"] <= b["cost_inr"] and
+                a["risk"] <= b["risk"]
+            )
+            strictly_better = (
+                a["time_hr"] < b["time_hr"] or
+                a["cost_inr"] < b["cost_inr"] or
+                a["risk"] < b["risk"]
+            )
+            return better_or_equal and strictly_better
+
+        dominant = None
+        for c1 in candidates:
+            if all(dominates(c1, c2) for c2 in candidates if c1 != c2):
+                dominant = c1
+                break
+
+        # --- NEW: non-linear penalty ---
+        def compute_penalty(c):
+            penalty = 0
+
+            if c["norm_time"] > 2:
+                penalty += 0.4
+            elif c["norm_time"] > 1.5:
+                penalty += 0.2
+
+            if c["norm_cost"] > 3:
+                penalty += 0.3
+            elif c["norm_cost"] > 2:
+                penalty += 0.15
+
+            return penalty
+
+        # --- NEW: priority weights ---
+        if priority == "cost":
+            w = {"time": 0.2, "cost": 0.6, "risk": 0.2}
+        elif priority == "time":
+            w = {"time": 0.6, "cost": 0.2, "risk": 0.2}
+        elif priority == "safety":
+            w = {"time": 0.2, "cost": 0.2, "risk": 0.6}
+        else:
+            w = {"time": 0.4, "cost": 0.3, "risk": 0.3}
+
+        # --- NEW: scoring ---
+        if dominant:
+            best = dominant
+            ranked = sorted(candidates, key=lambda x: (
+                x["time_hr"], x["cost_inr"], x["risk"]
+            ))
+        else:
+            for c in candidates:
+                penalty = compute_penalty(c)
+                c["score"] = (
+                    w["time"] * c["norm_time"] +
+                    w["cost"] * c["norm_cost"] +
+                    w["risk"] * c["norm_risk"]
+                ) + penalty
+
+            ranked = sorted(candidates, key=lambda x: x["score"])
+            best = ranked[0]
+
+        # --- cleanup temp fields ---
+        for c in candidates:
+            c.pop("norm_time", None)
+            c.pop("norm_cost", None)
+            c.pop("norm_risk", None)
+            c.pop("score", None)
 
         # --- explainability ---
         reason = generate_reason(best, priority)
