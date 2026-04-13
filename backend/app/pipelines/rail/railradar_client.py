@@ -64,8 +64,9 @@ IRCTC_CONNECT_KEYS = list(dict.fromkeys([k.strip() for k in _connect_keys_raw.sp
 random.shuffle(IRCTC_CONNECT_KEYS)
 _connect_key_idx = -1  # Start at -1 so first call uses index 0
 _connect_last_times = {}
-ENABLE_IRCTC_CONNECT = os.getenv("RAIL_ENABLE_IRCTC_CONNECT", "false").lower() == "true"
-ENABLE_IRCTC_RAPIDAPI = os.getenv("RAIL_ENABLE_IRCTC_RAPIDAPI", "false").lower() == "true"
+# Legacy providers deprecated in RailYatri/ConfirmTkt-first pipeline.
+ENABLE_IRCTC_CONNECT = False
+ENABLE_IRCTC_RAPIDAPI = False
 
 # ConfirmTkt Web (Primary HTML scrape source for trains-between-stations)
 CONFIRMTKT_WEB_BASE_URL = os.environ.get(
@@ -91,6 +92,11 @@ _key_rate_limit_until = {k: 0 for k in IRCTC_API_KEYS}
 _connect_key_rate_limit_until = {k: 0 for k in IRCTC_CONNECT_KEYS}
 _MIN_INTERVAL = 1.1  # 1.1s per-key limits so we can multiplex keys
 _BAN_DURATION = 300  # 5 minutes ban on 429
+
+# ConfirmTkt scraping guardrails (keep API responsive even if provider stalls).
+_CONFIRMTKT_CONNECT_TIMEOUT_S = float(os.getenv("CONFIRMTKT_CONNECT_TIMEOUT_S", "3"))
+_CONFIRMTKT_READ_TIMEOUT_S = float(os.getenv("CONFIRMTKT_READ_TIMEOUT_S", "4"))
+_CONFIRMTKT_TOTAL_BUDGET_S = float(os.getenv("CONFIRMTKT_TOTAL_BUDGET_S", "6"))
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -475,57 +481,12 @@ def search_stations(query):
     if not q:
         return []
 
-    # Versioned key so old offline-first cache entries do not shadow API-first flow.
-    key = _cache_key("station_search_v2", {"q": q.lower()})
+    key = _cache_key("station_search_offline_v1", {"q": q.lower()})
     cached = _cache_get(key)
     if cached is not None:
         return cached
 
-    # 1) IRCTC Connect first (preferred)
-    connect_results = []
-    if ENABLE_IRCTC_CONNECT and IRCTC_CONNECT_KEYS and _connect_secret:
-        connect_candidates = [
-            f"/api/searchStation/{q}",
-            f"/api/searchStation?query={q}",
-            f"/api/v1/searchStation/{q}",
-            f"/api/v1/searchStation?query={q}",
-        ]
-        for path in connect_candidates:
-            data = _irctc_connect_get(path)
-            rows = data if isinstance(data, list) else []
-            if rows:
-                connect_results = [
-                    {
-                        "code": s.get("code", "") or s.get("station_code", ""),
-                        "name": s.get("name", "") or s.get("station_name", ""),
-                        "state_name": s.get("state_name", "") or s.get("state", ""),
-                    }
-                    for s in rows
-                    if (s.get("code") or s.get("station_code")) and (s.get("name") or s.get("station_name"))
-                ]
-                if connect_results:
-                    print(f"  [IRCTC Connect] Found {len(connect_results)} stations for: {q}")
-                    _cache_set(key, connect_results, 30 * 24 * 3600)
-                    return connect_results
-
-    # 2) Other APIs (RapidAPI pool)
-    data = _get("/api/v1/searchStation", {"query": q}) if ENABLE_IRCTC_RAPIDAPI else None
-    rows = data if isinstance(data, list) else []
-    rapid_results = [
-        {
-            "code": s.get("code", ""),
-            "name": s.get("name", ""),
-            "state_name": s.get("state_name", ""),
-        }
-        for s in rows
-        if s.get("code") and s.get("name")
-    ]
-    if rapid_results:
-        print(f"  [IRCTC RapidAPI] Found {len(rapid_results)} stations for: {q}")
-        _cache_set(key, rapid_results, 30 * 24 * 3600)
-        return rapid_results
-
-    # 3) Offline CSV fallback (last resort)
+    # Offline-only station search.
     offline_results = search_offline_stations(q)
     if offline_results:
         print(f"  [Offline Data] Found {len(offline_results)} stations for: {q}")
@@ -540,7 +501,7 @@ def get_station_info(station_code):
     Get station details. Uses searchStation + getTrainSchedule for lat/lng.
     Returns: {name, code, lat, lng, state, zone} or None
     """
-    data = _get("/api/v1/searchStation", {"query": station_code})
+    data = search_offline_stations(station_code)
     from app.utils.coordinates import get_coords
 
     if not data or not isinstance(data, list):
@@ -1073,7 +1034,15 @@ def _confirmtkt_running_days_list(running_days):
     return out
 
 
-def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyyyy):
+def _remaining_timeout(deadline, connect_timeout_s, read_timeout_s):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    bounded = min(read_timeout_s, max(0.5, remaining))
+    return (connect_timeout_s, bounded)
+
+
+def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyyyy, timeout_cfg, deadline):
     """
     HTML-derived fallback:
       1) parse bundled JS URL from ConfirmTkt HTML
@@ -1081,9 +1050,12 @@ def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyy
       3) request train JSON and return trainList rows
     """
     try:
+        req_timeout = _remaining_timeout(deadline, timeout_cfg[0], timeout_cfg[1])
+        if req_timeout is None:
+            return []
         page_resp = requests.get(
             page_url,
-            timeout=20,
+            timeout=req_timeout,
             headers={"User-Agent": "Mozilla/5.0"},
         )
         if not page_resp.ok:
@@ -1099,7 +1071,10 @@ def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyy
             return []
 
         bundle_url = urljoin(page_url, script_match.group(1))
-        js_resp = requests.get(bundle_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        req_timeout = _remaining_timeout(deadline, timeout_cfg[0], timeout_cfg[1])
+        if req_timeout is None:
+            return []
+        js_resp = requests.get(bundle_url, timeout=req_timeout, headers={"User-Agent": "Mozilla/5.0"})
         if not js_resp.ok:
             return []
 
@@ -1123,6 +1098,9 @@ def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyy
         if client_match:
             clientid = client_match.group(1)
 
+        req_timeout = _remaining_timeout(deadline, timeout_cfg[0], timeout_cfg[1])
+        if req_timeout is None:
+            return []
         api_resp = requests.get(
             endpoint,
             params={
@@ -1139,7 +1117,7 @@ def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyy
                 "Accept": "application/json",
                 "User-Agent": "Mozilla/5.0",
             },
-            timeout=20,
+            timeout=req_timeout,
         )
         if not api_resp.ok:
             print(f"  [ConfirmTkt HTML] Asset-derived API HTTP {api_resp.status_code}")
@@ -1197,10 +1175,12 @@ def _confirmtkt_trains_between(from_code, to_code, date_of_journey):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
+    timeout_cfg = (_CONFIRMTKT_CONNECT_TIMEOUT_S, _CONFIRMTKT_READ_TIMEOUT_S)
+    deadline = time.monotonic() + max(_CONFIRMTKT_TOTAL_BUDGET_S, _CONFIRMTKT_READ_TIMEOUT_S)
 
     try:
         print(f"  [ConfirmTkt HTML] 🌐 Scraping trains: {from_code}→{to_code} ({doj_ddmmyyyy})")
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=timeout_cfg)
         if not resp.ok:
             print(f"  [ConfirmTkt HTML] HTTP {resp.status_code}")
             return None
@@ -1241,11 +1221,19 @@ def _confirmtkt_trains_between(from_code, to_code, date_of_journey):
 
         # HTML app-shell fallback: derive API call details from page assets.
         if not rows:
+            if time.monotonic() >= deadline:
+                print(
+                    f"  [ConfirmTkt HTML] ⏱️ Timeout budget exceeded for {from_code}→{to_code} "
+                    f"({doj_ddmmyyyy}); skipping asset fallback."
+                )
+                return None
             rows = _confirmtkt_fetch_trains_via_assets(
                 url,
                 from_code,
                 to_code,
                 doj_ddmmyyyy,
+                timeout_cfg,
+                deadline,
             )
 
         if not isinstance(rows, list) or not rows:
@@ -1358,13 +1346,47 @@ def get_trains_between(from_code, to_code, date_of_journey=None):
         # Use tomorrow's date to get valid results
         date_of_journey = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # ── Tier 1: ConfirmTkt HTML scrape (primary) ───────────────────────
+    # ── Tier 0: Unified orchestration cache (cache-first) ───────────────
+    ttl = _get_ttl_for_endpoint("trainBetweenStations")
+    orchestrated_key = _cache_key(
+        "trainBetween_orchestrated_v1",
+        {
+            "from": str(from_code or "").strip().upper(),
+            "to": str(to_code or "").strip().upper(),
+            "date": str(date_of_journey or "").strip(),
+        },
+    )
+    if ttl > 0:
+        cached = _cache_get(orchestrated_key)
+        if cached is not None:
+            print(f"  [Rail Cache] ✅ Cache hit {from_code}→{to_code} ({date_of_journey})")
+            return cached
+
+    # ── Tier 1: RailYatri trains-between (primary) ──────────────────────
+    try:
+        from app.pipelines.rail.railyatri_client import fetch_trains_between as _ry_trains_between
+
+        railyatri_data = _ry_trains_between(from_code, to_code, date_of_journey)
+        if railyatri_data and railyatri_data.get("trains"):
+            print(
+                f"  [RailYatri] ✅ {railyatri_data.get('totalTrains', 0)} trains "
+                f"{from_code}→{to_code} ({date_of_journey})"
+            )
+            if ttl > 0:
+                _cache_set(orchestrated_key, railyatri_data, ttl)
+            return railyatri_data
+        print(f"  [RailYatri] ⚠️ No trains parsed for {from_code}→{to_code} ({date_of_journey})")
+    except Exception as e:
+        print(f"  [RailYatri] ❌ Fallback failed: {e}")
+
+    # ── Tier 2: ConfirmTkt HTML fallback ─────────────────────────────────
     confirmtkt_data = _confirmtkt_trains_between(from_code, to_code, date_of_journey)
     if confirmtkt_data and confirmtkt_data.get("trains"):
+        if ttl > 0:
+            _cache_set(orchestrated_key, confirmtkt_data, ttl)
         return confirmtkt_data
 
-    # Required order: Redis cache (inside _confirmtkt_trains_between) -> ConfirmTkt HTML.
-    # No additional provider fallback here.
+    # Required order: cache -> RailYatri -> ConfirmTkt HTML.
     return None
 
 
@@ -1553,28 +1575,8 @@ def get_train_schedule(train_number):
     Get full schedule for a train with per-station details.
     Returns: {trainType, trainName, route: [{station_code, station_name, ...}]}
     """
-    # ── IRCTC Connect first (key pool), then RapidAPI ──────────────────
-    if ENABLE_IRCTC_CONNECT and IRCTC_CONNECT_KEYS and _connect_secret:
-        ttl = _get_ttl_for_endpoint("getTrainSchedule")
-        ck = None
-        if ttl > 0:
-            ck = _cache_key("irctc_connect_schedule", {"tn": str(train_number)})
-            cached = _cache_get(ck)
-            if cached is not None: return cached
-            
-        path = f"/api/getTrainInfo/{train_number}"
-        connect_data = _irctc_connect_get(path)
-        if connect_data:
-            formatted = _format_connect_schedule_to_rapidapi(connect_data)
-            if formatted and formatted.get("route"):
-                print(f"  [IRCTC Connect] Schedule fetched for {train_number}")
-                if ttl > 0 and ck: _cache_set(ck, formatted, ttl)
-                return formatted
-
-    data = _get("/api/v1/getTrainSchedule", {"trainNo": str(train_number)}) if ENABLE_IRCTC_RAPIDAPI else None
-    if not data or not isinstance(data, dict):
-        return None
-    return data
+    # IRCTC Connect / RapidAPI schedule APIs are deprecated in this flow.
+    return None
 
 
 def get_train_data(train_number, data_type="static"):
