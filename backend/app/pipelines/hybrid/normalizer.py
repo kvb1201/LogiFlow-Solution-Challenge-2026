@@ -45,21 +45,24 @@ def normalize_road(route):
 
 
 def normalize_rail(route):
-    time = max(float(route.get("duration_hours", 0)), 0.0)
-    cost = float(route.get("parcel_cost_inr", 0))
-    risk = float(route.get("risk_score", 0.3))
-    delay = float(route.get("predicted_delay_min", 0)) / 60.0
+    time = max(float(route.get("time", route.get("duration_hours", 0))), 0.0)
+    cost = float(route.get("cost", route.get("parcel_cost_inr", 0)))
+    risk = float(route.get("risk", route.get("risk_score", 0.3)))
+    delay = float(route.get("predicted_delay", route.get("predicted_delay_min", 0)))
+    # ensure delay is in hours
+    if delay > 10:  # likely in minutes
+        delay = delay / 60.0
 
     delay_ratio = delay / max(time, EPS)
     delay_ratio = clamp(delay_ratio)
-    delay_minutes = float(route.get("predicted_delay_min", 0))
+    delay_minutes = delay * 60
     punctuality = clamp(1 - (delay_minutes / 120.0))  # degrade if delays high
 
     confidence = (
         0.4 * (1 - risk) +
         0.3 * punctuality +
         0.2 * (1 - delay_ratio) +
-        0.1 * (1 - route.get("weather_risk", 0))
+        0.1 * (1 - float(route.get("weather_risk", 0)))
     )
 
     return {
@@ -71,7 +74,7 @@ def normalize_rail(route):
         "confidence": clamp(confidence),
         "meta": {
             "reliability": 1 - risk,
-            "weather_risk": route.get("weather_risk", 0),
+            "weather_risk": float(route.get("weather_risk", 0)),
             "congestion_risk": 0.2,
             "stops": 1 if route.get("has_transfer") else 0
         },

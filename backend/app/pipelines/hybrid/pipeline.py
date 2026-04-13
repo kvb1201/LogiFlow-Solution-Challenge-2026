@@ -49,6 +49,10 @@ class HybridPipeline:
 
         # --- extract best routes ---
         road_best = road_res.get("best")
+
+        # Debug print for rail_res
+        print("\n[HYBRID DEBUG] rail_res:", rail_res, "\n")
+
         if priority == "cost":
             rail_best = rail_res.get("cheapest")
         elif priority == "time":
@@ -56,7 +60,23 @@ class HybridPipeline:
         elif priority == "safety":
             rail_best = rail_res.get("safest")
         else:
-            rail_best = rail_res.get("cheapest") or rail_res.get("fastest") or rail_res.get("safest")
+            rail_best = (
+                rail_res.get("cheapest") or
+                rail_res.get("fastest") or
+                rail_res.get("safest") or
+                rail_res.get("best")
+            )
+
+        # 🔥 Fallback handling if structured keys are missing
+        if not rail_best:
+            if isinstance(rail_res, dict):
+                if rail_res.get("all"):
+                    rail_best = rail_res["all"][0]
+                elif rail_res.get("alternatives"):
+                    rail_best = rail_res["alternatives"][0]
+            elif isinstance(rail_res, list) and len(rail_res) > 0:
+                rail_best = rail_res[0]
+
         air_best = air_res.get("best") or air_res.get("best_route")
 
         normalized = []
