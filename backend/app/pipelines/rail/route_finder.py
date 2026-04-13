@@ -44,6 +44,18 @@ def _resolve_stations(city_name):
     return out
 
 
+def get_station_candidates(place: str) -> list[str]:
+    """
+    Public helper: return station-code candidates attempted for a user-entered place.
+    Used for user-facing fallback messages when no trains are found.
+    """
+    try:
+        return _resolve_stations(place)
+    except Exception:
+        raw = (place or "").strip()
+        return [raw] if raw else []
+
+
 def _minutes_to_time_str(minutes):
     """Convert minutes-from-midnight to HH:MM string."""
     if minutes is None:

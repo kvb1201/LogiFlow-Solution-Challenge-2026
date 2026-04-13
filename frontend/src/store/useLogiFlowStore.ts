@@ -4,8 +4,6 @@ import {
   optimizeAirRoute,
   getLiveTrainMap,
   getStationInfoDirect,
-  getTrainDelay,
-  getLiveTrainStatus,
   getLocationCoords,
   fetchRoadRoutes,
   type OptimizeResult,
@@ -433,7 +431,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       const friendlyNoRouteMessage =
         'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       set({
-        error: isNoRouteCase ? friendlyNoRouteMessage : msg,
+        // Preserve backend guidance (e.g., suggested station codes) when available.
+        error: isNoRouteCase ? (msg || friendlyNoRouteMessage) : msg,
         routes: [],
         selectedRoute: 0,
         airRoutes: [],
@@ -490,33 +489,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   fetchTrainDelayAndLive: async (trainNumber: string) => {
     const no = trainNumber.trim();
     if (!no) return;
-    set({ detailTrainNumber: no });
-    try {
-      const [delay, live] = await Promise.all([
-        getTrainDelay(no),
-        getLiveTrainStatus(no),
-      ]);
-      set({
-        trainDelayDetail: delay,
-        selectedTrainLive: live,
-      });
-    } catch (e) {
-      console.warn('Train detail fetch failed:', e);
-      set({ trainDelayDetail: null, selectedTrainLive: null });
-    }
+    // Delay/live per-train probes are disabled for RailYatri-first flow.
+    set({ detailTrainNumber: no, trainDelayDetail: null, selectedTrainLive: null });
   },
 
   /** Live map dot: only refresh live JSON — keep route delay breakdown intact */
   setMapFocusedTrain: (trainNumber) => {
     set({ mapFocusedTrainNumber: trainNumber });
-    if (!trainNumber) return;
-    void (async () => {
-      try {
-        const live = await getLiveTrainStatus(trainNumber);
-        set({ selectedTrainLive: live });
-      } catch (e) {
-        console.warn('Live status fetch failed:', e);
-      }
-    })();
+    // Do not fetch legacy live endpoint from map interactions.
   },
 }));

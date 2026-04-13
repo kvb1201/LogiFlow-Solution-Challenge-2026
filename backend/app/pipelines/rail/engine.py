@@ -4,8 +4,11 @@ Produces three primary recommendations (cheapest, fastest, safest)
 and a balanced composite ranking of all feasible options.
 """
 
+import os
+
 from app.pipelines.rail.railradar_client import get_train_geometry
 
+_ENABLE_GEOMETRY_LOOKUPS = os.getenv("RAIL_ENGINE_ENABLE_GEOMETRY_LOOKUPS", "false").lower() == "true"
 
 def _normalize(values):
     """Min-max normalize a list of values to 0-1 range."""
@@ -47,20 +50,22 @@ def _build_recommendation(route, priority, reason):
         }
 
     # Calculate geometry for mapping route
-    geometry = []
-    for t in route.get("trains", []):
-        t_no = t.get("train_no")
-        f_st = t.get("from_station")
-        t_st = t.get("to_station")
-        if t_no and f_st and t_st:
-            try:
-                g = get_train_geometry(t_no, f_st, t_st)
-                if g:
-                    geometry.extend(g)
-            except Exception:
-                pass
-    if not geometry:
-        geometry = None
+    geometry = None
+    if _ENABLE_GEOMETRY_LOOKUPS:
+        geometry = []
+        for t in route.get("trains", []):
+            t_no = t.get("train_no")
+            f_st = t.get("from_station")
+            t_st = t.get("to_station")
+            if t_no and f_st and t_st:
+                try:
+                    g = get_train_geometry(t_no, f_st, t_st)
+                    if g:
+                        geometry.extend(g)
+                except Exception:
+                    pass
+        if not geometry:
+            geometry = None
 
     key_factors = [reason]
     if route.get("risk_score", 0) < 0.2:
@@ -232,20 +237,22 @@ def decide(enriched_routes, payload):
         final_reason = " • ".join(reasoning)
 
         # Calculate geometry for mapping route
-        option_geometry = []
-        for t in r.get("trains", []):
-            t_no = t.get("train_no")
-            f_st = t.get("from_station")
-            t_st = t.get("to_station")
-            if t_no and f_st and t_st:
-                try:
-                    g = get_train_geometry(t_no, f_st, t_st)
-                    if g:
-                        option_geometry.extend(g)
-                except Exception:
-                    pass
-        if not option_geometry:
-            option_geometry = None
+        option_geometry = None
+        if _ENABLE_GEOMETRY_LOOKUPS:
+            option_geometry = []
+            for t in r.get("trains", []):
+                t_no = t.get("train_no")
+                f_st = t.get("from_station")
+                t_st = t.get("to_station")
+                if t_no and f_st and t_st:
+                    try:
+                        g = get_train_geometry(t_no, f_st, t_st)
+                        if g:
+                            option_geometry.extend(g)
+                    except Exception:
+                        pass
+            if not option_geometry:
+                option_geometry = None
 
         def _safe_float(v):
             if v == float("inf") or v == float("-inf") or v != v:
