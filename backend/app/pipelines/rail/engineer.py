@@ -5,6 +5,8 @@ Cost uses official IRCA tariff tables (slab-based, not formula).
 Integrates OpenWeather API for live weather-aware risk and ETA adjustment.
 """
 
+import os
+import time
 from datetime import datetime
 from app.pipelines.rail.config import (
     RISK_MULTIPLIERS,
@@ -15,6 +17,10 @@ from app.pipelines.rail.tariff import (
     determine_scale,
     get_tariff_breakdown,
 )
+
+_LOOKUP_BUDGET_S = float(os.getenv("RAIL_ENGINEER_LOOKUP_BUDGET_S", "4"))
+_MAX_EXTERNAL_LOOKUPS = int(os.getenv("RAIL_ENGINEER_MAX_EXTERNAL_LOOKUPS", "2"))
+_ENABLE_EXTERNAL_LOOKUPS = os.getenv("RAIL_ENGINEER_ENABLE_EXTERNAL_LOOKUPS", "true").lower() == "true"
 
 
 # calc_parcel_cost is now imported from tariff.py
@@ -123,6 +129,29 @@ def get_real_delay_data(train_number):
         "station_delays": station_delays,
         "data_source": "railradar_api_real",
     }
+
+
+def get_railyatri_running_record(train_number: str) -> dict | None:
+    """
+    Fetch a compact "running record" signal from RailYatri for the given train.
+    This is used as an additional reliability signal when real delay API data is missing.
+    """
+    try:
+        from app.pipelines.rail.railyatri_client import fetch_live_status
+        return fetch_live_status(str(train_number))
+    except Exception:
+        return None
+
+
+def get_railyatri_past_track_record(train_number: str, days_back: int = 5) -> dict | None:
+    """
+    Multi-sample past track record from RailYatri, aggregated for ML / explainability.
+    """
+    try:
+        from app.pipelines.rail.railyatri_client import fetch_past_track_record
+        return fetch_past_track_record(str(train_number), days_back=days_back)
+    except Exception:
+        return None
 
 
 def calc_risk_score(route, departure_date_str="2025-06-01", weather_data=None):
@@ -320,6 +349,11 @@ def engineer_features(routes, payload, weather_override=None):
     weather_factor, weather_risk = _compute_weather_factor(weather_data)
 
     enriched = []
+    delay_cache: dict[str, dict | None] = {}
+    ry_live_cache: dict[str, dict | None] = {}
+    ry_agg_cache: dict[str, dict | None] = {}
+    external_lookups = 0
+    lookup_deadline = time.monotonic() + max(1.0, _LOOKUP_BUDGET_S)
     for route in routes:
         distance = route.get("total_distance_km", 0)
         if distance <= 0:
@@ -327,14 +361,52 @@ def engineer_features(routes, payload, weather_override=None):
 
         # ── Fetch real delay data from RailRadar ──────────────────────
         real_delay = None
-        for t in route.get("trains", []):
-            train_no = t.get("train_no", "")
-            if train_no and len(train_no) == 5:
-                real_delay = get_real_delay_data(train_no)
-                if real_delay:
-                    break
+        railyatri_record = None
+        railyatri_agg = None
+        if _ENABLE_EXTERNAL_LOOKUPS:
+            provider = str(route.get("data_source") or "").lower()
+            for t in route.get("trains", []):
+                train_no = t.get("train_no", "")
+                if train_no and len(train_no) == 5:
+                    budget_exhausted = (
+                        time.monotonic() >= lookup_deadline or external_lookups >= _MAX_EXTERNAL_LOOKUPS
+                    )
+
+                    # RailYatri reliability signals first (past record before ML/ranking).
+                    budget_exhausted = (
+                        time.monotonic() >= lookup_deadline or external_lookups >= _MAX_EXTERNAL_LOOKUPS
+                    )
+                    if not budget_exhausted and railyatri_agg is None:
+                        if train_no not in ry_agg_cache:
+                            ry_agg_cache[train_no] = get_railyatri_past_track_record(train_no, days_back=1)
+                            external_lookups += 1
+                        railyatri_agg = ry_agg_cache.get(train_no)
+
+                    budget_exhausted = (
+                        time.monotonic() >= lookup_deadline or external_lookups >= _MAX_EXTERNAL_LOOKUPS
+                    )
+                    if not budget_exhausted and railyatri_record is None:
+                        if train_no not in ry_live_cache:
+                            ry_live_cache[train_no] = get_railyatri_running_record(train_no)
+                            external_lookups += 1
+                        railyatri_record = ry_live_cache.get(train_no)
+
+                    # RailYatri-first mode: try IRCTC delay only when budget remains.
+                    budget_exhausted = (
+                        time.monotonic() >= lookup_deadline or external_lookups >= _MAX_EXTERNAL_LOOKUPS
+                    )
+                    should_try_real_delay = not provider.startswith("railyatri")
+                    if should_try_real_delay and not budget_exhausted:
+                        if train_no not in delay_cache:
+                            delay_cache[train_no] = get_real_delay_data(train_no)
+                            external_lookups += 1
+                        real_delay = delay_cache.get(train_no)
+                        if real_delay:
+                            break
 
         route["real_delay_data"] = real_delay
+        route["railyatri_running_record"] = railyatri_record
+        route["railyatri_past_track_record"] = railyatri_agg
 
         # ── Determine tariff scale from train info ────────────────────
         first_train = route.get("trains", [{}])[0] if route.get("trains") else {}

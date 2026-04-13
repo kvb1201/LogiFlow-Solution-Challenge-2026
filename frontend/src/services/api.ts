@@ -86,6 +86,7 @@ export interface Recommendation {
   segments: RouteSegment[];
   delay_info: DelayInfo;
   data_source: string;
+  llm_explanation?: string;
 }
 
 export interface RankedOption {
@@ -304,14 +305,14 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
   });
   if (!res.ok) {
     let detail = '';
+    const rawBody = await res.text();
     try {
-      const data = await res.json();
+      const data = rawBody ? JSON.parse(rawBody) : null;
       if (data && typeof data === 'object' && 'detail' in data) {
         detail = String((data as { detail?: unknown }).detail ?? '').trim();
       }
     } catch {
-      const text = await res.text();
-      detail = text.trim();
+      detail = rawBody.trim();
     }
     throw new Error(detail || `Optimize failed (${res.status})`);
   }

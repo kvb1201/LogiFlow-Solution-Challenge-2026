@@ -4,12 +4,19 @@ Integrates data loading, route finding, feature engineering, ML models,
 and decision engine into the BasePipeline interface.
 """
 
+import os
+import time
+
 from app.pipelines.base import BasePipeline
 from app.pipelines.rail.route_finder import find_routes
 from app.pipelines.rail.engineer import engineer_features
 from app.pipelines.rail.tariff import calc_parcel_cost
 from app.pipelines.rail.engine import decide
 from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
+
+_ENABLE_LLM_EXPLANATION = os.getenv("RAIL_ENABLE_LLM_EXPLANATION", "true").lower() == "true"
+_LLM_EXPLANATION_TIMEOUT_S = int(os.getenv("RAIL_LLM_EXPLANATION_TIMEOUT_S", "4"))
+_OPTIMIZE_RESPONSE_BUDGET_S = float(os.getenv("RAIL_OPTIMIZE_RESPONSE_BUDGET_S", "20"))
 
 
 class RailPipeline(BasePipeline):
@@ -138,6 +145,7 @@ class RailCargoOptimizer:
         Main entry point for cargo optimization.
         """
         try:
+            started_at = time.monotonic()
             origin = payload.get("origin_city", "")
             destination = payload.get("destination_city", "")
 
@@ -156,10 +164,27 @@ class RailCargoOptimizer:
                 date_of_journey=departure_date,
             )
             if not routes:
+                try:
+                    from app.pipelines.rail.route_finder import get_station_candidates
+
+                    origin_codes = get_station_candidates(origin)
+                    dest_codes = get_station_candidates(destination)
+                    origin_hint = ", ".join([c.upper() for c in origin_codes[:6] if c])
+                    dest_hint = ", ".join([c.upper() for c in dest_codes[:6] if c])
+                    hint = ""
+                    if origin_hint or dest_hint:
+                        hint = (
+                            f" You may try with the actual station codes shown here: "
+                            f"{origin} → [{origin_hint or origin.upper()}], "
+                            f"{destination} → [{dest_hint or destination.upper()}]."
+                        )
+                except Exception:
+                    hint = ""
                 return {
                     "error": (
                         "Sorry, this train route is not available right now on ConfirmTkt. "
                         "We are continuously expanding route coverage."
+                        + hint
                     )
                 }
 
@@ -194,6 +219,51 @@ class RailCargoOptimizer:
 
             print("🎯 Running decision engine...")
             results = decide(enriched, payload)
+
+            # ── Optional LLM explainability (kept off by default for API latency) ─
+            if _ENABLE_LLM_EXPLANATION:
+                try:
+                    elapsed = time.monotonic() - started_at
+                    remaining = _OPTIMIZE_RESPONSE_BUDGET_S - elapsed
+                    # Never let explanation generation block a response near timeout.
+                    if remaining < 1.5:
+                        raise TimeoutError("Skipping LLM explanation due to response budget.")
+
+                    from app.services.train_explanation import generate_train_explanation
+
+                    ctx = {
+                        "origin": origin,
+                        "destination": destination,
+                        "railyatri_past_track_record": (
+                            enriched[0].get("railyatri_past_track_record") if enriched else None
+                        ),
+                    }
+                    priority_map = {
+                        "cost": "cheapest",
+                        "cheap": "cheapest",
+                        "cheapest": "cheapest",
+                        "time": "fastest",
+                        "fast": "fastest",
+                        "fastest": "fastest",
+                        "speed": "fastest",
+                        "safe": "safest",
+                        "safety": "safest",
+                        "safest": "safest",
+                        "reliable": "safest",
+                    }
+                    target_key = priority_map.get(str(payload.get("priority", "cost")).lower(), "cheapest")
+                    rec = results.get(target_key)
+                    if isinstance(rec, dict):
+                        llm_timeout = max(1, min(_LLM_EXPLANATION_TIMEOUT_S, int(remaining)))
+                        exp = generate_train_explanation(
+                            rec,
+                            context=ctx,
+                            timeout_s=llm_timeout,
+                        )
+                        if exp:
+                            rec["llm_explanation"] = exp
+                except Exception:
+                    pass
 
             results["route_metadata"] = {
                 "origin_city": origin,

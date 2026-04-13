@@ -369,6 +369,22 @@ def extract_route_features(route):
             except Exception:
                 continue
 
+    # Additional reliability signal (fallback when real delay API is unavailable):
+    # Incorporate RailYatri aggregate/live "severity" into junction_count
+    # WITHOUT changing feature vector shape.
+    try:
+        ry_agg = route.get("railyatri_past_track_record") or {}
+        sev = ry_agg.get("severity_avg_mean")
+        if sev is None:
+            ry = route.get("railyatri_running_record") or {}
+            sev = ry.get("severity_avg")
+        if sev is not None:
+            sev = float(sev)
+            # severity_avg in [0..1] roughly → add 0..2 to junction_count
+            junction_count += max(0, min(2, int(round(sev * 2))))
+    except Exception:
+        pass
+
     if "rajdhani" in train_type_str:
         train_type = 4
     elif "shatabdi" in train_type_str:
