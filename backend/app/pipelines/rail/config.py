@@ -47,7 +47,7 @@ SCALE_CLASSIFICATION = {
 
 # ── City name → primary station code mapping ──────────────────────────
 CITY_TO_STATION = {
-    "Mumbai":      ["CSMT", "LTT", "BDTS", "BCT", "DR"],
+    "Mumbai":      ["CSMT", "LTT", "BDTS", "BCT", "MMCT", "DR"],
     "Delhi":       ["NDLS", "DLI", "ANVT", "DSJ"],
     "Bengaluru":   ["SBC", "YPR", "BNCE"],
     "Chennai":     ["MAS", "MS"],

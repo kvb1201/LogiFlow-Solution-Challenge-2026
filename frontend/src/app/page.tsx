@@ -31,6 +31,16 @@ const modes = [
     iconBg: 'bg-sky-400/15 text-sky-300',
     glow: 'bg-sky-400/15',
   },
+  {
+    href: '/hybrid',
+    title: 'Hybrid',
+    tagline: 'Unified recommendation across road, rail, and air',
+    icon: 'hub',
+    gradient: 'from-[#32225a]/80 to-[#120b22]/90',
+    border: 'border-tertiary/30',
+    iconBg: 'bg-tertiary/15 text-tertiary',
+    glow: 'bg-tertiary/20',
+  },
 ] as const;
 
 export default function HomePage() {
@@ -74,7 +84,7 @@ export default function HomePage() {
 
           <p className="text-base sm:text-lg text-on-surface-variant max-w-2xl leading-relaxed mb-10 animate-slide-up [animation-delay:80ms] opacity-0 [animation-fill-mode:forwards]">
             One platform to plan and compare{' '}
-            <strong className="text-on-surface font-semibold">rail, road, and air</strong> options
+            <strong className="text-on-surface font-semibold">rail, road, air, and hybrid</strong> options
             with real data where it matters—schedules, traffic, risk, and live visibility—so teams ship
             with confidence across India.
           </p>
@@ -137,6 +147,18 @@ export default function HomePage() {
                     pipeline: cut-offs, capacity story, and how express fits next to surface modes.
                   </span>
                 </li>
+                <li className="flex gap-3">
+                  <span
+                    className="material-symbols-outlined text-tertiary shrink-0 mt-0.5"
+                    style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
+                  >
+                    check_circle
+                  </span>
+                  <span>
+                    <strong className="text-on-surface">Hybrid</strong> — compare all modes together and
+                    get a final recommendation with transparent tradeoffs.
+                  </span>
+                </li>
               </ul>
             </article>
           </div>
@@ -147,12 +169,12 @@ export default function HomePage() {
           <h2 className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-outline mb-8">
             Choose a mode
           </h2>
-          <div className="grid sm:grid-cols-3 gap-4 lg:gap-5">
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-5">
             {modes.map((m, i) => (
               <Link
                 key={m.href}
                 href={m.href}
-                className={`group relative flex flex-col rounded-2xl border ${m.border} bg-gradient-to-br ${m.gradient} p-6 sm:p-7 min-h-[220px] overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
+                className={`group relative flex flex-col rounded-2xl border ${m.border} bg-gradient-to-br ${m.gradient} p-6 sm:p-7 min-h-[220px] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-2xl hover:shadow-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
                 style={{ animationDelay: `${i * 90}ms` }}
               >
                 <div

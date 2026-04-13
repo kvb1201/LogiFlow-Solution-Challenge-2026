@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import type { Recommendation, RankedOption } from '@/services/api';
 
-const MapView = dynamic(() => import('@/components/Map'), { ssr: false });
 
 // ── Metric Chip ──────────────────────────────────────────────────────
 
@@ -270,14 +268,31 @@ function DetailPanel({
   ranked,
   trainDelayDetail,
   selectedTrainLive,
-  mapFocusedTrainNumber,
 }: {
   rec: Recommendation | null;
   ranked: RankedOption | null;
   trainDelayDetail: import('@/services/api').TrainDelayData | null;
   selectedTrainLive: Record<string, unknown> | null;
-  mapFocusedTrainNumber: string | null;
 }) {
+  const liveEntries = useMemo(() => {
+    if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
+    const preferred = ['currentStationName', 'currentStation', 'nextStationName', 'nextStation', 'delayMinutes', 'delay', 'status', 'position', 'speed'];
+    const rows: string[] = [];
+    const seen = new Set<string>();
+    for (const k of preferred) {
+      if (k in selectedTrainLive) {
+        const line = formatLiveLine(k, (selectedTrainLive as Record<string, unknown>)[k]);
+        if (line) { rows.push(line); seen.add(k); }
+      }
+    }
+    for (const [k, v] of Object.entries(selectedTrainLive)) {
+      if (seen.has(k) || k === 'success') continue;
+      const line = formatLiveLine(k, v);
+      if (line && rows.length < 14) rows.push(line);
+    }
+    return rows;
+  }, [selectedTrainLive]);
+
   const base = rec ?? ranked;
 
   if (!base) {
@@ -316,36 +331,8 @@ function DetailPanel({
   const riskColor =
     riskScore < 0.2 ? '#10b981' : riskScore < 0.4 ? '#f59e0b' : '#ef4444';
 
-  const liveEntries = useMemo(() => {
-    if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
-    const preferred = ['currentStationName', 'currentStation', 'nextStationName', 'nextStation', 'delayMinutes', 'delay', 'status', 'position', 'speed'];
-    const rows: string[] = [];
-    const seen = new Set<string>();
-    for (const k of preferred) {
-      if (k in selectedTrainLive) {
-        const line = formatLiveLine(k, (selectedTrainLive as Record<string, unknown>)[k]);
-        if (line) { rows.push(line); seen.add(k); }
-      }
-    }
-    for (const [k, v] of Object.entries(selectedTrainLive)) {
-      if (seen.has(k) || k === 'success') continue;
-      const line = formatLiveLine(k, v);
-      if (line && rows.length < 14) rows.push(line);
-    }
-    return rows;
-  }, [selectedTrainLive]);
-
   return (
     <div className="space-y-5">
-      {mapFocusedTrainNumber && (
-        <div className="text-[10px] text-tertiary bg-tertiary/10 border border-tertiary/20 rounded-lg px-3 py-2 leading-relaxed">
-          Map focus: <span className="mono font-semibold">{mapFocusedTrainNumber}</span>
-          {trainNo && mapFocusedTrainNumber !== trainNo && (
-            <span className="text-outline"> — route below for {trainNo}</span>
-          )}
-        </div>
-      )}
-
       {/* Summary card */}
       <div className="bg-surface-container/30 rounded-xl border border-outline-variant/10 p-3">
         <div className="flex items-start justify-between gap-2 mb-3">
@@ -473,7 +460,7 @@ function DetailPanel({
             </ul>
           ) : (
             <p className="text-[11px] text-outline">
-              No live data — select a route or tap a train on the map.
+              No live data for the current selection.
             </p>
           )}
         </div>
@@ -531,24 +518,14 @@ export default function RailwayDashboard() {
     hasSearched,
     activeView,
     setActiveView,
-    liveMapMode,
-    setLiveMapMode,
-    fetchLiveTrains,
     fetchTrainDelayAndLive,
     trainDelayDetail,
     selectedTrainLive,
-    mapFocusedTrainNumber,
     error,
     resetSearch,
   } = useLogiFlowStore();
 
   const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
-
-  useEffect(() => {
-    fetchLiveTrains();
-    const interval = setInterval(fetchLiveTrains, 30000);
-    return () => clearInterval(interval);
-  }, [fetchLiveTrains]);
 
   const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
   const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
@@ -560,6 +537,9 @@ export default function RailwayDashboard() {
   }, [trainNoForDetail, fetchTrainDelayAndLive]);
 
   const showRailLoading = loading && loadingMode === 'rail';
+  const showNoRoutePage =
+    !!error &&
+    /route is not available right now|no train routes found|no feasible routes found/i.test(error);
 
   // ── Landing ───────────────────────────────────────────────────────
   if (!hasSearched) {
@@ -656,6 +636,31 @@ export default function RailwayDashboard() {
     );
   }
 
+  if (!loading && showNoRoutePage) {
+    return (
+      <div className="flex-1 flex flex-col overflow-x-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-(--color-background)">
+          <div className="max-w-xl w-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/40 p-8 text-center">
+            <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-primary">train</span>
+            </div>
+            <h2 className="text-xl font-semibold text-on-surface mb-2">Route Not Available Right Now</h2>
+            <p className="text-sm text-on-surface-variant mb-6">
+              Sorry, this train route does not exist right now on ConfirmTkt. We are continuously
+              expanding route coverage.
+            </p>
+            <button
+              onClick={resetSearch}
+              className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition"
+            >
+              Try Another Route
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Results dashboard ─────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-(--color-background) text-(--color-on-surface)">
@@ -690,25 +695,8 @@ export default function RailwayDashboard() {
           </button>
         </div>
 
-        {/* Live map controls */}
-        <div className="flex bg-surface-container/50 rounded-full p-0.5 border border-outline-variant/8 gap-0.5">
-          {(
-            [
-              { key: 'all', label: 'All India', activeClass: 'bg-primary text-on-primary' },
-              { key: 'route', label: 'Route', activeClass: 'bg-tertiary text-[#002105]' },
-              { key: 'hidden', label: 'Hide', activeClass: 'bg-surface-container-highest text-on-surface' },
-            ] as const
-          ).map(({ key, label, activeClass }) => (
-            <button
-              key={key}
-              onClick={() => setLiveMapMode(key)}
-              className={`px-2.5 py-1 text-[10px] font-semibold rounded-full transition-all uppercase tracking-wider ${
-                liveMapMode === key ? activeClass : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="text-[10px] uppercase tracking-[0.16em] text-outline">
+          Rail analytics panel
         </div>
       </div>
 
@@ -720,10 +708,10 @@ export default function RailwayDashboard() {
         </div>
       )}
 
-      {/* 3-col main layout */}
+      {/* 2-col main layout */}
       <main className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden lg:overflow-hidden overflow-y-auto lg:overflow-y-clip">
         {/* Left: route list */}
-        <aside className="w-full lg:w-[27%] flex flex-col border-b lg:border-b-0 lg:border-r border-outline-variant/8 bg-surface-container-low/30 h-[40vh] lg:h-auto min-h-0 shrink-0 lg:shrink">
+        <aside className="w-full lg:w-[36%] xl:w-[34%] flex flex-col border-b lg:border-b-0 lg:border-r border-outline-variant/8 bg-surface-container-low/30 h-[44vh] lg:h-auto min-h-0 shrink-0 lg:shrink">
           {/* Toggle */}
           <div className="p-3 pb-2 shrink-0">
             <div className="flex bg-surface-container/50 rounded-lg p-0.5 border border-outline-variant/8">
@@ -812,49 +800,13 @@ export default function RailwayDashboard() {
           </div>
         </aside>
 
-        {/* Center: Map */}
-        <section className="flex-1 relative bg-[#0d1117] min-h-[450px] lg:min-h-0 border-b lg:border-b-0 border-outline-variant/8">
-          <div className="absolute inset-0">
-            <MapView
-              selectedRec={activeRec}
-              selectedOption={activeOption}
-              highlightType={activeView === 'all_options' ? 'selected' : selectedRecType}
-            />
-          </div>
-
-          {/* Floating overlay */}
-          {(activeRec || activeOption) && (
-            <div className="absolute top-3 left-3 z-10">
-              <div className="bg-surface-container-highest/80 backdrop-blur-xl p-3 rounded-xl border border-outline-variant/15 shadow-2xl min-w-[170px]">
-                <div className="text-[9px] text-primary mb-2 font-label font-bold uppercase tracking-[0.15em]">
-                  Selected Route
-                </div>
-                <div className="space-y-1 text-[11px]">
-                  {[
-                    ['Train', activeRec?.train_number || activeOption?.train_number],
-                    ['Dist.', `${activeRec?.distance_km || activeOption?.distance_km} km`],
-                    ['Time', `${activeRec?.duration_hours || activeOption?.effective_hours}h`],
-                    ['Speed', `${activeRec?.avg_speed_kmph || activeOption?.avg_speed_kmph} km/h`],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-3">
-                      <span className="text-outline">{k}</span>
-                      <span className="mono font-medium text-on-surface">{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
         {/* Right: detail panel */}
-        <aside className="w-full lg:w-[26%] bg-surface-container-lowest/40 p-4 min-h-0 h-auto lg:h-auto overflow-y-auto shrink-0 lg:shrink border-t lg:border-t-0 border-outline-variant/8">
+        <aside className="flex-1 bg-surface-container-lowest/35 p-4 sm:p-5 min-h-0 h-auto lg:h-auto overflow-y-auto shrink-0 lg:shrink border-t lg:border-t-0 border-outline-variant/8">
           <DetailPanel
             rec={activeRec}
             ranked={activeOption}
             trainDelayDetail={trainDelayDetail}
             selectedTrainLive={selectedTrainLive as Record<string, unknown> | null}
-            mapFocusedTrainNumber={mapFocusedTrainNumber}
           />
         </aside>
       </main>

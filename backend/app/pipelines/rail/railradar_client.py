@@ -1,9 +1,9 @@
 """
 Indian Railway API client for the Railway Cargo Decision Engine.
 
-MIGRATED from RailRadar → IRCTC RapidAPI (irctc1.p.rapidapi.com).
-Trains-between-stations tries IRCTC Connect (irctc-connect SDK-compatible API)
-first when IRCTC_CONNECT_API_KEYS + IRCTC_CONNECT_SDK_SECRET are set, then RapidAPI.
+MIGRATED from RailRadar → ConfirmTkt + IRCTC providers.
+Trains-between-stations now tries ConfirmTkt first, then IRCTC Connect
+(irctc-connect SDK-compatible API), then RapidAPI and scraper fallbacks.
 Much better coverage: 13+ endpoints including SearchStation, SearchTrain,
 TrainsBetweenStations, GetTrainSchedule, GetFare, GetLiveStation.
 
@@ -16,15 +16,19 @@ Features:
   - Rate limiting (2s interval for free tier)
 """
 
+import uuid
+
 import hashlib
 import hmac
 import json
 import os
 import random
+import re
 import requests
 import time
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote, urljoin
 
 from dotenv import load_dotenv
 
@@ -60,9 +64,19 @@ IRCTC_CONNECT_KEYS = list(dict.fromkeys([k.strip() for k in _connect_keys_raw.sp
 random.shuffle(IRCTC_CONNECT_KEYS)
 _connect_key_idx = -1  # Start at -1 so first call uses index 0
 _connect_last_times = {}
+ENABLE_IRCTC_CONNECT = os.getenv("RAIL_ENABLE_IRCTC_CONNECT", "false").lower() == "true"
+ENABLE_IRCTC_RAPIDAPI = os.getenv("RAIL_ENABLE_IRCTC_RAPIDAPI", "false").lower() == "true"
+
+# ConfirmTkt Web (Primary HTML scrape source for trains-between-stations)
+CONFIRMTKT_WEB_BASE_URL = os.environ.get(
+    "CONFIRMTKT_WEB_BASE_URL",
+    "https://www.confirmtkt.com",
+).rstrip("/")
 
 RAILRADAR_API_KEY = os.environ.get("RAILRADAR_API_KEY", "")
 RAILRADAR_BASE_URL = os.environ.get("RAILRADAR_BASE_URL", "https://api.railradar.org")
+RAIL_WEB_SCRAPE_ENABLED = os.getenv("RAIL_WEB_SCRAPE_ENABLED", "false").lower() == "true"
+RAIL_WEB_SCRAPE_URL_TEMPLATE = os.getenv("RAIL_WEB_SCRAPE_URL_TEMPLATE", "").strip()
 
 _session = requests.Session()
 _session.headers.update({
@@ -181,7 +195,6 @@ def _cache_get(key):
         try:
             cached = _redis_client.get(key)
             if cached:
-                print(f"  [Cache] ⚡ HIT (Redis): {key}")
                 return json.loads(cached)
         except Exception:
             pass
@@ -191,7 +204,6 @@ def _cache_get(key):
     if entry:
         # Check if expired, unless PERMANENT_CACHE is enabled
         if PERMANENT_CACHE or entry["expires_at"] > time.time():
-            print(f"  [Cache] ⚡ HIT ({'Permanent' if PERMANENT_CACHE else 'Disk/Mem'}): {key}")
             return entry["data"]
         else:
             del _mem_cache[key]  # expired
@@ -459,31 +471,68 @@ def search_stations(query):
     Search stations by name or code.
     Returns: [{code, name, state_name}]
     """
-    # 1. Try Cache First for Station Searches (they almost never change)
-    key = _cache_key("rapidapi_search_station", {"q": query.lower()})
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    # Versioned key so old offline-first cache entries do not shadow API-first flow.
+    key = _cache_key("station_search_v2", {"q": q.lower()})
     cached = _cache_get(key)
     if cached is not None:
         return cached
 
-    # 2. Try Offline Fallback Dataset First (Saves 100% of RapidAPI Quota)
-    offline_results = search_offline_stations(query)
+    # 1) IRCTC Connect first (preferred)
+    connect_results = []
+    if ENABLE_IRCTC_CONNECT and IRCTC_CONNECT_KEYS and _connect_secret:
+        connect_candidates = [
+            f"/api/searchStation/{q}",
+            f"/api/searchStation?query={q}",
+            f"/api/v1/searchStation/{q}",
+            f"/api/v1/searchStation?query={q}",
+        ]
+        for path in connect_candidates:
+            data = _irctc_connect_get(path)
+            rows = data if isinstance(data, list) else []
+            if rows:
+                connect_results = [
+                    {
+                        "code": s.get("code", "") or s.get("station_code", ""),
+                        "name": s.get("name", "") or s.get("station_name", ""),
+                        "state_name": s.get("state_name", "") or s.get("state", ""),
+                    }
+                    for s in rows
+                    if (s.get("code") or s.get("station_code")) and (s.get("name") or s.get("station_name"))
+                ]
+                if connect_results:
+                    print(f"  [IRCTC Connect] Found {len(connect_results)} stations for: {q}")
+                    _cache_set(key, connect_results, 30 * 24 * 3600)
+                    return connect_results
+
+    # 2) Other APIs (RapidAPI pool)
+    data = _get("/api/v1/searchStation", {"query": q}) if ENABLE_IRCTC_RAPIDAPI else None
+    rows = data if isinstance(data, list) else []
+    rapid_results = [
+        {
+            "code": s.get("code", ""),
+            "name": s.get("name", ""),
+            "state_name": s.get("state_name", ""),
+        }
+        for s in rows
+        if s.get("code") and s.get("name")
+    ]
+    if rapid_results:
+        print(f"  [IRCTC RapidAPI] Found {len(rapid_results)} stations for: {q}")
+        _cache_set(key, rapid_results, 30 * 24 * 3600)
+        return rapid_results
+
+    # 3) Offline CSV fallback (last resort)
+    offline_results = search_offline_stations(q)
     if offline_results:
-        print(f"  [Offline Data] Found {len(offline_results)} stations for: {query}")
-        _cache_set(key, offline_results, 30 * 24 * 3600)
+        print(f"  [Offline Data] Found {len(offline_results)} stations for: {q}")
+        _cache_set(key, offline_results, 12 * 3600)
         return offline_results
 
-    # 3. Key-Rotated RapidAPI Call (Absolute Last Resort)
-    data = _get("/api/v1/searchStation", {"query": query})
-    if not data or not isinstance(data, list):
-        return []
-    
-    result = [{"code": s.get("code", ""), "name": s.get("name", "")} for s in data]
-    
-    # Cache for 30 Days if successful
-    if result:
-        _cache_set(key, result, 30 * 24 * 3600)
-
-    return result
+    return []
 
 
 def get_station_info(station_code):
@@ -532,7 +581,7 @@ def search_trains(query):
     Search trains by number or name.
     Returns: [{trainNumber, trainName, ...}]
     """
-    data = _get("/api/v1/searchTrain", {"query": query})
+    data = _get("/api/v1/searchTrain", {"query": query}) if ENABLE_IRCTC_RAPIDAPI else None
     if not data or not isinstance(data, list):
         return []
     return [
@@ -748,6 +797,556 @@ def _trains_between_from_connect_rows(rows, from_code, to_code):
     return {"totalTrains": len(trains), "trains": trains}
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  IRCTC DIRECT SCRAPER — Session-based fallback via irctc.co.in
+# ══════════════════════════════════════════════════════════════════════
+
+_irctc_direct_session = None
+_irctc_direct_session_ts = 0
+_IRCTC_SESSION_MAX_AGE = 600  # Re-create session every 10 minutes
+
+_IRCTC_SEARCH_URL = "https://www.irctc.co.in/nget/train-search"
+_IRCTC_API_URL = "https://www.irctc.co.in/eticketing/protected/mapps1/altAvlEnq/TC"
+
+_IRCTC_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+}
+
+
+def _get_irctc_direct_session():
+    """
+    Get or create an IRCTC direct session.
+    Visits the train search page to acquire necessary cookies and tokens.
+    """
+    global _irctc_direct_session, _irctc_direct_session_ts
+
+    now = time.time()
+    if (
+        _irctc_direct_session is not None
+        and (now - _irctc_direct_session_ts) < _IRCTC_SESSION_MAX_AGE
+    ):
+        return _irctc_direct_session
+
+    print("  [IRCTC Direct] 🌐 Establishing new session...")
+    sess = requests.Session()
+    sess.headers.update(_IRCTC_BROWSER_HEADERS)
+
+    try:
+        # Step 1: Visit the main search page to get session cookies
+        resp = sess.get(_IRCTC_SEARCH_URL, timeout=20)
+        if resp.ok:
+            print(f"  [IRCTC Direct] ✅ Session established ({len(sess.cookies)} cookies acquired)")
+            _irctc_direct_session = sess
+            _irctc_direct_session_ts = now
+            return sess
+        else:
+            print(f"  [IRCTC Direct] ⚠️ Session page returned HTTP {resp.status_code}")
+            return None
+    except Exception as e:
+        print(f"  [IRCTC Direct] ❌ Failed to establish session: {e}")
+        return None
+
+
+def _irctc_direct_trains_between(from_code, to_code, date_of_journey):
+    """
+    Fetch trains between stations directly from IRCTC's protected API.
+    This mimics how the browser sends the request after loading the search page.
+
+    Args:
+        from_code: Origin station code (e.g. 'NDLS')
+        to_code: Destination station code (e.g. 'MMCT')
+        date_of_journey: Date in 'YYYY-MM-DD' format
+
+    Returns:
+        Standard format: {totalTrains, trains: [...]} or None on failure.
+    """
+    # ── 1. Cache check ─────────────────────────────────────────────────
+    ttl = _get_ttl_for_endpoint("trainBetweenStations")
+    ck = _cache_key(
+        "irctc_direct_trainBetween",
+        {"from": from_code.upper(), "to": to_code.upper()},
+    )
+    cached = _cache_get(ck)
+    if cached is not None:
+        return cached
+
+    # ── 2. Get/create browser-like session ─────────────────────────────
+    sess = _get_irctc_direct_session()
+    if sess is None:
+        return None
+
+    # ── 3. Build the POST request ──────────────────────────────────────
+    # The IRCTC API expects date as YYYYMMDD
+    try:
+        yyyy, mm, dd = date_of_journey.split("-")
+        irctc_date = f"{yyyy}{mm}{dd}"
+    except Exception:
+        irctc_date = date_of_journey.replace("-", "")
+
+    payload = {
+        "concessionBooking": False,
+        "srcStn": from_code.upper().strip(),
+        "destStn": to_code.upper().strip(),
+        "jrnyClass": "",
+        "jrnyDate": irctc_date,
+        "quotaCode": "GN",
+        "currentBooking": "false",
+        "flexiFlag": False,
+        "handicapFlag": False,
+        "ticketType": "E",
+        "loyaltyRedemptionBooking": False,
+        "ftBooking": False,
+    }
+
+    # Dynamic greq header: timestamp_ms:uuid-v4
+    greq_value = f"{int(time.time() * 1000)}:{uuid.uuid4()}"
+
+    api_headers = {
+        "Content-Type": "application/json; charset=UTF-8",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.irctc.co.in/nget/train-search",
+        "Origin": "https://www.irctc.co.in",
+        "greq": greq_value,
+        "bmirak": "webbm",
+    }
+
+    print(f"  [IRCTC Direct] 📡 POST altAvlEnq/TC: {from_code}→{to_code} on {irctc_date}")
+
+    try:
+        resp = sess.post(
+            _IRCTC_API_URL,
+            json=payload,
+            headers=api_headers,
+            timeout=25,
+        )
+
+        if resp.status_code == 403:
+            # Akamai bot detection triggered — invalidate session
+            print("  [IRCTC Direct] 🔴 403 Forbidden (bot detection). Resetting session.")
+            global _irctc_direct_session, _irctc_direct_session_ts
+            _irctc_direct_session = None
+            _irctc_direct_session_ts = 0
+            return None
+
+        if not resp.ok:
+            print(f"  [IRCTC Direct] ⚠️ HTTP {resp.status_code}")
+            return None
+
+        data = resp.json()
+    except requests.exceptions.JSONDecodeError:
+        print("  [IRCTC Direct] ⚠️ Non-JSON response (possibly HTML captcha page)")
+        return None
+    except Exception as e:
+        print(f"  [IRCTC Direct] ❌ Request failed: {e}")
+        return None
+
+    # ── 4. Parse trainBtwnStnsList ─────────────────────────────────────
+    raw_trains = data.get("trainBtwnStnsList")
+    if not raw_trains or not isinstance(raw_trains, list):
+        print(f"  [IRCTC Direct] ⚠️ No trains in response (keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'})")
+        return None
+
+    from app.pipelines.rail.config import STATION_TO_CITY
+
+    trains = []
+    fc, tc = from_code.upper().strip(), to_code.upper().strip()
+
+    for t in raw_trains:
+        train_no = str(t.get("trainNumber", "")).strip()
+        train_name = str(t.get("trainName", "")).strip()
+        if not train_no:
+            continue
+
+        actual_fs = str(t.get("fromStnCode", fc)).strip().upper()
+        actual_ts = str(t.get("toStnCode", tc)).strip().upper()
+
+        # Cluster filtering (same logic as Connect rows)
+        fc_city = STATION_TO_CITY.get(fc)
+        if fc_city and actual_fs != fc:
+            if STATION_TO_CITY.get(actual_fs) != fc_city:
+                continue
+        tc_city = STATION_TO_CITY.get(tc)
+        if tc_city and actual_ts != tc:
+            if STATION_TO_CITY.get(actual_ts) != tc_city:
+                continue
+
+        # Parse duration "HH:MM"
+        dur_str = str(t.get("duration", "0:0"))
+        try:
+            parts = dur_str.split(":")
+            dur_minutes = int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            dur_minutes = 0
+
+        dep_str = str(t.get("departureTime", ""))
+        arr_str = str(t.get("arrivalTime", ""))
+        dep_minutes = _time_str_to_minutes(dep_str)
+        arr_minutes = _time_str_to_minutes(arr_str)
+
+        dep_day = 1
+        arr_day = 1
+        if dep_minutes is not None and arr_minutes is not None and arr_minutes <= dep_minutes:
+            arr_day = 2
+
+        try:
+            distance_km = int(float(str(t.get("distance", 0))))
+        except (ValueError, TypeError):
+            distance_km = 0
+
+        avg_speed = round(distance_km / (dur_minutes / 60), 1) if dur_minutes > 0 else 0
+
+        # Running days from individual fields
+        day_map = [
+            ("runningMon", "Mon"), ("runningTue", "Tue"), ("runningWed", "Wed"),
+            ("runningThu", "Thu"), ("runningFri", "Fri"), ("runningSat", "Sat"),
+            ("runningSun", "Sun"),
+        ]
+        run_days_list = [abbr for field, abbr in day_map if str(t.get(field, "N")).upper() == "Y"]
+        all_days = len(run_days_list) == 7
+
+        # Available classes
+        class_types = t.get("avlClasses", []) or t.get("classTypes", [])
+        if isinstance(class_types, str):
+            class_types = [c.strip() for c in class_types.split(",") if c.strip()]
+
+        trains.append({
+            "trainNumber": train_no,
+            "trainName": train_name,
+            "type": t.get("trainType", "") or "",
+            "distanceKm": distance_km,
+            "travelTimeMinutes": dur_minutes,
+            "avgSpeedKmph": avg_speed,
+            "totalHalts": 0,
+            "sourceStationName": t.get("fromStnName", "") or actual_fs,
+            "destinationStationName": t.get("toStnName", "") or actual_ts,
+            "fromStationCode": actual_fs,
+            "toStationCode": actual_ts,
+            "runningDays": {"days": run_days_list, "allDays": all_days},
+            "fromStationSchedule": {
+                "departureMinutes": dep_minutes,
+                "day": dep_day,
+                "stationCode": actual_fs,
+            },
+            "toStationSchedule": {
+                "arrivalMinutes": arr_minutes,
+                "day": arr_day,
+                "distanceFromSourceKm": distance_km,
+                "stationCode": actual_ts,
+            },
+            "hasPantry": False,
+            "classTypes": class_types,
+            "specialTrain": False,
+        })
+
+    if not trains:
+        print("  [IRCTC Direct] ⚠️ No valid trains after filtering")
+        return None
+
+    result = {"totalTrains": len(trains), "trains": trains}
+    print(f"  [IRCTC Direct] ✅ Parsed {len(trains)} trains {from_code}→{to_code}")
+
+    # Cache it
+    if ttl > 0:
+        _cache_set(ck, result, ttl)
+
+    return result
+
+
+def _confirmtkt_running_days_list(running_days):
+    """
+    Convert ConfirmTkt runningDays string like '1110110' to ['Mon', ...].
+    """
+    s = str(running_days or "").strip()
+    if not s:
+        return []
+    out = []
+    for i, ch in enumerate(s[:7]):
+        if ch == "1" and i < len(_DAY_ABBR):
+            out.append(_DAY_ABBR[i])
+    return out
+
+
+def _confirmtkt_fetch_trains_via_assets(page_url, from_code, to_code, doj_ddmmyyyy):
+    """
+    HTML-derived fallback:
+      1) parse bundled JS URL from ConfirmTkt HTML
+      2) fetch bundle and infer search endpoint/config hints
+      3) request train JSON and return trainList rows
+    """
+    try:
+        page_resp = requests.get(
+            page_url,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not page_resp.ok:
+            return []
+
+        html = page_resp.text or ""
+        script_match = re.search(
+            r'<script[^>]*type="module"[^>]*src="([^"]+)"',
+            html,
+            flags=re.IGNORECASE,
+        )
+        if not script_match:
+            return []
+
+        bundle_url = urljoin(page_url, script_match.group(1))
+        js_resp = requests.get(bundle_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        if not js_resp.ok:
+            return []
+
+        bundle = js_resp.text or ""
+        endpoint = "https://cttrainsapi.confirmtkt.com/api/v1/trains/search"
+
+        endpoint_match = re.search(
+            r'https?://[^"\\\']*cttrainsapi[^"\\\']*/api/v1/trains/search',
+            bundle,
+            flags=re.IGNORECASE,
+        )
+        if endpoint_match:
+            endpoint = endpoint_match.group(0)
+
+        apikey = "ct-web!2$"
+        clientid = "ct-web"
+        key_match = re.search(r'apikey["\']?\s*[:=]\s*["\']([^"\']+)["\']', bundle, flags=re.IGNORECASE)
+        client_match = re.search(r'clientid["\']?\s*[:=]\s*["\']([^"\']+)["\']', bundle, flags=re.IGNORECASE)
+        if key_match:
+            apikey = key_match.group(1)
+        if client_match:
+            clientid = client_match.group(1)
+
+        api_resp = requests.get(
+            endpoint,
+            params={
+                "sourceStationCode": from_code.upper().strip(),
+                "destinationStationCode": to_code.upper().strip(),
+                "dateOfJourney": doj_ddmmyyyy,
+                "addAvailabilityCache": "true",
+                "enableNearby": "true",
+            },
+            headers={
+                "apikey": apikey,
+                "clientid": clientid,
+                "deviceid": str(uuid.uuid4()),
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
+            },
+            timeout=20,
+        )
+        if not api_resp.ok:
+            print(f"  [ConfirmTkt HTML] Asset-derived API HTTP {api_resp.status_code}")
+            return []
+
+        body = api_resp.json()
+        payload = body.get("data", {}) if isinstance(body, dict) else {}
+        rows = payload.get("trainList", []) if isinstance(payload, dict) else []
+        if isinstance(rows, list) and rows:
+            print(f"  [ConfirmTkt HTML] ✅ Asset-derived trainList size={len(rows)}")
+            return rows
+        return []
+    except Exception as e:
+        print(f"  [ConfirmTkt HTML] Asset-derived fetch failed: {e}")
+        return []
+
+
+def _confirmtkt_trains_between(from_code, to_code, date_of_journey):
+    """
+    ConfirmTkt HTML page scrape for trains between stations.
+    Returns normalized shape: {totalTrains, trains: [...]}
+    """
+    ttl = _get_ttl_for_endpoint("trainBetweenStations")
+    ck = None
+    if ttl > 0:
+        ck = _cache_key(
+            "confirmtkt_trainBetween",
+            {
+                "from": from_code.upper().strip(),
+                "to": to_code.upper().strip(),
+                "date": date_of_journey,
+            },
+        )
+        cached = _cache_get(ck)
+        if cached is not None:
+            return cached
+
+    try:
+        yyyy, mm, dd = date_of_journey.split("-")
+        doj_ddmmyyyy = f"{dd}-{mm}-{yyyy}"
+    except Exception:
+        doj_ddmmyyyy = date_of_journey
+
+    from_slug = quote(str(from_code).strip(), safe="")
+    to_slug = quote(str(to_code).strip(), safe="")
+    url = (
+        f"{CONFIRMTKT_WEB_BASE_URL}/rbooking/trains/from/"
+        f"{from_slug}/to/{to_slug}/{doj_ddmmyyyy}"
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        print(f"  [ConfirmTkt HTML] 🌐 Scraping trains: {from_code}→{to_code} ({doj_ddmmyyyy})")
+        resp = requests.get(url, headers=headers, timeout=20)
+        if not resp.ok:
+            print(f"  [ConfirmTkt HTML] HTTP {resp.status_code}")
+            return None
+
+        html = resp.text or ""
+        rows = []
+
+        # Next.js payload (preferred): <script id="__NEXT_DATA__">...</script>
+        next_data_match = re.search(
+            r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+            html,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if next_data_match:
+            try:
+                next_data = json.loads(next_data_match.group(1))
+                page_props = (
+                    next_data.get("props", {})
+                    .get("pageProps", {})
+                )
+                rows = (
+                    page_props.get("trainsData", {}).get("trainList")
+                    or page_props.get("trains", {}).get("trainList")
+                    or page_props.get("trainList")
+                    or []
+                )
+            except Exception:
+                rows = []
+
+        # Fallback extraction: JSON snippet containing "trainList":[...]
+        if not rows:
+            tl_match = re.search(r'"trainList"\s*:\s*(\[[\s\S]*?\])\s*,\s*"(?:quotaList|errorMessage|sortBy)"', html)
+            if tl_match:
+                try:
+                    rows = json.loads(tl_match.group(1))
+                except Exception:
+                    rows = []
+
+        # HTML app-shell fallback: derive API call details from page assets.
+        if not rows:
+            rows = _confirmtkt_fetch_trains_via_assets(
+                url,
+                from_code,
+                to_code,
+                doj_ddmmyyyy,
+            )
+
+        if not isinstance(rows, list) or not rows:
+            print(
+                f"  [ConfirmTkt HTML] ⚠️ No trainList parsed for {from_code}→{to_code} "
+                f"on {doj_ddmmyyyy}; falling back to IRCTC providers."
+            )
+            return None
+
+        fc = from_code.upper().strip()
+        tc = to_code.upper().strip()
+
+        trains = []
+        for t in rows:
+            train_no = str(t.get("trainNumber", "")).strip()
+            if not train_no:
+                continue
+
+            actual_fs = str(t.get("fromStnCode", fc)).strip().upper()
+            actual_ts = str(t.get("toStnCode", tc)).strip().upper()
+
+            dep_minutes = _time_str_to_minutes(t.get("departureTime", ""))
+            arr_minutes = _time_str_to_minutes(t.get("arrivalTime", ""))
+            dep_day = 1
+            arr_day = 1
+            if dep_minutes is not None and arr_minutes is not None and arr_minutes <= dep_minutes:
+                arr_day = 2
+
+            try:
+                duration_min = int(t.get("duration") or 0)
+            except (ValueError, TypeError):
+                duration_min = _connect_travel_minutes("", dep_minutes, arr_minutes, dep_day, arr_day)
+
+            try:
+                distance_km = int(float(str(t.get("distance") or 0)))
+            except (ValueError, TypeError):
+                distance_km = 0
+
+            avg_speed = round(distance_km / (duration_min / 60), 1) if duration_min > 0 else 0
+            run_days_list = _confirmtkt_running_days_list(t.get("runningDays", ""))
+            all_days = len(run_days_list) == 7
+
+            trains.append({
+                "trainNumber": train_no,
+                "trainName": str(t.get("trainName", "")).strip(),
+                "type": str(t.get("trainType", "")).strip(),
+                "provider": "confirmtkt_html",
+                "distanceKm": distance_km,
+                "travelTimeMinutes": duration_min,
+                "avgSpeedKmph": avg_speed,
+                "totalHalts": 0,
+                "sourceStationName": t.get("fromStnName", actual_fs),
+                "destinationStationName": t.get("toStnName", actual_ts),
+                "fromStationCode": actual_fs,
+                "toStationCode": actual_ts,
+                "runningDays": {"days": run_days_list, "allDays": all_days},
+                "fromStationSchedule": {
+                    "departureMinutes": dep_minutes,
+                    "day": dep_day,
+                    "stationCode": actual_fs,
+                },
+                "toStationSchedule": {
+                    "arrivalMinutes": arr_minutes,
+                    "day": arr_day,
+                    "distanceFromSourceKm": distance_km,
+                    "stationCode": actual_ts,
+                },
+                "hasPantry": bool(t.get("hasPantry", False)),
+                "classTypes": t.get("avlClasses", []),
+                "specialTrain": False,
+                # Keep rich ConfirmTkt payload so downstream/UI can use it directly.
+                "confirmtkt_raw": t,
+                "confirmtkt_availability_cache": t.get("availabilityCache", {}),
+                "confirmtkt_availability_cache_tatkal": t.get("availabilityCacheTatkal", {}),
+                "confirmtkt_avl_classes": t.get("avlClasses", []),
+                "confirmtkt_train_rating": t.get("trainRating"),
+                "confirmtkt_running_days_raw": t.get("runningDays"),
+            })
+
+        if not trains:
+            print(
+                f"  [ConfirmTkt HTML] ⚠️ Parsed payload but no valid normalized trains "
+                f"for {from_code}→{to_code}; falling back."
+            )
+            return None
+
+        out = {
+            "totalTrains": len(trains),
+            "trains": trains,
+            "confirmtkt_raw_count": len(rows),
+            "confirmtkt_raw_train_list": rows,
+        }
+        print(f"  [ConfirmTkt HTML] ✅ {out['totalTrains']} trains {from_code}→{to_code}")
+        if ttl > 0 and ck:
+            _cache_set(ck, out, ttl)
+        return out
+    except Exception as e:
+        print(f"  [ConfirmTkt HTML] ❌ Scrape failed: {e}")
+        return None
+
+
 def get_trains_between(from_code, to_code, date_of_journey=None):
     """
     Find all trains between two station codes.
@@ -759,93 +1358,14 @@ def get_trains_between(from_code, to_code, date_of_journey=None):
         # Use tomorrow's date to get valid results
         date_of_journey = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # ── IRCTC Connect first (key pool), then RapidAPI ──────────────────
-    if IRCTC_CONNECT_KEYS and _connect_secret:
-        ttl_c = _get_ttl_for_endpoint("trainBetweenStations")
-        ck = None
-        if ttl_c > 0:
-            ck = _cache_key(
-                "irctc_connect_trainBetween",
-                {"from": from_code.upper(), "to": to_code.upper()},
-            )
-            cached = _cache_get(ck)
-            if cached is not None:
-                return cached
-        path = f"/api/searchTrainBetweenStations/{from_code.upper().strip()}/{to_code.upper().strip()}"
-        connect_rows = _irctc_connect_get(path)
-        if connect_rows:
-            out = _trains_between_from_connect_rows(connect_rows, from_code, to_code)
-            if out.get("trains"):
-                print(f"  [IRCTC Connect] {out['totalTrains']} trains {from_code}→{to_code}")
-                if ttl_c > 0 and ck:
-                    _cache_set(ck, out, ttl_c)
-                return out
+    # ── Tier 1: ConfirmTkt HTML scrape (primary) ───────────────────────
+    confirmtkt_data = _confirmtkt_trains_between(from_code, to_code, date_of_journey)
+    if confirmtkt_data and confirmtkt_data.get("trains"):
+        return confirmtkt_data
 
-    data = _get("/api/v3/trainBetweenStations", {
-        "fromStationCode": from_code.upper(),
-        "toStationCode": to_code.upper(),
-        "dateOfJourney": date_of_journey,
-    })
-
-    if not data or not isinstance(data, list):
-        return None
-
-    trains = []
-    for t in data:
-        # Parse duration string "HH:MM" → minutes
-        dur_str = t.get("duration", "0:0")
-        try:
-            parts = dur_str.split(":")
-            dur_minutes = int(parts[0]) * 60 + int(parts[1])
-        except (ValueError, IndexError):
-            dur_minutes = 0
-
-        # Parse departure/arrival times → minutes from midnight
-        dep_str = t.get("from_std", "") or t.get("from_sta", "")
-        arr_str = t.get("to_sta", "") or t.get("to_std", "")
-
-        dep_minutes = _time_str_to_minutes(dep_str)
-        arr_minutes = _time_str_to_minutes(arr_str)
-
-        # Running days
-        run_days_list = t.get("run_days", [])
-        all_days = len(run_days_list) == 7
-
-        distance_km = t.get("distance", 0) or 0
-        avg_speed = round(distance_km / (dur_minutes / 60), 1) if dur_minutes > 0 else 0
-
-        trains.append({
-            "trainNumber": t.get("train_number", ""),
-            "trainName": t.get("train_name", ""),
-            "type": t.get("train_type", ""),
-            "distanceKm": distance_km,
-            "travelTimeMinutes": dur_minutes,
-            "avgSpeedKmph": avg_speed,
-            "totalHalts": t.get("halt_stn", 0) or 0,
-            "sourceStationName": t.get("from_station_name", from_code),
-            "destinationStationName": t.get("to_station_name", to_code),
-            "runningDays": {
-                "days": run_days_list,
-                "allDays": all_days,
-            },
-            "fromStationSchedule": {
-                "departureMinutes": dep_minutes,
-                "day": (t.get("from_day") or 0) + 1,  # 0-indexed → 1-indexed
-            },
-            "toStationSchedule": {
-                "arrivalMinutes": arr_minutes,
-                "day": (t.get("to_day") or 0) + 1,
-                "distanceFromSourceKm": distance_km,
-            },
-            "hasPantry": t.get("has_pantry", False),
-            "classTypes": t.get("class_type", []),
-            "specialTrain": t.get("special_train", False),
-        })
-
-    return {
-        "totalTrains": len(trains),
-        "trains": trains,
-    }
+    # Required order: Redis cache (inside _confirmtkt_trains_between) -> ConfirmTkt HTML.
+    # No additional provider fallback here.
+    return None
 
 
 def _time_str_to_minutes(time_str):
@@ -856,6 +1376,131 @@ def _time_str_to_minutes(time_str):
         parts = time_str.strip().split(":")
         return int(parts[0]) * 60 + int(parts[1])
     except (ValueError, IndexError):
+        return None
+
+
+def _looks_like_time(text):
+    if not isinstance(text, str):
+        return False
+    return re.fullmatch(r"\d{1,2}:\d{2}", text.strip()) is not None
+
+
+def _scrape_trains_between_html(from_code, to_code, date_of_journey):
+    """
+    Last-resort scraper fallback.
+    Requires:
+      - RAIL_WEB_SCRAPE_ENABLED=true
+      - RAIL_WEB_SCRAPE_URL_TEMPLATE with placeholders {from}, {to}, {date}
+    Example:
+      https://example.com/trains?from={from}&to={to}&date={date}
+    """
+    if not RAIL_WEB_SCRAPE_ENABLED:
+        return None
+    if not RAIL_WEB_SCRAPE_URL_TEMPLATE:
+        print("  [WebScrape] Disabled: missing RAIL_WEB_SCRAPE_URL_TEMPLATE")
+        return None
+
+    # date_of_journey expected YYYY-MM-DD; many sites use DD-MM-YYYY
+    date_for_site = date_of_journey
+    try:
+        yyyy, mm, dd = date_of_journey.split("-")
+        date_for_site = f"{dd}-{mm}-{yyyy}"
+    except Exception:
+        pass
+
+    url = (
+        RAIL_WEB_SCRAPE_URL_TEMPLATE
+        .replace("{from}", from_code.upper().strip())
+        .replace("{to}", to_code.upper().strip())
+        .replace("{date}", date_for_site)
+    )
+    print(f"  [WebScrape] Attempting HTML scrape: {url}")
+
+    try:
+        resp = _session.get(
+            url,
+            timeout=20,
+            headers={
+                "User-Agent": "Mozilla/5.0 (LogiFlow bot; +https://localhost)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        if not resp.ok:
+            print(f"  [WebScrape] HTTP {resp.status_code}")
+            return None
+
+        # Use pandas parser (already a dependency in this project)
+        import pandas as pd
+        tables = pd.read_html(resp.text)
+        if not tables:
+            return None
+
+        trains = []
+        for df in tables:
+            cols = [str(c).strip().lower() for c in df.columns]
+            has_train_col = any(("train" in c and ("no" in c or "number" in c or "name" in c)) for c in cols)
+            if not has_train_col:
+                continue
+
+            for _, row in df.iterrows():
+                raw = {str(k).strip().lower(): row[k] for k in df.columns}
+                train_no = ""
+                train_name = ""
+                dep = None
+                arr = None
+
+                for k, v in raw.items():
+                    s = str(v).strip()
+                    if not train_no and ("train no" in k or "train number" in k):
+                        train_no = s
+                    if not train_name and ("train name" in k or k == "train"):
+                        train_name = s
+                    if dep is None and ("dep" in k or "departure" in k) and _looks_like_time(s):
+                        dep = _time_str_to_minutes(s)
+                    if arr is None and ("arr" in k or "arrival" in k) and _looks_like_time(s):
+                        arr = _time_str_to_minutes(s)
+
+                if not train_no and not train_name:
+                    continue
+                if not train_no:
+                    m = re.search(r"\b\d{5}\b", train_name)
+                    if m:
+                        train_no = m.group(0)
+                if not train_no:
+                    continue
+
+                dur = 0
+                if dep is not None and arr is not None:
+                    dur = arr - dep
+                    if dur <= 0:
+                        dur += 1440
+
+                trains.append({
+                    "trainNumber": train_no,
+                    "trainName": train_name or train_no,
+                    "type": "",
+                    "distanceKm": 0,
+                    "travelTimeMinutes": dur,
+                    "avgSpeedKmph": 0,
+                    "totalHalts": 0,
+                    "sourceStationName": from_code.upper(),
+                    "destinationStationName": to_code.upper(),
+                    "fromStationCode": from_code.upper(),
+                    "toStationCode": to_code.upper(),
+                    "runningDays": {"days": [], "allDays": False},
+                    "fromStationSchedule": {"departureMinutes": dep, "day": 1},
+                    "toStationSchedule": {"arrivalMinutes": arr, "day": 1, "distanceFromSourceKm": 0},
+                    "hasPantry": False,
+                    "classTypes": [],
+                    "specialTrain": False,
+                })
+
+        if not trains:
+            return None
+        print(f"  [WebScrape] Parsed {len(trains)} trains from HTML")
+        return {"totalTrains": len(trains), "trains": trains}
+    except Exception as e:
+        print(f"  [WebScrape] Failed: {e}")
         return None
 
 
@@ -909,7 +1554,7 @@ def get_train_schedule(train_number):
     Returns: {trainType, trainName, route: [{station_code, station_name, ...}]}
     """
     # ── IRCTC Connect first (key pool), then RapidAPI ──────────────────
-    if IRCTC_CONNECT_KEYS and _connect_secret:
+    if ENABLE_IRCTC_CONNECT and IRCTC_CONNECT_KEYS and _connect_secret:
         ttl = _get_ttl_for_endpoint("getTrainSchedule")
         ck = None
         if ttl > 0:
@@ -926,7 +1571,7 @@ def get_train_schedule(train_number):
                 if ttl > 0 and ck: _cache_set(ck, formatted, ttl)
                 return formatted
 
-    data = _get("/api/v1/getTrainSchedule", {"trainNo": str(train_number)})
+    data = _get("/api/v1/getTrainSchedule", {"trainNo": str(train_number)}) if ENABLE_IRCTC_RAPIDAPI else None
     if not data or not isinstance(data, dict):
         return None
     return data
@@ -1013,7 +1658,7 @@ def get_live_status(train_number, journey_date=None):
     if journey_date:
         params["startDate"] = journey_date
 
-    data = _get("/api/v1/liveTrainStatus", params)
+    data = _get("/api/v1/liveTrainStatus", params) if ENABLE_IRCTC_RAPIDAPI else None
     return data
 
 
@@ -1022,10 +1667,12 @@ def get_live_station_board(station_code, hours=4):
     Get live station board — trains arriving/departing at a station.
     NOTE: NOT cached — real-time data.
     """
-    data = _get("/api/v3/getLiveStation", {
-        "fromStationCode": station_code.upper(),
-        "hours": hours,
-    })
+    data = None
+    if ENABLE_IRCTC_RAPIDAPI:
+        data = _get("/api/v3/getLiveStation", {
+            "fromStationCode": station_code.upper(),
+            "hours": hours,
+        })
     return data
 
 
@@ -1034,11 +1681,13 @@ def get_fare(train_number, from_code, to_code):
     Get passenger fare for a train between two stations.
     Returns: [{class_type, class_name, fare}]
     """
-    data = _get("/api/v1/getFare", {
-        "trainNo": str(train_number),
-        "fromStationCode": from_code.upper(),
-        "toStationCode": to_code.upper(),
-    })
+    data = None
+    if ENABLE_IRCTC_RAPIDAPI:
+        data = _get("/api/v1/getFare", {
+            "trainNo": str(train_number),
+            "fromStationCode": from_code.upper(),
+            "toStationCode": to_code.upper(),
+        })
     return data
 
 
