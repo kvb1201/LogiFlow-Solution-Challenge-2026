@@ -392,7 +392,20 @@ class AirPipeline(BasePipeline):
         filtered = self._apply_constraints(engineered, normalized)
 
         if not filtered:
-            return []
+            return {
+                "best": None,
+                "alternatives": [],
+                "all": []
+            }
 
         ranked = score_routes(filtered, normalized["priority"])
-        return [self._explain_route(route, normalized["priority"]) for route in ranked]
+        explained = [self._explain_route(route, normalized["priority"]) for route in ranked]
+
+        best = explained[0]
+        alternatives = explained[1:]
+
+        return {
+            "best": best,
+            "alternatives": alternatives,
+            "all": explained
+        }

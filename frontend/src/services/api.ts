@@ -36,6 +36,13 @@ export interface RoadPayload {
   traffic_aware: boolean;
   vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
   fuel_price?: number;
+  // simulation controls
+  mode?: 'realtime' | 'simulation';
+  simulation?: {
+    traffic_level: number;
+    weather_level: number;
+    incident_count: number;
+  };
 }
 
 export interface AirPayload {
@@ -257,6 +264,36 @@ export interface AirOptimizeResult {
   };
 }
 
+export interface HybridComparisonRow {
+  mode: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  confidence?: number | null;
+}
+
+export interface HybridModeRoute {
+  mode?: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  train_name?: string | null;
+  airline?: string | null;
+  distance_km?: number | null;
+}
+
+export interface HybridOptimizeResult {
+  recommended_mode?: string | null;
+  reason?: string | null;
+  tradeoffs?: string[] | null;
+  comparison?: HybridComparisonRow[] | null;
+  best_per_mode?: {
+    road?: HybridModeRoute | null;
+    rail?: HybridModeRoute | null;
+    air?: HybridModeRoute | null;
+  } | null;
+}
+
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
@@ -266,23 +303,42 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Optimize failed (${res.status}): ${text}`);
+    let detail = '';
+    try {
+      const data = await res.json();
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      const text = await res.text();
+      detail = text.trim();
+    }
+    throw new Error(detail || `Optimize failed (${res.status})`);
   }
   return res.json();
 }
 
 export async function fetchRoadRoutes(payload: RoadPayload) {
+  console.log('[API] ROAD REQUEST →', payload);
   const res = await fetch(`${BACKEND_BASE}/road/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+
+  const data = await res.json();
+
+  console.log('[API] ROAD RESPONSE →', {
+    routeCount: data?.all?.length,
+    firstRoute: data?.all?.[0],
+    simulation: data?.simulation,
+  });
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Road optimize failed (${res.status}): ${text}`);
+    throw new Error(`Road optimize failed (${res.status}): ${JSON.stringify(data)}`);
   }
-  return res.json();
+
+  return data;
 }
 
 export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimizeResult> {
@@ -294,6 +350,23 @@ export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimize
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Air optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function optimizeHybridRoute(payload: {
+  source: string;
+  destination: string;
+  priority: string;
+}): Promise<HybridOptimizeResult> {
+  const res = await fetch(`${BACKEND_BASE}/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
   }
   return res.json();
 }
@@ -361,6 +434,18 @@ export async function getStationInfo(stationCode: string): Promise<StationInfo |
   const res = await fetch(`${BACKEND_BASE}/railway/stations/${encodeURIComponent(stationCode)}`);
   if (!res.ok) return null;
   return res.json();
+}
+
+/** Get coordinates for a city/town name from the backend. */
+export async function getLocationCoords(name: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/railway/coords?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { lat: data.lat, lng: data.lng };
+  } catch {
+    return null;
+  }
 }
 
 function num(v: unknown, fallback = 0): number {

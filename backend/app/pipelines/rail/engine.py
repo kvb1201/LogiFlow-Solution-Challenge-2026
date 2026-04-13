@@ -70,6 +70,7 @@ def _build_recommendation(route, priority, reason):
     elif delay_info.get("avg_delay_minutes", 0) > 60:
         key_factors.append("Significant historical delay expected")
 
+    decision_hours = route.get("adjusted_duration_hours", route.get("effective_hours", route.get("total_duration_hours", 0)))
     rec = {
         "priority": priority,
         "reason": reason,
@@ -80,7 +81,7 @@ def _build_recommendation(route, priority, reason):
         "train_type": first_train.get("train_type", ""),
         "departure": first_train.get("departure_time", ""),
         "arrival": route["trains"][-1].get("arrival_time", "") if route.get("trains") else "",
-        "duration_hours": round(route.get("effective_hours", route.get("total_duration_hours", 0)), 1),
+        "duration_hours": round(decision_hours, 1),
         "parcel_cost_inr": round(route.get("parcel_cost_inr", 0), 0),
         "risk_score": route.get("risk_score", 0),
         "risk_pct": f"{route.get('risk_score', 0) * 100:.0f}%",
@@ -131,11 +132,11 @@ def decide(enriched_routes, payload):
     deadline = payload.get("deadline_hours", float("inf"))
 
     # ── Apply hard constraints ────────────────────────────────────────
-    filtered = [
-        r for r in enriched_routes
-        if r.get("parcel_cost_inr", 0) <= budget
-        and r.get("effective_hours", 0) <= deadline
-    ]
+    filtered = []
+    for r in enriched_routes:
+        decision_hours = r.get("adjusted_duration_hours", r.get("effective_hours", 0))
+        if r.get("parcel_cost_inr", 0) <= budget and decision_hours <= deadline:
+            filtered.append(r)
 
     if not filtered:
         print(f"  [Engine] No routes meet budget ({budget}) and deadline ({deadline}h). "
@@ -150,10 +151,14 @@ def decide(enriched_routes, payload):
     )
 
     # ── Fastest ───────────────────────────────────────────────────────
-    fastest_route = min(filtered, key=lambda r: r.get("effective_hours", float("inf")))
+    fastest_route = min(
+        filtered,
+        key=lambda r: r.get("adjusted_duration_hours", r.get("effective_hours", float("inf")))
+    )
+    fastest_hours = fastest_route.get("adjusted_duration_hours", fastest_route.get("effective_hours", 0))
     fastest = _build_recommendation(
         fastest_route, "fastest",
-        f"Arrives in {fastest_route.get('effective_hours', 0):.1f} hrs "
+        f"Arrives in {fastest_hours:.1f} hrs "
         f"(incl. any transfer waits)"
     )
 
@@ -167,7 +172,7 @@ def decide(enriched_routes, payload):
 
     # ── Balanced composite scoring ────────────────────────────────────
     costs = [r.get("parcel_cost_inr", 0) for r in filtered]
-    times = [r.get("effective_hours", 0) for r in filtered]
+    times = [r.get("adjusted_duration_hours", r.get("effective_hours", 0)) for r in filtered]
     risks = [r.get("risk_score", 0) for r in filtered]
     eases = [1 - r.get("booking_ease", 0.5) for r in filtered]  # flip: lower = better
 
@@ -207,7 +212,10 @@ def decide(enriched_routes, payload):
         if w_cost > 0.3 and norm_costs[i] <= 0.2:
             reasoning.append(f"Highly cost-effective (₹{r.get('parcel_cost_inr', 0):.0f}) matching budget priority")
         if w_time > 0.3 and norm_times[i] <= 0.2:
-            reasoning.append(f"Provides extremely fast transit ({r.get('effective_hours', 0):.1f}h) matching time priority")
+            reasoning.append(
+                f"Provides extremely fast transit "
+                f"({r.get('adjusted_duration_hours', r.get('effective_hours', 0)):.1f}h) matching time priority"
+            )
         if w_risk > 0.3 and norm_risks[i] <= 0.2:
             reasoning.append(f"Offers optimal safety for physical cargo ({r.get('risk_score', 0)*100:.0f}% risk)")
             
@@ -254,7 +262,10 @@ def decide(enriched_routes, payload):
             "train_type": first_train.get("train_type", ""),
             "route_type": r.get("route_type", "direct"),
             "parcel_cost_inr": round(_safe_float(r.get("parcel_cost_inr", 0)), 0),
-            "effective_hours": round(_safe_float(r.get("effective_hours", 0)), 1),
+            "effective_hours": round(
+                _safe_float(r.get("adjusted_duration_hours", r.get("effective_hours", 0))),
+                1
+            ),
             "risk_score": _safe_float(r.get("risk_score", 0)),
             "booking_ease": _safe_float(r.get("booking_ease", 0.5)),
             "has_transfer": r.get("has_transfer", False),

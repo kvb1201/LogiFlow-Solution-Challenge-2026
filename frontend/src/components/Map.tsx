@@ -86,7 +86,54 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
     trainDelayDetail,
     mapFocusedTrainNumber,
     setMapFocusedTrain,
+    source,
+    destination,
+    hasSearched,
   } = useLogiFlowStore();
+
+  // ── Draw source/dest city dots (even if optimization fails) ────────
+  useEffect(() => {
+    if (!stationLayerRef.current || !mapRef.current) return;
+    
+    // If we have a selected route, the route drawing handles station dots.
+    // However, if we don't have a route (fail case), we still want the cities.
+    const segments = selectedRec?.segments || selectedOption?.segments;
+    if (segments && segments.length > 0) return;
+
+    if (!hasSearched) {
+       stationLayerRef.current.clearLayers();
+       return;
+    }
+
+    stationLayerRef.current.clearLayers();
+    const srcCoord = stationCoords[source.trim()];
+    const dstCoord = stationCoords[destination.trim()];
+
+    if (srcCoord) {
+      const marker = L.marker([srcCoord.lat, srcCoord.lng], {
+        icon: makeIcon(stationDotSvg('#10b981', true), 24),
+      }).addTo(stationLayerRef.current);
+      marker.bindTooltip(`<strong>Source:</strong> ${source}`, { direction: 'top', permanent: true });
+    }
+    if (dstCoord) {
+      const marker = L.marker([dstCoord.lat, dstCoord.lng], {
+        icon: makeIcon(stationDotSvg('#ef4444', true), 24),
+      }).addTo(stationLayerRef.current);
+      marker.bindTooltip(`<strong>Destination:</strong> ${destination}`, { direction: 'top', permanent: true });
+    }
+
+    if (srcCoord || dstCoord) {
+       const pts = [
+         srcCoord ? ([srcCoord.lat, srcCoord.lng] as [number, number]) : null,
+         dstCoord ? ([dstCoord.lat, dstCoord.lng] as [number, number]) : null
+       ].filter(Boolean) as [number, number][];
+       
+       if (pts.length > 0) {
+         const bounds = L.latLngBounds(pts);
+         mapRef.current.fitBounds(bounds, { padding: [100, 100], maxZoom: 6 });
+       }
+    }
+  }, [source, destination, stationCoords, hasSearched, selectedRec, selectedOption]);
 
   // ── Animation loop for train positions ─────────────────────────────
   useEffect(() => {

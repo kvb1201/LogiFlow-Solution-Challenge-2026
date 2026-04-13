@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
@@ -38,7 +38,20 @@ function delayHrs(route: RoadRoute): number {
   return 0;
 }
 
-function computeConfidence(route: RoadRoute, allRoutes: RoadRoute[], routeIndex: number): number {
+// Priority weights: [cost, time, risk]
+function priorityWeights(priority: string): [number, number, number] {
+  if (priority === 'cost') return [0.6, 0.25, 0.15];
+  if (priority === 'time') return [0.2, 0.6, 0.2];
+  if (priority === 'safe') return [0.15, 0.2, 0.65];
+  return [1 / 3, 1 / 3, 1 / 3]; // balanced
+}
+
+function computeConfidence(
+  route: RoadRoute,
+  allRoutes: RoadRoute[],
+  routeIndex: number,
+  priority: string
+): number {
   if (!allRoutes.length) return 68;
   const best = allRoutes[0];
   const costs = allRoutes.map(r => Number(r.cost));
@@ -50,11 +63,14 @@ function computeConfidence(route: RoadRoute, allRoutes: RoadRoute[], routeIndex:
   const costDiff = Math.max(0, Number(route.cost) - Number(best.cost)) / spanC;
   const timeDiff = Math.max(0, Number(route.time) - Number(best.time)) / spanT;
   const riskDiff = Math.max(0, Number(route.risk) - Number(best.risk)) / spanR;
-  let confidence = 1 - (costDiff + timeDiff + riskDiff);
+  const [wC, wT, wR] = priorityWeights(priority);
+  // Weighted deviation from best — lower is better
+  const weightedDev = wC * costDiff + wT * timeDiff + wR * riskDiff;
+  let confidence = 1 - weightedDev * 1.5; // scale so spread is meaningful
   const delay = delayHrs(route);
-  if (delay > 4) confidence -= 0.2;
-  else if (delay > 2) confidence -= 0.1;
-  confidence -= routeIndex * 0.012;
+  if (delay > 4) confidence -= 0.18;
+  else if (delay > 2) confidence -= 0.08;
+  confidence -= routeIndex * 0.015; // rank penalty
   return Math.round(Math.max(0.3, Math.min(0.95, confidence)) * 100);
 }
 
@@ -66,7 +82,13 @@ function sanitizeInsights(reason: string | undefined, factors: string[]): string
     const t = raw.trim();
     if (!t) continue;
     const low = t.toLowerCase();
-    if (seen.has(low) || (r0 && low === r0) || /^optimized for\b/i.test(t)) continue;
+    if (
+      seen.has(low) ||
+      (r0 && low === r0) ||
+      /^optimized for\b/i.test(t) ||
+      /selected among/i.test(t) ||
+      /within budget/i.test(t)
+    ) continue;
     seen.add(low);
     out.push(t.length > 118 ? `${t.slice(0, 115)}…` : t);
   }
@@ -78,17 +100,53 @@ function whyNotThisRoute(best: RoadRoute, alt: RoadRoute): string[] {
   const dt = Number(alt.time) - Number(best.time);
   const dc = Number(alt.cost) - Number(best.cost);
   const dr = (Number(alt.risk) - Number(best.risk)) * 100;
-  if (dt > 0.05) lines.push(`Slower by ${dt.toFixed(1)} hrs`);
-  if (dc > 0) lines.push(`More expensive by ₹${formatCurrency(dc)}`);
-  if (dr > 1) lines.push(`Higher risk (+${Math.round(dr)}%)`);
+  if (dt > 0.05) lines.push(`Takes ${dt.toFixed(1)} hrs longer than best route`);
+  if (dc > 0) lines.push(`Costs ₹${formatCurrency(dc)} more than best route`);
+  if (dr > 1) lines.push(`Higher risk by ${Math.round(dr)}% compared to best route`);
   return lines;
 }
 
-function explainConfidence(confidence: number, route: RoadRoute): string {
+function explainConfidence(
+  confidence: number,
+  route: RoadRoute,
+  allRoutes: RoadRoute[],
+  priority: string
+): string {
   const delay = delayHrs(route);
-  let s = `Estimated confidence is ${confidence}% for this option versus the leading route on cost, time, and risk.`;
-  if (delay > 2) s += ' Higher predicted delay reduces certainty slightly.';
-  return s;
+  const reasons: string[] = [];
+
+  if (allRoutes.length > 0) {
+    const best = allRoutes[0];
+    const dt = Number(route.time) - Number(best.time);
+    const dc = Number(route.cost) - Number(best.cost);
+    const dr = Number(route.risk) - Number(best.risk);
+
+    // Priority-first reason
+    if (priority === 'cost') {
+      if (dc <= 0) reasons.push('cheapest option');
+      else reasons.push(`₹${formatCurrency(dc)} more than cheapest`);
+    } else if (priority === 'time') {
+      if (dt <= 0.1) reasons.push('fastest option');
+      else reasons.push(`${dt.toFixed(1)} hrs slower than fastest`);
+    } else if (priority === 'safe') {
+      if (dr <= 0.01) reasons.push('lowest risk profile');
+      else reasons.push(`higher risk (+${Math.round(dr * 100)}%)`);
+    } else {
+      // Balanced — report all three
+      if (dt <= 0.1) reasons.push('competitive travel time');
+      else reasons.push(`${dt.toFixed(1)} hrs slower`);
+      if (dc <= 0) reasons.push('cost efficient');
+      else reasons.push(`₹${formatCurrency(dc)} higher cost`);
+      if (dr <= 0.01) reasons.push('low risk');
+      else reasons.push(`moderate risk (+${Math.round(dr * 100)}%)`);
+    }
+  }
+
+  // Delay note — only flag if it actually hurts
+  if (delay > 4) reasons.push('high delay expected');
+  else if (delay > 2) reasons.push('moderate expected delay');
+
+  return `Recommendation strength ${confidence}% — based on ${reasons.join(', ')}.`;
 }
 
 function explainDataSource(route: RoadRoute): string {
@@ -154,6 +212,7 @@ function RouteCard({
   confidence: number;
 }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const priority = useLogiFlowStore(s => s.priority);
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
   const isBest = index === 0;
@@ -161,7 +220,7 @@ function RouteCard({
   const best = routes[0];
   const insights = sanitizeInsights(route.reason, factors);
   const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
-  const confidenceNote = explainConfidence(confidence, route);
+  const confidenceNote = explainConfidence(confidence, route, routes, priority);
   const dataSourceNote = explainDataSource(route);
 
   return (
@@ -175,9 +234,9 @@ function RouteCard({
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
       }}
       className={[
-        'w-full text-left rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden',
+        'w-full text-left rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden',
         isSelected
-          ? 'border-primary/35 bg-surface-container/50 shadow-[0_0_0_1px_rgba(172,199,255,0.08)] shadow-lg'
+          ? 'border-primary/60 bg-surface-container/60 shadow-[0_0_0_2px_rgba(172,199,255,0.18),0_0_24px_rgba(172,199,255,0.10)] scale-[1.01]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:bg-surface-container/30 hover:border-outline-variant/25',
       ].join(' ')}
     >
@@ -417,10 +476,10 @@ function RecommendationPanel({
     const ch = cheapestIdx >= 0 ? cheapestIdx + 1 : 1;
     const sf = safestIdx >= 0 ? safestIdx + 1 : 1;
 
-    if (priority === 'time') out.push(`Prioritize speed → Route ${fr} (${Number(routes[fastestIdx]?.time).toFixed(1)}h).`);
-    else if (priority === 'cost') out.push(`Prioritize cost → Route ${ch} (₹${formatCurrency(routes[cheapestIdx]?.cost)}).`);
-    else if (priority === 'safe') out.push(`Prioritize safety → Route ${sf} (lowest risk).`);
-    else out.push(`Route 1 is the default ranked trade-off for this lane.`);
+    if (priority === 'time') out.push(`Fastest option → Route ${fr} (${Number(routes[fastestIdx]?.time).toFixed(1)} hrs).`);
+    else if (priority === 'cost') out.push(`Most cost-efficient → Route ${ch} (₹${formatCurrency(routes[cheapestIdx]?.cost)}).`);
+    else if (priority === 'safe') out.push(`Safest route → Route ${sf} (lowest risk exposure).`);
+    else out.push(`Route 1 offers the best overall balance across cost, time, and risk.`);
 
     if (routes.length > 1) {
       if (fr === ch) out.push(`Route ${fr} leads on both time and cost.`);
@@ -457,15 +516,34 @@ export default function RouteResults() {
   const routes = useLogiFlowStore(s => s.routes);
   const selectedRoute = useLogiFlowStore(s => s.selectedRoute);
   const setSelectedRoute = useLogiFlowStore(s => s.setSelectedRoute);
+  const priority = useLogiFlowStore(s => s.priority);
   const source = useLogiFlowStore(s => s.source);
   const destination = useLogiFlowStore(s => s.destination);
   const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
 
+  // Auto-select best route whenever routes or priority changes
+  useEffect(() => {
+    if (!routes.length) return;
+    let bestIndex = 0;
+    if (priority === 'cost') {
+      const minCostVal = Math.min(...routes.map(r => Number(r.cost)));
+      bestIndex = routes.findIndex(r => Number(r.cost) === minCostVal);
+    } else if (priority === 'time') {
+      const minTimeVal = Math.min(...routes.map(r => Number(r.time)));
+      bestIndex = routes.findIndex(r => Number(r.time) === minTimeVal);
+    } else if (priority === 'safe') {
+      const minRiskVal = Math.min(...routes.map(r => Number(r.risk)));
+      bestIndex = routes.findIndex(r => Number(r.risk) === minRiskVal);
+    }
+    setSelectedRoute(Math.max(0, bestIndex));
+  }, [routes, priority, setSelectedRoute]);
+
   if (!routes || routes.length === 0) return null;
 
-  const minCost = Math.min(...routes.map(r => Number(r.cost)));
-  const minTime = Math.min(...routes.map(r => Number(r.time)));
-  const minRisk = Math.min(...routes.map(r => Number(r.risk)));
+  const safeIndex = Math.min(selectedRoute, routes.length - 1);
+  const minCost = Math.min(...routes.map((r) => Number(r.cost)));
+  const minTime = Math.min(...routes.map((r) => Number(r.time)));
+  const minRisk = Math.min(...routes.map((r) => Number(r.risk)));
 
   return (
     <section>
@@ -490,7 +568,7 @@ export default function RouteResults() {
           <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
           {routes.map((r, i) => (
             <RouteCard
-              key={i}
+              key={`${i}-${r.cost}-${r.time}-${r.risk}`}
               route={r}
               index={i}
               isSelected={i === selectedRoute}
@@ -502,7 +580,7 @@ export default function RouteResults() {
               destination={destination}
               cargoKg={cargoWeight}
               routes={routes}
-              confidence={computeConfidence(r, routes, i)}
+              confidence={computeConfidence(r, routes, i, priority)}
             />
           ))}
         </div>
@@ -520,13 +598,17 @@ export default function RouteResults() {
                 </span>
                 Live Map
               </span>
-              <span className="text-[10px] mono text-on-surface-variant">
-                R{selectedRoute + 1} · {formatCostCompact(routes[selectedRoute]?.cost ?? 0)} ·{' '}
-                {Number(routes[selectedRoute]?.time ?? 0).toFixed(1)}h
+              <span className="text-[10px] mono text-on-surface-variant text-right truncate">
+                R{safeIndex + 1} · {formatCostCompact(routes[safeIndex]?.cost ?? 0)} ·{' '}
+                {Number(routes[safeIndex]?.time ?? 0).toFixed(1)}h
               </span>
             </div>
             <div className="flex-1 min-h-0 pt-3">
-              <MapView routes={routes} selectedRoute={selectedRoute} />
+              <MapView
+                key={`map-${selectedRoute}-${routes.length}-${Math.round(routes[0]?.cost ?? 0)}`}
+                routes={routes}
+                selectedRoute={selectedRoute}
+              />
             </div>
           </div>
         </div>
