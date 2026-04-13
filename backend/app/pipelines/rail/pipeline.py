@@ -26,20 +26,34 @@ class RailPipeline(BasePipeline):
         Generate rail cargo routes between source and destination cities.
         """
         try:
-            routes = find_routes(source, destination, max_direct=10, max_transfer=3)
+            departure_date = (payload or {}).get("departure_date")
+            # API-first route discovery; CSV is used only as fallback inside find_routes.
+            routes = find_routes(
+                source,
+                destination,
+                max_direct=10,
+                max_transfer=3,
+                use_api=True,
+                date_of_journey=departure_date,
+            )
         except Exception as e:
             print(f"  [RailPipeline] Route finding failed: {e}")
             routes = []
 
         if not routes:
-            return [{
+            fallback = {
                 "type": "Rail",
                 "mode": "rail",
                 "time": 24,
                 "cost": 5000,
                 "risk": 0.5,
                 "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }]
+            }
+            return {
+                "best": fallback,
+                "alternatives": [],
+                "all": [fallback]
+            }
 
         default_payload = {
             "cargo_weight_kg": 100,
@@ -53,14 +67,19 @@ class RailPipeline(BasePipeline):
 
         enriched = engineer_features(routes, default_payload)
         if not enriched:
-            return [{
+            fallback = {
                 "type": "Rail",
                 "mode": "rail",
                 "time": 24,
                 "cost": 5000,
                 "risk": 0.5,
                 "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }]
+            }
+            return {
+                "best": fallback,
+                "alternatives": [],
+                "all": [fallback]
+            }
 
         results = []
         for r in enriched:
@@ -95,7 +114,17 @@ class RailPipeline(BasePipeline):
                     "tariff_breakdown": r.get("tariff_breakdown", {}),
                 },
             })
-        return results
+        # Sort routes by simple score (cost + time + risk)
+        ranked = sorted(results, key=lambda x: (x["cost"], x["time"], x["risk"]))
+
+        best = ranked[0]
+        alternatives = ranked[1:]
+
+        return {
+            "best": best,
+            "alternatives": alternatives,
+            "all": ranked
+        }
 
 
 class RailCargoOptimizer:
@@ -116,19 +145,35 @@ class RailCargoOptimizer:
                 return {"error": "origin_city and destination_city are required"}
 
             print(f"\n🚂 Finding routes: {origin} → {destination}")
-            routes = find_routes(origin, destination, max_direct=15, max_transfer=5)
+            departure_date = payload.get("departure_date")
+            # API-first route discovery; CSV is used only as fallback inside find_routes.
+            routes = find_routes(
+                origin,
+                destination,
+                max_direct=15,
+                max_transfer=5,
+                use_api=True,
+                date_of_journey=departure_date,
+            )
             if not routes:
-                return {"error": f"No train routes found between {origin} and {destination}."}
+                return {
+                    "error": (
+                        "Sorry, this train route is not available right now on ConfirmTkt. "
+                        "We are continuously expanding route coverage."
+                    )
+                }
 
             print(f"  Found {len(routes)} route candidates")
 
             print("⚙️ Engineering features...")
             enriched = engineer_features(routes, payload)
             if not enriched:
-                return {"error": "No feasible routes found for this cargo type/weight."}
-
-            print("🎯 Running decision engine...")
-            results = decide(enriched, payload)
+                return {
+                    "error": (
+                        "Sorry, this train route is not available right now for your selection. "
+                        "We are continuously expanding route coverage."
+                    )
+                }
 
             try:
                 from app.pipelines.rail.ml_models import predict_delay, predict_duration_factor
@@ -146,6 +191,9 @@ class RailCargoOptimizer:
                 for r in enriched:
                     r["predicted_delay_min"] = r.get("effective_hours", 0) * 3
                     r["adjusted_duration_hours"] = r.get("effective_hours", 0) * 1.1
+
+            print("🎯 Running decision engine...")
+            results = decide(enriched, payload)
 
             results["route_metadata"] = {
                 "origin_city": origin,

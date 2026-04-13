@@ -79,7 +79,15 @@ const PRIORITY_OPTIONS = [
   },
 ];
 
-// ── Location Input ────────────────────────────────────────────────────
+const SIMULATION_PRESETS = [
+  { name: "Peak Hour", traffic: 0.85, weather: 0.2, incidents: 1 },
+  { name: "Heavy Rain", traffic: 0.6, weather: 0.9, incidents: 2 },
+  { name: "Festival Rush", traffic: 0.95, weather: 0.3, incidents: 3 },
+  { name: "Highway Accident", traffic: 0.7, weather: 0.2, incidents: 5 },
+  { name: "Clear Conditions", traffic: 0.2, weather: 0.1, incidents: 0 },
+];
+
+// ── Autocomplete Input ───────────────────────────────────────────────
 
 function LocationInput({
   label,
@@ -258,6 +266,12 @@ export default function RoadInputForm() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = new Date().toISOString().split('T')[0];
+  // Simulation mode state
+  const [simulationMode, setSimulationMode] = useState(false);
+  const [simTraffic, setSimTraffic] = useState(0.5);
+  const [simWeather, setSimWeather] = useState(0.5);
+  const [simIncidents, setSimIncidents] = useState(0);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   useEffect(() => {
     const timers = [
@@ -285,7 +299,27 @@ export default function RoadInputForm() {
       return;
     }
     setError(null);
-    handleOptimize({ mode: 'road', avoidTolls, avoidHighways, trafficAware });
+    console.log("[FORM SUBMIT]", {
+      mode: 'road',
+      simulationMode,
+      simTraffic,
+      simWeather,
+      simIncidents,
+      source,
+      destination,
+      priority,
+    });
+    handleOptimize({
+      mode: 'road',
+      simulation_mode: simulationMode,
+      simulation: simulationMode
+        ? {
+            traffic_level: simTraffic,
+            weather_level: simWeather,
+            incident_count: simIncidents,
+          }
+        : undefined,
+    });
   };
 
   return (
@@ -649,6 +683,100 @@ export default function RoadInputForm() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Simulation Mode */}
+            <div className="mt-6 border border-outline-variant/20 rounded-xl p-4 bg-surface-container-lowest/30">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold text-on-surface-variant uppercase">Simulation Mode</span>
+                <input
+                  type="checkbox"
+                  checked={simulationMode}
+                  onChange={(e) => setSimulationMode(e.target.checked)}
+                />
+              </div>
+
+              {simulationMode && (
+                <>
+                  {/* Presets */}
+                  <div className="mb-4">
+                    <label className="text-[11px] text-on-surface-variant mb-2 block">
+                      Scenario Presets
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {SIMULATION_PRESETS.map((preset) => (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() => {
+                            setSimulationMode(true);
+                            setActivePreset(preset.name);
+                            setSimTraffic(preset.traffic);
+                            setSimWeather(preset.weather);
+                            setSimIncidents(preset.incidents);
+                          }}
+                          className={`px-3 py-1.5 text-xs rounded-lg border transition ${
+                            activePreset === preset.name
+                              ? "bg-primary/20 border-primary text-primary"
+                              : "border-outline-variant/20 bg-surface-container hover:bg-primary/10"
+                          }`}
+                        >
+                          {preset.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sliders */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-[11px] text-on-surface-variant">Traffic Level</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={simTraffic}
+                        onChange={(e) => {
+                          setSimTraffic(Number(e.target.value));
+                          setActivePreset(null);
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-on-surface-variant">Weather Severity</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={simWeather}
+                        onChange={(e) => {
+                          setSimWeather(Number(e.target.value));
+                          setActivePreset(null);
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-on-surface-variant">Incidents</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={simIncidents}
+                        onChange={(e) => {
+                          setSimIncidents(Number(e.target.value));
+                          setActivePreset(null);
+                        }}
+                        className="w-full px-2 py-1 rounded bg-surface-container border border-outline-variant/20 text-sm"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Submit */}

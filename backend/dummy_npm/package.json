@@ -11,6 +11,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "irctc-connect": "^3.0.3"
+    "irctc-connect": "^3.0.3",
+    "railway": "^2.0.17",
+    "railway-api": "^2.1.0"
   }
 }

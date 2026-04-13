@@ -6,6 +6,7 @@ import {
   getStationInfoDirect,
   getTrainDelay,
   getLiveTrainStatus,
+  getLocationCoords,
   fetchRoadRoutes,
   type OptimizeResult,
   type Recommendation,
@@ -148,6 +149,12 @@ interface LogiFlowState {
     avoidTolls?: boolean;
     avoidHighways?: boolean;
     trafficAware?: boolean;
+    simulation_mode?: boolean;
+    simulation?: {
+      traffic_level: number;
+      weather_level: number;
+      incident_count: number;
+    };
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
@@ -189,7 +196,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   liveTrains: [],
   stationCoords: {},
-  liveMapMode: 'all',
+  liveMapMode: 'route',
 
   trainDelayDetail: null,
   selectedTrainLive: null,
@@ -265,6 +272,33 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     const mode = opts?.mode || 'rail';
     set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
 
+    // ALWAYS fetch source/destination city coordinates for the map immediately
+    // to ensure user sees "dots" even if everything else fails.
+    void (async () => {
+      const src = source.trim();
+      const dst = destination.trim();
+      const [srcCoord, dstCoord] = await Promise.all([
+        getLocationCoords(src),
+        getLocationCoords(dst),
+      ]);
+      if (srcCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [src]: { code: src, name: src, lat: srcCoord.lat, lng: srcCoord.lng }
+          }
+        }));
+      }
+      if (dstCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [dst]: { code: dst, name: dst, lat: dstCoord.lat, lng: dstCoord.lng }
+          }
+        }));
+      }
+    })();
+
     try {
       if (opts?.mode === 'air') {
         const maxStops = cargoType === 'Perishable' ? 0 : cargoType === 'Fragile' ? 1 : 2;
@@ -301,12 +335,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
         const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
-        console.log("ROAD PAYLOAD:", {
-          avoidTolls,
-          avoidHighways,
-          trafficAware,
-        });
-        const raw = (await fetchRoadRoutes({
+
+        const payload = {
           source: source.trim(),
           destination: destination.trim(),
           priority,
@@ -319,11 +349,27 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
-        })) as RoadOptimizeResponse;
+          mode: (opts?.simulation_mode ? 'simulation' : 'realtime') as 'simulation' | 'realtime',
+          simulation: opts?.simulation,
+        };
+
+        console.log("[LogiFlow] REQUEST →", payload);
+
+        const raw = (await fetchRoadRoutes(payload)) as RoadOptimizeResponse;
+
+        console.log("[LogiFlow] RESPONSE →", raw?.all?.[0]?.time, raw?.all?.[0]?.risk);
+
         const all = Array.isArray(raw?.all) ? raw.all : [];
+
+        console.log("[LogiFlow] ZUSTAND SET →", {
+          routeCount: all.length,
+          firstRoute_time: all[0]?.time,
+          firstRoute_risk: all[0]?.risk,
+        });
+
         set({
           searchMode: 'road',
-          routes: all,
+          routes: all.map(r => ({ ...r })),
           selectedRoute: 0,
           recommendations: { cheapest: null, fastest: null, safest: null },
           allOptions: [],
@@ -380,15 +426,27 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
+      const isNoRouteCase =
+        /no train routes found/i.test(msg) ||
+        /no feasible routes found/i.test(msg) ||
+        /route is not available right now/i.test(msg);
+      const friendlyNoRouteMessage =
+        'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       set({
-        error: msg,
+        error: isNoRouteCase ? friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         airRoutes: [],
         selectedAirRouteIndex: 0,
         airConstraintsApplied: null,
+        recommendations: { cheapest: null, fastest: null, safest: null },
+        allOptions: [],
+        constraintsApplied: null,
+        routeMetadata: null,
       });
-      console.error('Optimize error:', err);
+      if (!isNoRouteCase) {
+        console.error('Optimize error:', err);
+      }
     } finally {
       set({ loading: false, loadingMode: null });
     }

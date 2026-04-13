@@ -25,10 +25,16 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="h-full flex flex-col overflow-x-hidden font-body" suppressHydrationWarning>
+      <body className="h-full flex flex-col overflow-x-hidden font-body bg-[#06080d]" suppressHydrationWarning>
         <NavBar />
-        <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <div className="absolute w-[800px] h-[800px] rounded-full blur-[140px] opacity-[0.08] bg-primary -top-[35%] -left-[20%] animate-mesh-1" />
+            <div className="absolute w-[680px] h-[680px] rounded-full blur-[120px] opacity-[0.07] bg-tertiary -bottom-[35%] -right-[20%] animate-mesh-2" />
+          </div>
+          <div className="relative z-10 flex-1 flex flex-col min-h-0">
           {children}
+          </div>
         </main>
       </body>
     </html>
