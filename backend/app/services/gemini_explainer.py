@@ -9,15 +9,23 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
-GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
-GEMINI_API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-)
+
+def _gemini_runtime_config() -> tuple[str, str, str]:
+    # Reload .env so key/model updates are reflected without stale process values.
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
+    key = (os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_RAIL") or "").strip()
+    model = (
+        os.getenv("GEMINI_MODEL")
+        or os.getenv("GEMINI_MODEL_RAIL")
+        or "gemini-2.0-flash"
+    ).strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    return key, model, url
 
 
 def is_gemini_enabled() -> bool:
-    return bool(GEMINI_API_KEY)
+    key, _, _ = _gemini_runtime_config()
+    return bool(key)
 
 
 def _clean_json_block(text: str) -> str:
@@ -37,7 +45,8 @@ def generate_hybrid_explanations(
     ranked_routes: List[Dict[str, Any]],
     recommended_mode: str,
 ) -> Dict[str, Any] | None:
-    if not is_gemini_enabled():
+    api_key, _, api_url = _gemini_runtime_config()
+    if not api_key:
         return None
 
     prompt_payload = {
@@ -85,8 +94,8 @@ def generate_hybrid_explanations(
 
     try:
         response = requests.post(
-            GEMINI_API_URL,
-            params={"key": GEMINI_API_KEY},
+            api_url,
+            params={"key": api_key},
             json=request_body,
             timeout=12,
         )

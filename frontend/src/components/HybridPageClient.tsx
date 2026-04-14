@@ -2,7 +2,13 @@
 
 import Link from 'next/link';
 import React, { useMemo, useState } from 'react';
-import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
+import {
+  askHybridAssistant,
+  optimizeHybridRoute,
+  type HybridAssistantMessage,
+  type HybridComparisonRow,
+  type HybridOptimizeResult,
+} from '@/services/api';
 
 type Priority = 'cost' | 'time' | 'balanced';
 type Mode = 'road' | 'rail' | 'air';
@@ -127,6 +133,10 @@ export default function HybridPageClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
+  const [assistantQuestion, setAssistantQuestion] = useState('');
+  const [assistantThread, setAssistantThread] = useState<HybridAssistantMessage[]>([]);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   const comparisonRows = useMemo(() => {
     return Array.isArray(result?.comparison) ? result?.comparison : [];
@@ -136,6 +146,24 @@ export default function HybridPageClient() {
     if (!comparisonRows.length || !recommendedMode) return null;
     return comparisonRows.find((row) => normalizeMode(row.mode) === recommendedMode) ?? null;
   }, [comparisonRows, recommendedMode]);
+  const assistantContext = useMemo(() => {
+    if (!result) return null;
+    return {
+      source: source.trim(),
+      destination: destination.trim(),
+      priority,
+      recommended_mode: result.recommended_mode ?? null,
+      recommended_reason: result.reason ?? null,
+      comparison: comparisonRows,
+      tradeoffs: Array.isArray(result.tradeoffs) ? result.tradeoffs : [],
+      reason: result.reason ?? undefined,
+      mode_insights:
+        result && typeof result === 'object' && 'mode_insights' in result
+          ? ((result as unknown as { mode_insights?: Record<string, string[]> }).mode_insights ?? {})
+          : {},
+      best_per_mode: result.best_per_mode ?? undefined,
+    };
+  }, [result, source, destination, priority, comparisonRows]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,11 +177,39 @@ export default function HybridPageClient() {
         priority,
       });
       setResult(data);
+      setAssistantQuestion('');
+      setAssistantThread([]);
+      setAssistantError(null);
     } catch (err: unknown) {
       setResult(null);
       setError(err instanceof Error ? err.message : 'Failed to optimize hybrid route.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onAskSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const question = assistantQuestion.trim();
+    if (!question || !assistantContext || assistantLoading) return;
+
+    setAssistantLoading(true);
+    setAssistantError(null);
+    const nextThread = [...assistantThread, { role: 'user', content: question } as HybridAssistantMessage];
+    setAssistantQuestion('');
+
+    try {
+      const response = await askHybridAssistant({
+        question,
+        context: assistantContext,
+        history: assistantThread,
+      });
+      setAssistantThread([...nextThread, { role: 'assistant', content: response.answer }]);
+    } catch (err: unknown) {
+      setAssistantError(err instanceof Error ? err.message : 'Failed to get assistant response.');
+      setAssistantQuestion(question);
+    } finally {
+      setAssistantLoading(false);
     }
   }
 
@@ -294,6 +350,56 @@ export default function HybridPageClient() {
               ) : (
                 <p className="text-sm text-on-surface-variant">No tradeoffs were returned for this route set.</p>
               )}
+            </div>
+
+            <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5 space-y-3">
+              <h3 className="text-sm font-semibold text-on-surface">Ask Gemini about this hybrid result</h3>
+              <p className="text-sm text-on-surface-variant leading-relaxed">
+                Ask follow-up questions about mode selection, costs, ETA, delay risk, and tradeoffs.
+                Responses are constrained to transportation and logistics context.
+              </p>
+
+              {assistantThread.length > 0 && (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {assistantThread.map((message, idx) => (
+                    <div
+                      key={`hybrid-chat-${message.role}-${idx}`}
+                      className={`rounded-xl border px-3 py-2 text-sm leading-relaxed whitespace-pre-line ${
+                        message.role === 'user'
+                          ? 'ml-6 bg-primary/10 border-primary/20 text-on-surface'
+                          : 'mr-6 bg-surface-container/40 border-outline-variant/10 text-on-surface-variant'
+                      }`}
+                    >
+                      <div className="text-[10px] uppercase tracking-[0.14em] font-semibold opacity-70 mb-1">
+                        {message.role === 'user' ? 'You' : 'Gemini'}
+                      </div>
+                      {message.content}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <form onSubmit={onAskSubmit} className="space-y-2">
+                <textarea
+                  rows={3}
+                  value={assistantQuestion}
+                  onChange={(e) => setAssistantQuestion(e.target.value)}
+                  placeholder="Why is rail recommended over road here? What changes if priority is time?"
+                  className="w-full rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-outline">Transportation-only follow-up for this exact hybrid result.</span>
+                  <button
+                    type="submit"
+                    disabled={assistantLoading || !assistantQuestion.trim()}
+                    className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+                  >
+                    {assistantLoading ? 'Thinking...' : 'Ask'}
+                  </button>
+                </div>
+              </form>
+
+              {assistantError && <p className="text-sm text-error">{assistantError}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
