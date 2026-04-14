@@ -372,6 +372,51 @@ export async function optimizeHybridRoute(payload: {
   return res.json();
 }
 
+export type WaterRoute = {
+  type: 'Water';
+  mode: 'water';
+  time: number;
+  cost: number;
+  risk: number;
+  segments: Array<{ mode: string; from: string; to: string }>;
+  origin_port?: string;
+  destination_port?: string;
+  distance_nm?: number;
+  transshipments?: number;
+  risk_breakdown?: Record<string, number>;
+  expected_delay_hours?: number;
+  delay_prob?: number;
+  reliability_score?: number;
+  notes?: string;
+};
+
+export type WaterPayload = {
+  source: string;
+  destination: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  priority?: string;
+  constraints?: {
+    risk_threshold?: number | null;
+    delay_tolerance_hours?: number | null;
+    max_transshipments?: number | null;
+    budget_max_inr?: number | null;
+  };
+};
+
+export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRoute[]> {
+  const res = await fetch(`${BACKEND_BASE}/water/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Water optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
   const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
