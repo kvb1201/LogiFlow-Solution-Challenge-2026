@@ -8,7 +8,19 @@ from app.pipelines.water import WaterPipeline
 
 def test():
     pipeline = WaterPipeline()
-    routes = pipeline.generate("Surat", "Mumbai")
+    routes = pipeline.generate(
+        "Surat",
+        "Mumbai",
+        {
+            "cargo_weight_kg": 250,
+            "cargo_type": "General",
+            "priority": "cost",
+            "constraints": {
+                "max_transshipments": 1,
+                "risk_threshold": 0.75,
+            },
+        },
+    )
 
     print("Generated Routes:")
     for r in routes:
