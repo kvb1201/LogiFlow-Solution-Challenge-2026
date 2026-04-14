@@ -159,27 +159,8 @@ def _init_redis():
         print(f"  [Cache] ⚠️ Redis unavailable ({e}) — using in-memory cache")
 
 
-# Persistent Local fallback cache (mirrors Redis for standalone python scripts)
-_CACHE_FILE = os.path.join(os.path.dirname(__file__), "api_cache.json")
+# In-memory fallback
 _mem_cache = {}
-
-def _load_mem_cache():
-    global _mem_cache
-    if os.path.exists(_CACHE_FILE):
-        try:
-            with open(_CACHE_FILE, "r") as f:
-                _mem_cache = json.load(f)
-        except Exception:
-            _mem_cache = {}
-
-def _save_mem_cache():
-    try:
-        with open(_CACHE_FILE, "w") as f:
-            json.dump(_mem_cache, f)
-    except Exception:
-        pass
-
-_load_mem_cache()
 
 def _cache_key(endpoint, params):
     """Generate a deterministic cache key from endpoint + params."""
@@ -213,7 +194,7 @@ def _cache_get(key):
             return entry["data"]
         else:
             del _mem_cache[key]  # expired
-            _save_mem_cache()
+
             
     return None
 
@@ -247,7 +228,6 @@ def _cache_set(key, data, ttl):
         for k in list(_mem_cache.keys())[:100]:
             del _mem_cache[k]
 
-    _save_mem_cache()
 
 
 def get_cache_stats():
