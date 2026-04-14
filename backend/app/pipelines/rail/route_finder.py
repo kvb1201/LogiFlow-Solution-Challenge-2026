@@ -5,43 +5,55 @@ FALLBACK: Uses CSV data_loader when API is unavailable.
 """
 
 from app.pipelines.rail import railradar_client
-from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
-
-
-def _resolve_stations_via_api(city_name):
-    """
-    Resolve a city name to station codes using the RailRadar search API.
-    Returns list of station code strings.
-    """
-    results = railradar_client.search_stations(city_name)
-    if results:
-        return [s["code"] for s in results]
-    return []
+from app.pipelines.rail.config import STATION_TO_CITY
+from app.pipelines.rail.station_resolver import resolve_station
 
 
 def _resolve_stations(city_name):
     """
-    Resolve a city name to its station codes.
-    Tries: 1) config mapping, 2) RailRadar API search, 3) raw code.
+    Resolve a city name to its primary station code using local resolver.
+    Returns a list with a single station code.
     """
-    # 1. Direct config lookup
-    city_key = city_name.strip()
-    for city, codes in CITY_TO_STATION.items():
-        if city.lower() == city_key.lower():
-            return codes
+    raw_input = city_name.strip()
+    city_key = raw_input.split(",")[0].strip()
+    candidates = []
 
-    # 2. RailRadar API search
-    api_codes = _resolve_stations_via_api(city_key)
-    if api_codes:
-        return api_codes
+    # Always try resolved station code first so downstream (ConfirmTkt) receives a code.
+    code = resolve_station(city_name)
+    if code:
+        candidates.append(code)
 
-    # 3. Fuzzy config match
-    for city, codes in CITY_TO_STATION.items():
-        if city_key.lower() in city.lower() or city.lower() in city_key.lower():
-            return codes
+    # Keep the original input as a secondary fallback for providers that accept text queries.
+    candidates.append(raw_input)
 
-    # 4. Assume it's already a station code
-    return [city_key.upper()]
+    # Final fallback: assume already a station code form.
+    candidates.append(city_key.upper())
+
+    # Deduplicate while preserving order.
+    out = []
+    seen = set()
+    for c in candidates:
+        normalized = (c or "").strip()
+        if not normalized:
+            continue
+        key = normalized.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(normalized)
+    return out
+
+
+def get_station_candidates(place: str) -> list[str]:
+    """
+    Public helper: return station-code candidates attempted for a user-entered place.
+    Used for user-facing fallback messages when no trains are found.
+    """
+    try:
+        return _resolve_stations(place)
+    except Exception:
+        raw = (place or "").strip()
+        return [raw] if raw else []
 
 
 def _minutes_to_time_str(minutes):
@@ -53,7 +65,14 @@ def _minutes_to_time_str(minutes):
     return f"{h:02d}:{m:02d}"
 
 
-def find_routes(source_city, dest_city, max_direct=15, max_transfer=5):
+def find_routes(
+    source_city,
+    dest_city,
+    max_direct=15,
+    max_transfer=5,
+    use_api=True,
+    date_of_journey=None,
+):
     """
     Find all cargo routes between two cities.
     Uses RailRadar API as primary data source.
@@ -82,103 +101,126 @@ def find_routes(source_city, dest_city, max_direct=15, max_transfer=5):
         return []
 
     routes = []
-    seen_trains = set()
-
-    # ── Query RailRadar API for each station pair ─────────────────────
-    for fs in from_stations:
-        for ts in to_stations:
-            api_data = railradar_client.get_trains_between(fs, ts)
-            if not api_data or not api_data.get("trains"):
-                continue
-
-            for train in api_data["trains"]:
-                train_no = train.get("trainNumber", "")
-                if train_no in seen_trains:
+    # ── PRIMARY: API-first (IRCTC Connect/RapidAPI through client) ────
+    if use_api:
+        seen_trains = set()
+        # Query API for each station pair
+        for fs in from_stations:
+            for ts in to_stations:
+                api_data = railradar_client.get_trains_between(
+                    fs,
+                    ts,
+                    date_of_journey=date_of_journey,
+                )
+                if not api_data or not api_data.get("trains"):
                     continue
-                seen_trains.add(train_no)
 
-                # Extract schedule for this segment
-                from_schedule = train.get("fromStationSchedule", {})
-                to_schedule = train.get("toStationSchedule", {})
+                for train in api_data.get("trains", []):
+                    # STRICT VERIFICATION: Ensure the API didn't return a "nearby" station
+                    # IRCTC API sometimes clusters Mumbai stations (BCT, MMCT, BSR, PNVL).
+                    # We only want trains that actually stop at the station we queried.
+                    actual_fs = train.get("fromStationCode", "").upper()
+                    actual_ts = train.get("toStationCode", "").upper()
+                    
+                    # If the API explicitly returns a different station code, skip it
+                    # unless it's an exact match of what we requested.
+                    req_fs = fs.upper()
+                    req_ts = ts.upper()
 
-                dep_minutes = from_schedule.get("departureMinutes")
-                arr_minutes = to_schedule.get("arrivalMinutes")
-                dep_day = from_schedule.get("day", 1)
-                arr_day = to_schedule.get("day", 1)
+                    train_no = train.get("trainNumber", "")
+                    train_key = (train_no, actual_fs or fs.upper(), actual_ts or ts.upper())
+                    if train_key in seen_trains:
+                        continue
+                    seen_trains.add(train_key)
 
-                # Duration calculation (across days)
-                if dep_minutes is not None and arr_minutes is not None:
-                    duration_min = arr_minutes - dep_minutes
-                    duration_min += (arr_day - dep_day) * 1440
-                    if duration_min <= 0:
-                        duration_min += 1440
-                else:
-                    duration_min = train.get("travelTimeMinutes", 0) or 0
+                    # Extract schedule for this segment
+                    from_schedule = train.get("fromStationSchedule", {})
+                    to_schedule = train.get("toStationSchedule", {})
 
-                distance_km = to_schedule.get(
-                    "distanceFromSourceKm",
-                    train.get("distanceKm", 0)
-                ) or 0
-                avg_speed = train.get("avgSpeedKmph", 0) or 0
+                    dep_minutes = from_schedule.get("departureMinutes")
+                    arr_minutes = to_schedule.get("arrivalMinutes")
+                    dep_day = from_schedule.get("day", 1)
+                    arr_day = to_schedule.get("day", 1)
 
-                # Running days
-                running_days = train.get("runningDays", {})
-                days_list = running_days.get("days", [])
-                all_days = running_days.get("allDays", False)
+                    # Duration calculation (across days)
+                    if dep_minutes is not None and arr_minutes is not None:
+                        duration_min = arr_minutes - dep_minutes
+                        duration_min += (arr_day - dep_day) * 1440
+                        if duration_min <= 0:
+                            duration_min += 1440
+                    else:
+                        duration_min = train.get("travelTimeMinutes", 0) or 0
 
-                train_info = {
-                    "train_no": train_no,
-                    "train_name": train.get("trainName", ""),
-                    "train_type": train.get("type", ""),
-                    "from_station": fs,
-                    "to_station": ts,
-                    "from_station_name": train.get("sourceStationName", fs),
-                    "to_station_name": train.get("destinationStationName", ts),
-                    "departure_time": _minutes_to_time_str(dep_minutes),
-                    "arrival_time": _minutes_to_time_str(arr_minutes),
-                    "distance_km": round(distance_km, 1),
-                    "duration_minutes": duration_min,
-                    "avg_speed_kmph": avg_speed,
-                    "total_halts": train.get("totalHalts", 0),
-                    "running_days": days_list,
-                    "all_days": all_days,
-                    "data_source": "railradar_api",
-                    # These are used by ML/engineer downstream
-                    "stops_between": train.get("totalHalts", 0),
-                    "total_train_stops": train.get("totalHalts", 0) + 2,
-                    "total_train_distance": train.get("distanceKm", 0) or 0,
-                }
+                    distance_km = to_schedule.get(
+                        "distanceFromSourceKm",
+                        train.get("distanceKm", 0)
+                    ) or 0
+                    avg_speed = train.get("avgSpeedKmph", 0) or 0
 
-                routes.append({
-                    "route_type": "direct",
-                    "trains": [train_info],
-                    "total_distance_km": round(distance_km, 1),
-                    "total_duration_minutes": duration_min,
-                    "total_duration_hours": round(duration_min / 60, 2) if duration_min > 0 else 0,
-                    "has_transfer": False,
-                    "transfer_details": [],
-                    "data_source": "railradar_api",
-                    "segments": [{
-                        "mode": "Rail",
-                        "from": fs,
-                        "to": ts,
-                        "from_name": train.get("sourceStationName", fs),
-                        "to_name": train.get("destinationStationName", ts),
+                    # Running days
+                    running_days = train.get("runningDays", {})
+                    days_list = running_days.get("days", [])
+                    all_days = running_days.get("allDays", False)
+
+                    train_info = {
                         "train_no": train_no,
                         "train_name": train.get("trainName", ""),
                         "train_type": train.get("type", ""),
-                        "departure": _minutes_to_time_str(dep_minutes),
-                        "arrival": _minutes_to_time_str(arr_minutes),
+                        "from_station": actual_fs or fs,
+                        "to_station": actual_ts or ts,
+                        "from_station_name": train.get("sourceStationName", fs),
+                        "to_station_name": train.get("destinationStationName", ts),
+                        "departure_time": _minutes_to_time_str(dep_minutes),
+                        "arrival_time": _minutes_to_time_str(arr_minutes),
                         "distance_km": round(distance_km, 1),
                         "duration_minutes": duration_min,
                         "avg_speed_kmph": avg_speed,
+                        "total_halts": train.get("totalHalts", 0),
                         "running_days": days_list,
-                    }],
-                })
+                        "all_days": all_days,
+                        "data_source": train.get("provider", "rail_api"),
+                        # These are used by ML/engineer downstream
+                        "stops_between": train.get("totalHalts", 0),
+                        "total_train_stops": train.get("totalHalts", 0) + 2,
+                        "total_train_distance": train.get("distanceKm", 0) or 0,
+                        # ConfirmTkt-rich fields for UI + ML.
+                        "confirmtkt_raw": train.get("confirmtkt_raw"),
+                        "confirmtkt_availability_cache": train.get("confirmtkt_availability_cache", {}),
+                        "confirmtkt_availability_cache_tatkal": train.get("confirmtkt_availability_cache_tatkal", {}),
+                        "confirmtkt_avl_classes": train.get("confirmtkt_avl_classes", []),
+                        "confirmtkt_train_rating": train.get("confirmtkt_train_rating"),
+                    }
 
-    # ── Fallback to CSV if API returned nothing ───────────────────────
+                    routes.append({
+                        "route_type": "direct",
+                        "trains": [train_info],
+                        "total_distance_km": round(distance_km, 1),
+                        "total_duration_minutes": duration_min,
+                        "total_duration_hours": round(duration_min / 60, 2) if duration_min > 0 else 0,
+                        "has_transfer": False,
+                        "transfer_details": [],
+                        "data_source": train.get("provider", "rail_api"),
+                        "segments": [{
+                            "mode": "Rail",
+                            "from": actual_fs or fs,
+                            "to": actual_ts or ts,
+                            "from_name": train.get("sourceStationName", fs),
+                            "to_name": train.get("destinationStationName", ts),
+                            "train_no": train_no,
+                            "train_name": train.get("trainName", ""),
+                            "train_type": train.get("type", ""),
+                            "departure": _minutes_to_time_str(dep_minutes),
+                            "arrival": _minutes_to_time_str(arr_minutes),
+                            "distance_km": round(distance_km, 1),
+                            "duration_minutes": duration_min,
+                            "avg_speed_kmph": avg_speed,
+                            "running_days": days_list,
+                            "confirmtkt_raw": train.get("confirmtkt_raw"),
+                        }],
+                    })
+
+    # ── FALLBACK: CSV/local schedule data (only when API yields nothing) ─
     if not routes:
-        print(f"  [RouteFinder] API returned no routes, falling back to CSV data...")
         try:
             from app.pipelines.rail import data_loader
             direct_trains = data_loader.get_trains_for_route(
@@ -209,7 +251,7 @@ def find_routes(source_city, dest_city, max_direct=15, max_transfer=5):
                     }],
                 })
         except Exception as e:
-            print(f"  [RouteFinder] CSV fallback also failed: {e}")
+            print(f"  [RouteFinder] CSV fallback load failed: {e}")
 
     # Sort by duration
     routes.sort(key=lambda x: x.get("total_duration_minutes", 9999))

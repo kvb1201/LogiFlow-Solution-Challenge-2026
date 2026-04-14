@@ -1,21 +1,22 @@
 import { create } from 'zustand';
 import {
   optimizeCargoRoute,
+  optimizeAirRoute,
   getLiveTrainMap,
   getStationInfoDirect,
-  getTrainDelay,
-  getLiveTrainStatus,
+  getLocationCoords,
   fetchRoadRoutes,
   fetchWaterRoutes,
   type OptimizeResult,
   type Recommendation,
   type RankedOption,
   type LiveTrainPosition,
-  type StationInfo,
   type TrainDelayData,
   type LiveTrainStatus,
   type StationSearchResult,
   type WaterRoute,
+  type AirRoute,
+  type AirOptimizeResult,
 } from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -73,12 +74,16 @@ interface LogiFlowState {
   deadlineHours: number;
 
   // Results
+  searchMode: 'rail' | 'road' | 'air';
   recommendations: {
     cheapest: Recommendation | null;
     fastest: Recommendation | null;
     safest: Recommendation | null;
   };
   allOptions: RankedOption[];
+  airRoutes: AirRoute[];
+  selectedAirRouteIndex: number;
+  airConstraintsApplied: AirOptimizeResult['constraints_applied'] | null;
   selectedOptionIndex: number;
   constraintsApplied: OptimizeResult['constraints_applied'] | null;
   routeMetadata: OptimizeResult['route_metadata'] | null;
@@ -117,7 +122,7 @@ interface LogiFlowState {
 
   // UI state
   loading: boolean;
-  loadingMode: 'rail' | 'road' | 'water' | null;
+  loadingMode: 'rail' | 'road' | 'water' | 'air' | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -132,6 +137,7 @@ interface LogiFlowState {
   setBudgetMax: (val: number) => void;
   setDeadlineHours: (val: number) => void;
   setSelectedOptionIndex: (idx: number) => void;
+  setSelectedAirRouteIndex: (idx: number) => void;
   setActiveView: (view: 'recommendations' | 'all_options') => void;
   setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
   setSelectedRoute: (idx: number) => void;
@@ -144,10 +150,16 @@ interface LogiFlowState {
   setFuelPrice: (val: number) => void;
 
   handleOptimize: (opts?: {
-    mode?: 'rail' | 'road' | 'water';
+    mode?: 'rail' | 'road' | 'water' | 'air';
     avoidTolls?: boolean;
     avoidHighways?: boolean;
     trafficAware?: boolean;
+    simulation_mode?: boolean;
+    simulation?: {
+      traffic_level: number;
+      weather_level: number;
+      incident_count: number;
+    };
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
@@ -170,9 +182,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   recommendations: { cheapest: null, fastest: null, safest: null },
   allOptions: [],
+  airRoutes: [],
+  selectedAirRouteIndex: 0,
+  airConstraintsApplied: null,
   selectedOptionIndex: 0,
   constraintsApplied: null,
   routeMetadata: null,
+  searchMode: 'rail',
 
   routes: [],
   selectedRoute: 0,
@@ -188,7 +204,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   liveTrains: [],
   stationCoords: {},
-  liveMapMode: 'all',
+  liveMapMode: 'route',
 
   trainDelayDetail: null,
   selectedTrainLive: null,
@@ -214,6 +230,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setBudgetMax: (val) => set({ budgetMax: val }),
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
+  setSelectedAirRouteIndex: (idx) => set({ selectedAirRouteIndex: idx }),
   setActiveView: (view) => set({ activeView: view }),
   setLiveMapMode: (mode) => set({ liveMapMode: mode }),
   setSelectedRoute: (idx) => set({ selectedRoute: idx }),
@@ -231,9 +248,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     loadingMode: null,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
+    airRoutes: [],
+    selectedAirRouteIndex: 0,
+    airConstraintsApplied: null,
     selectedOptionIndex: 0,
     routes: [],
     selectedRoute: 0,
+    searchMode: 'rail',
     error: null,
     trainDelayDetail: null,
     selectedTrainLive: null,
@@ -260,17 +281,71 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     const mode = opts?.mode || 'rail';
     set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
 
+    // ALWAYS fetch source/destination city coordinates for the map immediately
+    // to ensure user sees "dots" even if everything else fails.
+    void (async () => {
+      const src = source.trim();
+      const dst = destination.trim();
+      const [srcCoord, dstCoord] = await Promise.all([
+        getLocationCoords(src),
+        getLocationCoords(dst),
+      ]);
+      if (srcCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [src]: { code: src, name: src, lat: srcCoord.lat, lng: srcCoord.lng }
+          }
+        }));
+      }
+      if (dstCoord) {
+        set(state => ({
+          stationCoords: {
+             ...state.stationCoords,
+             [dst]: { code: dst, name: dst, lat: dstCoord.lat, lng: dstCoord.lng }
+          }
+        }));
+      }
+    })();
+
     try {
+      if (opts?.mode === 'air') {
+        const maxStops = cargoType === 'Perishable' ? 0 : cargoType === 'Fragile' ? 1 : 2;
+        const result = await optimizeAirRoute({
+          source: source.trim(),
+          destination: destination.trim(),
+          priority,
+          departure_date: departureDate,
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType.toLowerCase(),
+          max_stops: maxStops,
+          budget_limit: budgetMax,
+          deadline_hours: deadlineHours,
+        });
+        set({
+          searchMode: 'air',
+          airRoutes: result.ranked_routes || [],
+          selectedAirRouteIndex: 0,
+          airConstraintsApplied: result.constraints_applied,
+          recommendations: { cheapest: null, fastest: null, safest: null },
+          allOptions: [],
+          constraintsApplied: null,
+          routeMetadata: null,
+          routes: [],
+          selectedRoute: 0,
+          trainDelayDetail: null,
+          selectedTrainLive: null,
+          detailTrainNumber: null,
+          mapFocusedTrainNumber: null,
+        });
+        return;
+      }
       if (opts?.mode === 'road') {
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
         const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
-        console.log("ROAD PAYLOAD:", {
-          avoidTolls,
-          avoidHighways,
-          trafficAware,
-        });
-        const raw = (await fetchRoadRoutes({
+
+        const payload = {
           source: source.trim(),
           destination: destination.trim(),
           priority,
@@ -283,11 +358,33 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
-        })) as RoadOptimizeResponse;
+          mode: (opts?.simulation_mode ? 'simulation' : 'realtime') as 'simulation' | 'realtime',
+          simulation: opts?.simulation,
+        };
+
+        console.log("[LogiFlow] REQUEST →", payload);
+
+        const raw = (await fetchRoadRoutes(payload)) as RoadOptimizeResponse;
+
+        console.log("[LogiFlow] RESPONSE →", raw?.all?.[0]?.time, raw?.all?.[0]?.risk);
+
         const all = Array.isArray(raw?.all) ? raw.all : [];
+
+        console.log("[LogiFlow] ZUSTAND SET →", {
+          routeCount: all.length,
+          firstRoute_time: all[0]?.time,
+          firstRoute_risk: all[0]?.risk,
+        });
+
         set({
-          routes: all,
+          searchMode: 'road',
+          routes: all.map(r => ({ ...r })),
           selectedRoute: 0,
+          recommendations: { cheapest: null, fastest: null, safest: null },
+          allOptions: [],
+          airRoutes: [],
+          selectedAirRouteIndex: 0,
+          airConstraintsApplied: null,
         });
         return;
       }
@@ -326,15 +423,21 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       });
 
       set({
+        searchMode: 'rail',
         recommendations: {
           cheapest: result.cheapest,
           fastest: result.fastest,
           safest: result.safest,
         },
         allOptions: result.all_options || [],
+        airRoutes: [],
+        selectedAirRouteIndex: 0,
+        airConstraintsApplied: null,
         constraintsApplied: result.constraints_applied,
         routeMetadata: result.route_metadata,
         selectedOptionIndex: 0,
+        routes: [],
+        selectedRoute: 0,
       });
 
       // Fetch station coordinates for map (from segments)
@@ -355,14 +458,30 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
+      const isNoRouteCase =
+        /no train routes found/i.test(msg) ||
+        /no feasible routes found/i.test(msg) ||
+        /route is not available right now/i.test(msg);
+      const friendlyNoRouteMessage =
+        'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       set({
-        error: msg,
+        // Preserve backend guidance (e.g., suggested station codes) when available.
+        error: isNoRouteCase ? (msg || friendlyNoRouteMessage) : msg,
         routes: [],
         selectedRoute: 0,
         waterRoutes: [],
         selectedWaterRoute: 0,
+        airRoutes: [],
+        selectedAirRouteIndex: 0,
+        airConstraintsApplied: null,
+        recommendations: { cheapest: null, fastest: null, safest: null },
+        allOptions: [],
+        constraintsApplied: null,
+        routeMetadata: null,
       });
-      console.error('Optimize error:', err);
+      if (!isNoRouteCase) {
+        console.error('Optimize error:', err);
+      }
     } finally {
       set({ loading: false, loadingMode: null });
     }
@@ -406,33 +525,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   fetchTrainDelayAndLive: async (trainNumber: string) => {
     const no = trainNumber.trim();
     if (!no) return;
-    set({ detailTrainNumber: no });
-    try {
-      const [delay, live] = await Promise.all([
-        getTrainDelay(no),
-        getLiveTrainStatus(no),
-      ]);
-      set({
-        trainDelayDetail: delay,
-        selectedTrainLive: live,
-      });
-    } catch (e) {
-      console.warn('Train detail fetch failed:', e);
-      set({ trainDelayDetail: null, selectedTrainLive: null });
-    }
+    // Delay/live per-train probes are disabled for RailYatri-first flow.
+    set({ detailTrainNumber: no, trainDelayDetail: null, selectedTrainLive: null });
   },
 
   /** Live map dot: only refresh live JSON — keep route delay breakdown intact */
   setMapFocusedTrain: (trainNumber) => {
     set({ mapFocusedTrainNumber: trainNumber });
-    if (!trainNumber) return;
-    void (async () => {
-      try {
-        const live = await getLiveTrainStatus(trainNumber);
-        set({ selectedTrainLive: live });
-      } catch (e) {
-        console.warn('Live status fetch failed:', e);
-      }
-    })();
+    // Do not fetch legacy live endpoint from map interactions.
   },
 }));

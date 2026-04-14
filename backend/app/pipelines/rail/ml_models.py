@@ -317,9 +317,12 @@ def _load_or_train():
             print("  [ML] Loaded cached models.")
             return
         except Exception as e:
-            print(f"  [ML] Cache load failed: {e}. Retraining...")
+            print(f"  [ML] Cache load failed: {e}.")
 
-    _train_models()
+    # DO NOT train models during a live request (too slow, hits rate limits)
+    # Instead, mark as loaded so we use fallback heuristics
+    print("  [ML] Models not found — using heuristic fallbacks (fast).")
+    _models_loaded = True
 
 
 def extract_route_features(route):
@@ -334,6 +337,7 @@ def extract_route_features(route):
     train_type_str = ""
     scheduled_duration = route.get("total_duration_minutes", 0)
 
+    confirmtkt_prediction_signal = []
     for t in route.get("trains", []):
         total_stops += t.get("stops_between", 0) + 2
         train_type_str += (t.get("train_type", "") + " " + t.get("train_name", "")).lower()
@@ -351,6 +355,36 @@ def extract_route_features(route):
         if to_stn in MAJOR_JUNCTIONS:
             junction_count += 1
 
+        # Pull prediction probability signal from ConfirmTkt availability cache
+        # and feed it into model inputs through junction_count scaling.
+        avl_cache = t.get("confirmtkt_availability_cache") or {}
+        for cls_data in avl_cache.values():
+            try:
+                pct = cls_data.get("predictionPercentage")
+                if pct is None:
+                    continue
+                pct = float(pct)
+                if pct >= 0:
+                    confirmtkt_prediction_signal.append(pct)
+            except Exception:
+                continue
+
+    # Additional reliability signal (fallback when real delay API is unavailable):
+    # Incorporate RailYatri aggregate/live "severity" into junction_count
+    # WITHOUT changing feature vector shape.
+    try:
+        ry_agg = route.get("railyatri_past_track_record") or {}
+        sev = ry_agg.get("severity_avg_mean")
+        if sev is None:
+            ry = route.get("railyatri_running_record") or {}
+            sev = ry.get("severity_avg")
+        if sev is not None:
+            sev = float(sev)
+            # severity_avg in [0..1] roughly → add 0..2 to junction_count
+            junction_count += max(0, min(2, int(round(sev * 2))))
+    except Exception:
+        pass
+
     if "rajdhani" in train_type_str:
         train_type = 4
     elif "shatabdi" in train_type_str:
@@ -364,6 +398,10 @@ def extract_route_features(route):
 
     avg_spacing = total_distance / max(total_stops - 1, 1) if total_stops > 1 else total_distance
     is_long_distance = 1 if total_distance > 500 else 0
+    if confirmtkt_prediction_signal:
+        avg_prediction = sum(confirmtkt_prediction_signal) / len(confirmtkt_prediction_signal)
+        # Better confirmation probability generally correlates with less uncertainty.
+        junction_count = max(0, junction_count - int(avg_prediction / 35))
 
     return np.array([[
         total_stops, total_distance, avg_spacing, junction_count,

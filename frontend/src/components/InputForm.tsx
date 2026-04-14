@@ -4,29 +4,31 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { searchStations, type StationSearchResult } from '@/services/api';
 
-// ── Debounced station search ─────────────────────────────────────────
+// ── Debounced station search ──────────────────────────────────────────
 
 function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
   const [results, setResults] = useState<StationSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const search = useCallback((query: string) => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (!query || query.length < 2) {
-      setResults([]);
-      setGlobalSuggestions([]);
-      return;
-    }
-
-    setLoading(true);
-    timeoutRef.current = setTimeout(async () => {
-      const data = await searchStations(query);
-      setResults(data);
-      setGlobalSuggestions(data);
-      setLoading(false);
-    }, 300);
-  }, [setGlobalSuggestions]);
+  const search = useCallback(
+    (query: string) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (!query || query.length < 2) {
+        setResults([]);
+        setGlobalSuggestions([]);
+        return;
+      }
+      setLoading(true);
+      timeoutRef.current = setTimeout(async () => {
+        const data = await searchStations(query);
+        setResults(data);
+        setGlobalSuggestions(data);
+        setLoading(false);
+      }, 300);
+    },
+    [setGlobalSuggestions]
+  );
 
   const clear = useCallback(() => {
     setResults([]);
@@ -36,7 +38,7 @@ function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) =>
   return { results, loading, search, clear };
 }
 
-// ── Constants ────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────
 
 const CARGO_TYPES = [
   { value: 'General', icon: 'inventory_2', desc: 'Standard goods' },
@@ -45,12 +47,30 @@ const CARGO_TYPES = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'cost', label: 'Cheapest', icon: 'savings', color: 'from-emerald-500/20 to-emerald-600/5 border-emerald-500/30', iconColor: 'text-emerald-400' },
-  { value: 'time', label: 'Fastest', icon: 'bolt', color: 'from-amber-500/20 to-amber-600/5 border-amber-500/30', iconColor: 'text-amber-400' },
-  { value: 'safe', label: 'Safest', icon: 'verified_user', color: 'from-blue-500/20 to-blue-600/5 border-blue-500/30', iconColor: 'text-blue-400' },
+  {
+    value: 'cost',
+    label: 'Cheapest',
+    icon: 'savings',
+    activeClass: 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300',
+    iconColor: 'text-emerald-400',
+  },
+  {
+    value: 'time',
+    label: 'Fastest',
+    icon: 'bolt',
+    activeClass: 'bg-amber-500/10 border-amber-500/35 text-amber-300',
+    iconColor: 'text-amber-400',
+  },
+  {
+    value: 'safe',
+    label: 'Safest',
+    icon: 'verified_user',
+    activeClass: 'bg-blue-500/10 border-blue-500/35 text-blue-300',
+    iconColor: 'text-blue-400',
+  },
 ];
 
-// ── Autocomplete Input ───────────────────────────────────────────────
+// ── Station Input ─────────────────────────────────────────────────────
 
 function StationInput({
   label,
@@ -90,85 +110,112 @@ function StationInput({
   };
 
   const selectStation = (station: StationSearchResult) => {
-    onChange(`${station.name}`);
+    onChange(station.name);
     clear();
     setShowDropdown(false);
   };
 
   return (
     <div ref={wrapperRef} className="relative z-[9999]">
-      <label className="block text-[11px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-2 ml-1 flex items-center gap-2">
+      <label className="flex items-center gap-1.5 text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
         {label}
         {loading && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
       </label>
-      
-      <div className="relative group">
-        <div className={`absolute -inset-0.5 rounded-xl transition-all duration-500 ease-out ${
-          focused 
-            ? 'opacity-100 bg-gradient-to-r from-primary/40 via-tertiary/40 to-primary/40 blur-md' 
-            : 'opacity-0 bg-transparent blur-none'
-        }`} />
-        
-        <div className={`relative flex items-center bg-[#0d1117] border rounded-xl overflow-hidden transition-all duration-300 ${
-          focused ? 'border-primary/50 shadow-[0_0_15px_rgba(47,129,247,0.15)]' : 'border-outline-variant/30 hover:border-outline-variant/60'
-        }`}>
-          <div className="pl-4 pr-3 flex items-center justify-center">
-             <span className={`material-symbols-outlined text-xl transition-all duration-500 ${
-               focused ? `${iconColor} scale-110 drop-shadow-md` : 'text-outline scale-100'
-             }`}>
-               {icon}
-             </span>
-          </div>
 
+      <div className="relative">
+        {/* Focus glow */}
+        <div
+          className={`absolute -inset-0.5 rounded-xl transition-all duration-400 ${
+            focused
+              ? 'opacity-100 bg-gradient-to-r from-primary/30 via-tertiary/25 to-primary/30 blur-sm'
+              : 'opacity-0'
+          }`}
+        />
+        <div
+          className={`relative flex items-center bg-surface-container-lowest/80 border rounded-xl overflow-hidden transition-all duration-200 ${
+            focused
+              ? 'border-primary/40 shadow-[0_0_12px_rgba(172,199,255,0.12)]'
+              : 'border-outline-variant/20 hover:border-outline-variant/40'
+          }`}
+        >
+          <div className="pl-3.5 pr-2.5 flex items-center justify-center shrink-0">
+            <span
+              className={`material-symbols-outlined transition-all duration-300 leading-none ${
+                focused ? `${iconColor} scale-110` : 'text-outline scale-100'
+              }`}
+              style={{
+                fontSize: '18px',
+                fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20",
+              }}
+            >
+              {icon}
+            </span>
+          </div>
           <input
             type="text"
             value={value}
             onChange={e => handleChange(e.target.value)}
-            onFocus={() => { setFocused(true); if (results.length) setShowDropdown(true); }}
+            onFocus={() => {
+              setFocused(true);
+              if (results.length) setShowDropdown(true);
+            }}
             onBlur={() => setFocused(false)}
-            className="w-full py-4 pr-3 bg-transparent text-white placeholder:text-outline/40 focus:outline-none text-sm font-medium tracking-wide"
+            className="w-full py-3.5 pr-3 bg-transparent text-on-surface placeholder:text-outline/40 focus:outline-none text-sm font-medium"
             placeholder={placeholder}
           />
-          
           {value && (
             <button
               type="button"
-              onMouseDown={(e) => { e.preventDefault(); onChange(''); clear(); setShowDropdown(false); }}
-              className="absolute right-3 p-1 rounded-full text-outline-variant hover:text-white hover:bg-white/10 transition-colors"
+              onMouseDown={e => {
+                e.preventDefault();
+                onChange('');
+                clear();
+                setShowDropdown(false);
+              }}
+              className="absolute right-2.5 p-1 rounded-full text-outline/50 hover:text-on-surface hover:bg-surface-container transition-colors"
             >
-              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                close
+              </span>
             </button>
           )}
         </div>
       </div>
 
+      {/* Dropdown */}
       {showDropdown && results.length > 0 && (
-        <div className="absolute z-[99999] top-full left-0 right-0 mt-2 bg-[#12161d]/95 backdrop-blur-xl border border-white/10 border-b-white/5 rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden animate-slide-up origin-top">
-          <div className="max-h-[260px] overflow-y-auto p-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 bg-surface-container-low/95 backdrop-blur-xl border border-outline-variant/20 rounded-2xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.7)] overflow-hidden animate-slide-up origin-top">
+          <div className="max-h-[240px] overflow-y-auto p-1.5">
             {results.map((s, i) => (
               <button
                 key={`${s.code}-${i}`}
                 type="button"
-                className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-all duration-200 text-left group"
-                onMouseDown={(e) => {
-                  e.preventDefault(); 
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container/80 transition-all duration-150 text-left group"
+                onMouseDown={e => {
+                  e.preventDefault();
                   selectStation(s);
                 }}
               >
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white/5 border border-white/5 flex items-center justify-center group-hover:bg-primary/20 group-hover:border-primary/30 transition-all">
-                  <span className="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-lg">train</span>
+                <div className="w-8 h-8 rounded-full bg-surface-container/60 border border-outline-variant/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 group-hover:border-primary/25 transition-all">
+                  <span
+                    className="material-symbols-outlined text-outline group-hover:text-primary transition-colors"
+                    style={{ fontSize: '15px', fontVariationSettings: "'FILL' 1" }}
+                  >
+                    train
+                  </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors truncate">
+                  <div className="text-[13px] font-semibold text-on-surface group-hover:text-on-surface truncate">
                     {s.name}
                   </div>
-                  <div className="text-[11px] text-white/40 font-mono mt-0.5 tracking-wider">
-                    {s.code}
-                  </div>
+                  <div className="text-[10px] text-outline mono mt-0.5 tracking-wider">{s.code}</div>
                 </div>
-                <div className="opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 pr-2 text-primary">
-                  <span className="material-symbols-outlined text-sm">subdirectory_arrow_left</span>
-                </div>
+                <span
+                  className="material-symbols-outlined text-outline/0 group-hover:text-primary/60 transition-all -translate-x-1 group-hover:translate-x-0"
+                  style={{ fontSize: '14px' }}
+                >
+                  subdirectory_arrow_left
+                </span>
               </button>
             ))}
           </div>
@@ -178,7 +225,7 @@ function StationInput({
   );
 }
 
-// ── Main Form ────────────────────────────────────────────────────────
+// ── Main Form ─────────────────────────────────────────────────────────
 
 export default function InputForm() {
   const {
@@ -199,11 +246,11 @@ export default function InputForm() {
 
   useEffect(() => {
     const timers = [
-      setTimeout(() => setFormStep(1), 100),
-      setTimeout(() => setFormStep(2), 250),
-      setTimeout(() => setFormStep(3), 400),
-      setTimeout(() => setFormStep(4), 550),
-      setTimeout(() => setFormStep(5), 700),
+      setTimeout(() => setFormStep(1), 80),
+      setTimeout(() => setFormStep(2), 220),
+      setTimeout(() => setFormStep(3), 360),
+      setTimeout(() => setFormStep(4), 500),
+      setTimeout(() => setFormStep(5), 640),
     ];
     return () => timers.forEach(clearTimeout);
   }, []);
@@ -215,238 +262,327 @@ export default function InputForm() {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 overflow-x-hidden min-h-fit">
-    <div className="form-container-glow relative w-full">
-      <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-tertiary/10 to-primary/20 rounded-3xl blur-xl opacity-50 animate-pulse-slow pointer-events-none" />
+    <div className="w-full max-w-5xl mx-auto px-4">
+      <div className="form-container-glow relative">
+        {/* Ambient glow */}
+        <div className="absolute -inset-1 bg-gradient-to-r from-primary/15 via-tertiary/8 to-primary/15 rounded-3xl blur-2xl opacity-40 animate-pulse-slow pointer-events-none" />
 
-      <div className="relative flex flex-col max-h-[85vh] min-h-0 bg-surface-container-low/80 backdrop-blur-2xl border border-outline-variant/15 rounded-2xl shadow-2xl overflow-x-hidden">
-        <div className="h-1 w-full shrink-0 bg-gradient-to-r from-transparent via-primary to-transparent animate-shimmer" />
+        <div className="relative flex flex-col bg-surface-container-low/75 backdrop-blur-2xl border border-outline-variant/12 rounded-2xl shadow-2xl overflow-hidden">
+          {/* Top shimmer bar */}
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent animate-shimmer shrink-0" />
 
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden rounded-b-2xl">
-        <div className="flex flex-col flex-1 min-h-0 p-4 sm:p-6 md:p-8 pb-0 pt-4 sm:pt-6 md:pt-8">
-          {/* Header */}
-          <div className={`shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6 transition-all duration-700 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border border-primary/20">
-                  <span className="material-symbols-outlined text-primary text-xl">train</span>
-                </div>
-                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full animate-ping opacity-75" />
-                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-tertiary rounded-full" />
-              </div>
-              <div>
-                <h2 className="text-xl font-headline font-bold text-on-surface tracking-tight">Railway Cargo</h2>
-                <p className="text-xs text-on-surface-variant font-body mt-0.5">Powered by RailRadar · Live Indian Railways Data</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-surface-container border border-transparent hover:border-outline-variant/20"
-            >
-              <span className="material-symbols-outlined text-sm">{showAdvanced ? 'unfold_less' : 'tune'}</span>
-              {showAdvanced ? 'Less' : 'Advanced'}
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 mt-2">
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 pb-24 scroll-smooth overscroll-y-contain">
-            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4`}>
-            {/* Source & Destination with autocomplete */}
-            <div className={`relative z-[100] md:col-span-2 lg:col-span-3 transition-all duration-700 delay-75 ${formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-[100] w-full">
-                <div className="hidden md:block absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10 pointer-events-none">
-                  <div className="w-10 h-10 rounded-full bg-surface-container border border-outline-variant/20 flex items-center justify-center shadow-lg">
-                    <span className="material-symbols-outlined text-primary text-sm">swap_horiz</span>
-                  </div>
-                </div>
-
-                <div className="w-full min-w-0">
-                <StationInput
-                  label="Origin"
-                  value={source}
-                  onChange={setSource}
-                  icon="my_location"
-                  iconColor="text-primary"
-                  placeholder="Search city or station..."
-                />
-                </div>
-                <div className="w-full min-w-0">
-                <StationInput
-                  label="Destination"
-                  value={destination}
-                  onChange={setDestination}
-                  icon="flag"
-                  iconColor="text-tertiary"
-                  placeholder="Search city or station..."
-                />
-                </div>
-              </div>
-            </div>
-
-            {/* Cargo Weight & Date */}
-            <div className={`md:col-span-1 lg:col-span-1 transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                  Cargo Weight
-                </label>
-                <div className="relative flex items-center w-full">
-                  <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-sm text-outline">scale</span>
-                  </div>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5000}
-                    value={cargoWeight}
-                    onChange={e => setCargoWeight(Number(e.target.value))}
-                    className="w-full min-w-0 pl-14 pr-12 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
-                  />
-                  <span className="absolute right-4 text-xs text-outline mono">kg</span>
-                </div>
-            </div>
-
-            <div className={`md:col-span-1 lg:col-span-1 transition-all duration-700 delay-100 ${formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Departure Date
-                  </label>
-                  <div className="relative flex items-center w-full">
-                    <div className="absolute left-3 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
-                      <span className="material-symbols-outlined text-sm text-outline">calendar_today</span>
-                    </div>
-                    <input
-                      type="date"
-                      value={departureDate}
-                      onChange={e => setDepartureDate(e.target.value)}
-                      className="w-full min-w-0 pl-14 pr-4 py-3.5 border border-outline-variant/20 rounded-xl bg-surface-container-lowest/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
-                    />
-                  </div>
-            </div>
-
-            {/* Cargo Type */}
-            <div className={`md:col-span-2 lg:col-span-3 transition-all duration-700 delay-150 ${formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
-                Cargo Type
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full">
-                {CARGO_TYPES.map(ct => (
-                  <button
-                    key={ct.value}
-                    type="button"
-                    onClick={() => setCargoType(ct.value)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-300 cursor-pointer ${
-                      cargoType === ct.value
-                        ? 'bg-primary/15 border-primary/40 shadow-md shadow-primary/10'
-                        : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-outline-variant/30 hover:bg-surface-container/50'
-                    }`}
-                  >
-                    <span className={`material-symbols-outlined text-lg ${cargoType === ct.value ? 'text-primary' : 'text-outline'}`}>
-                      {ct.icon}
-                    </span>
-                    <span className={`text-xs font-medium ${cargoType === ct.value ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                      {ct.value}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Priority */}
-            <div className={`md:col-span-2 lg:col-span-3 transition-all duration-700 delay-200 ${formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-3 ml-1">
-                Optimization Priority
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
-                {PRIORITY_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPriority(opt.value)}
-                    className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden w-full min-w-0 ${
-                      priority === opt.value
-                        ? `bg-gradient-to-b ${opt.color} border-current shadow-lg scale-[1.02]`
-                        : 'bg-surface-container-lowest/30 border-outline-variant/10 hover:border-outline-variant/30'
-                    }`}
-                  >
-                    <span className={`material-symbols-outlined text-2xl ${priority === opt.value ? opt.iconColor : 'text-outline'}`}>
-                      {opt.icon}
-                    </span>
-                    <span className={`text-sm font-semibold ${priority === opt.value ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                      {opt.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Advanced — Budget & Deadline */}
-            <div className={`md:col-span-2 lg:col-span-3 min-h-0 overflow-hidden transition-[max-height,opacity] duration-500 ease-in-out ${showAdvanced ? 'max-h-[min(380px,70vh)] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 w-full overflow-y-auto">
-                <div>
-                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Budget Cap
-                  </label>
-                  <div className="space-y-2">
-                    <input
-                      type="range" min={5000} max={100000} step={1000}
-                      value={budgetMax}
-                      onChange={e => setBudgetMax(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="text-right text-xs mono text-primary">₹{budgetMax.toLocaleString()}</div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-label font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">
-                    Deadline
-                  </label>
-                  <div className="space-y-2">
-                    <input
-                      type="range" min={4} max={96} step={2}
-                      value={deadlineHours}
-                      onChange={e => setDeadlineHours(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="text-right text-xs mono text-primary">{deadlineHours}h</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            </div>
-            </div>
-            {/* End scrollable fields */}
-
-            <div
-              className={`shrink-0 border-t border-outline-variant/15 bg-surface-container-lowest/95 backdrop-blur-md p-4 -mx-4 sm:-mx-6 md:-mx-8 mt-0 pb-[max(env(safe-area-inset-bottom),1rem)] transition-all duration-700 delay-300 ${formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-            >
-              <button
-                type="submit"
-                disabled={loading || !source.trim() || !destination.trim()}
-                className="group/btn relative w-full py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed bg-primary text-white font-semibold hover:opacity-95 shadow-lg shadow-primary/20"
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0 p-5 sm:p-7 pb-0 pt-5 sm:pt-7">
+              {/* Header */}
+              <div
+                className={`shrink-0 flex items-center justify-between gap-3 mb-5 transition-all duration-600 ${
+                  formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                }`}
               >
-                <span className={`material-symbols-outlined text-xl shrink-0 text-white ${loading ? 'animate-spin' : ''}`}>
-                  {loading ? 'progress_activity' : 'train'}
-                </span>
-                <span className="text-sm tracking-wide font-semibold text-white">
-                  {loading ? 'Finding Routes...' : 'Optimize Route'}
-                </span>
-              </button>
-
-              {source.trim() && destination.trim() && !loading && (
-                <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 flex flex-wrap items-center justify-center gap-1.5 px-1 animate-fade-in">
-                  <span className="material-symbols-outlined text-tertiary text-xs shrink-0">check_circle</span>
-                  <span>
-                    Ready: <span className="mono text-primary break-all">{source}</span> →{' '}
-                    <span className="mono text-tertiary break-all">{destination}</span> · {cargoWeight}kg {cargoType}
+                <div className="flex items-center gap-3">
+                  <div className="relative shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/25 to-primary-container/15 flex items-center justify-center border border-primary/20">
+                      <span
+                        className="material-symbols-outlined text-primary leading-none"
+                        style={{
+                          fontSize: '18px',
+                          fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24",
+                        }}
+                      >
+                        train
+                      </span>
+                    </div>
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-tertiary rounded-full animate-ping opacity-60" />
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-tertiary rounded-full" />
+                  </div>
+                  <div>
+                    <h2 className="text-[15px] font-headline font-bold text-on-surface tracking-tight">
+                      Railway Cargo
+                    </h2>
+                    <p className="text-[10px] text-outline mt-0.5">
+                      Powered by RailRadar · Live Indian Railways Data
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-1.5 text-[11px] text-on-surface-variant hover:text-primary transition-colors px-2.5 py-1.5 rounded-lg hover:bg-surface-container border border-transparent hover:border-outline-variant/15"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                    {showAdvanced ? 'unfold_less' : 'tune'}
                   </span>
-                </p>
-              )}
+                  {showAdvanced ? 'Less' : 'Advanced'}
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 mt-1">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-24 scroll-smooth">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Origin & Destination */}
+                    <div
+                      className={`relative z-[100] md:col-span-2 lg:col-span-3 transition-all duration-600 ${
+                        formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+                        {/* Swap icon */}
+                        <div className="hidden md:flex absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10 pointer-events-none items-center justify-center">
+                          <div className="w-9 h-9 rounded-full bg-surface-container border border-outline-variant/15 flex items-center justify-center shadow-md">
+                            <span
+                              className="material-symbols-outlined text-primary"
+                              style={{ fontSize: '15px' }}
+                            >
+                              swap_horiz
+                            </span>
+                          </div>
+                        </div>
+                        <StationInput
+                          label="Origin"
+                          value={source}
+                          onChange={setSource}
+                          icon="my_location"
+                          iconColor="text-primary"
+                          placeholder="Search city or station..."
+                        />
+                        <StationInput
+                          label="Destination"
+                          value={destination}
+                          onChange={setDestination}
+                          icon="flag"
+                          iconColor="text-tertiary"
+                          placeholder="Search city or station..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* Weight */}
+                    <div
+                      className={`transition-all duration-600 delay-75 ${
+                        formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                      }`}
+                    >
+                      <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+                        Cargo Weight
+                      </label>
+                      <div className="relative flex items-center">
+                        <div className="absolute left-3 w-7 h-7 rounded-lg bg-surface-container/60 flex items-center justify-center shrink-0">
+                          <span
+                            className="material-symbols-outlined text-outline"
+                            style={{ fontSize: '14px' }}
+                          >
+                            scale
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          value={cargoWeight}
+                          onChange={e => setCargoWeight(Number(e.target.value))}
+                          className="w-full pl-12 pr-10 py-3.5 border border-outline-variant/15 rounded-xl bg-surface-container-lowest/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                        />
+                        <span className="absolute right-3.5 text-[11px] text-outline mono">kg</span>
+                      </div>
+                    </div>
+
+                    {/* Date */}
+                    <div
+                      className={`transition-all duration-600 delay-75 ${
+                        formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                      }`}
+                    >
+                      <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+                        Departure Date
+                      </label>
+                      <div className="relative flex items-center">
+                        <div className="absolute left-3 w-7 h-7 rounded-lg bg-surface-container/60 flex items-center justify-center shrink-0">
+                          <span
+                            className="material-symbols-outlined text-outline"
+                            style={{ fontSize: '14px' }}
+                          >
+                            calendar_today
+                          </span>
+                        </div>
+                        <input
+                          type="date"
+                          value={departureDate}
+                          onChange={e => setDepartureDate(e.target.value)}
+                          className="w-full pl-12 pr-4 py-3.5 border border-outline-variant/15 rounded-xl bg-surface-container-lowest/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Cargo type */}
+                    <div
+                      className={`md:col-span-2 lg:col-span-3 transition-all duration-600 delay-100 ${
+                        formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                      }`}
+                    >
+                      <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
+                        Cargo Type
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {CARGO_TYPES.map(ct => (
+                          <button
+                            key={ct.value}
+                            type="button"
+                            onClick={() => setCargoType(ct.value)}
+                            className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200 ${
+                              cargoType === ct.value
+                                ? 'bg-primary/10 border-primary/30 shadow-sm'
+                                : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 hover:bg-surface-container/30'
+                            }`}
+                          >
+                            <span
+                              className={`material-symbols-outlined leading-none transition-colors ${
+                                cargoType === ct.value ? 'text-primary' : 'text-outline'
+                              }`}
+                              style={{
+                                fontSize: '18px',
+                                fontVariationSettings: `'FILL' ${cargoType === ct.value ? 1 : 0}, 'wght' 400`,
+                              }}
+                            >
+                              {ct.icon}
+                            </span>
+                            <span
+                              className={`text-[11px] font-medium ${
+                                cargoType === ct.value ? 'text-on-surface' : 'text-on-surface-variant'
+                              }`}
+                            >
+                              {ct.value}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Priority */}
+                    <div
+                      className={`md:col-span-2 lg:col-span-3 transition-all duration-600 delay-150 ${
+                        formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                      }`}
+                    >
+                      <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
+                        Optimization Priority
+                      </label>
+                      <div className="grid grid-cols-3 gap-2.5">
+                        {PRIORITY_OPTIONS.map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setPriority(opt.value)}
+                            className={`relative flex flex-col items-center gap-2 py-3.5 px-3 rounded-xl border transition-all duration-200 ${
+                              priority === opt.value
+                                ? `${opt.activeClass} shadow-sm scale-[1.02]`
+                                : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 text-on-surface-variant'
+                            }`}
+                          >
+                            <span
+                              className={`material-symbols-outlined leading-none ${
+                                priority === opt.value ? opt.iconColor : 'text-outline'
+                              }`}
+                              style={{
+                                fontSize: '22px',
+                                fontVariationSettings: `'FILL' ${priority === opt.value ? 1 : 0}, 'wght' 400`,
+                              }}
+                            >
+                              {opt.icon}
+                            </span>
+                            <span className="text-[12px] font-semibold">{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Advanced */}
+                    <div
+                      className={`md:col-span-2 lg:col-span-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-in-out ${
+                        showAdvanced ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                        <div>
+                          <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+                            Budget Cap
+                          </label>
+                          <input
+                            type="range"
+                            min={5000}
+                            max={100000}
+                            step={1000}
+                            value={budgetMax}
+                            onChange={e => setBudgetMax(Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="text-right text-[11px] mono text-primary mt-1">
+                            ₹{budgetMax.toLocaleString()}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+                            Deadline
+                          </label>
+                          <input
+                            type="range"
+                            min={4}
+                            max={96}
+                            step={2}
+                            value={deadlineHours}
+                            onChange={e => setDeadlineHours(Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="text-right text-[11px] mono text-primary mt-1">
+                            {deadlineHours}h
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submit footer */}
+                <div
+                  className={`shrink-0 border-t border-outline-variant/10 bg-surface-container-lowest/90 backdrop-blur-md p-4 -mx-5 sm:-mx-7 mt-0 pb-[max(env(safe-area-inset-bottom),1rem)] transition-all duration-600 ${
+                    formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                  }`}
+                >
+                  <button
+                    type="submit"
+                    disabled={loading || !source.trim() || !destination.trim()}
+                    className="w-full py-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed bg-primary hover:bg-primary/90 active:scale-[0.99] text-on-primary font-semibold shadow-lg shadow-primary/15"
+                  >
+                    <span
+                      className={`material-symbols-outlined leading-none ${loading ? 'animate-spin' : ''}`}
+                      style={{ fontSize: '18px', fontVariationSettings: "'FILL' 1" }}
+                    >
+                      {loading ? 'progress_activity' : 'train'}
+                    </span>
+                    <span className="text-sm tracking-wide">
+                      {loading ? 'Finding Routes...' : 'Optimize Route'}
+                    </span>
+                  </button>
+                  {source.trim() && destination.trim() && !loading && (
+                    <p className="text-center text-[10px] text-outline/50 mt-2.5 flex items-center justify-center gap-1.5 animate-fade-in">
+                      <span
+                        className="material-symbols-outlined text-tertiary"
+                        style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
+                      >
+                        check_circle
+                      </span>
+                      <span className="mono text-primary">{source}</span>
+                      {' → '}
+                      <span className="mono text-tertiary">{destination}</span>
+                      {' · '}
+                      {cargoWeight}kg {cargoType}
+                    </p>
+                  )}
+                </div>
+              </form>
             </div>
-          </form>
-        </div>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }

@@ -75,7 +75,7 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_sc
         "traffic_score": traffic_score,
         "Temperature": temp,
         "Humidity": humidity,
-        "Asset_Utilization": demand,  # reuse as proxy if needed
+        "Asset_Utilization": traffic_score * 100,  # approximate utilization from traffic
         "Demand_Forecast": demand
     }
 
@@ -120,7 +120,8 @@ def predict_delay(
     if traffic is not None:
         t_factor = 1 + (0.15 * float(traffic))
     elif traffic_level is not None:
-        t_factor = 1 + float(traffic_level)
+        # amplify real traffic signal (raw values are too small ~0.05–0.3)
+        t_factor = 1 + (float(traffic_level) * 2.5)
     else:
         t_factor = traffic_factor(hour, is_weekend)
 
@@ -130,9 +131,14 @@ def predict_delay(
     if traffic is not None:
         traffic_input = float(traffic)
     elif traffic_level is not None:
-        traffic_input = float(traffic_level)
+        # pass amplified and normalized signal to ML (keep within [0,1])
+        traffic_input = min(float(traffic_level) * 5.0, 1.0)
     else:
         traffic_input = 0.5
+
+    # Simulation override (if synthetic inputs are passed via extreme values)
+    if traffic_level is not None and traffic_level > 0.8:
+        traffic_input = 1.0
 
     delay_prob = _ml_delay_probability(
         hour,
@@ -141,9 +147,11 @@ def predict_delay(
         traffic_input,
         demand
     )
+    # prevent completely flat or extreme ML output
+    delay_prob = max(min(delay_prob, 0.95), 0.05)
 
-    # Cap ML influence to avoid unrealistic delays
-    ml_factor = 1 + min(delay_prob, 0.5) * 0.3
+    # Increase ML influence (previous cap was suppressing variation)
+    ml_factor = 1 + (delay_prob * 0.4)
 
     # Avoid double counting traffic (handled inside ML)
     adjusted_time = base_time_hours * t_factor * w_factor * ml_factor

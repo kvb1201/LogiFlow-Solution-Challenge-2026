@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from app.services.optimizer import optimize_routes
+from app.pipelines.hybrid.pipeline import HybridPipeline
 
 router = APIRouter()
 
@@ -10,92 +10,31 @@ router = APIRouter()
 class Preferences(BaseModel):
     preferred_mode: Optional[str] = None
 
+
+class Cargo(BaseModel):
+    weight: float = 100
+    type: str = "general"
+
+
 class Constraints(BaseModel):
     excluded_modes: List[str] = Field(default_factory=list)
     risk_threshold: Optional[float] = None
     delay_tolerance_hours: Optional[float] = None
     max_transshipments: Optional[int] = None
     budget_max_inr: Optional[float] = None
+    max_stops: Optional[int] = None
+    budget_limit: Optional[float] = None
 
 class OptimizeRequest(BaseModel):
     source: str
     destination: str
     priority: str
+    departure_date: Optional[str] = None
     cargo_weight_kg: float = 100
     cargo_type: str = "General"
+    cargo: Optional[Cargo] = Field(default_factory=Cargo)
     preferences: Optional[Preferences] = Field(default_factory=Preferences)
     constraints: Optional[Constraints] = Field(default_factory=Constraints)
-
-# ------------------ Coordinates Mapping ------------------
-from app.services.enricher import enrich_segment
-
-# ------------------ Mock Route Generator ------------------
-
-def generate_routes(source, destination):
-    return [
-        {
-            "type": "Road",
-            "mode": "road",
-            "time": 7,
-            "cost": 3000,
-            "risk": 0.6,
-            "segments": [
-                {"mode": "Road", "from": source, "to": destination}
-            ],
-        },
-        {
-            "type": "Rail",
-            "mode": "rail",
-            "time": 8,
-            "cost": 2000,
-            "risk": 0.3,
-            "segments": [
-                {"mode": "Rail", "from": source, "to": destination}
-            ],
-        },
-        {
-            "type": "Water",
-            "mode": "water",
-            "time": 10,
-            "cost": 1500,
-            "risk": 0.5,
-            "segments": [
-                {"mode": "Water", "from": source, "to": "Port"},
-                {"mode": "Water", "from": "Port", "to": destination},
-            ],
-        },
-        {
-            "type": "Hybrid",
-            "mode": "hybrid",
-            "time": 6,
-            "cost": 2500,
-            "risk": 0.4,
-            "segments": [
-                {"mode": "Road", "from": source, "to": "Midpoint"},
-                {"mode": "Rail", "from": "Midpoint", "to": destination},
-            ],
-        },
-    ]
-
-# ------------------ Decision Engine ------------------
-
-def score_route(route, priority, preferred_mode):
-    time = route["time"]
-    cost = route["cost"]
-    risk = route["risk"]
-
-    if priority == "Fast":
-        score = time * 0.6 + cost * 0.2 + risk * 0.2
-    elif priority == "Cheap":
-        score = time * 0.2 + cost * 0.6 + risk * 0.2
-    else:  # Safe
-        score = time * 0.2 + cost * 0.2 + risk * 0.6
-
-    # Preference boost
-    if preferred_mode and route["mode"] == preferred_mode:
-        score *= 0.85
-
-    return score
 
 # ------------------ API ------------------
 
@@ -106,4 +45,17 @@ def optimize(data: OptimizeRequest):
     p_l = p.lower()
     if p_l in {"fast", "cheap", "safe"}:
         data.priority = p_l.capitalize()  # fast->Fast, cheap->Cheap, safe->Safe
-    return optimize_routes(data)
+
+    pipeline = HybridPipeline()
+
+    payload = {
+        "priority": data.priority.lower(),
+        "cargo_weight_kg": data.cargo.weight if data.cargo else data.cargo_weight_kg,
+        "cargo_type": data.cargo.type if data.cargo else data.cargo_type,
+        "budget": data.constraints.budget_limit or data.constraints.budget_max_inr if data.constraints else None,
+        "max_stops": data.constraints.max_stops if data.constraints else None,
+        "preferred_mode": data.preferences.preferred_mode if data.preferences else None,
+        "constraints": data.constraints.dict() if data.constraints else {},
+    }
+
+    return pipeline.generate(data.source, data.destination, payload)

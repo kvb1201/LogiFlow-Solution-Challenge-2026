@@ -36,6 +36,25 @@ export interface RoadPayload {
   traffic_aware: boolean;
   vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
   fuel_price?: number;
+  // simulation controls
+  mode?: 'realtime' | 'simulation';
+  simulation?: {
+    traffic_level: number;
+    weather_level: number;
+    incident_count: number;
+  };
+}
+
+export interface AirPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg: number;
+  cargo_type: string;
+  max_stops?: number;
+  budget_limit?: number;
+  deadline_hours?: number;
 }
 
 export interface DelayInfo {
@@ -67,6 +86,7 @@ export interface Recommendation {
   segments: RouteSegment[];
   delay_info: DelayInfo;
   data_source: string;
+  llm_explanation?: string;
 }
 
 export interface RankedOption {
@@ -172,6 +192,109 @@ export interface TrainDelayData {
   route: TrainDelayStation[];
 }
 
+export interface AirCostBreakdown {
+  base_freight: number;
+  fuel_surcharge: number;
+  terminal_fee: number;
+  handling_fee: number;
+  cargo_markup: number;
+  heavy_lift_fee: number;
+  total: number;
+  currency: string;
+  pricing_basis: string;
+}
+
+export interface AirAirportInfo {
+  code: string;
+  name: string;
+  city_name?: string;
+}
+
+export interface AirRoute {
+  type: string;
+  mode: string;
+  time: number;
+  cost: number;
+  risk: number;
+  delay_prob: number;
+  airline: string;
+  stops: number;
+  distance: number;
+  cost_per_kg: number;
+  weather_risk: number;
+  congestion_risk: number;
+  reliability: number;
+  cargo_type: string;
+  cargo_weight: number;
+  data_source: string;
+  route_support_type: string;
+  supported_by: string;
+  confidence_score: number;
+  confidence_label: string;
+  confidence_reasons: string[];
+  cost_breakdown: AirCostBreakdown;
+  business_rules_applied: string[];
+  reason: string;
+  key_factors: string[];
+  eta: string;
+  score?: number;
+  segments: RouteSegment[];
+  air_details: {
+    source_airport: AirAirportInfo;
+    destination_airport: AirAirportInfo;
+    hub_airport?: AirAirportInfo | null;
+    supporting_airlines?: string[];
+    confidence_reasons?: string[];
+    business_rules_applied?: string[];
+    cost_breakdown?: AirCostBreakdown;
+  };
+}
+
+export interface AirOptimizeResult {
+  mode: 'air';
+  best_route: AirRoute | null;
+  alternatives: AirRoute[];
+  ranked_routes: AirRoute[];
+  total_routes: number;
+  constraints_applied: {
+    budget_limit: number | null;
+    deadline_hours: number | null;
+    max_stops: number | null;
+    cargo_type: string;
+    cargo_weight_kg: number;
+  };
+}
+
+export interface HybridComparisonRow {
+  mode: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  confidence?: number | null;
+}
+
+export interface HybridModeRoute {
+  mode?: string;
+  time_hr?: number | null;
+  cost_inr?: number | null;
+  risk?: number | null;
+  train_name?: string | null;
+  airline?: string | null;
+  distance_km?: number | null;
+}
+
+export interface HybridOptimizeResult {
+  recommended_mode?: string | null;
+  reason?: string | null;
+  tradeoffs?: string[] | null;
+  comparison?: HybridComparisonRow[] | null;
+  best_per_mode?: {
+    road?: HybridModeRoute | null;
+    rail?: HybridModeRoute | null;
+    air?: HybridModeRoute | null;
+  } | null;
+}
+
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
@@ -181,21 +304,70 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Optimize failed (${res.status}): ${text}`);
+    let detail = '';
+    const rawBody = await res.text();
+    try {
+      const data = rawBody ? JSON.parse(rawBody) : null;
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      detail = rawBody.trim();
+    }
+    throw new Error(detail || `Optimize failed (${res.status})`);
   }
   return res.json();
 }
 
 export async function fetchRoadRoutes(payload: RoadPayload) {
+  console.log('[API] ROAD REQUEST →', payload);
   const res = await fetch(`${BACKEND_BASE}/road/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+
+  console.log('[API] ROAD RESPONSE →', {
+    routeCount: data?.all?.length,
+    firstRoute: data?.all?.[0],
+    simulation: data?.simulation,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Road optimize failed (${res.status}): ${JSON.stringify(data)}`);
+  }
+
+  return data;
+}
+
+export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimizeResult> {
+  const res = await fetch(`${BACKEND_BASE}/air/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Road optimize failed (${res.status}): ${text}`);
+    throw new Error(`Air optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function optimizeHybridRoute(payload: {
+  source: string;
+  destination: string;
+  priority: string;
+}): Promise<HybridOptimizeResult> {
+  const res = await fetch(`${BACKEND_BASE}/optimize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
   }
   return res.json();
 }
@@ -308,6 +480,18 @@ export async function getStationInfo(stationCode: string): Promise<StationInfo |
   const res = await fetch(`${BACKEND_BASE}/railway/stations/${encodeURIComponent(stationCode)}`);
   if (!res.ok) return null;
   return res.json();
+}
+
+/** Get coordinates for a city/town name from the backend. */
+export async function getLocationCoords(name: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/railway/coords?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { lat: data.lat, lng: data.lng };
+  } catch {
+    return null;
+  }
 }
 
 function num(v: unknown, fallback = 0): number {

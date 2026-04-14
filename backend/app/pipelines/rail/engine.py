@@ -4,6 +4,11 @@ Produces three primary recommendations (cheapest, fastest, safest)
 and a balanced composite ranking of all feasible options.
 """
 
+import os
+
+from app.pipelines.rail.railradar_client import get_train_geometry
+
+_ENABLE_GEOMETRY_LOOKUPS = os.getenv("RAIL_ENGINE_ENABLE_GEOMETRY_LOOKUPS", "false").lower() == "true"
 
 def _normalize(values):
     """Min-max normalize a list of values to 0-1 range."""
@@ -11,9 +16,17 @@ def _normalize(values):
         return []
     lo = min(values)
     hi = max(values)
-    if hi == lo:
+    if hi == lo or hi == float("inf") or lo == float("-inf"):
         return [0.5] * len(values)
-    return [(v - lo) / (hi - lo) for v in values]
+    
+    # Handle NaN or Inf in values
+    results = []
+    for v in values:
+        if v == float("inf") or v == float("-inf") or v != v:  # v != v is NaN check
+            results.append(1.0) # Assume worst for inf/NaN
+        else:
+            results.append((v - lo) / (hi - lo))
+    return results
 
 
 def _build_recommendation(route, priority, reason):
@@ -36,16 +49,44 @@ def _build_recommendation(route, priority, reason):
             "delay_data_source": "ml_prediction",
         }
 
+    # Calculate geometry for mapping route
+    geometry = None
+    if _ENABLE_GEOMETRY_LOOKUPS:
+        geometry = []
+        for t in route.get("trains", []):
+            t_no = t.get("train_no")
+            f_st = t.get("from_station")
+            t_st = t.get("to_station")
+            if t_no and f_st and t_st:
+                try:
+                    g = get_train_geometry(t_no, f_st, t_st)
+                    if g:
+                        geometry.extend(g)
+                except Exception:
+                    pass
+        if not geometry:
+            geometry = None
+
+    key_factors = [reason]
+    if route.get("risk_score", 0) < 0.2:
+        key_factors.append("Very low risk profile")
+    if delay_info.get("avg_delay_minutes", 0) < 15:
+        key_factors.append("Highly punctual historically")
+    elif delay_info.get("avg_delay_minutes", 0) > 60:
+        key_factors.append("Significant historical delay expected")
+
+    decision_hours = route.get("adjusted_duration_hours", route.get("effective_hours", route.get("total_duration_hours", 0)))
     rec = {
         "priority": priority,
         "reason": reason,
+        "key_factors": key_factors,
         "route_type": route.get("route_type", "direct"),
         "train_number": first_train.get("train_no", ""),
         "train_name": first_train.get("train_name", ""),
         "train_type": first_train.get("train_type", ""),
         "departure": first_train.get("departure_time", ""),
         "arrival": route["trains"][-1].get("arrival_time", "") if route.get("trains") else "",
-        "duration_hours": round(route.get("effective_hours", route.get("total_duration_hours", 0)), 1),
+        "duration_hours": round(decision_hours, 1),
         "parcel_cost_inr": round(route.get("parcel_cost_inr", 0), 0),
         "risk_score": route.get("risk_score", 0),
         "risk_pct": f"{route.get('risk_score', 0) * 100:.0f}%",
@@ -57,12 +98,17 @@ def _build_recommendation(route, priority, reason):
         "avg_speed_kmph": route.get("avg_speed_kmph", 0),
         "running_days": first_train.get("running_days", []),
         "segments": route.get("segments", []),
+        "geometry": geometry,
         "delay_info": delay_info,
         "predicted_delay_min": round(route.get("predicted_delay_min", 0), 1),
         "adjusted_duration_hours": round(route.get("adjusted_duration_hours", route.get("effective_hours", 0)), 1),
         "tariff_scale": route.get("tariff_scale", "S"),
         "tariff_breakdown": route.get("tariff_breakdown", {}),
         "data_source": route.get("data_source", "unknown"),
+        # Weather fields (from OpenWeather integration)
+        "weather_factor": route.get("weather_factor", 1.0),
+        "weather_risk": route.get("weather_risk", 0.0),
+        "weather_data": route.get("weather_data"),
     }
     return rec
 
@@ -91,11 +137,11 @@ def decide(enriched_routes, payload):
     deadline = payload.get("deadline_hours", float("inf"))
 
     # ── Apply hard constraints ────────────────────────────────────────
-    filtered = [
-        r for r in enriched_routes
-        if r.get("parcel_cost_inr", 0) <= budget
-        and r.get("effective_hours", 0) <= deadline
-    ]
+    filtered = []
+    for r in enriched_routes:
+        decision_hours = r.get("adjusted_duration_hours", r.get("effective_hours", 0))
+        if r.get("parcel_cost_inr", 0) <= budget and decision_hours <= deadline:
+            filtered.append(r)
 
     if not filtered:
         print(f"  [Engine] No routes meet budget ({budget}) and deadline ({deadline}h). "
@@ -110,10 +156,14 @@ def decide(enriched_routes, payload):
     )
 
     # ── Fastest ───────────────────────────────────────────────────────
-    fastest_route = min(filtered, key=lambda r: r.get("effective_hours", float("inf")))
+    fastest_route = min(
+        filtered,
+        key=lambda r: r.get("adjusted_duration_hours", r.get("effective_hours", float("inf")))
+    )
+    fastest_hours = fastest_route.get("adjusted_duration_hours", fastest_route.get("effective_hours", 0))
     fastest = _build_recommendation(
         fastest_route, "fastest",
-        f"Arrives in {fastest_route.get('effective_hours', 0):.1f} hrs "
+        f"Arrives in {fastest_hours:.1f} hrs "
         f"(incl. any transfer waits)"
     )
 
@@ -127,7 +177,7 @@ def decide(enriched_routes, payload):
 
     # ── Balanced composite scoring ────────────────────────────────────
     costs = [r.get("parcel_cost_inr", 0) for r in filtered]
-    times = [r.get("effective_hours", 0) for r in filtered]
+    times = [r.get("adjusted_duration_hours", r.get("effective_hours", 0)) for r in filtered]
     risks = [r.get("risk_score", 0) for r in filtered]
     eases = [1 - r.get("booking_ease", 0.5) for r in filtered]  # flip: lower = better
 
@@ -162,29 +212,86 @@ def decide(enriched_routes, payload):
         real_delay = r.get("real_delay_data")
         avg_delay = real_delay.get("avg_arrival_delay_min", 0) if real_delay else r.get("predicted_delay_min", 0)
 
+        # ── Generating Proper Reasoning ───────────────────────────────────
+        reasoning = []
+        if w_cost > 0.3 and norm_costs[i] <= 0.2:
+            reasoning.append(f"Highly cost-effective (₹{r.get('parcel_cost_inr', 0):.0f}) matching budget priority")
+        if w_time > 0.3 and norm_times[i] <= 0.2:
+            reasoning.append(
+                f"Provides extremely fast transit "
+                f"({r.get('adjusted_duration_hours', r.get('effective_hours', 0)):.1f}h) matching time priority"
+            )
+        if w_risk > 0.3 and norm_risks[i] <= 0.2:
+            reasoning.append(f"Offers optimal safety for physical cargo ({r.get('risk_score', 0)*100:.0f}% risk)")
+            
+        if not reasoning:
+            if norm_costs[i] < 0.3 and norm_times[i] < 0.3:
+                reasoning.append("Provides robust balance of speed and affordability")
+            elif norm_risks[i] < 0.2 and norm_eases[i] < 0.2:
+                reasoning.append("Highly reliable schedule with minimal booking delays")
+            elif norm_eases[i] < 0.1:
+                reasoning.append("Selected for its high booking availability context")
+            else:
+                reasoning.append("Meets standard cargo transport requirements")
+                
+        final_reason = " • ".join(reasoning)
+
+        # Calculate geometry for mapping route
+        option_geometry = None
+        if _ENABLE_GEOMETRY_LOOKUPS:
+            option_geometry = []
+            for t in r.get("trains", []):
+                t_no = t.get("train_no")
+                f_st = t.get("from_station")
+                t_st = t.get("to_station")
+                if t_no and f_st and t_st:
+                    try:
+                        g = get_train_geometry(t_no, f_st, t_st)
+                        if g:
+                            option_geometry.extend(g)
+                    except Exception:
+                        pass
+            if not option_geometry:
+                option_geometry = None
+
+        def _safe_float(v):
+            if v == float("inf") or v == float("-inf") or v != v:
+                return 0.0
+            return v
+
         all_options.append({
             "rank": 0,
+            "selection_reason": final_reason,
+            "train_number": first_train.get("train_no", ""),
+            "train_name": first_train.get("train_name", ""),
             "train_number": first_train.get("train_no", ""),
             "train_name": first_train.get("train_name", ""),
             "train_type": first_train.get("train_type", ""),
             "route_type": r.get("route_type", "direct"),
-            "parcel_cost_inr": round(r.get("parcel_cost_inr", 0), 0),
-            "effective_hours": round(r.get("effective_hours", 0), 1),
-            "risk_score": r.get("risk_score", 0),
-            "booking_ease": r.get("booking_ease", 0.5),
+            "parcel_cost_inr": round(_safe_float(r.get("parcel_cost_inr", 0)), 0),
+            "effective_hours": round(
+                _safe_float(r.get("adjusted_duration_hours", r.get("effective_hours", 0))),
+                1
+            ),
+            "risk_score": _safe_float(r.get("risk_score", 0)),
+            "booking_ease": _safe_float(r.get("booking_ease", 0.5)),
             "has_transfer": r.get("has_transfer", False),
-            "total_score": round(total_score, 4),
+            "total_score": round(_safe_float(total_score), 4),
             "distance_km": r.get("total_distance_km", 0),
             "avg_speed_kmph": r.get("avg_speed_kmph", 0),
             "avg_delay_min": round(avg_delay, 1),
             "delay_source": "railradar_api" if real_delay else "ml_prediction",
             "running_days": first_train.get("running_days", []),
             "segments": r.get("segments", []),
+            "geometry": option_geometry,
             "tariff_scale": r.get("tariff_scale", "S"),
             "data_source": r.get("data_source", "unknown"),
+            "weather_factor": r.get("weather_factor", 1.0),
+            "weather_risk": r.get("weather_risk", 0.0),
         })
 
     all_options.sort(key=lambda x: x["total_score"])
+    all_options = all_options[:15]  # Limit to top 15 to keep JSON size manageable
     for i, opt in enumerate(all_options):
         opt["rank"] = i + 1
 

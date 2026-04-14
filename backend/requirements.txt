@@ -18,3 +18,5 @@ joblib
 python-dotenv
 requests
 catboost
+redis>=5.0.0
+pypdf>=4.0.0
