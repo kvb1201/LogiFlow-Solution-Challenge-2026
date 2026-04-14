@@ -3,7 +3,9 @@
  * Connects to the FastAPI backend and RailRadar API.
  */
 
-const BACKEND_BASE = '/api';
+const BACKEND_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
+  'http://127.0.0.1:8000';
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -295,6 +297,34 @@ export interface HybridOptimizeResult {
   } | null;
 }
 
+export interface HybridAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface HybridAssistantContext {
+  source: string;
+  destination: string;
+  priority: string;
+  recommended_mode?: string | null;
+  recommended_reason?: string | null;
+  comparison?: HybridComparisonRow[];
+  tradeoffs?: string[];
+  reason?: string;
+  mode_insights?: Record<string, string[]>;
+  best_per_mode?: HybridOptimizeResult['best_per_mode'];
+}
+
+export interface HybridAssistantPayload {
+  question: string;
+  context: HybridAssistantContext;
+  history?: HybridAssistantMessage[];
+}
+
+export interface HybridAssistantResponse {
+  answer: string;
+}
+
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
@@ -368,6 +398,21 @@ export async function optimizeHybridRoute(payload: {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function askHybridAssistant(
+  payload: HybridAssistantPayload
+): Promise<HybridAssistantResponse> {
+  const res = await fetch(`${BACKEND_BASE}/optimize/assistant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid assistant failed (${res.status}): ${text}`);
   }
   return res.json();
 }
