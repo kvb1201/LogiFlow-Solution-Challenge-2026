@@ -1,28 +1,36 @@
-PRIORITY_WEIGHTS = {
-    "fast": {"time": 0.5, "cost": 0.2, "risk": 0.2, "delay": 0.1},
-    "cheap": {"time": 0.2, "cost": 0.5, "risk": 0.2, "delay": 0.1},
-    "balanced": {"time": 0.3, "cost": 0.3, "risk": 0.2, "delay": 0.2},
-    "safe": {"time": 0.2, "cost": 0.2, "risk": 0.4, "delay": 0.2},
-}
+from copy import deepcopy
 
 
-def score_routes(routes, priority):
-    if not routes:
-        return []
+def _priority_key(priority):
+	value = (priority or "balanced").strip().lower()
+	aliases = {
+		"time": "fast",
+		"fastest": "fast",
+		"cost": "cheap",
+		"cheapest": "cheap",
+		"safest": "safe",
+	}
+	return aliases.get(value, value)
 
-    weights = PRIORITY_WEIGHTS.get(priority, PRIORITY_WEIGHTS["balanced"])
 
-    max_time = max(route["time"] for route in routes) or 1
-    max_cost = max(route["cost"] for route in routes) or 1
-    max_risk = max(route["risk"] for route in routes) or 1
-    max_delay = max(route["delay_prob"] for route in routes) or 1
+def score_routes(routes, priority="balanced"):
+	"""Rank air routes by requested priority while preserving route payload shape."""
+	normalized = _priority_key(priority)
+	ranked = [deepcopy(route) for route in (routes or [])]
 
-    for route in routes:
-        route["score"] = (
-            weights["time"] * (route["time"] / max_time)
-            + weights["cost"] * (route["cost"] / max_cost)
-            + weights["risk"] * (route["risk"] / max_risk)
-            + weights["delay"] * (route["delay_prob"] / max_delay)
-        )
+	if normalized == "fast":
+		ranked.sort(key=lambda r: (float(r.get("time", 0)), float(r.get("risk", 0)), float(r.get("cost", 0))))
+	elif normalized == "cheap":
+		ranked.sort(key=lambda r: (float(r.get("cost", 0)), float(r.get("time", 0)), float(r.get("risk", 0))))
+	elif normalized == "safe":
+		ranked.sort(key=lambda r: (float(r.get("risk", 0)), float(r.get("time", 0)), float(r.get("cost", 0))))
+	else:
+		ranked.sort(
+			key=lambda r: (
+				float(r.get("time", 0)) * 0.35
+				+ float(r.get("cost", 0)) * 0.35
+				+ float(r.get("risk", 0)) * 0.30
+			)
+		)
 
-    return sorted(routes, key=lambda route: route["score"])
+	return ranked
