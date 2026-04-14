@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+import logging
 
 
 air_router = APIRouter(prefix="/air", tags=["air-cargo"])
+logger = logging.getLogger(__name__)
 
 
 class AirCargoPayload(BaseModel):
@@ -42,12 +44,23 @@ def optimize_air(payload: AirCargoPayload):
             },
         )
 
+        # AirPipeline currently returns a dict with best/alternatives/all.
+        # Keep backward compatibility with older list-style outputs.
+        if isinstance(result, dict):
+            ranked_routes = result.get("all") or []
+            best_route = result.get("best")
+            alternatives = result.get("alternatives") or []
+        else:
+            ranked_routes = result or []
+            best_route = ranked_routes[0] if ranked_routes else None
+            alternatives = ranked_routes[1:] if len(ranked_routes) > 1 else []
+
         return {
             "mode": "air",
-            "best_route": result[0] if result else None,
-            "alternatives": result[1:] if len(result) > 1 else [],
-            "ranked_routes": result,
-            "total_routes": len(result),
+            "best_route": best_route,
+            "alternatives": alternatives,
+            "ranked_routes": ranked_routes,
+            "total_routes": len(ranked_routes),
             "constraints_applied": {
                 "budget_limit": payload.budget_limit,
                 "deadline_hours": payload.deadline_hours,
@@ -58,7 +71,13 @@ def optimize_air(payload: AirCargoPayload):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return a clearer API error while preserving traceback in server logs.
+        logger.exception("Air optimize failed")
+        message = str(e).strip() or "Unknown error"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Air optimize internal error ({type(e).__name__}): {message}",
+        )
 
 
 @air_router.get("/health")
