@@ -181,29 +181,8 @@ for city, codes in CITY_TO_STATION.items():
         _seen_codes.add(c)
         _ALL_STATIONS.append({"code": c, "name": city.upper(), "city": city})
 
-# Include codes discovered in API cache payloads.
-_CACHE_FILE = os.path.join(os.path.dirname(__file__), "api_cache.json")
-if os.path.exists(_CACHE_FILE):
-    try:
-        with open(_CACHE_FILE, "r", encoding="utf-8") as f:
-            cache_obj = json.load(f)
-        entries = cache_obj.values() if isinstance(cache_obj, dict) else []
-        for entry in entries:
-            payload = entry.get("data") if isinstance(entry, dict) and "data" in entry else entry
-            if not isinstance(payload, dict):
-                continue
-            trains = payload.get("trains") or payload.get("confirmtkt_raw_train_list") or []
-            if not isinstance(trains, list):
-                continue
-            for t in trains:
-                for k in ("fromStationCode", "toStationCode", "fromStnCode", "toStnCode"):
-                    c = str(t.get(k, "")).strip().upper()
-                    if not c or len(c) > 6 or c in _seen_codes:
-                        continue
-                    _seen_codes.add(c)
-                    _ALL_STATIONS.append({"code": c, "name": c})
-    except Exception:
-        pass
+# Comprehensive station list is now offline-first via stations.json + PDF cache.
+
 
 
 def _norm(s: str) -> str:

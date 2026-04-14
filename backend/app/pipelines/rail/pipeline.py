@@ -30,7 +30,7 @@ class RailPipeline(BasePipeline):
 
     def generate(self, source, destination, payload=None):
         """
-        Generate rail cargo routes between source and destination cities.
+        Generate rail cargo routes between source and destination cities.705072
         """
         try:
             departure_date = (payload or {}).get("departure_date")

@@ -501,7 +501,7 @@ export default function InputForm() {
                         showAdvanced ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
                       }`}
                     >
-                      <div className="grid grid-cols-2 gap-4 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                         <div>
                           <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
                             Budget Cap
