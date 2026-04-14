@@ -1,6 +1,7 @@
+# This pipeline combines road, rail, and air results, then attaches Gemini-backed natural-language explainability.
 from app.services.pipeline_registry import get_pipeline
 from .normalizer import normalize_road, normalize_rail, normalize_air
-from .explain import generate_tradeoffs, generate_mode_insights, generate_reason
+from .explain import build_hybrid_explanations
 
 
 class HybridPipeline:
@@ -197,9 +198,11 @@ class HybridPipeline:
             c.pop("score", None)
 
         # --- explainability ---
-        reason = generate_reason(best, priority)
-        tradeoffs = generate_tradeoffs(ranked)
-        mode_insights = {r["mode"]: generate_mode_insights(r) for r in ranked}
+        explanations = build_hybrid_explanations(priority, ranked)
+        reason = explanations["reason"]
+        tradeoffs = explanations["tradeoffs"]
+        mode_insights = explanations["mode_insights"]
+        route_explanations = explanations["route_explanations"]
 
         return {
             "priority": priority,
@@ -213,7 +216,8 @@ class HybridPipeline:
                     "time_hr": round(r["time_hr"], 2),
                     "cost_inr": int(r["cost_inr"]),
                     "risk": round(r["risk"], 2),
-                    "confidence": round(r["confidence"], 2)
+                    "confidence": round(r["confidence"], 2),
+                    "explanation": route_explanations.get(r["mode"], "")
                 }
                 for r in ranked
             ],
