@@ -427,12 +427,17 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       const isNoRouteCase =
         /no train routes found/i.test(msg) ||
         /no feasible routes found/i.test(msg) ||
-        /route is not available right now/i.test(msg);
+        /route is not available right now/i.test(msg) ||
+        /no route available/i.test(msg) ||
+        /air optimize failed \(404\)/i.test(msg);
+      const isAirNoRouteCase = opts?.mode === 'air' && isNoRouteCase;
       const friendlyNoRouteMessage =
-        'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
+        opts?.mode === 'air'
+          ? 'No route available right now.'
+          : 'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       set({
         // Preserve backend guidance (e.g., suggested station codes) when available.
-        error: isNoRouteCase ? (msg || friendlyNoRouteMessage) : msg,
+        error: isNoRouteCase ? friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         airRoutes: [],
@@ -443,7 +448,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         constraintsApplied: null,
         routeMetadata: null,
       });
-      if (!isNoRouteCase) {
+      if (!isAirNoRouteCase && !isNoRouteCase) {
         console.error('Optimize error:', err);
       }
     } finally {
