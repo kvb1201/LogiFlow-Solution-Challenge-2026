@@ -6,6 +6,7 @@ import {
   getTrainDelay,
   getLiveTrainStatus,
   fetchRoadRoutes,
+  fetchWaterRoutes,
   type OptimizeResult,
   type Recommendation,
   type RankedOption,
@@ -14,6 +15,7 @@ import {
   type TrainDelayData,
   type LiveTrainStatus,
   type StationSearchResult,
+  type WaterRoute,
 } from '@/services/api';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -85,6 +87,10 @@ interface LogiFlowState {
   routes: RoadRoute[];
   selectedRoute: number;
 
+  // Water results
+  waterRoutes: WaterRoute[];
+  selectedWaterRoute: number;
+
   // Road preferences
   avoidTolls: boolean;
   avoidHighways: boolean;
@@ -111,7 +117,7 @@ interface LogiFlowState {
 
   // UI state
   loading: boolean;
-  loadingMode: 'rail' | 'road' | null;
+  loadingMode: 'rail' | 'road' | 'water' | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -129,6 +135,7 @@ interface LogiFlowState {
   setActiveView: (view: 'recommendations' | 'all_options') => void;
   setLiveMapMode: (mode: 'all' | 'route' | 'hidden') => void;
   setSelectedRoute: (idx: number) => void;
+  setSelectedWaterRoute: (idx: number) => void;
 
   setAvoidTolls: (val: boolean) => void;
   setAvoidHighways: (val: boolean) => void;
@@ -137,7 +144,7 @@ interface LogiFlowState {
   setFuelPrice: (val: number) => void;
 
   handleOptimize: (opts?: {
-    mode?: 'rail' | 'road';
+    mode?: 'rail' | 'road' | 'water';
     avoidTolls?: boolean;
     avoidHighways?: boolean;
     trafficAware?: boolean;
@@ -169,6 +176,9 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   routes: [],
   selectedRoute: 0,
+
+  waterRoutes: [],
+  selectedWaterRoute: 0,
 
   avoidTolls: false,
   avoidHighways: false,
@@ -207,6 +217,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setActiveView: (view) => set({ activeView: view }),
   setLiveMapMode: (mode) => set({ liveMapMode: mode }),
   setSelectedRoute: (idx) => set({ selectedRoute: idx }),
+  setSelectedWaterRoute: (idx) => set({ selectedWaterRoute: idx }),
 
   setAvoidTolls: (val) => set({ avoidTolls: val }),
   setAvoidHighways: (val) => set({ avoidHighways: val }),
@@ -280,6 +291,29 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         });
         return;
       }
+
+      if (opts?.mode === 'water') {
+        const raw = await fetchWaterRoutes({
+          source: source.trim(),
+          destination: destination.trim(),
+          priority,
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          constraints: {
+            budget_max_inr: budgetMax || null,
+            risk_threshold: null,
+            delay_tolerance_hours: null,
+            max_transshipments: null,
+          },
+        });
+
+        set({
+          waterRoutes: Array.isArray(raw) ? raw : [],
+          selectedWaterRoute: 0,
+        });
+        return;
+      }
+
       const result = await optimizeCargoRoute({
         origin_city: source.trim(),
         destination_city: destination.trim(),
@@ -325,6 +359,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         error: msg,
         routes: [],
         selectedRoute: 0,
+        waterRoutes: [],
+        selectedWaterRoute: 0,
       });
       console.error('Optimize error:', err);
     } finally {

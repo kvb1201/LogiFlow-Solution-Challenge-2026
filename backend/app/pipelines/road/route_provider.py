@@ -3,13 +3,17 @@ from pathlib import Path
 import os
 import requests
 
-# Load .env
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+# Load .env from both:
+# - backend/.env (historical)
+# - repo-root/.env (common)
+_here = Path(__file__).resolve()
+load_dotenv(_here.parents[3] / ".env")  # backend/.env
+load_dotenv(_here.parents[4] / ".env")  # repo-root/.env
 
 TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
 
 if not TOMTOM_API_KEY:
-    raise Exception("TOMTOM_API_KEY not set in environment")
+    raise Exception("TOMTOM_API_KEY not set (expected in backend/.env or repo-root .env)")
 
 
 def geocode_city(city: str):
@@ -30,6 +34,9 @@ def geocode_city(city: str):
 
         pos = res["results"][0]["position"]
         return pos["lat"], pos["lon"]
+    except requests.exceptions.RequestException:
+        # Avoid leaking API keys via exception messages that include the request URL.
+        raise Exception("TomTom geocoding request failed (network/DNS/timeout).") from None
     except Exception as e:
         print(f"DEBUG: Geocode error for '{city}': {str(e)}")
         raise e
@@ -86,7 +93,11 @@ def get_routes(source, destination, payload=None):
         # TomTom expects repeated keys: avoid=motorways&avoid=tollRoads (not comma-separated)
         params["avoid"] = avoid_list
 
-    res = requests.get(url, params=params, timeout=10)
+    try:
+        res = requests.get(url, params=params, timeout=10)
+    except requests.exceptions.RequestException:
+        # Avoid leaking API keys via exception messages that include the request URL.
+        raise Exception("TomTom routing request failed (network/DNS/timeout).") from None
 
     if res.status_code != 200:
         raise Exception(f"TomTom API failed: {res.text}")

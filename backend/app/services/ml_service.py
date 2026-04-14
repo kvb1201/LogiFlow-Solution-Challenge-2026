@@ -4,11 +4,19 @@ from typing import Dict, Tuple
 import joblib
 import pandas as pd
 
-# Load trained ML model
-_artifact = joblib.load("app/models/delay_model.pkl")
-_model = _artifact["model"]
-_FEATURES = _artifact["features"]
-_traffic_map = _artifact.get("traffic_map", {})
+# Load trained ML model (optional).
+# In demo/dev environments the artifact may be missing; fall back to heuristics.
+try:
+    _artifact = joblib.load("app/models/delay_model.pkl")
+    _model = _artifact["model"]
+    _FEATURES = _artifact["features"]
+    _traffic_map = _artifact.get("traffic_map", {})
+except Exception as e:
+    print(f"[ml_service] delay_model.pkl not available ({e}); using heuristic fallback.")
+    _artifact = None
+    _model = None
+    _FEATURES = ["traffic_score", "Temperature", "Humidity", "Asset_Utilization", "Demand_Forecast"]
+    _traffic_map = {}
 
 
 def traffic_factor(hour: int, is_weekend: bool = False) -> float:
@@ -71,10 +79,19 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_sc
         "Demand_Forecast": demand
     }
 
-    df = pd.DataFrame([row])[_FEATURES]
+    # Heuristic fallback if no model is present.
+    if _model is None:
+        rain = float(weather.get("rain", 0) or 0)
+        base = 0.12
+        base += 0.20 * min(max(float(traffic_score), 0.0), 1.0)
+        base += 0.08 if is_weekend else 0.0
+        base += 0.10 if hour in {8, 9, 18, 19, 20} else 0.0
+        base += 0.08 if rain > 2 else 0.0
+        return max(0.01, min(0.70, base))
 
+    df = pd.DataFrame([row])[_FEATURES]
     prob = _model.predict_proba(df)[0][1]
-    return prob
+    return float(prob)
 
 
 def predict_delay(
