@@ -98,35 +98,9 @@ class AirPipeline(BasePipeline):
                 route["data_source"] = "free_stack_mock_catalog"
             return mocked
 
-        source_airport = resolve_city_to_airport(source)
-        destination_airport = resolve_city_to_airport(destination)
-
-        return [
-            {
-                "airline": "IndiGo",
-                "stops": 0,
-                "distance": 1050,
-                "duration": 2.2,
-                "delay_risk": 0.2,
-                "cost_per_kg": 8.5,
-                "cargo_types": ["general", "fragile", "perishable"],
-                "source_airport": source_airport,
-                "destination_airport": destination_airport,
-                "data_source": "free_stack_dynamic_fallback",
-            },
-            {
-                "airline": "Air India",
-                "stops": 1,
-                "distance": 1230,
-                "duration": 3.4,
-                "delay_risk": 0.34,
-                "cost_per_kg": 6.4,
-                "cargo_types": ["general", "fragile"],
-                "source_airport": source_airport,
-                "destination_airport": destination_airport,
-                "data_source": "free_stack_dynamic_fallback",
-            },
-        ]
+        # No synthetic fallback: if we have no live or mock routes, return empty
+        # so the API can surface a clean "No route available" response.
+        return []
 
     def _engineer_features(self, routes, source, destination, payload):
         engineered = []

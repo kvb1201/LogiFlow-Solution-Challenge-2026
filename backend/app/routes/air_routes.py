@@ -55,6 +55,9 @@ def optimize_air(payload: AirCargoPayload):
             best_route = ranked_routes[0] if ranked_routes else None
             alternatives = ranked_routes[1:] if len(ranked_routes) > 1 else []
 
+        if not ranked_routes or best_route is None:
+            raise HTTPException(status_code=404, detail="No route available")
+
         return {
             "mode": "air",
             "best_route": best_route,
@@ -70,6 +73,8 @@ def optimize_air(payload: AirCargoPayload):
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         # Return a clearer API error while preserving traceback in server logs.
         logger.exception("Air optimize failed")
