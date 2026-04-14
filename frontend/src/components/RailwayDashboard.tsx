@@ -563,7 +563,7 @@ export default function RailwayDashboard() {
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
         <div
-          className="flex-1 flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden"
+          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
           style={{ background: '#06080d' }}
         >
           {/* Animated background */}
@@ -593,7 +593,7 @@ export default function RailwayDashboard() {
 
             {/* Headline */}
             <div className="text-center mb-10">
-              <h1 className="text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
+              <h1 className="text-[2.5rem] xs:text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
                 <span
                   className="bg-gradient-to-r from-primary via-primary-fixed-dim to-primary bg-clip-text text-transparent animate-gradient-shift"
                   style={{ backgroundSize: '200% auto' }}
@@ -692,14 +692,14 @@ export default function RailwayDashboard() {
           >
             my_location
           </span>
-          <span className="font-medium text-on-surface max-w-[100px] truncate">{source}</span>
+          <span className="font-medium text-on-surface max-w-[60px] sm:max-w-[100px] truncate">{source}</span>
           <span
             className="material-symbols-outlined text-outline"
             style={{ fontSize: '11px' }}
           >
             arrow_forward
           </span>
-          <span className="font-medium text-on-surface max-w-[100px] truncate">{destination}</span>
+          <span className="font-medium text-on-surface max-w-[60px] sm:max-w-[100px] truncate">{destination}</span>
           <button
             onClick={resetSearch}
             className="ml-1 text-outline hover:text-primary transition-colors"
@@ -711,7 +711,7 @@ export default function RailwayDashboard() {
           </button>
         </div>
 
-        <div className="text-[10px] uppercase tracking-[0.16em] text-outline">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-outline hidden sm:block">
           Rail analytics panel
         </div>
       </div>
