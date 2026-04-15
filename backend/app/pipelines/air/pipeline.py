@@ -90,16 +90,16 @@ class AirPipeline(BasePipeline):
         routes = MOCK_ROUTES.get(key)
         if routes:
             mocked = deepcopy(routes)
-            source_airport = resolve_city_to_airport(source)
-            destination_airport = resolve_city_to_airport(destination)
+            source_airport = resolve_city_to_airport(source) or {"code": source[:3].upper(), "name": source}
+            destination_airport = resolve_city_to_airport(destination) or {"code": destination[:3].upper(), "name": destination}
             for route in mocked:
                 route["source_airport"] = source_airport
                 route["destination_airport"] = destination_airport
                 route["data_source"] = "free_stack_mock_catalog"
             return mocked
 
-        source_airport = resolve_city_to_airport(source)
-        destination_airport = resolve_city_to_airport(destination)
+        source_airport = resolve_city_to_airport(source) or {"code": source[:3].upper(), "name": source}
+        destination_airport = resolve_city_to_airport(destination) or {"code": destination[:3].upper(), "name": destination}
 
         return [
             {
@@ -153,18 +153,15 @@ class AirPipeline(BasePipeline):
             cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_type, cargo_rule)
             cost = cost_breakdown["total"]
             business_rules = self._evaluate_business_rules(route, cargo_weight, cargo_type, cargo_rule)
-            risk = round(
-                min(
-                    1.0,
-                    float(route.get("delay_risk", 0))
-                    + stops * 0.1
-                    + (1 - reliability) * 0.15
-                    + weather_risk * 0.6
-                    + congestion_risk * 0.4,
-                    + cargo_rule["risk_bias"],
-                ),
-                3,
+            risk_raw = (
+                float(route.get("delay_risk", 0))
+                + stops * 0.1
+                + (1 - reliability) * 0.15
+                + weather_risk * 0.6
+                + congestion_risk * 0.4
+                + cargo_rule["risk_bias"]
             )
+            risk = round(min(1.0, risk_raw), 3)
 
             if business_rules["risk_adjustment"]:
                 risk = round(min(1.0, risk + business_rules["risk_adjustment"]), 3)
@@ -386,26 +383,40 @@ class AirPipeline(BasePipeline):
         return "watch"
 
     def generate(self, source, destination, payload=None):
-        normalized = self._get_payload(payload)
-        routes = self._fetch_routes(source, destination, normalized)
-        engineered = self._engineer_features(routes, source, destination, normalized)
-        filtered = self._apply_constraints(engineered, normalized)
+        try:
+            normalized = self._get_payload(payload)
+            routes = self._fetch_routes(source, destination, normalized)
+            engineered = self._engineer_features(routes, source, destination, normalized)
+            filtered = self._apply_constraints(engineered, normalized)
 
-        if not filtered:
+            if not filtered:
+                return {
+                    "mode": "air",
+                    "best": None,
+                    "alternatives": [],
+                    "all": [],
+                    "error": "No air routes found"
+                }
+
+            ranked = score_routes(filtered, normalized["priority"])
+            explained = [self._explain_route(route, normalized["priority"]) for route in ranked]
+
+            best = explained[0] if explained else None
+            alternatives = explained[1:] if len(explained) > 1 else []
+
             return {
-                "best": None,
-                "alternatives": [],
-                "all": []
+                "mode": "air",
+                "best": best,
+                "alternatives": alternatives,
+                "all": explained
             }
 
-        ranked = score_routes(filtered, normalized["priority"])
-        explained = [self._explain_route(route, normalized["priority"]) for route in ranked]
-
-        best = explained[0]
-        alternatives = explained[1:]
-
-        return {
-            "best": best,
-            "alternatives": alternatives,
-            "all": explained
-        }
+        except Exception as e:
+            print("[AIR PIPELINE ERROR]", str(e), type(e))
+            return {
+                "mode": "air",
+                "best": None,
+                "alternatives": [],
+                "all": [],
+                "error": str(e)
+            }

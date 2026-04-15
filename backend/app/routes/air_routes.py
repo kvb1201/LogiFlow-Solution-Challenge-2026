@@ -42,12 +42,16 @@ def optimize_air(payload: AirCargoPayload):
             },
         )
 
+        # Ensure result is a dict (new pipeline contract)
+        if not isinstance(result, dict):
+            raise Exception(f"Invalid pipeline response: {type(result)}")
+
         return {
             "mode": "air",
-            "best_route": result[0] if result else None,
-            "alternatives": result[1:] if len(result) > 1 else [],
-            "ranked_routes": result,
-            "total_routes": len(result),
+            "best_route": result.get("best"),
+            "alternatives": result.get("alternatives", []),
+            "ranked_routes": result.get("all", []),
+            "total_routes": len(result.get("all", [])),
             "constraints_applied": {
                 "budget_limit": payload.budget_limit,
                 "deadline_hours": payload.deadline_hours,
@@ -55,6 +59,7 @@ def optimize_air(payload: AirCargoPayload):
                 "cargo_type": payload.cargo_type,
                 "cargo_weight_kg": payload.cargo_weight_kg,
             },
+            "error": result.get("error")
         }
 
     except Exception as e:
