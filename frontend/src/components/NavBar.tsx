@@ -9,6 +9,7 @@ const nav = [
   { href: '/railway', label: 'Railways', icon: 'train' },
   { href: '/road', label: 'Roadways', icon: 'local_shipping' },
   { href: '/air', label: 'Airways', icon: 'flight_takeoff' },
+  { href: '/water', label: 'Waterways', icon: 'directions_boat' },
   { href: '/hybrid', label: 'Hybrid', icon: 'hub' },
 ] as const;
 
@@ -58,6 +59,8 @@ export default function NavBar() {
                 isActive(href)
                   ? href === '/air'
                     ? 'bg-sky-500/25 text-sky-100 border border-sky-400/30 shadow-sm'
+                    : href === '/water'
+                    ? 'bg-teal-500/25 text-teal-100 border border-teal-400/30 shadow-sm'
                     : href === '/hybrid'
                     ? 'bg-tertiary/20 text-tertiary border border-tertiary/30 shadow-sm'
                     : 'bg-primary text-on-primary shadow-sm'
