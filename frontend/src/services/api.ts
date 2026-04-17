@@ -623,3 +623,19 @@ export async function fetchOptimizedRoute(
   if (!res.ok) throw new Error(`API failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchExplanation(payload: { pipeline: string, priority: string, route_data: any, context?: any }): Promise<string | null> {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/explain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.explanation;
+  } catch (error) {
+    console.error("Explanation fetch error:", error);
+    return null;
+  }
+}

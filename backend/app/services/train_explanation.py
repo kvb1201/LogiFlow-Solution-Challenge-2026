@@ -1,14 +1,14 @@
 """
 Unified train recommendation explanation: Groq first (free tier), then Gemini.
 """
-from typing import Any
+from typing import Any, Optional, Dict
 
 
 def generate_train_explanation(
-    recommendation: dict[str, Any],
-    context: dict[str, Any] | None = None,
+    recommendation: Dict[str, Any],
+    context: Optional[Dict[str, Any]] = None,
     timeout_s: int = 4,
-) -> str | None:
+) -> Optional[str]:
     provider_timeout = max(2, min(int(timeout_s), 4))
     try:
         from app.services.groq_service import generate_train_explanation as groq_explain
