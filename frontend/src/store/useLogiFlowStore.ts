@@ -254,6 +254,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     selectedOptionIndex: 0,
     routes: [],
     selectedRoute: 0,
+    waterRoutes: [],
+    selectedWaterRoute: 0,
     searchMode: 'rail',
     error: null,
     trainDelayDetail: null,

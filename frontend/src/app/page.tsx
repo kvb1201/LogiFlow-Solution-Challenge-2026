@@ -22,6 +22,16 @@ const modes = [
     glow: 'bg-secondary/20',
   },
   {
+    href: '/water',
+    title: 'Waterways',
+    tagline: 'Maritime port-based routing with transshipment & risk analysis',
+    icon: 'directions_boat',
+    gradient: 'from-[#0d3330]/80 to-[#051a18]/90',
+    border: 'border-teal-400/25',
+    iconBg: 'bg-teal-400/15 text-teal-300',
+    glow: 'bg-teal-400/15',
+  },
+  {
     href: '/air',
     title: 'Airways',
     tagline: 'Express air cargo pipeline & cut-off orchestration',
@@ -83,8 +93,8 @@ export default function HomePage() {
           </h1>
 
           <p className="text-base sm:text-lg text-on-surface-variant max-w-2xl leading-relaxed mb-10 animate-slide-up [animation-delay:80ms] opacity-0 [animation-fill-mode:forwards]">
-            One platform to plan and compare{' '}
-            <strong className="text-on-surface font-semibold">rail, road, air, and hybrid</strong> options
+          One platform to plan and compare{' '}
+            <strong className="text-on-surface font-semibold">rail, road, water, air, and hybrid</strong> options
             with real data where it matters—schedules, traffic, risk, and live visibility—so teams ship
             with confidence across India.
           </p>
@@ -137,6 +147,19 @@ export default function HomePage() {
                 </li>
                 <li className="flex gap-3">
                   <span
+                    className="material-symbols-outlined text-teal-300 shrink-0 mt-0.5"
+                    style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
+                  >
+                    check_circle
+                  </span>
+                  <span>
+                    <strong className="text-on-surface">Waterways</strong> — explore maritime cargo
+                    routes between Indian ports with transshipment options, risk breakdown, and
+                    reliability scoring.
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <span
                     className="material-symbols-outlined text-sky-300 shrink-0 mt-0.5"
                     style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
                   >
@@ -169,7 +192,7 @@ export default function HomePage() {
           <h2 className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-outline mb-8">
             Choose a mode
           </h2>
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-5">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5">
             {modes.map((m, i) => (
               <Link
                 key={m.href}

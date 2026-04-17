@@ -2,13 +2,11 @@
 
 import Link from 'next/link';
 import React, { useMemo, useState } from 'react';
-import {
-  askHybridAssistant,
-  optimizeHybridRoute,
-  type HybridAssistantMessage,
-  type HybridComparisonRow,
-  type HybridOptimizeResult,
-} from '@/services/api';
+import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
+import dynamic from 'next/dynamic';
+import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+
+const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
 type Priority = 'cost' | 'time' | 'balanced';
 type Mode = 'road' | 'rail' | 'air';
@@ -30,18 +28,18 @@ function toNum(v: unknown): number | null {
 
 function formatHours(v: unknown): string {
   const n = toNum(v);
-  return n == null ? 'N/A' : `${n.toFixed(2)} hrs`;
+  return n == null ? '-' : `${n.toFixed(2)} hrs`;
 }
 
 function formatInr(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return 'N/A';
+  if (n == null) return '-';
   return `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(n))}`;
 }
 
 function formatRisk(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return 'N/A';
+  if (n == null) return '-';
   return `${Math.round(n * 100)}%`;
 }
 
@@ -127,16 +125,24 @@ function ComparisonTable({ rows, recommendedMode }: { rows: HybridComparisonRow[
 }
 
 export default function HybridPageClient() {
-  const [source, setSource] = useState('');
-  const [destination, setDestination] = useState('');
-  const [priority, setPriority] = useState<Priority>('balanced');
+  const source = useLogiFlowStore(s => s.source);
+  const setSource = useLogiFlowStore(s => s.setSource);
+  const destination = useLogiFlowStore(s => s.destination);
+  const setDestination = useLogiFlowStore(s => s.setDestination);
+  const priority = useLogiFlowStore(s => s.priority);
+  const setPriority = useLogiFlowStore(s => s.setPriority);
+  const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
+  const setCargoWeight = useLogiFlowStore(s => s.setCargoWeight);
+  const cargoType = useLogiFlowStore(s => s.cargoType);
+  const setCargoType = useLogiFlowStore(s => s.setCargoType);
+  const budgetMax = useLogiFlowStore(s => s.budgetMax);
+  const setBudgetMax = useLogiFlowStore(s => s.setBudgetMax);
+  const departureDate = useLogiFlowStore(s => s.departureDate);
+  const deadlineHours = useLogiFlowStore(s => s.deadlineHours);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
-  const [assistantQuestion, setAssistantQuestion] = useState('');
-  const [assistantThread, setAssistantThread] = useState<HybridAssistantMessage[]>([]);
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   const comparisonRows = useMemo(() => {
     return Array.isArray(result?.comparison) ? result?.comparison : [];
@@ -144,26 +150,8 @@ export default function HybridPageClient() {
   const recommendedMode = normalizeMode(result?.recommended_mode);
   const recommendedRow = useMemo(() => {
     if (!comparisonRows.length || !recommendedMode) return null;
-    return comparisonRows.find((row) => normalizeMode(row.mode) === recommendedMode) ?? null;
+    return comparisonRows.find((row: HybridComparisonRow) => normalizeMode(row.mode) === recommendedMode) ?? null;
   }, [comparisonRows, recommendedMode]);
-  const assistantContext = useMemo(() => {
-    if (!result) return null;
-    return {
-      source: source.trim(),
-      destination: destination.trim(),
-      priority,
-      recommended_mode: result.recommended_mode ?? null,
-      recommended_reason: result.reason ?? null,
-      comparison: comparisonRows,
-      tradeoffs: Array.isArray(result.tradeoffs) ? result.tradeoffs : [],
-      reason: result.reason ?? undefined,
-      mode_insights:
-        result && typeof result === 'object' && 'mode_insights' in result
-          ? ((result as unknown as { mode_insights?: Record<string, string[]> }).mode_insights ?? {})
-          : {},
-      best_per_mode: result.best_per_mode ?? undefined,
-    };
-  }, [result, source, destination, priority, comparisonRows]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -175,41 +163,22 @@ export default function HybridPageClient() {
         source: source.trim(),
         destination: destination.trim(),
         priority,
+        departure_date: departureDate,
+        cargo_weight_kg: cargoWeight,
+        cargo_type: cargoType,
+        cargo: { weight: cargoWeight, type: cargoType.toLowerCase() },
+        constraints: {
+          budget_max_inr: budgetMax,
+          budget_limit: budgetMax,
+          delay_tolerance_hours: deadlineHours
+        }
       });
       setResult(data);
-      setAssistantQuestion('');
-      setAssistantThread([]);
-      setAssistantError(null);
     } catch (err: unknown) {
       setResult(null);
       setError(err instanceof Error ? err.message : 'Failed to optimize hybrid route.');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function onAskSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const question = assistantQuestion.trim();
-    if (!question || !assistantContext || assistantLoading) return;
-
-    setAssistantLoading(true);
-    setAssistantError(null);
-    const nextThread = [...assistantThread, { role: 'user', content: question } as HybridAssistantMessage];
-    setAssistantQuestion('');
-
-    try {
-      const response = await askHybridAssistant({
-        question,
-        context: assistantContext,
-        history: assistantThread,
-      });
-      setAssistantThread([...nextThread, { role: 'assistant', content: response.answer }]);
-    } catch (err: unknown) {
-      setAssistantError(err instanceof Error ? err.message : 'Failed to get assistant response.');
-      setAssistantQuestion(question);
-    } finally {
-      setAssistantLoading(false);
     }
   }
 
@@ -275,13 +244,43 @@ export default function HybridPageClient() {
               <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Priority</span>
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority)}
+                onChange={(e) => setPriority(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
               >
                 <option value="balanced">Balanced</option>
                 <option value="cost">Cost</option>
                 <option value="time">Time</option>
               </select>
+            </label>
+            <label className="block">
+              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Cargo Weight (kg)</span>
+              <input
+                type="number"
+                value={cargoWeight}
+                onChange={(e) => setCargoWeight(Number(e.target.value))}
+                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Cargo Type</span>
+              <select
+                value={cargoType}
+                onChange={(e) => setCargoType(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+              >
+                <option value="General">General</option>
+                <option value="Perishable">Perishable</option>
+                <option value="Fragile">Fragile</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Max Budget (₹)</span>
+              <input
+                type="number"
+                value={budgetMax}
+                onChange={(e) => setBudgetMax(Number(e.target.value))}
+                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
             </label>
           </div>
 
@@ -337,69 +336,47 @@ export default function HybridPageClient() {
             <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
 
             <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5">
-              <h3 className="text-sm font-semibold text-on-surface mb-3">Tradeoffs</h3>
+              <h3 className="text-sm font-semibold text-on-surface mb-4">Tradeoffs & Considerations</h3>
               {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 ? (
-                <ul className="space-y-2 text-sm text-on-surface-variant">
-                  {result.tradeoffs.map((line, idx) => (
-                    <li key={`tradeoff-${idx}`} className="flex items-start gap-2">
-                      <span className="text-primary mt-0.5">•</span>
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {result.tradeoffs.map((line: string, idx: number) => {
+                    const l = line.toLowerCase();
+                    const isTime = l.includes('time') || l.includes('hrs') || l.includes('slower') || l.includes('faster');
+                    const isCost = l.includes('cost') || l.includes('rs') || l.includes('cheaper') || l.includes('expensive');
+                    const isRisk = l.includes('risk') || l.includes('delay') || l.includes('safe');
+                    const isHigher = l.includes('higher') || l.includes('more') || l.includes('slower') || l.includes('expensive');
+                    
+                    let bgClass = 'bg-surface-container/50 border-outline-variant/15';
+                    let textClass = 'text-primary';
+                    let icon = 'info';
+
+                    if (isTime) {
+                      icon = 'schedule';
+                      bgClass = isHigher ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-amber-400' : 'text-emerald-400';
+                    } else if (isCost) {
+                      icon = 'payments';
+                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
+                    } else if (isRisk) {
+                      icon = 'warning';
+                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
+                    }
+
+                    return (
+                      <div key={`tradeoff-${idx}`} className={`rounded-xl border p-4 flex items-start gap-3 transition-transform hover:scale-[1.02] hover:bg-opacity-80 \${bgClass}`}>
+                        <span className={`material-symbols-outlined shrink-0 \${textClass}`} style={{ fontSize: '20px' }}>
+                          {icon}
+                        </span>
+                        <span className="text-sm font-medium text-on-surface leading-relaxed">{line}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <p className="text-sm text-on-surface-variant">No tradeoffs were returned for this route set.</p>
               )}
-            </div>
-
-            <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-on-surface">Ask Gemini about this hybrid result</h3>
-              <p className="text-sm text-on-surface-variant leading-relaxed">
-                Ask follow-up questions about mode selection, costs, ETA, delay risk, and tradeoffs.
-                Responses are constrained to transportation and logistics context.
-              </p>
-
-              {assistantThread.length > 0 && (
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {assistantThread.map((message, idx) => (
-                    <div
-                      key={`hybrid-chat-${message.role}-${idx}`}
-                      className={`rounded-xl border px-3 py-2 text-sm leading-relaxed whitespace-pre-line ${
-                        message.role === 'user'
-                          ? 'ml-6 bg-primary/10 border-primary/20 text-on-surface'
-                          : 'mr-6 bg-surface-container/40 border-outline-variant/10 text-on-surface-variant'
-                      }`}
-                    >
-                      <div className="text-[10px] uppercase tracking-[0.14em] font-semibold opacity-70 mb-1">
-                        {message.role === 'user' ? 'You' : 'Gemini'}
-                      </div>
-                      {message.content}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <form onSubmit={onAskSubmit} className="space-y-2">
-                <textarea
-                  rows={3}
-                  value={assistantQuestion}
-                  onChange={(e) => setAssistantQuestion(e.target.value)}
-                  placeholder="Why is rail recommended over road here? What changes if priority is time?"
-                  className="w-full rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/25"
-                />
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] text-outline">Transportation-only follow-up for this exact hybrid result.</span>
-                  <button
-                    type="submit"
-                    disabled={assistantLoading || !assistantQuestion.trim()}
-                    className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
-                  >
-                    {assistantLoading ? 'Thinking...' : 'Ask'}
-                  </button>
-                </div>
-              </form>
-
-              {assistantError && <p className="text-sm text-error">{assistantError}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -419,18 +396,39 @@ export default function HybridPageClient() {
                         <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">Top pick</span>
                       )}
                     </div>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-on-surface"><span className="text-outline">Time:</span> {formatHours(modeData?.time_hr)}</p>
-                      <p className="text-on-surface"><span className="text-outline">Cost:</span> {formatInr(modeData?.cost_inr)}</p>
-                      <p className="text-on-surface"><span className="text-outline">Risk:</span> {formatRisk(modeData?.risk)}</p>
-                      {mode === 'rail' && <p className="text-on-surface"><span className="text-outline">Train:</span> {modeData?.train_name || 'N/A'}</p>}
-                      {mode === 'air' && <p className="text-on-surface"><span className="text-outline">Airline:</span> {modeData?.airline || 'N/A'}</p>}
-                      {mode === 'road' && <p className="text-on-surface"><span className="text-outline">Distance:</span> {toNum(modeData?.distance_km) == null ? 'N/A' : `${toNum(modeData?.distance_km)?.toFixed(1)} km`}</p>}
+                    <div className="space-y-1.5 text-sm">
+                      {modeData ? (
+                        <>
+                          {toNum(modeData?.time_hr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Time:</span> <span className="font-medium">{formatHours(modeData?.time_hr)}</span></p>}
+                          {toNum(modeData?.cost_inr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Cost:</span> <span className="font-medium">{formatInr(modeData?.cost_inr)}</span></p>}
+                          {toNum(modeData?.risk) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Risk:</span> <span className="font-medium">{formatRisk(modeData?.risk)}</span></p>}
+                          {mode === 'rail' && modeData?.train_name && modeData.train_name !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Train:</span> <span className="font-medium text-right ml-2">{modeData.train_name}</span></p>}
+                          {mode === 'air' && modeData?.airline && modeData.airline !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Airline:</span> <span className="font-medium text-right ml-2">{modeData.airline}</span></p>}
+                          {mode === 'road' && toNum(modeData?.distance_km) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Distance:</span> <span className="font-medium">{toNum(modeData?.distance_km)?.toFixed(1)} km</span></p>}
+                          {toNum(modeData?.time_hr) == null && toNum(modeData?.cost_inr) == null && toNum(modeData?.risk) == null && (
+                            <p className="text-outline italic text-[11px]">No data extracted for this mode.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-outline italic text-[11px]">No viable route generated.</p>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {(result.best_per_mode?.road as any)?.geometry && (
+              <div className="mt-4 rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5 flex flex-col h-[400px]">
+                <h3 className="text-sm font-semibold text-on-surface mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary" style={{ fontSize: '18px' }}>map</span>
+                  Road Segment Map
+                </h3>
+                <div className="flex-1 rounded-xl overflow-hidden min-h-0 border border-outline-variant/10">
+                  <MapView routes={[result.best_per_mode?.road as any]} selectedRoute={0} />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
