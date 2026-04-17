@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import type { WaterRoute } from '@/services/api';
+import { fetchExplanation, type WaterRoute } from '@/services/api';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -291,6 +291,25 @@ function DetailPanel({ route, source, destination }: { route: WaterRoute; source
   const risk = Number(route.risk ?? 0);
   const reliability = Number(route.reliability_score ?? 0);
 
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [route]);
+
+  const handleExplain = async () => {
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'water',
+      priority: useLogiFlowStore.getState().priority,
+      route_data: route,
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  };
+
   return (
     <div className="space-y-5">
       {/* Summary */}
@@ -429,6 +448,61 @@ function DetailPanel({ route, source, destination }: { route: WaterRoute; source
           </div>
         </div>
       </section>
+
+      {/* Explanation */}
+      {dynamicExplanation ? (
+        <section>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span
+              className="material-symbols-outlined text-teal-400 leading-none"
+              style={{ fontSize: '14px', fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20" }}
+            >
+              lightbulb
+            </span>
+            <h3 className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+              Route Insights
+            </h3>
+          </div>
+          <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3">
+            <ul className="space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed">
+              {dynamicExplanation
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map((line, i) => (
+                  <li key={`${line}-${i}`} className="flex gap-2">
+                    <span className="text-teal-400/70 shrink-0">•</span>
+                    <span>{line.replace(/^[-*]\s*/, '')}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        </section>
+      ) : (
+        <section>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span
+              className="material-symbols-outlined text-teal-400 leading-none"
+              style={{ fontSize: '14px', fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20" }}
+            >
+              lightbulb
+            </span>
+            <h3 className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+              Route Insights
+            </h3>
+          </div>
+          <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3 flex items-center justify-between">
+            <span className="text-[11px] text-on-surface-variant">No insights available yet.</span>
+            <button 
+              onClick={handleExplain} 
+              disabled={isLoadingExplanation} 
+              className="px-3 py-1.5 bg-teal-500/10 text-teal-400 text-[10px] rounded hover:bg-teal-500/20 transition disabled:opacity-50 font-medium"
+            >
+              {isLoadingExplanation ? 'Analyzing...' : 'Analyze with AI'}
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

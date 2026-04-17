@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Dict, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -8,13 +8,13 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
-def _groq_config() -> tuple[str | None, str]:
+def _groq_config() -> Tuple[Optional[str], str]:
     key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEY_RAIL")
     model = os.getenv("GROQ_MODEL_RAIL") or os.getenv("GROQ_MODEL") or "llama-3.1-8b-instant"
     return key, model
 
 
-def _build_prompt(rec: dict[str, Any], ctx: dict[str, Any]) -> str:
+def _build_prompt(rec: Dict[str, Any], ctx: Dict[str, Any]) -> str:
     return (
         "You are LogiFlow, a railway cargo assistant.\n"
         "Write a concise, user-facing explanation for why THIS train/route is recommended.\n"
@@ -39,10 +39,10 @@ def _build_prompt(rec: dict[str, Any], ctx: dict[str, Any]) -> str:
 
 
 def generate_train_explanation(
-    recommendation: dict[str, Any],
-    context: dict[str, Any] | None = None,
+    recommendation: Dict[str, Any],
+    context: Optional[Dict[str, Any]] = None,
     timeout_s: int = 4,
-) -> str | None:
+) -> Optional[str]:
     """
     Short user-facing justification via Groq OpenAI-compatible API.
     Reads GROQ_API_KEY (or GROQ_API_KEY_RAIL) and GROQ_MODEL / GROQ_MODEL_RAIL.

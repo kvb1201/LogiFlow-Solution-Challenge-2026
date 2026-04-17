@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { fetchExplanation } from '@/services/api';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(value));
@@ -61,6 +62,26 @@ export default function AirResults() {
   const airConstraintsApplied = useLogiFlowStore((state) => state.airConstraintsApplied);
 
   const selected = airRoutes[selectedAirRouteIndex] ?? airRoutes[0];
+
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [selected]);
+
+  const handleExplain = async () => {
+    if (!selected) return;
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'air',
+      priority: useLogiFlowStore.getState().priority,
+      route_data: selected,
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  };
 
   const breakdown = useMemo(() => {
     const b = selected?.cost_breakdown;
@@ -378,6 +399,50 @@ export default function AirResults() {
                   ))}
                 </ul>
               </div>
+
+              {/* Dynamic AI Explanation */}
+              <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest/30 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-outline flex items-center gap-1.5">
+                    <span 
+                      className="material-symbols-outlined text-secondary" 
+                      style={{ fontSize: '14px', fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20" }}
+                    >
+                      lightbulb
+                    </span>
+                    Route Insights
+                  </div>
+                  {!dynamicExplanation && (
+                    <button 
+                      onClick={handleExplain} 
+                      disabled={isLoadingExplanation} 
+                      className="px-2.5 py-1 bg-secondary/10 text-secondary text-[10px] rounded hover:bg-secondary/20 transition disabled:opacity-50"
+                    >
+                      {isLoadingExplanation ? 'Analyzing...' : 'Analyze with AI'}
+                    </button>
+                  )}
+                </div>
+
+                {dynamicExplanation ? (
+                  <ul className="space-y-1.5 mt-3 text-[11px] text-on-surface-variant leading-relaxed">
+                    {dynamicExplanation
+                      .split('\n')
+                      .map(line => line.trim())
+                      .filter(Boolean)
+                      .map((line, i) => (
+                        <li key={`${line}-${i}`} className="flex gap-2">
+                          <span className="text-secondary/70 shrink-0">•</span>
+                          <span>{line.replace(/^[-*]\s*/, '')}</span>
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <div className="text-[11px] text-on-surface-variant mt-2">
+                     Click to generate an AI explanation for why this route was ranked here.
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         </div>
