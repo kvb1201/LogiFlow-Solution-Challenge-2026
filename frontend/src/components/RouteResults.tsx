@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
+import { fetchExplanation } from '@/services/api';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -212,6 +213,9 @@ function RouteCard({
   confidence: number;
 }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  
   const priority = useLogiFlowStore(s => s.priority);
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
@@ -222,6 +226,25 @@ function RouteCard({
   const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
   const confidenceNote = explainConfidence(confidence, route, routes, priority);
   const dataSourceNote = explainDataSource(route);
+
+  // Reset explanation when route changes
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [route]);
+
+  const handleExplain = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'road',
+      priority,
+      route_data: route,
+      context: { best_route: best }
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  };
 
   return (
     <div
@@ -424,17 +447,42 @@ function RouteCard({
         )}
 
         {/* Insights */}
-        {(route.reason || insights.length > 0) && (
+        {(dynamicExplanation || route.reason || insights.length > 0) ? (
           <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5">
-              Route insight
+            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5 flex justify-between items-center">
+              <span>Route insight</span>
+              {!dynamicExplanation && (
+                <button 
+                  onClick={handleExplain} 
+                  disabled={isLoadingExplanation} 
+                  className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
+                >
+                  {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
+                </button>
+              )}
             </div>
-            {route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
+            
+            {dynamicExplanation && (
+              <ul className="mb-2 space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed bg-surface-container-low/40 p-2 rounded border border-outline-variant/10">
+                {dynamicExplanation
+                  .split('\n')
+                  .map(line => line.trim())
+                  .filter(Boolean)
+                  .map((line, i) => (
+                    <li key={`${line}-${i}`} className="flex gap-2">
+                      <span className="text-primary/70 shrink-0">•</span>
+                      <span>{line.replace(/^[-*]\s*/, '')}</span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+
+            {!dynamicExplanation && route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
               <p className="text-[11px] text-on-surface font-medium mb-1.5 leading-relaxed">
                 {route.reason}
               </p>
             )}
-            {insights.length > 0 && (
+            {!dynamicExplanation && insights.length > 0 && (
               <ul className="text-[11px] text-on-surface-variant space-y-1">
                 {insights.map((factor, idx) => (
                   <li key={`${factor}-${idx}`} className="flex items-start gap-2">
@@ -444,6 +492,19 @@ function RouteCard({
                 ))}
               </ul>
             )}
+          </div>
+        ) : (
+          <div className="mt-3 pt-3 border-t border-outline-variant/8">
+            <div className="flex justify-between items-center">
+              <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold">Route insight</div>
+              <button 
+                onClick={handleExplain} 
+                disabled={isLoadingExplanation} 
+                className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
+              >
+                {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
+              </button>
+            </div>
           </div>
         )}
       </div>

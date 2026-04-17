@@ -2,8 +2,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
-
+from typing import Any, Dict, List, Optional, Union
 import requests
 from dotenv import load_dotenv
 
@@ -36,7 +35,7 @@ def generate_hybrid_explanations(
     priority: str,
     ranked_routes: List[Dict[str, Any]],
     recommended_mode: str,
-) -> Dict[str, Any] | None:
+) -> Optional[Dict[str, Any]]:
     if not is_gemini_enabled():
         return None
 
