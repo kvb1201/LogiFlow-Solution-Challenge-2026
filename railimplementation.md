@@ -17,26 +17,50 @@ Because official Indian Railways APIs are heavily restricted, we built a **highl
 
 ## 2. Deep Dive: Web Scraping Strategies
 
-Our scraping strategy is a multi-tiered approach that degrades gracefully if a provider changes their website structure or blocks us.
+Our scraping strategy is a multi-tiered approach that degrades gracefully if a provider changes their website structure or blocks us. Here is the highly detailed breakdown of how each of the three primary scraping approaches works.
 
-### Tier 1: RailYatri Scraping (`railyatri_client.py`)
-RailYatri is our primary source for real-time train running status and historical performance (which drives our ML models).
-* **Live Status Extraction**: We fetch the live status page for a train. Since the page doesn't expose clean JSON, we use Python's `re` module to parse the HTML document. We identify the correct `<table>` containing station data by scanning table headers (`<th>`) for keywords like "station" and "status". We then iterate over the table rows (`<tr>` and `<td>`), cleaning out HTML tags using `html.unescape` and regex to build an array of stop dictionaries.
-* **Historical Severity Assessment**: We fetch past status records (up to 14 days back) using undocumented `start_date` and `start_day` query parameters. We calculate a "delayed ratio" and "severity average" by categorizing scraped status text (e.g., extracting "Mostly Delayed", "Irregular" or "On Time") into numerical penalty values.
-* **Trains-Between-Stations (HTML State Fallback)**: If the public API fails, we fetch the RailYatri booking page HTML. Since it is a modern web app, the data is preloaded into the DOM. We use regex to extract the payload from `<script id="__NEXT_DATA__">` or `__INITIAL_STATE__ = {...};`, parse it as JSON, and normalize the train list.
+### Approach 1: RailYatri Scraping (`railyatri_client.py`)
+RailYatri acts as our primary source for both real-time live tracking ("running status") and discovery of trains between stations.
 
-### Tier 2: ConfirmTkt Next.js & Asset Reverse Engineering (`railradar_client.py`)
-If RailYatri fails to find trains, we failover to ConfirmTkt.
-* **Next.js Hydration Scraping**: ConfirmTkt is built with Next.js. Similar to RailYatri, we fetch the HTML response and use regex to pull out the `<script id="__NEXT_DATA__">` tag, converting the massive hydration state into a JSON object and filtering down to `pageProps.trainsData.trainList`.
-* **Asset-Derived API Reverse Engineering (Advanced)**: If the Next.js state isn't present, we look for the main JavaScript bundle `<script type="module" src="...bundle.js">`. We download the JS bundle itself, run regex over the minified code, and extract internal API keys (like `"ct-web!2$"`), client IDs, and undocumented API endpoints. We then dynamically construct headers (`apikey`, `clientid`, `deviceid`) and directly query their undocumented backend API.
+**1. Live Status HTML Parsing:**
+- **Endpoint Target**: We scrape the public `https://www.railyatri.in/live-train-status/{train_number}` page directly using `requests.get()`.
+- **Table Extraction Strategy**: Unlike API responses, the data is embedded inside an HTML table. Since standard HTML parsers can be slow or brittle if the DOM changes slightly, we use a robust regular expression approach. We locate `<table>` tags and inspect their `<th>` containing keywords like "station" and "status". 
+- **Row Traversal**: Once the correct table is found, we extract `<tr>` cells. For each `<td>`, we clean HTML remnants using `html.unescape()` to extract the exact station name, arrival time, and delay status string (e.g., "Mostly Delayed").
+- **Historical Scaling via Query Params**: We discovered through UI inspection that RailYatri accepts `start_date` and `start_day` URL parameters. We loop historical parameters (up to 14 days) and aggregate the scraped statuses to calculate two ML features: **Severity Average** and **Delayed Ratio**.
 
-### Tier 3: IRCTC Direct (Session Mimicry)
-If aggregator sites fail entirely, we emulate a browser session interacting with the official IRCTC domain.
-* **Session Initialization**: We use `requests.Session()` with spoofed User-Agent headers to visit the IRCTC homepage, grabbing essential tracking cookies and anti-bot tokens.
-* **Header Spoofing**: IRCTC has bot-protection that checks for specific browser-generated headers. We generate a custom `greq` header (`timestamp:uuid-v4`) as the browser would, passing it to `altAvlEnq/TC` via a POST request to bypass protection cleanly.
+**2. Trains-Between-Stations & Next.js Hydration:**
+- **Primary API**: It first tries `trainticketapi.railyatri.in` with JSON payload.
+- **HTML Fallback**: If the API blocks us or enforces authentication, we failover to requesting the browser UI page. Since RailYatri uses modern rendering paradigms, the initial request contains the entire datastructure serialized into a `<script>` tag. We extract the text between `<script id="__NEXT_DATA__">...</script>` or `__INITIAL_STATE__ = {...};`, parse it via `json.loads()`, and navigate the massive JSON tree payload to extract the actual trains connecting the two requested stations.
 
-### Tier 4: Generic Pandas HTML Extractor
-As a last resort for customized URLs (defined in `.env`), we use `pandas.read_html` which automatically detects `<table>` tags in a fetched DOM. We iterate over the extracted DataFrames looking for columns matching "Train No" or "Departure", and construct a normalized train object.
+### Approach 2: ConfirmTkt Scraping (`railradar_client.py`)
+If RailYatri fails to find valid routes, the pipeline automatically fails over to the ConfirmTkt provider. ConfirmTkt uses more modern obfuscation techniques, requiring a highly technical two-stage scrape.
+
+**1. The Next.js State Extractor Contextual Parsing:**
+- **Endpoint Target**: We scrape `https://www.confirmtkt.com/rbooking/trains/from/{from_slug}/to/{to_slug}/{date}`.
+- **Hydration State Extraction**: We use `re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', html)` to lift the Next.js framework's state payload.
+- **Data Normalization**: We process the massive JSON object payload, dynamically traveling `pageProps.trainsData.trainList` or `pageProps.trainList` to bypass API authorization bounds. We format it into a universal schema (`trainNumber`, `departureMinutes`, `classTypes`) that our logistics ML models expect.
+
+**2. Asset-Derived API Reverse Engineering (The "Bundle Parser" Fallback):**
+If Next.js obfuscates the data, ConfirmTkt shifts to an App-client fetching model. To circumvent this, we do on-the-fly reverse engineering:
+- **Locating the Frontend Logic**: We use regex to find the module script tag (`<script type="module" src="...">`) injected in the HTML.
+- **Asset Download & Inspection**: We make a secondary `requests.get()` to download this `.js` bundle file directly.
+- **Regex Heuristics on Javascript**: We scan the raw minified javascript string for patterns looking for variables literally named `apikey` or `clientid`. Through this, we extract internal API credentials (such as `"ct-web!2$"` for the `apikey`).
+- **Internal API Request Targeting**: We identify the internal URL `cttrainsapi.confirmtkt.com/api/v1/trains/search` from the js source. We then construct the exact `Headers` their SPA utilizes (including an injection of a generated `uuid` as `deviceid`), mimicking an authenticated internal browser fetch.
+
+### Approach 3: IRCTC Direct Spoofing/Session Mimicry (`railradar_client.py`)
+If both aggregator endpoints (RY and CT) utterly fail, the system relies on the final defensive layer: mocking a human user on the official Indian Railways (IRCTC) site.
+
+**1. Session Hydration & Cookie Replay:**
+- We instantiate a `requests.Session()` coupled with standard consumer "User-Agent" headers.
+- **Cold Call Handshake**: We initiate a GET request to `https://www.irctc.co.in/nget/train-search`. This does not yield train data, but it solves their edge firewall challenges (Akamai) and captures tracking browser cookies. 
+
+**2. Custom Anti-Bot Header Spoofing:**
+- IRCTC's API endpoints enforce headers that prove the request originated from their UI javascript. 
+- We engineered a bypass by constructing the `greq` header. In our code, we generate this exactly as their frontend code does: `f"{int(time.time() * 1000)}:{uuid.uuid4()}"`. 
+- By injecting this dynamically generated token along with the `bmirak` header value `"webbm"`, the IRCTC WAF accepts our synthetic requests as legitimate traffic.
+
+**3. Direct Alt Availability Enforcement (altAvlEnq/TC):**
+- With our mock session and tokens primed, we POST directly to `https://www.irctc.co.in/eticketing/protected/mapps1/altAvlEnq/TC` using the `YYYYMMDD` native IRCTC JSON format schema to finally extract exactly what trains exist, falling entirely under the official radar.
 
 ---
 
