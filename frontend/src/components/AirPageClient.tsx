@@ -18,7 +18,7 @@ export default function AirPageClient() {
   const hasResults = airRoutes.length > 0;
   const showAirLoading = loading && loadingMode === 'air';
   const showNoRoutePage =
-    !!error && /no route available|no air routes found|no feasible routes found|air optimize failed \(404\)/i.test(error);
+    !!error && /no route available|no air routes found|no feasible routes|air optimize failed \(404\)/i.test(error);
 
   if (!hasSearched) {
     return (
