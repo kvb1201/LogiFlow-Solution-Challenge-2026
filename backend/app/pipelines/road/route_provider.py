@@ -7,13 +7,17 @@ from requests.exceptions import RequestException
 
 from app.utils.coordinates import get_coords
 
-# Load .env
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+# Load .env from both:
+# - backend/.env (historical)
+# - repo-root/.env (common)
+_here = Path(__file__).resolve()
+load_dotenv(_here.parents[3] / ".env")  # backend/.env
+load_dotenv(_here.parents[4] / ".env")  # repo-root/.env
 
 TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
 
 if not TOMTOM_API_KEY:
-    raise Exception("TOMTOM_API_KEY not set in environment")
+    raise Exception("TOMTOM_API_KEY not set (expected in backend/.env or repo-root .env)")
 
 
 def geocode_city(city: str):
@@ -164,6 +168,7 @@ def get_routes(source, destination, payload=None):
 
     try:
         res = requests.get(url, params=params, timeout=10)
+
 
         if res.status_code != 200:
             raise Exception(f"TomTom API failed: {res.text}")

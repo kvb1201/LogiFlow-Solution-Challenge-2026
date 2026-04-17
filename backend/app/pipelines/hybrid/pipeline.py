@@ -47,37 +47,51 @@ class HybridPipeline:
         rail_res = results.get("rail", {})
         air_res = results.get("air", {})
 
-        # --- extract best routes ---
-        road_best = road_res.get("best")
+        # --- extract best routes (robust to dict OR list) ---
+
+        def extract_best(res, mode):
+            # Handle list responses
+            if isinstance(res, list):
+                return res[0] if res else None
+
+            # Handle dict responses
+            if isinstance(res, dict):
+                if mode == "rail":
+                    # priority-aware selection
+                    if priority == "cost":
+                        candidate = res.get("cheapest")
+                    elif priority == "time":
+                        candidate = res.get("fastest")
+                    elif priority == "safety":
+                        candidate = res.get("safest")
+                    else:
+                        candidate = (
+                            res.get("cheapest") or
+                            res.get("fastest") or
+                            res.get("safest") or
+                            res.get("best")
+                        )
+                else:
+                    candidate = res.get("best") or res.get("best_route")
+
+                # fallback handling
+                if not candidate:
+                    if res.get("all"):
+                        return res["all"][0]
+                    if res.get("alternatives"):
+                        return res["alternatives"][0]
+
+                return candidate
+
+            return None
+
+        road_best = extract_best(road_res, "road")
 
         # Debug print for rail_res
         print("\n[HYBRID DEBUG] rail_res:", rail_res, "\n")
 
-        if priority == "cost":
-            rail_best = rail_res.get("cheapest")
-        elif priority == "time":
-            rail_best = rail_res.get("fastest")
-        elif priority == "safety":
-            rail_best = rail_res.get("safest")
-        else:
-            rail_best = (
-                rail_res.get("cheapest") or
-                rail_res.get("fastest") or
-                rail_res.get("safest") or
-                rail_res.get("best")
-            )
-
-        # 🔥 Fallback handling if structured keys are missing
-        if not rail_best:
-            if isinstance(rail_res, dict):
-                if rail_res.get("all"):
-                    rail_best = rail_res["all"][0]
-                elif rail_res.get("alternatives"):
-                    rail_best = rail_res["alternatives"][0]
-            elif isinstance(rail_res, list) and len(rail_res) > 0:
-                rail_best = rail_res[0]
-
-        air_best = air_res.get("best") or air_res.get("best_route")
+        rail_best = extract_best(rail_res, "rail")
+        air_best = extract_best(air_res, "air")
 
         normalized = []
 

@@ -334,6 +334,10 @@ class RoadPipeline(BasePipeline):
 
         routes = self._get_routes(source, destination, payload)
 
+        # Defensive: ensure routes is always a non-empty list
+        if not isinstance(routes, list) or len(routes) == 0:
+            raise Exception("[RoadPipeline] No valid routes returned from provider")
+
         # Always compute realtime baseline first
         realtime_payload = payload.copy()
         realtime_payload["mode"] = "realtime"
@@ -377,6 +381,10 @@ class RoadPipeline(BasePipeline):
             safest = _clean(min(ranked, key=lambda x: x["risk"]))
 
         cleaned_ranked = [_clean(r) for r in ranked]
+
+        # Defensive: ensure at least one ranked route exists
+        if not cleaned_ranked:
+            raise Exception("[RoadPipeline] No routes after processing (engineering/scoring failed)")
 
         def _priority_factor():
             if priority == "cost":
@@ -564,15 +572,24 @@ class RoadPipeline(BasePipeline):
         ]
 
         print(f"[PIPELINE OUTPUT] mode={payload.get('mode')} routes={len(explained_ranked)}")
+
         return {
+            "mode": "road",
             "simulation": simulation_mode,
-            "best": _explain(cleaned_ranked[0], "best"),
+
+            # PRIMARY CONTRACT (for hybrid)
+            "best": _explain(cleaned_ranked[0], "best") if cleaned_ranked else None,
+            "alternatives": [_explain(r, "alternative") for r in cleaned_ranked[1:]],
+
+            # SECONDARY (optional but useful)
             "cheapest": _explain(cheapest, "cheapest") if cheapest else None,
             "fastest": _explain(fastest, "fastest") if fastest else None,
             "safest": _explain(safest, "safest") if safest else None,
-            "alternatives": [_explain(r, "alternative") for r in cleaned_ranked[1:]],
-            "has_alternatives": len(cleaned_ranked) > 1,
+
+            # DEBUG / FULL DATA
             "all": explained_ranked,
+            "has_alternatives": len(cleaned_ranked) > 1,
+
             "constraints_applied": {
                 "budget": payload.get("budget"),
                 "deadline_hours": payload.get("deadline_hours"),
