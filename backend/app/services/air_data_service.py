@@ -54,6 +54,10 @@ def get_live_air_routes(source: str, destination: str, departure_date: str) -> L
     if not source_code or not destination_code:
         return []
 
+    if source_code == destination_code:
+        # Don't support intra-city flights even if the dataset has loops
+        return []
+
     routes = []
     direct = _build_direct_route(source_airport, destination_airport)
     if direct:

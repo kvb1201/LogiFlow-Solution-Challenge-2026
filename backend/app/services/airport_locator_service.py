@@ -13,6 +13,7 @@ load_dotenv()
 
 DEFAULT_OURAIRPORTS_CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "airports.csv"
 OURAIRPORTS_CSV_PATH = os.getenv("OURAIRPORTS_CSV_PATH", str(DEFAULT_OURAIRPORTS_CSV_PATH))
+AIRPORT_MATCH_THRESHOLD_KM = 100.0
 
 CITY_TO_AIRPORT = {
     "Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
@@ -92,7 +93,8 @@ def find_nearest_airport_for_city(city: str) -> Optional[dict]:
             best_distance = distance
             best = airport
 
-    if not best:
+    if not best or best_distance > AIRPORT_MATCH_THRESHOLD_KM:
+        print(f"[AirportLocatorService] Nearest airport {best.get('iata_code') if best else 'N/A'} is too far ({best_distance:.1f}km) for city {city}")
         return None
 
     return {
