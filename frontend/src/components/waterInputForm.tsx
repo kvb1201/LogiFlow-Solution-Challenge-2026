@@ -2,36 +2,42 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import { searchCities, type StationSearchResult } from '@/services/api';
 
-// ── Debounced city search ─────────────────────────────────────────────
+// ── Static Ports Data ───────────────────────────────────────────────────
 
-function useCitySearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
-  const [results, setResults] = useState<{ name: string; lat?: number; lng?: number }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+const WATER_PORTS = [
+  { name: 'Mundra Port, Gujarat, India' },
+  { name: 'Deendayal Port (Kandla), Gujarat, India' },
+  { name: 'Jawaharlal Nehru Port (JNPT), Navi Mumbai, India' },
+  { name: 'Mumbai Port, Maharashtra, India' },
+  { name: 'Mormugao Port, Goa, India' },
+  { name: 'New Mangalore Port, Karnataka, India' },
+  { name: 'Cochin Port (Kochi), Kerala, India' },
+  { name: 'V.O. Chidambaranar Port (Thoothukudi), Tamil Nadu, India' },
+  { name: 'Chennai Port, Tamil Nadu, India' },
+  { name: 'Kamarajar Port (Ennore), Tamil Nadu, India' },
+  { name: 'Visakhapatnam Port, Andhra Pradesh, India' },
+  { name: 'Paradip Port, Odisha, India' },
+  { name: 'Kolkata Port (Haldia Dock Complex), West Bengal, India' }
+];
 
-  const search = useCallback(
-    (query: string) => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (!query || query.length < 2) {
-        setResults([]);
-        setGlobalSuggestions([]);
-        return;
-      }
-      setLoading(true);
-      timeoutRef.current = setTimeout(async () => {
-        const data = await searchCities(query);
-        setResults(data);
-        setGlobalSuggestions(data.map((r) => ({ code: r.name.slice(0, 5).toUpperCase(), name: r.name })));
-        setLoading(false);
-      }, 300);
-    },
-    [setGlobalSuggestions]
-  );
+function useCitySearch(setGlobalSuggestions: (rows: { code: string; name: string }[]) => void) {
+  const [results, setResults] = useState<{ name: string }[]>(WATER_PORTS);
+  const loading = false;
+
+  const search = useCallback((query: string) => {
+    if (!query) {
+      setResults(WATER_PORTS);
+      setGlobalSuggestions([]);
+      return;
+    }
+    const filtered = WATER_PORTS.filter(p => p.name.toLowerCase().includes(query.toLowerCase()));
+    setResults(filtered);
+    setGlobalSuggestions(filtered.map(r => ({ code: r.name.slice(0, 5).toUpperCase(), name: r.name })));
+  }, [setGlobalSuggestions]);
 
   const clear = useCallback(() => {
-    setResults([]);
+    setResults(WATER_PORTS);
     setGlobalSuggestions([]);
   }, [setGlobalSuggestions]);
 
@@ -310,6 +316,10 @@ export default function WaterInputForm() {
                 </h2>
                 <p className="text-[10px] text-outline mt-0.5">
                   Port-based routes with transshipment options
+                </p>
+                <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
+                  <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>info</span>
+                  Note: The given data is limited and not real-time.
                 </p>
               </div>
             </div>
