@@ -9,10 +9,15 @@ from app.routes.explain_routes import router as explain_router
 
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
-# CORS (IMPORTANT for frontend)
+# CORS — allow Vercel frontend, localhost dev, and Capacitor mobile apps
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://logi-flow-solution-challenge-2026.vercel.app",
+    ],
+    allow_origin_regex=".*",  # for mobile apps (Capacitor sends no origin / origin=null)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
