@@ -71,6 +71,7 @@ def optimize_air(payload: AirCargoPayload):
                 "cargo_type": payload.cargo_type,
                 "cargo_weight_kg": payload.cargo_weight_kg,
             },
+            "error": result.get("error") if isinstance(result, dict) else None,
         }
 
     except HTTPException:
