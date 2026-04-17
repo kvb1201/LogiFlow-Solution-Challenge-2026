@@ -563,7 +563,7 @@ export default function RailwayDashboard() {
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
         <div
-          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
+          className="flex-1 flex flex-col items-center px-4 py-10 sm:py-16 relative overflow-y-auto overflow-x-hidden"
           style={{ background: '#06080d' }}
         >
           {/* Animated background */}
