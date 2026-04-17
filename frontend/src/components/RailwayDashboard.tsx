@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
-import type { Recommendation, RankedOption } from '@/services/api';
+import { fetchExplanation, type Recommendation, type RankedOption } from '@/services/api';
 
 
 // ── Metric Chip ──────────────────────────────────────────────────────
@@ -274,6 +274,14 @@ function DetailPanel({
   trainDelayDetail: import('@/services/api').TrainDelayData | null;
   selectedTrainLive: Record<string, unknown> | null;
 }) {
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [rec, ranked]);
+
   const liveEntries = useMemo(() => {
     if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
     const preferred = ['currentStationName', 'currentStation', 'nextStationName', 'nextStation', 'delayMinutes', 'delay', 'status', 'position', 'speed'];
@@ -328,6 +336,20 @@ function DetailPanel({
   const runningDays = isRec ? rec!.running_days : ranked!.running_days;
   const distanceKm = isRec ? rec!.distance_km : ranked!.distance_km;
   const llmExplanation = isRec ? rec!.llm_explanation : undefined;
+
+  const handleExplain = async () => {
+    if (!base) return;
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'rail',
+      priority: useLogiFlowStore.getState().priority,
+      route_data: base
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  };
+
+  const displayExplanation = llmExplanation || dynamicExplanation;
 
   const riskColor =
     riskScore < 0.2 ? '#10b981' : riskScore < 0.4 ? '#f59e0b' : '#ef4444';
@@ -427,16 +449,15 @@ function DetailPanel({
       </section>
 
       {/* Explanation */}
-      {llmExplanation && (
+      {displayExplanation ? (
         <section>
-          <SectionHeader icon="lightbulb" title="Why this recommendation" />
+          <SectionHeader icon="lightbulb" title="Route Insights" />
           <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3">
             <ul className="space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed">
-              {llmExplanation
+              {displayExplanation
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean)
-                .slice(0, 5)
                 .map((line, i) => (
                   <li key={`${line}-${i}`} className="flex gap-2">
                     <span className="text-primary/70 shrink-0">•</span>
@@ -444,6 +465,20 @@ function DetailPanel({
                   </li>
                 ))}
             </ul>
+          </div>
+        </section>
+      ) : (
+        <section>
+          <SectionHeader icon="lightbulb" title="Route Insights" />
+          <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3 flex items-center justify-between">
+            <span className="text-[11px] text-on-surface-variant">No insights available yet.</span>
+            <button 
+              onClick={handleExplain} 
+              disabled={isLoadingExplanation} 
+              className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] rounded hover:bg-primary/20 transition disabled:opacity-50 font-medium"
+            >
+              {isLoadingExplanation ? 'Analyzing...' : 'Analyze with AI'}
+            </button>
           </div>
         </section>
       )}

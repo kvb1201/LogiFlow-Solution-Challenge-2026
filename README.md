@@ -1,246 +1,130 @@
-# LogiFlow-Solution-Challenge-
-AI-powered multimodal logistics optimization system.
-
-## Features
-- Multimodal routing (road, rail, hybrid)
-- Decision engine for cost, time, and risk
-- Simulation of disruptions
-- ML-based delay prediction
-
-## Tech Stack
-- Backend: FastAPI
-- Frontend: React
-- ML: Scikit-learn
-
-## Structure
-- backend/
-- frontend/
-- ml/
-- docs/
-# LogiFlow — Solution Challenge 2026
-
-AI-powered **multimodal logistics optimization system** designed for intelligent routing, disruption handling, and decision support.
+<div align="center">
+  <img src="https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge" alt="Status" />
+  <img src="https://img.shields.io/badge/Google-Solution%20Challenge%202026-blue?style=for-the-badge&logo=google" alt="Google Solution Challenge" />
+  <br />
+  <h1>🌍 <b>LogiFlow</b></h1>
+  <h3>The Ultimate Decision Intelligence Platform for Global Multimodal Logistics</h3>
+  <p><i>Building order from chaos. Predictable routing through unpredictable worlds.</i></p>
+</div>
 
 ---
 
-# 🚀 Project Vision
+## 📖 The LogiFlow Narrative
 
-LogiFlow is a **decision intelligence platform** that:
-- Optimizes logistics across multiple transport modes
-- Adapts to constraints and preferences
-- Simulates disruptions and recommends alternatives
-- Evolves into ML-driven predictions
+In the complex realities of modern supply chains, **LogiFlow** emerged to solve an undeniable truth: *Transportation is never static.* Web searches and APIs fail when ports strike, trains delay, or weather halts cargo planes.
 
----
+Built for the **Google Solution Challenge 2026**, LogiFlow isn’t just a simple route optimizer. It is a highly resilient, multi-modal **Decision Intelligence Ecosystem**. By orchestrating four inherently decoupled transport pipelines—**Rail, Air, Road, and Water**—into a singular *Hybrid Orchestrator*, LogiFlow calculates time, cost, and risk down to the exact ton and km. 
 
-# 🧠 Current Architecture
+When official APIs go dark, LogiFlow’s built-in intelligent proxy architectures spoof sessions to extract critical tracking data. Where legacy routing sees point A to B, LogiFlow sees delay probabilities modeled by **XGBoost & CatBoost**. And when a user needs to understand *why* a route was chosen over another, **Google Gemini** evaluates the tradeoffs natively to deliver a crisp tactical verdict.
 
-## 🔹 Backend (FastAPI)
-
-Structured into **modular layers**:
-
-```
-routes → services → pipelines → utils
-```
-
-### Components
-
-#### 1. Routes
-- `/optimize` → main API endpoint
-
-#### 2. Services
-- `optimizer.py` → core decision engine
-- `pipeline_registry.py` → manages pipelines
-- `scorer.py` → scoring logic (time/cost/risk)
-- `enricher.py` → converts locations → coordinates
-- `validator.py` → ensures pipeline output correctness
-
-#### 3. Pipelines (Core Innovation)
-Each transport mode is independent:
-
-```
-pipelines/
-  road.py
-  rail.py
-  water.py
-  hybrid.py
-```
-
-Each pipeline:
-- generates routes
-- follows a fixed schema
-- is independently testable
-
-#### 4. Utils
-- `coordinates.py` → location mapping
+Welcome to the future of logistics routing.
 
 ---
 
-# 🧩 Pipeline Architecture
+## 🚀 The Tech Stack Arsenal
 
-Each pipeline implements:
+We refused to compromise on speed and stability. The system runs on a deeply separated, modern stack optimized for concurrency and high-throughput data extraction.
 
-```python
-generate(source, destination) → list of routes
-```
+### 🧠 Backend (The Decision Engine)
+- **Framework**: `FastAPI` + `Uvicorn` for blazing fast async concurrency.
+- **Data & Intelligence**: `Python 3.12+`, `Pandas`, `NumPy`, `Pydantic` validation.
+- **Machine Learning**: `Scikit-learn`, `CatBoost`, `XGBoost` for risk arrays and predictive delay modeling.
+- **Resilience**: `Redis` for distributed caching, advanced circuit breakers, rotating proxy API headers (`requests`).
 
-### Standard Output Format
-
-```json
-{
-  "type": "Road",
-  "mode": "road",
-  "time": 7,
-  "cost": 3000,
-  "risk": 0.6,
-  "segments": [...]
-}
-```
+### 💻 Frontend (The Command Center)
+- **Architecture**: `Next.js 16` (App Router) + `React 19`.
+- **Styling & UI**: `Tailwind CSS v4`, `Radix UI` for headless accessible components, `Lucide React` for typography and iconography.
+- **State & Data**: `Zustand` for global state hydration across heavy pipeline outputs.
+- **Geospatial Visualization**: `Leaflet`, `React-Leaflet`, and `Mapbox GL` for drawing intricate transshipment routes dynamically.
 
 ---
 
-# 🧪 Testing Workflow
+## ⛓️ The Atomic Pipeline Architecture
 
-## 1. Individual Pipeline Testing
+The soul of LogiFlow relies on its `BasePipeline` contract. Every mode of transport operates completely independently, shielding the global platform from localized failures. 
 
+### 🚂 1. Rail Pipeline (`rail`)
+*Dominant Logic: Official Tariff Scaling & High-Availability Data Extraction*
+
+The Indian Railway network is notorious for blocked APIs. Our pipeline bypasses this using extreme defensive engineering:
+- **Web Scraping Ecosystem**: We cascade across three extraction strategies:
+  1. **RailYatri HTML Parsing:** Robust regex HTML parsing to extract running status metrics.
+  2. **ConfirmTkt Next.js State Extraction:** Directly lifting `__NEXT_DATA__` JSON framework state variables off SPA pages to bypass authorization APIs.
+  3. **IRCTC Session Mimicry:** Generating dynamic client tokens (`greq` and `bmirak`) and spoofing synthetic requests to hit internal Akamai and WAF walls successfully.
+- **Data Transformation**: Runs fuzzy station resolvers, historical timetable fallbacks (`Train_details_22122017.csv`), and enforces official 2026 Indian Railway scale tables for parcels.
+- **Machine Learning**: Calculates **Severity Average** and **Delayed Ratio** to predict exactly how late your cargo will be.
+
+### ✈️ 2. Air Pipeline (`air`)
+*Dominant Logic: Airborne Network Graph Geometry*
+
+Calculates real-world air cargo routing based on physical node connection:
+- **Global Network Parsing**: Processes live and static OpenFlights data (`routes.dat`, `airports.csv`).
+- **Risk Calculation**: Integrates METAR weather condition reports dynamically.
+- **ML Congestion Matrix**: Predicts airport delay risks based on historical congestion.
+
+### 🚚 3. Road Pipeline (`road`)
+*Dominant Logic: Simulation & Spatial Simulation*
+
+Built on robust Map engines with hyper-local granularity logic:
+- **Dual Engine Architecture**: Supports standard `realtime` API routing and custom `simulation` routing.
+- **Dynamic Variable Injection**: Takes dynamic traffic density, fuel pricing permutations, and physical highway conditions directly from UI sliders.
+- **Cost Scaling**: Generates granular, km-by-km pricing estimates.
+
+### 🚢 4. Water Pipeline (`water`)
+*Dominant Logic: Maritime Hub Relays*
+
+Connects internal cities to coastal seaports for heavy/bulk cargo:
+- **Port Mapping Logic**: Finds the nearest logical transshipment port.
+- **Coastal/Deep-Sea Engine**: Accurately scales maritime container pricing.
+
+---
+
+## 🌩️ The Hybrid Orchestrator & AI AI Brain
+
+What happens when multiple pipelines return completely different structures (`duration_hrs` vs. `transit_minutes`, official tariffs vs. map estimates)?
+
+1. **The Normalizer**: A specialized middleware that maps disparate pipeline structures, standardizing all cargo routes onto an immutable standard JSON dictionary evaluating **Time, Cost, and Risk**.
+2. **The LLM Tradeoff Evaluator**: 
+   - Connected natively to **Google Gemini APIs** (`gemini_explainer.py`).
+   - Receives the normalized dataset and acts as a freight broker.
+   - Summarizes *why* Road is picked over Rail, providing the ultimate **"Verdict"** back to the logistics manager in clean UI cards.
+   - Falls back to `Groq` for high-throughput, instant summarization if primary models choke.
+
+---
+
+## 🛠️ Developer Check-List: Hacking the Machine
+
+We designed LogiFlow to be extensible. Want to add drones? Or Hyperloop? 
+
+1. **Registry**: Add your pipeline mode into `backend/app/services/pipeline_registry.py`.
+2. **Extensibility**: Extend the `BasePipeline` (`backend/app/pipelines/base.py`). Ensure you expose a rigid `generate(source, destination, payload)` method.
+3. **Normalize**: Map your new outputs through `Pipelines/hybrid/normalizer.py`.
+4. **Dashboards**: Hydrate it on the frontend via Next.js components in `/frontend/src/components/`, adding Mapbox visualizations if the route calls for it.
+5. **Testing First**: Never pollute the orchestrator without validating your pipeline with `python backend/app/pipelines/run_tests.py`.
+
+---
+
+## 🛡️ Getting Started
+
+### 1. Bootstrapping the Backend (FastAPI)
 ```bash
 cd backend
-python app/pipelines/test_road.py
-```
-
-## 2. Full Pipeline Testing
-
-```bash
-python app/pipelines/run_tests.py
-```
-
-## 3. Backend API Test
-
-```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+# Insert APIs to .env (.env.example provided)
 uvicorn app.main:app --reload
 ```
+API Documentation live at: `http://localhost:8000/docs`
 
-Then open:
-```
-http://localhost:8000/docs
-```
-
----
-
-# ⚙️ Development Workflow
-
-## For Backend Developers
-
-1. Work only in your pipeline:
-```
-app/pipelines/<mode>.py
-```
-
-2. Test locally:
+### 2. Bootstrapping the Frontend (Next.js)
 ```bash
-python app/pipelines/test_<mode>.py
+cd frontend
+npm install
+npm run dev
 ```
-
-3. Validate integration:
-```bash
-python app/pipelines/run_tests.py
-```
+Dashboard live at: `http://localhost:3000`
 
 ---
 
-## Team Rules
-
-### ❌ Do NOT modify:
-- optimizer
-- response format
-- other pipelines
-
-### ✅ Only modify:
-- your assigned pipeline
-
----
-
-# 🧠 Decision Engine
-
-The optimizer:
-
-1. Collects routes from all pipelines  
-2. Applies constraints (excluded modes)  
-3. Validates routes  
-4. Scores routes based on priority  
-5. Returns best + alternatives  
-
----
-
-# 📊 Scoring Logic
-
-Based on user priority:
-
-| Priority | Focus |
-|--------|------|
-| Fast   | Minimize time |
-| Cheap  | Minimize cost |
-| Safe   | Minimize risk |
-
----
-
-# 🔮 Upcoming Features
-
-## 1. Simulation Engine (NEXT)
-- Apply disruptions (weather, strikes)
-- Recompute routes
-- Compare before vs after
-
-## 2. ML Integration
-- Delay prediction
-- Risk estimation
-- Demand forecasting
-
-## 3. Real-time Data
-- Traffic APIs
-- Weather APIs
-- Map integration
-
----
-
-# 🧭 Roadmap
-
-### Phase 1 (Done)
-- Backend modularization
-- Pipeline architecture
-- Testing + validation
-
-### Phase 2 (In Progress)
-- Improve pipeline realism
-- Enhance scoring
-
-### Phase 3 (Next)
-- Simulation engine
-
-### Phase 4 (Final)
-- UI polish
-- ML integration
-
----
-
-# 🏁 Key Strengths
-
-- Modular architecture  
-- Independent pipeline development  
-- Scalable design  
-- Simulation-ready system  
-
----
-
-# 🧑‍💻 Tech Stack
-
-- Backend: FastAPI  
-- Frontend: React  
-- ML: Scikit-learn  
-
----
-
-# 📌 Summary
-
-LogiFlow is not just a route optimizer —  
-it is a **scalable logistics decision engine** built for real-world complexity.
+*LogiFlow was designed by a team absolutely dedicated to solving the unsolveable data problems found in modern global routing. We built fallbacks for our fallbacks.*

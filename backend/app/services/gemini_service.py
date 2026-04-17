@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union, Dict, List, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -10,18 +10,16 @@ from dotenv import load_dotenv
 # gemini_service.py -> backend/app/services -> parents[2] = backend/
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-_MODEL_CACHE: tuple[float, set[str]] | None = None
+_MODEL_CACHE: Optional[Tuple[float, Set[str]]] = None
 
 
-def _gemini_config() -> tuple[str | None, str]:
-    # Prefer generic env vars, but support rail-scoped ones too.
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_RAIL")
-    # If you set GEMINI_MODEL globally for other pipelines, rail can override via GEMINI_MODEL_RAIL.
-    model = os.getenv("GEMINI_MODEL_RAIL") or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
+def _gemini_config() -> Tuple[Optional[str], str]:
+    key = os.getenv("GEMINI_API_KEY")
+    model = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
     return key, model
 
 
-def _list_models(api_key: str, timeout_s: int = 10) -> set[str]:
+def _list_models(api_key: str, timeout_s: int = 10) -> Set[str]:
     global _MODEL_CACHE
     # Cache for 10 minutes to avoid extra calls.
     import time
@@ -74,10 +72,10 @@ def _resolve_model_name(api_key: str, requested: str) -> str:
 
 
 def generate_train_explanation(
-    recommendation: dict[str, Any],
-    context: dict[str, Any] | None = None,
+    recommendation: Dict[str, Any],
+    context: Optional[Dict[str, Any]] = None,
     timeout_s: int = 4,
-) -> str | None:
+) -> Optional[str]:
     """
     Use Gemini to produce a short, user-facing justification for why a train was chosen.
     Reads GEMINI_API_KEY and GEMINI_MODEL from env.
@@ -143,3 +141,65 @@ def generate_train_explanation(
     except Exception:
         return None
 
+def generate_generic_explanation(
+    pipeline: str,
+    priority: str,
+    route_data: Dict[str, Any],
+    context: Optional[Dict[str, Any]] = None,
+    timeout_s: int = 15,
+) -> Optional[str]:
+    """
+    Use Gemini to produce a generic short, pointwise explanation for why a route is or isn't ideal in a pipeline.
+    """
+    api_key, model = _gemini_config()
+    if not api_key:
+        return None
+    if (model or "").strip() == "gemini-flash-latest":
+        model = "models/gemini-flash-latest"
+    model_name = _resolve_model_name(api_key, model)
+
+    ctx = context or {}
+
+    prompt = (
+        "You are LogiFlow, an intelligent multimodal cargo assistant.\n"
+        f"You are explaining a {pipeline} route option to the user.\n"
+        f"The user prioritized: {priority}.\n"
+        "Write a concise, pointwise explanation analyzing this route. Highlight why it's good or why it might not be ideal.\n"
+        "Use the provided fields only; do not invent distances or costs.\n"
+        "Keep the explanation practical and keep constraints in mind.\n"
+        f"Route Details: {route_data}\n"
+        f"Context/Best Options: {ctx}\n\n"
+        "Structure your response strictly as:\n"
+        "- A concise 1-2 sentence overview of the route's value proposition.\n"
+        "- 3 to 5 detailed bullet points analyzing specific tradeoffs (cost, speed, risk, and specialized constraints).\n"
+        "Keep each bullet point informative but under 25 words."
+    )
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
+    try:
+        resp = requests.post(
+            url,
+            headers={"Content-Type": "application/json", "X-goog-api-key": api_key},
+            params={"key": api_key},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 400,
+                },
+            },
+            timeout=timeout_s,
+        )
+        if not resp.ok:
+            return None
+        data = resp.json() if resp.content else {}
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return None
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        text = " ".join([(p.get("text") or "").strip() for p in parts if isinstance(p, dict)]).strip()
+        return text or None
+    except Exception as e:
+        print(f"[GeminiService] generic explanation error: {e}")
+        return None
