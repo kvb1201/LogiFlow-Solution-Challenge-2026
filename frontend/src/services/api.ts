@@ -355,11 +355,27 @@ export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimize
   return res.json();
 }
 
-export async function optimizeHybridRoute(payload: {
+export interface HybridPayload {
   source: string;
   destination: string;
   priority: string;
-}): Promise<HybridOptimizeResult> {
+  departure_date?: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  cargo?: { weight: number; type: string };
+  preferences?: { preferred_mode?: string };
+  constraints?: {
+    excluded_modes?: string[];
+    risk_threshold?: number;
+    delay_tolerance_hours?: number;
+    max_transshipments?: number;
+    budget_max_inr?: number;
+    max_stops?: number;
+    budget_limit?: number;
+  };
+}
+
+export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
   const res = await fetch(`${BACKEND_BASE}/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

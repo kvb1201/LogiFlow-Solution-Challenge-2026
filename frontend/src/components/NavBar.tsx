@@ -22,7 +22,7 @@ export default function NavBar() {
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <header className="h-14 shrink-0 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 relative z-[60] border-b border-outline-variant/15 bg-[linear-gradient(110deg,rgba(10,14,20,0.94),rgba(18,23,33,0.92),rgba(10,14,20,0.94))] backdrop-blur-2xl shadow-[0_10px_40px_-30px_rgba(172,199,255,0.7)]">
+    <header className="h-14 shrink-0 flex items-center px-3 sm:px-4 gap-2 sm:gap-3 relative z-[100001] border-b border-outline-variant/15 bg-[linear-gradient(110deg,rgba(10,14,20,0.94),rgba(18,23,33,0.92),rgba(10,14,20,0.94))] backdrop-blur-2xl shadow-[0_10px_40px_-30px_rgba(172,199,255,0.7)]">
       <Link
         href="/"
         onClick={resetSearch}
