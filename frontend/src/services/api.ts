@@ -3,7 +3,7 @@
  * Connects to the FastAPI backend and RailRadar API.
  */
 
-const BACKEND_BASE = '/api';
+const BACKEND_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
