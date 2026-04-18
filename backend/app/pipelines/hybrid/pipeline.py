@@ -93,10 +93,14 @@ class HybridPipeline:
 
         road_best = extract_best(road_res, "road")
 
-        # Debug print for rail_res
-        print("\n[HYBRID DEBUG] rail_res:", rail_res, "\n")
-
-        rail_best = extract_best(rail_res, "rail")
+        # --- Detect rail "no_routes" status before extracting best ---
+        rail_no_routes = False
+        if isinstance(rail_res, dict) and rail_res.get("status") == "no_routes":
+            rail_no_routes = True
+            rail_best = None
+            print(f"[HYBRID] Rail transport not available: {rail_res.get('message', 'no routes')}")
+        else:
+            rail_best = extract_best(rail_res, "rail")
         # --- Detect air "no_routes" status before extracting best ---
         air_no_routes = False
         if isinstance(air_res, dict) and air_res.get("status") == "no_routes":
@@ -245,6 +249,8 @@ class HybridPipeline:
         unavailable_modes = {}
         if air_no_routes or air_best is None:
             unavailable_modes["air"] = "Air transport not available for this route"
+        if rail_no_routes or rail_best is None:
+            unavailable_modes["rail"] = "Rail transport not available for this route"
 
         result = {
             "priority": priority,

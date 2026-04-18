@@ -48,18 +48,13 @@ class RailPipeline(BasePipeline):
             routes = []
 
         if not routes:
-            fallback = {
-                "type": "Rail",
-                "mode": "rail",
-                "time": 24,
-                "cost": 5000,
-                "risk": 0.5,
-                "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }
             return {
-                "best": fallback,
+                "mode": "rail",
+                "status": "no_routes",
+                "message": f"No railway routes found between {source} and {destination}",
+                "best": None,
                 "alternatives": [],
-                "all": [fallback]
+                "all": [],
             }
 
         default_payload = {
@@ -90,18 +85,13 @@ class RailPipeline(BasePipeline):
 
         enriched = engineer_features(routes, default_payload, weather_override=weather_override)
         if not enriched:
-            fallback = {
-                "type": "Rail",
-                "mode": "rail",
-                "time": 24,
-                "cost": 5000,
-                "risk": 0.5,
-                "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }
             return {
-                "best": fallback,
+                "mode": "rail",
+                "status": "no_routes",
+                "message": f"No railway routes found between {source} and {destination}",
+                "best": None,
                 "alternatives": [],
-                "all": [fallback]
+                "all": [],
             }
 
         results = []
