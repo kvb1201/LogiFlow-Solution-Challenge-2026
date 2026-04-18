@@ -1,14 +1,34 @@
 # This pipeline combines road, rail, and air results, then attaches Gemini-backed natural-language explainability.
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from app.services.pipeline_registry import get_pipeline
 from app.utils.request_context import RequestContext
 from .normalizer import normalize_road, normalize_rail, normalize_air
 from .explain import build_hybrid_explanations
 
+# Step 3: Canonical priority labels
+_PRIORITY_ALIASES = {
+    "cost": "cheap",
+    "cheap": "cheap",
+    "cheapest": "cheap",
+    "time": "fast",
+    "fast": "fast",
+    "fastest": "fast",
+    "speed": "fast",
+    "safety": "safe",
+    "safe": "safe",
+    "safest": "safe",
+    "reliable": "safe",
+    "balanced": "balanced",
+}
+
+_PIPELINE_TIMEOUT_S = 30
+
 
 class HybridPipeline:
     def generate(self, source, destination, payload=None, context=None):
         payload = payload or {}
-        priority = payload.get("priority") or "balanced"
+        raw_priority = payload.get("priority") or "balanced"
+        priority = _PRIORITY_ALIASES.get(raw_priority.lower().strip(), "balanced")
 
         # Create a shared request context for cross-pipeline caching
         # (weather, geocoding, incidents) to eliminate redundant API calls.
@@ -19,8 +39,7 @@ class HybridPipeline:
         rail_pipeline = get_pipeline("rail")
         air_pipeline = get_pipeline("air")
 
-        # --- PARALLEL PIPELINE EXECUTION WITH TIMEOUT ---
-        from concurrent.futures import ThreadPoolExecutor
+        # --- Step 1: PARALLEL PIPELINE EXECUTION WITH TIMEOUT ---
 
         def safe_call(pipeline, name):
             try:
@@ -37,14 +56,20 @@ class HybridPipeline:
             }
 
             results = {}
+            timed_out_modes = []
 
             for name, future in futures.items():
                 try:
-                    results[name] = future.result()
+                    results[name] = future.result(timeout=_PIPELINE_TIMEOUT_S)
                     if results[name]:
                         print(f"[HYBRID SUCCESS] {name} returned data")
                     else:
                         print(f"[HYBRID EMPTY] {name} returned empty result")
+                except FuturesTimeoutError:
+                    print(f"[HYBRID] Timeout: {name} (>{_PIPELINE_TIMEOUT_S}s)")
+                    timed_out_modes.append(name)
+                    results[name] = {}
+                    future.cancel()
                 except Exception as e:
                     print(f"[HYBRID ERROR] {name} execution error: {e}")
                     results[name] = {}
@@ -53,7 +78,7 @@ class HybridPipeline:
         rail_res = results.get("rail", {})
         air_res = results.get("air", {})
 
-        # --- extract best routes (robust to dict OR list) ---
+        # --- Step 2: extract best routes with no_routes detection ---
 
         def extract_best(res, mode):
             # Handle list responses
@@ -63,12 +88,12 @@ class HybridPipeline:
             # Handle dict responses
             if isinstance(res, dict):
                 if mode == "rail":
-                    # priority-aware selection
-                    if priority == "cost":
+                    # priority-aware selection (using canonical labels)
+                    if priority == "cheap":
                         candidate = res.get("cheapest")
-                    elif priority == "time":
+                    elif priority == "fast":
                         candidate = res.get("fastest")
-                    elif priority == "safety":
+                    elif priority == "safe":
                         candidate = res.get("safest")
                     else:
                         candidate = (
@@ -98,64 +123,78 @@ class HybridPipeline:
         if isinstance(rail_res, dict) and rail_res.get("status") == "no_routes":
             rail_no_routes = True
             rail_best = None
-            print(f"[HYBRID] Rail transport not available: {rail_res.get('message', 'no routes')}")
+            print(f"[HYBRID] Mode skipped: rail ({rail_res.get('message', 'no routes')})")
+        elif "rail" in timed_out_modes:
+            rail_no_routes = True
+            rail_best = None
         else:
             rail_best = extract_best(rail_res, "rail")
+
         # --- Detect air "no_routes" status before extracting best ---
         air_no_routes = False
         if isinstance(air_res, dict) and air_res.get("status") == "no_routes":
             air_no_routes = True
             air_best = None
-            print(f"[HYBRID] Air transport not available: {air_res.get('message', 'no routes')}")
+            print(f"[HYBRID] Mode skipped: air ({air_res.get('message', 'no routes')})")
+        elif "air" in timed_out_modes:
+            air_no_routes = True
+            air_best = None
         else:
             air_best = extract_best(air_res, "air")
 
         normalized = []
 
         if road_best:
-            print("[HYBRID DEBUG] Using ROAD best route")
             nr = normalize_road(road_best)
             if nr:
                 normalized.append(nr)
             else:
-                print("[HYBRID DEBUG] Road normalization failed")
+                print("[HYBRID] Road normalization failed")
 
         if rail_best:
-            print("[HYBRID DEBUG] Using RAIL best route")
             nr = normalize_rail(rail_best)
             if nr:
                 normalized.append(nr)
             else:
-                print("[HYBRID DEBUG] Rail normalization failed")
+                print("[HYBRID] Rail normalization failed")
 
         if air_best:
             # Reject low-confidence or fallback air routes
             air_confidence = air_best.get("confidence_score", 0)
             air_is_fallback = air_best.get("is_fallback", False)
             if air_confidence < 60:
-                print(f"[HYBRID FILTER] Skipping air route — low confidence ({air_confidence})")
+                print(f"[HYBRID] Mode skipped: air (low confidence {air_confidence})")
                 air_best = None
             elif air_is_fallback and air_best.get("data_source") == "mock":
-                print(f"[HYBRID FILTER] Skipping air route — mock fallback data (confidence={air_confidence})")
+                print(f"[HYBRID] Mode skipped: air (mock fallback, confidence={air_confidence})")
                 air_best = None
             else:
-                print("[HYBRID DEBUG] Using AIR best route")
                 nr = normalize_air(air_best)
                 if nr:
                     normalized.append(nr)
                 else:
-                    print("[HYBRID DEBUG] Air normalization failed")
+                    print("[HYBRID] Air normalization failed")
 
-        if not normalized or len(normalized) == 0:
-            print("[HYBRID DEBUG] No normalized routes")
-            print(f"  road_best: {road_best}")
-            print(f"  rail_best: {rail_best}")
-            print(f"  air_best: {air_best}")
-            print(f"  raw results: {results}")
-            return {"error": "No routes available"}
+        if not normalized:
+            # Step 7: available_modes will be empty
+            unavailable = {}
+            if not road_best:
+                unavailable["road"] = "Road transport not available for this route"
+            if rail_no_routes or not rail_best:
+                unavailable["rail"] = "Rail transport not available for this route"
+            if air_no_routes or not air_best:
+                unavailable["air"] = "Air transport not available for this route"
+            return {
+                "error": "No routes available for any transport mode",
+                "available_modes": [],
+                "unavailable_modes": unavailable,
+            }
 
+        # --- Step 7: Track which modes are actually in the comparison ---
+        available_modes = [c["mode"] for c in normalized]
+        print(f"[HYBRID] Final modes used: {', '.join(available_modes)}")
 
-        # --- NEW: relative normalization ---
+        # --- Step 5: Clean scoring (single pass) ---
         candidates = normalized
 
         best_time = min(c["time_hr"] for c in candidates)
@@ -167,7 +206,7 @@ class HybridPipeline:
             c["norm_cost"] = c["cost_inr"] / max(best_cost, 1e-6)
             c["norm_risk"] = c["risk"] / max(best_risk, 1e-6)
 
-        # --- NEW: dominance check ---
+        # --- dominance check ---
         def dominates(a, b):
             better_or_equal = (
                 a["time_hr"] <= b["time_hr"] and
@@ -187,33 +226,30 @@ class HybridPipeline:
                 dominant = c1
                 break
 
-        # --- NEW: non-linear penalty ---
+        # --- non-linear penalty ---
         def compute_penalty(c):
-            penalty = 0
-
+            penalty = 0.0
             if c["norm_time"] > 2:
                 penalty += 0.4
             elif c["norm_time"] > 1.5:
                 penalty += 0.2
-
             if c["norm_cost"] > 3:
                 penalty += 0.3
             elif c["norm_cost"] > 2:
                 penalty += 0.15
-
             return penalty
 
-        # --- NEW: priority weights ---
-        if priority == "cost":
+        # --- Step 3: priority weights using canonical labels ---
+        if priority == "cheap":
             w = {"time": 0.2, "cost": 0.6, "risk": 0.2}
-        elif priority == "time":
+        elif priority == "fast":
             w = {"time": 0.6, "cost": 0.2, "risk": 0.2}
-        elif priority == "safety":
+        elif priority == "safe":
             w = {"time": 0.2, "cost": 0.2, "risk": 0.6}
-        else:
+        else:  # balanced
             w = {"time": 0.4, "cost": 0.3, "risk": 0.3}
 
-        # --- NEW: scoring ---
+        # --- scoring ---
         if dominant:
             best = dominant
             ranked = sorted(candidates, key=lambda x: (
@@ -222,11 +258,12 @@ class HybridPipeline:
         else:
             for c in candidates:
                 penalty = compute_penalty(c)
-                c["score"] = (
+                score = (
                     w["time"] * c["norm_time"] +
                     w["cost"] * c["norm_cost"] +
                     w["risk"] * c["norm_risk"]
                 ) + penalty
+                c["score"] = max(score, 0.0)  # Step 5: ensure no negative scores
 
             ranked = sorted(candidates, key=lambda x: x["score"])
             best = ranked[0]
@@ -238,19 +275,21 @@ class HybridPipeline:
             c.pop("norm_risk", None)
             c.pop("score", None)
 
-        # --- explainability ---
+        # --- Step 6: explainability (only with available modes) ---
         explanations = build_hybrid_explanations(priority, ranked)
         reason = explanations["reason"]
         tradeoffs = explanations["tradeoffs"]
         mode_insights = explanations["mode_insights"]
         route_explanations = explanations["route_explanations"]
 
-        # Add insight for unavailable modes
+        # --- Step 2+7: unavailable modes ---
         unavailable_modes = {}
         if air_no_routes or air_best is None:
             unavailable_modes["air"] = "Air transport not available for this route"
         if rail_no_routes or rail_best is None:
             unavailable_modes["rail"] = "Rail transport not available for this route"
+        if not road_best:
+            unavailable_modes["road"] = "Road transport not available for this route"
 
         result = {
             "priority": priority,
@@ -258,6 +297,7 @@ class HybridPipeline:
             "reason": reason,
             "tradeoffs": tradeoffs,
             "mode_insights": mode_insights,
+            "available_modes": available_modes,
             "comparison": [
                 {
                     "mode": r["mode"],
