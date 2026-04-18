@@ -17,12 +17,12 @@ class RoadBaseAdapter(BasePipeline):
     mode = "road"
     name = "Road Transport (Adapter)"
 
-    def generate(self, source: str, destination: str, payload: dict | None = None):
+    def generate(self, source: str, destination: str, payload: dict | None = None, context=None):
         from app.pipelines.road.pipeline import RoadPipeline
 
         payload = payload or {}
 
-        raw: Any = RoadPipeline().generate(source, destination, payload)
+        raw: Any = RoadPipeline().generate(source, destination, payload, context=context)
         if not isinstance(raw, dict):
             return []
 

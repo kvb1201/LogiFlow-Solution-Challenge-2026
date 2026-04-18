@@ -51,11 +51,19 @@ def generate_port_paths(
 
     max_legs is the maximum number of sea legs (edges). So a direct route has 1 leg.
     """
+    # Debug BFS input per Step 5
+    print(f"[WATER BFS] Trying origin='{origin_port_id}', dest='{dest_port_id}' (max_legs={max_legs})")
+
     if origin_port_id == dest_port_id:
         # A "water route" with no sea leg is not meaningful; caller can try other port pairs.
         return []
 
     if origin_port_id not in _PORT_IDX or dest_port_id not in _PORT_IDX:
+        print(f"[WATER BFS] Input ports not found in index")
+        return []
+    
+    if origin_port_id not in SEA_LANES and not any(origin_port_id in lanes for lanes in SEA_LANES.values()):
+        print(f"[WATER BFS] origin_port_id '{origin_port_id}' not in SEA_LANES network")
         return []
 
     # (score, path)
@@ -91,11 +99,6 @@ def generate_port_paths(
             penalty = port_call_penalty_km if len(path) > 1 else 0.0
             new_score = score + d_km + penalty
             heapq.heappush(heap, (new_score, path + [nxt]))
-
-    # Ensure at least one direct attempt if adjacency is missing
-    if not out and origin_port_id in SEA_LANES:
-        if dest_port_id in SEA_LANES.get(origin_port_id, []):
-            out.append([origin_port_id, dest_port_id])
 
     return out
 

@@ -28,7 +28,7 @@ class RailPipeline(BasePipeline):
     mode = "rail"
     name = "Rail Transport (Parcel by Train)"
 
-    def generate(self, source, destination, payload=None):
+    def generate(self, source, destination, payload=None, context=None):
         """
         Generate rail cargo routes between source and destination cities.705072
         """
@@ -48,18 +48,13 @@ class RailPipeline(BasePipeline):
             routes = []
 
         if not routes:
-            fallback = {
-                "type": "Rail",
-                "mode": "rail",
-                "time": 24,
-                "cost": 5000,
-                "risk": 0.5,
-                "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }
             return {
-                "best": fallback,
+                "mode": "rail",
+                "status": "no_routes",
+                "message": f"No railway routes found between {source} and {destination}",
+                "best": None,
                 "alternatives": [],
-                "all": [fallback]
+                "all": [],
             }
 
         default_payload = {
@@ -72,20 +67,31 @@ class RailPipeline(BasePipeline):
         if payload:
             default_payload.update(payload)
 
-        enriched = engineer_features(routes, default_payload)
+        # Use context to cache weather for the origin city
+        weather_override = None
+        if context:
+            cache_key = f"weather:{source}"
+            if context.has(cache_key):
+                weather_override = context.get(cache_key)
+                print(f"[CACHE HIT] {cache_key} (rail)")
+            else:
+                try:
+                    from app.services.weather_service import get_weather
+                    weather_override = get_weather(source)
+                    print(f"[API CALL] {cache_key} (rail)")
+                    context.set(cache_key, weather_override)
+                except Exception:
+                    weather_override = None
+
+        enriched = engineer_features(routes, default_payload, weather_override=weather_override)
         if not enriched:
-            fallback = {
-                "type": "Rail",
-                "mode": "rail",
-                "time": 24,
-                "cost": 5000,
-                "risk": 0.5,
-                "segments": [{"mode": "Rail", "from": source, "to": destination}],
-            }
             return {
-                "best": fallback,
+                "mode": "rail",
+                "status": "no_routes",
+                "message": f"No railway routes found between {source} and {destination}",
+                "best": None,
                 "alternatives": [],
-                "all": [fallback]
+                "all": [],
             }
 
         results = []

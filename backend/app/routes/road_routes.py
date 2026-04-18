@@ -28,8 +28,10 @@ class RoadPayload(BaseModel):
 def optimize_road(payload: RoadPayload):
     try:
         from app.pipelines.road.pipeline import RoadPipeline
+        from app.utils.request_context import RequestContext
 
         pipeline = RoadPipeline()
+        context = RequestContext()
 
         # Resolve mode (single source of truth)
         mode = payload.mode or "realtime"
@@ -48,7 +50,8 @@ def optimize_road(payload: RoadPayload):
                 "avoid_highways": payload.avoid_highways,
                 "traffic_aware": payload.traffic_aware,
                 "simulation": payload.simulation,
-            }
+            },
+            context=context,
         )
 
         return result

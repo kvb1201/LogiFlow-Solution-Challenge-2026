@@ -24,8 +24,10 @@ class AirCargoPayload(BaseModel):
 def optimize_air(payload: AirCargoPayload):
     try:
         from app.pipelines.air import AirPipeline
+        from app.utils.request_context import RequestContext
 
         pipeline = AirPipeline()
+        context = RequestContext()
         result = pipeline.generate(
             payload.source,
             payload.destination,
@@ -42,6 +44,7 @@ def optimize_air(payload: AirCargoPayload):
                     "deadline_hours": payload.deadline_hours,
                 },
             },
+            context=context,
         )
 
         # AirPipeline currently returns a dict with best/alternatives/all.
@@ -57,6 +60,18 @@ def optimize_air(payload: AirCargoPayload):
 
         if not ranked_routes or best_route is None:
             raise HTTPException(status_code=404, detail="No route available")
+
+        # Handle explicit "no routes" status cleanly (HTTP 200, not an error)
+        if result.get("status") == "no_routes":
+            return {
+                "mode": "air",
+                "status": "no_routes",
+                "message": result.get("message", "No valid air routes found"),
+                "best_route": None,
+                "alternatives": [],
+                "ranked_routes": [],
+                "total_routes": 0,
+            }
 
         return {
             "mode": "air",

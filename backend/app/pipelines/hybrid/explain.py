@@ -74,15 +74,15 @@ def generate_mode_insights(route):
 def generate_reason(best_route, priority):
     mode = (best_route.get("mode") or "").upper()
 
-    if priority == "time":
+    if priority == "fast":
         time_hr = round(best_route.get("time_hr", 0), 1)
         return f"{mode} is the fastest option with about {time_hr} hours of travel time."
 
-    if priority == "cost":
+    if priority == "cheap":
         cost_inr = int(best_route.get("cost_inr", 0))
         return f"{mode} is the most cost-efficient option at about Rs.{cost_inr}."
 
-    if priority == "safety":
+    if priority == "safe":
         risk_pct = int((best_route.get("risk", 0) or 0) * 100)
         return f"{mode} has the lowest modeled risk at about {risk_pct}% among the available modes."
 
@@ -103,11 +103,11 @@ def generate_route_explanation(route, best_route, priority):
     risk_pct = int(round((route.get("risk", 0) or 0) * 100))
 
     if route is best_route:
-        if priority == "time":
+        if priority == "fast":
             return f"{mode} ranks first because it has the shortest travel time at about {time_hr} hours."
-        if priority == "cost":
+        if priority == "cheap":
             return f"{mode} ranks first because it has the lowest cost at about Rs.{cost_inr}."
-        if priority == "safety":
+        if priority == "safe":
             return f"{mode} ranks first because it has the lowest modeled risk at about {risk_pct}%."
         return (
             f"{mode} ranks first because it best balances time ({time_hr} hours), "

@@ -1,6 +1,7 @@
 import random
 
 from app.pipelines.base import BasePipeline
+from app.utils.request_context import RequestContext
 
 
 class RoadPipeline(BasePipeline):
@@ -8,14 +9,14 @@ class RoadPipeline(BasePipeline):
     name = "Road Transport"
 
     # --- STEP 1: Simulate routes ---
-    def _get_routes(self, source, destination, payload):
+    def _get_routes(self, source, destination, payload, context=None):
         """
         Route provider abstraction.
         STRICT: Only uses real provider. No simulation fallback.
         """
         from app.pipelines.road.route_provider import get_routes
 
-        routes = get_routes(source, destination, payload)
+        routes = get_routes(source, destination, payload, context=context)
 
         if not routes or not isinstance(routes, list):
             raise Exception("Route provider returned no valid routes")
@@ -23,13 +24,27 @@ class RoadPipeline(BasePipeline):
         return routes
 
     # --- STEP 2: Feature Engineering ---
-    def _engineer(self, routes, source, destination, payload):
+    def _engineer(self, routes, source, destination, payload, context=None):
         enriched = []
         simulation_mode = payload.get("mode") == "simulation"
         sim = payload.get("simulation") or {} if simulation_mode else {}
         from app.services.ml_service import predict_delay
         from app.services.weather_service import get_weather
         weight = payload.get("cargo_weight_kg", 100)
+
+        # ── Fetch weather ONCE per city, cache in context ──────────────
+        cache_key = f"weather:{source}"
+        if context and context.has(cache_key):
+            weather_base = context.get(cache_key)
+            print(f"[CACHE HIT] {cache_key}")
+        else:
+            weather_base = get_weather(source) or {}
+            print(f"[API CALL] {cache_key}")
+            if context:
+                context.set(cache_key, weather_base)
+        # Basic guard to ensure dict shape
+        if not isinstance(weather_base, dict):
+            weather_base = {}
 
         for route_idx, r in enumerate(routes):
             # Validate geometry early to prevent frontend/map crashes
@@ -60,14 +75,9 @@ class RoadPipeline(BasePipeline):
             else:
                 traffic_cat = 2
 
-            weather = get_weather(source) or {}
-            # Basic guard to ensure dict shape
-            if not isinstance(weather, dict):
-                weather = {}
-
-            # Inject synthetic variation if API returns flat data
-            temp = weather.get("temp", 30)
-            rain = weather.get("rain", 0)
+            # Use pre-fetched weather (cached above), inject synthetic variation per-route
+            temp = weather_base.get("temp", 30)
+            rain = weather_base.get("rain", 0)
             distance_factor = (distance % 100) / 100
             weather = {
                 "temp": temp + (distance_factor * 3 - 1.5),   # ±1.5°C variation
@@ -319,7 +329,7 @@ class RoadPipeline(BasePipeline):
         return sorted(routes, key=lambda x: x["score"])
 
     # --- STEP 3: Pipeline Entry ---
-    def generate(self, source: str, destination: str, payload=None):
+    def generate(self, source: str, destination: str, payload=None, context=None):
         payload = payload or {}
         mode = payload.get("mode", "realtime")
 
@@ -332,7 +342,7 @@ class RoadPipeline(BasePipeline):
         simulation_mode = mode == "simulation"
         priority = payload.get("priority", "balanced")
 
-        routes = self._get_routes(source, destination, payload)
+        routes = self._get_routes(source, destination, payload, context=context)
 
         # Defensive: ensure routes is always a non-empty list
         if not isinstance(routes, list) or len(routes) == 0:
@@ -342,7 +352,7 @@ class RoadPipeline(BasePipeline):
         realtime_payload = payload.copy()
         realtime_payload["mode"] = "realtime"
 
-        realtime_enriched = self._engineer(routes, source, destination, realtime_payload)
+        realtime_enriched = self._engineer(routes, source, destination, realtime_payload, context=context)
 
         realtime_filtered, _ = self._apply_constraints(realtime_enriched, realtime_payload)
         realtime_ranked = self._score_routes(realtime_filtered, priority)
@@ -354,7 +364,7 @@ class RoadPipeline(BasePipeline):
             import copy
             sim_routes = copy.deepcopy(routes)
 
-            simulated_enriched = self._engineer(sim_routes, source, destination, payload)
+            simulated_enriched = self._engineer(sim_routes, source, destination, payload, context=context)
             filtered, constraint_note = self._apply_constraints(simulated_enriched, payload)
             ranked = self._score_routes(filtered, priority)
         else:
