@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { wakeBackend } from '@/services/api';
 
 const nav = [
   { href: '/', label: 'Home', icon: 'home' },
@@ -17,6 +19,13 @@ export default function NavBar() {
   const pathname = usePathname();
   const liveTrains = useLogiFlowStore((s) => s.liveTrains);
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      wakeBackend();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);

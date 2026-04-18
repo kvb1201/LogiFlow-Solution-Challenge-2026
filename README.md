@@ -157,4 +157,9 @@ Built by Neural Foundry for the Google Solution Challenge 2026.
 
 ## License
 
-MIT
+This project is part of a competition submission.
+
+Usage is permitted only for official team members.  
+External reuse, copying, or redistribution is strictly prohibited.
+
+All rights reserved © 2026 Kavya Bhatiya
