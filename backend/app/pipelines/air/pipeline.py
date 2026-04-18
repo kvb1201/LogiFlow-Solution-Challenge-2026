@@ -89,51 +89,10 @@ class AirPipeline(BasePipeline):
                 route["is_fallback"] = False
             return live_routes
 
-        print(f"[AIR FALLBACK] using mock route for {source} -> {destination}")
-        key = (source, destination)
-        routes = MOCK_ROUTES.get(key)
-        if routes:
-            mocked = deepcopy(routes)
-            source_airport = resolve_city_to_airport(source) or {"code": source[:3].upper(), "name": source}
-            destination_airport = resolve_city_to_airport(destination) or {"code": destination[:3].upper(), "name": destination}
-            for route in mocked:
-                route["source_airport"] = source_airport
-                route["destination_airport"] = destination_airport
-                route["data_source"] = "mock"
-                route["is_fallback"] = True
-            return mocked
-
-        source_airport = resolve_city_to_airport(source) or {"code": source[:3].upper(), "name": source}
-        destination_airport = resolve_city_to_airport(destination) or {"code": destination[:3].upper(), "name": destination}
-
-        return [
-            {
-                "airline": "IndiGo",
-                "stops": 0,
-                "distance": 1050,
-                "duration": 2.2,
-                "delay_risk": 0.2,
-                "cost_per_kg": 8.5,
-                "cargo_types": ["general", "fragile", "perishable"],
-                "source_airport": source_airport,
-                "destination_airport": destination_airport,
-                "data_source": "mock",
-                "is_fallback": True,
-            },
-            {
-                "airline": "Air India",
-                "stops": 1,
-                "distance": 1230,
-                "duration": 3.4,
-                "delay_risk": 0.34,
-                "cost_per_kg": 6.4,
-                "cargo_types": ["general", "fragile"],
-                "source_airport": source_airport,
-                "destination_airport": destination_airport,
-                "data_source": "mock",
-                "is_fallback": True,
-            },
-        ]
+        # No real routes found — return empty instead of mock data
+        print(f"[AIR] No routes found for {source} \u2192 {destination}")
+        print(f"[AIR] Skipping fallback routes")
+        return []
 
     def _engineer_features(self, routes, source, destination, payload, context=None):
         engineered = []
@@ -374,6 +333,7 @@ class AirPipeline(BasePipeline):
         reasons = []
         support_type = route.get("route_support_type", "inferred")
         stops = int(route.get("stops", 0))
+        is_fallback = route.get("is_fallback", False)
 
         if support_type == "direct":
             score += 18
@@ -383,6 +343,11 @@ class AirPipeline(BasePipeline):
             reasons.append("Airport chain is supported by the OpenFlights route snapshot.")
         else:
             reasons.append("Route is inferred from nearest-airport matching and fallback airline heuristics.")
+
+        # Penalize mock/fallback routes — they have no real schedule validation
+        if is_fallback:
+            score -= 15
+            reasons.append("Route is based on fallback/mock data — no verified schedule.")
 
         reliability_bonus = round((reliability - 0.7) * 45)
         score += reliability_bonus
@@ -412,17 +377,28 @@ class AirPipeline(BasePipeline):
     def generate(self, source, destination, payload=None, context=None):
         try:
             normalized = self._get_payload(payload)
-            routes = self._fetch_routes(source, destination, normalized)
+            routes = self._fetch_routes(source, destination, normalized, context=context)
+            if not routes:
+                return {
+                    "mode": "air",
+                    "status": "no_routes",
+                    "message": f"No valid air routes found between {source} and {destination}",
+                    "best": None,
+                    "alternatives": [],
+                    "all": [],
+                }
+
             engineered = self._engineer_features(routes, source, destination, normalized, context=context)
             filtered = self._apply_constraints(engineered, normalized)
 
             if not filtered:
                 return {
                     "mode": "air",
+                    "status": "no_routes",
+                    "message": f"No valid air routes found between {source} and {destination}",
                     "best": None,
                     "alternatives": [],
                     "all": [],
-                    "error": "No air routes found"
                 }
 
             ranked = score_routes(filtered, normalized["priority"])
