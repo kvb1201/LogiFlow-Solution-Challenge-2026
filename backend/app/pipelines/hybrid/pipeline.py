@@ -1,13 +1,19 @@
 # This pipeline combines road, rail, and air results, then attaches Gemini-backed natural-language explainability.
 from app.services.pipeline_registry import get_pipeline
+from app.utils.request_context import RequestContext
 from .normalizer import normalize_road, normalize_rail, normalize_air
 from .explain import build_hybrid_explanations
 
 
 class HybridPipeline:
-    def generate(self, source, destination, payload=None):
+    def generate(self, source, destination, payload=None, context=None):
         payload = payload or {}
         priority = payload.get("priority") or "balanced"
+
+        # Create a shared request context for cross-pipeline caching
+        # (weather, geocoding, incidents) to eliminate redundant API calls.
+        if context is None:
+            context = RequestContext()
 
         road_pipeline = get_pipeline("road")
         rail_pipeline = get_pipeline("rail")
@@ -18,7 +24,7 @@ class HybridPipeline:
 
         def safe_call(pipeline, name):
             try:
-                return pipeline.generate(source, destination, payload)
+                return pipeline.generate(source, destination, payload, context=context)
             except Exception as e:
                 print(f"[HYBRID ERROR] {name} pipeline failed: {e}")
                 return {}

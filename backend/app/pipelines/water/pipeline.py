@@ -10,7 +10,7 @@ class WaterPipeline(BasePipeline):
     mode = "water"
     name = "Water Transport (Maritime)"
 
-    def generate(self, source: str, destination: str, payload: dict | None = None):
+    def generate(self, source: str, destination: str, payload: dict | None = None, context=None):
         payload = payload or {}
         constraints = payload.get("constraints") or {}
 
@@ -19,8 +19,8 @@ class WaterPipeline(BasePipeline):
             constraints = {**constraints, "max_transshipments": 1}
             payload = {**payload, "constraints": constraints}
 
-        origin_ports = map_city_to_ports(source, n=2)
-        dest_ports = map_city_to_ports(destination, n=2)
+        origin_ports = map_city_to_ports(source, n=2, context=context)
+        dest_ports = map_city_to_ports(destination, n=2, context=context)
 
         if not origin_ports or not dest_ports:
             return [

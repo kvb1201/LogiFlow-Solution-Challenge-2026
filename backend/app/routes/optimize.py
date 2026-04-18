@@ -46,7 +46,10 @@ def optimize(data: OptimizeRequest):
     if p_l in {"fast", "cheap", "safe"}:
         data.priority = p_l.capitalize()  # fast->Fast, cheap->Cheap, safe->Safe
 
+    from app.utils.request_context import RequestContext
+
     pipeline = HybridPipeline()
+    context = RequestContext()
 
     payload = {
         "priority": data.priority.lower(),
@@ -58,4 +61,4 @@ def optimize(data: OptimizeRequest):
         "constraints": data.constraints.dict() if data.constraints else {},
     }
 
-    return pipeline.generate(data.source, data.destination, payload)
+    return pipeline.generate(data.source, data.destination, payload, context=context)

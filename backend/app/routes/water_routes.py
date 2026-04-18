@@ -27,8 +27,10 @@ class WaterPayload(BaseModel):
 def optimize_water(payload: WaterPayload):
     try:
         from app.pipelines.water.pipeline import WaterPipeline
+        from app.utils.request_context import RequestContext
 
         pipeline = WaterPipeline()
+        context = RequestContext()
         return pipeline.generate(
             payload.source,
             payload.destination,
@@ -38,6 +40,7 @@ def optimize_water(payload: WaterPayload):
                 "cargo_type": payload.cargo_type,
                 "constraints": payload.constraints.dict(),
             },
+            context=context,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

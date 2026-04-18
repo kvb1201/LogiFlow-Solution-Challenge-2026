@@ -80,12 +80,16 @@ class AirPipeline(BasePipeline):
             return departure_date
         return "2026-04-10"
 
-    def _fetch_routes(self, source, destination, payload):
+    def _fetch_routes(self, source, destination, payload, context=None):
         departure_date = self._get_departure_date(payload)
         live_routes = get_live_air_routes(source, destination, departure_date)
         if live_routes:
+            for route in live_routes:
+                route["data_source"] = "openflights"
+                route["is_fallback"] = False
             return live_routes
 
+        print(f"[AIR FALLBACK] using mock route for {source} -> {destination}")
         key = (source, destination)
         routes = MOCK_ROUTES.get(key)
         if routes:
@@ -95,7 +99,8 @@ class AirPipeline(BasePipeline):
             for route in mocked:
                 route["source_airport"] = source_airport
                 route["destination_airport"] = destination_airport
-                route["data_source"] = "free_stack_mock_catalog"
+                route["data_source"] = "mock"
+                route["is_fallback"] = True
             return mocked
 
         source_airport = resolve_city_to_airport(source) or {"code": source[:3].upper(), "name": source}
@@ -112,7 +117,8 @@ class AirPipeline(BasePipeline):
                 "cargo_types": ["general", "fragile", "perishable"],
                 "source_airport": source_airport,
                 "destination_airport": destination_airport,
-                "data_source": "free_stack_dynamic_fallback",
+                "data_source": "mock",
+                "is_fallback": True,
             },
             {
                 "airline": "Air India",
@@ -124,17 +130,18 @@ class AirPipeline(BasePipeline):
                 "cargo_types": ["general", "fragile"],
                 "source_airport": source_airport,
                 "destination_airport": destination_airport,
-                "data_source": "free_stack_dynamic_fallback",
+                "data_source": "mock",
+                "is_fallback": True,
             },
         ]
 
-    def _engineer_features(self, routes, source, destination, payload):
+    def _engineer_features(self, routes, source, destination, payload, context=None):
         engineered = []
         cargo_weight = payload["cargo_weight"]
         cargo_type = payload["cargo_type"]
         cargo_rule = self.CARGO_RULES.get(cargo_type, self.CARGO_RULES["general"])
         departure_date = self._get_departure_date(payload)
-        weather_context = get_route_weather_context(source, destination)
+        weather_context = get_route_weather_context(source, destination, context=context)
 
         for route in routes:
             supported = [item.lower() for item in route.get("cargo_types", ["general"])]
@@ -189,6 +196,7 @@ class AirPipeline(BasePipeline):
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
                 "data_source": route.get("data_source", "mock"),
+                "is_fallback": route.get("is_fallback", True),
                 "route_support_type": route.get("route_support_type", "inferred"),
                 "supported_by": route.get("supported_by", "internal_fallback"),
                 "confidence_score": confidence_score,
@@ -233,9 +241,28 @@ class AirPipeline(BasePipeline):
         budget_limit = payload.get("budget_limit")
         deadline_hours = payload.get("deadline_hours")
 
+        MIN_CONFIDENCE = 60
+
         filtered = []
         for route in routes:
-            if max_stops is not None and route["stops"] > int(max_stops):
+            # Step 1: Minimum confidence threshold
+            if route.get("confidence_score", 0) < MIN_CONFIDENCE:
+                print(f"[AIR FILTER] rejected low confidence route (score: {route.get('confidence_score')})")
+                continue
+
+            # Step 4: Prevent unrealistic routes
+            stops = route.get("stops", 0)
+            if stops > 1:
+                print(f"[AIR FILTER] rejected route with excessive stops: {stops}")
+                continue
+
+            src_air = route.get("air_details", {}).get("source_airport", {})
+            dst_air = route.get("air_details", {}).get("destination_airport", {})
+            if src_air.get("lat") is None or dst_air.get("lat") is None:
+                print("[AIR FILTER] rejected route with missing airport geographic mapping")
+                continue
+
+            if max_stops is not None and stops > int(max_stops):
                 continue
             if budget_limit is not None and route["cost"] > float(budget_limit):
                 continue
@@ -382,11 +409,11 @@ class AirPipeline(BasePipeline):
             return "medium"
         return "watch"
 
-    def generate(self, source, destination, payload=None):
+    def generate(self, source, destination, payload=None, context=None):
         try:
             normalized = self._get_payload(payload)
             routes = self._fetch_routes(source, destination, normalized)
-            engineered = self._engineer_features(routes, source, destination, normalized)
+            engineered = self._engineer_features(routes, source, destination, normalized, context=context)
             filtered = self._apply_constraints(engineered, normalized)
 
             if not filtered:

@@ -37,7 +37,7 @@ def iter_ports() -> Iterable[dict]:
     return PORTS
 
 
-def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0) -> list[PortCandidate]:
+def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0, context=None) -> list[PortCandidate]:
     """
     Map a city name to the nearest N ports by geodesic distance.
 
@@ -47,7 +47,15 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0
     if not city_name:
         return []
 
-    city_lat, city_lng = get_coords(city_name)
+    cache_key = f"coords:{city_name}"
+    if context and context.has(cache_key):
+        city_lat, city_lng = context.get(cache_key)
+        print(f"[CACHE HIT] {cache_key}")
+    else:
+        city_lat, city_lng = get_coords(city_name)
+        print(f"[API CALL] {cache_key}")
+        if context:
+            context.set(cache_key, (city_lat, city_lng))
 
     candidates: list[PortCandidate] = []
     for p in iter_ports():

@@ -14,8 +14,17 @@ def _condition_penalty(condition: str) -> float:
     return 0.02
 
 
-def _single_city_weather_risk(city: str) -> dict:
-    weather = get_weather(city)
+def _single_city_weather_risk(city: str, context=None) -> dict:
+    cache_key = f"weather:{city}"
+    if context and context.has(cache_key):
+        weather = context.get(cache_key)
+        print(f"[CACHE HIT] {cache_key}")
+    else:
+        weather = get_weather(city)
+        print(f"[API CALL] {cache_key}")
+        if context:
+            context.set(cache_key, weather)
+
     temp = float(weather.get("temp", 30))
     rain = float(weather.get("rain", 0))
     condition = weather.get("condition", "Clear")
@@ -34,9 +43,9 @@ def _single_city_weather_risk(city: str) -> dict:
     }
 
 
-def get_route_weather_context(source: str, destination: str) -> dict:
-    source_weather = _single_city_weather_risk(source)
-    destination_weather = _single_city_weather_risk(destination)
+def get_route_weather_context(source: str, destination: str, context=None) -> dict:
+    source_weather = _single_city_weather_risk(source, context=context)
+    destination_weather = _single_city_weather_risk(destination, context=context)
     combined = round((source_weather["risk"] + destination_weather["risk"]) / 2, 3)
 
     return {

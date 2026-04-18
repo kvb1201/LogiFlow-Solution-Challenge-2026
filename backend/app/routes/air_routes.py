@@ -22,8 +22,10 @@ class AirCargoPayload(BaseModel):
 def optimize_air(payload: AirCargoPayload):
     try:
         from app.pipelines.air import AirPipeline
+        from app.utils.request_context import RequestContext
 
         pipeline = AirPipeline()
+        context = RequestContext()
         result = pipeline.generate(
             payload.source,
             payload.destination,
@@ -40,6 +42,7 @@ def optimize_air(payload: AirCargoPayload):
                     "deadline_hours": payload.deadline_hours,
                 },
             },
+            context=context,
         )
 
         # Ensure result is a dict (new pipeline contract)
