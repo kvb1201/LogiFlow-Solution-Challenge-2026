@@ -639,3 +639,28 @@ export async function fetchExplanation(payload: { pipeline: string, priority: st
     return null;
   }
 }
+
+let hasWoken = false;
+
+export function wakeBackend() {
+  if (hasWoken) return;
+  hasWoken = true;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    fetch(`${BACKEND_BASE}/health`, {
+      method: 'GET',
+      mode: 'no-cors',
+      keepalive: true,
+      signal: controller.signal,
+    }).catch(() => {
+      // Ignore silently
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+  } catch (error) {
+    // Ignore silently
+  }
+}
