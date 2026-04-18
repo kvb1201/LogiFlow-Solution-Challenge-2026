@@ -49,6 +49,18 @@ def optimize_air(payload: AirCargoPayload):
         if not isinstance(result, dict):
             raise Exception(f"Invalid pipeline response: {type(result)}")
 
+        # Handle explicit "no routes" status cleanly (HTTP 200, not an error)
+        if result.get("status") == "no_routes":
+            return {
+                "mode": "air",
+                "status": "no_routes",
+                "message": result.get("message", "No valid air routes found"),
+                "best_route": None,
+                "alternatives": [],
+                "ranked_routes": [],
+                "total_routes": 0,
+            }
+
         return {
             "mode": "air",
             "best_route": result.get("best"),
@@ -62,7 +74,6 @@ def optimize_air(payload: AirCargoPayload):
                 "cargo_type": payload.cargo_type,
                 "cargo_weight_kg": payload.cargo_weight_kg,
             },
-            "error": result.get("error")
         }
 
     except Exception as e:

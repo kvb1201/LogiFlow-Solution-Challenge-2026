@@ -97,7 +97,14 @@ class HybridPipeline:
         print("\n[HYBRID DEBUG] rail_res:", rail_res, "\n")
 
         rail_best = extract_best(rail_res, "rail")
-        air_best = extract_best(air_res, "air")
+        # --- Detect air "no_routes" status before extracting best ---
+        air_no_routes = False
+        if isinstance(air_res, dict) and air_res.get("status") == "no_routes":
+            air_no_routes = True
+            air_best = None
+            print(f"[HYBRID] Air transport not available: {air_res.get('message', 'no routes')}")
+        else:
+            air_best = extract_best(air_res, "air")
 
         normalized = []
 
@@ -118,12 +125,22 @@ class HybridPipeline:
                 print("[HYBRID DEBUG] Rail normalization failed")
 
         if air_best:
-            print("[HYBRID DEBUG] Using AIR best route")
-            nr = normalize_air(air_best)
-            if nr:
-                normalized.append(nr)
+            # Reject low-confidence or fallback air routes
+            air_confidence = air_best.get("confidence_score", 0)
+            air_is_fallback = air_best.get("is_fallback", False)
+            if air_confidence < 60:
+                print(f"[HYBRID FILTER] Skipping air route — low confidence ({air_confidence})")
+                air_best = None
+            elif air_is_fallback and air_best.get("data_source") == "mock":
+                print(f"[HYBRID FILTER] Skipping air route — mock fallback data (confidence={air_confidence})")
+                air_best = None
             else:
-                print("[HYBRID DEBUG] Air normalization failed")
+                print("[HYBRID DEBUG] Using AIR best route")
+                nr = normalize_air(air_best)
+                if nr:
+                    normalized.append(nr)
+                else:
+                    print("[HYBRID DEBUG] Air normalization failed")
 
         if not normalized or len(normalized) == 0:
             print("[HYBRID DEBUG] No normalized routes")
@@ -224,7 +241,12 @@ class HybridPipeline:
         mode_insights = explanations["mode_insights"]
         route_explanations = explanations["route_explanations"]
 
-        return {
+        # Add insight for unavailable modes
+        unavailable_modes = {}
+        if air_no_routes or air_best is None:
+            unavailable_modes["air"] = "Air transport not available for this route"
+
+        result = {
             "priority": priority,
             "recommended_mode": best["mode"],
             "reason": reason,
@@ -247,3 +269,8 @@ class HybridPipeline:
                 "air": air_best
             }
         }
+
+        if unavailable_modes:
+            result["unavailable_modes"] = unavailable_modes
+
+        return result
