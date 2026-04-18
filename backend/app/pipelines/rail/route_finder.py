@@ -4,6 +4,8 @@ PRIMARY: Uses RailRadar API for real train data between stations.
 FALLBACK: Uses CSV data_loader when API is unavailable.
 """
 
+import re
+
 from app.pipelines.rail import railradar_client
 from app.pipelines.rail.config import STATION_TO_CITY
 from app.pipelines.rail.station_resolver import resolve_station
@@ -162,6 +164,17 @@ def find_routes(
                     days_list = running_days.get("days", [])
                     all_days = running_days.get("allDays", False)
 
+                    # Step 5: Validate scraped data
+                    station_code_pattern = re.compile(r'^[A-Z]{2,5}$')
+                    if not station_code_pattern.match(actual_fs or fs.upper()):
+                        continue
+                    if not station_code_pattern.match(actual_ts or ts.upper()):
+                        continue
+                    if duration_min <= 0 or duration_min > 4320:  # max 72 hours
+                        continue
+                    if distance_km <= 0:
+                        continue
+
                     train_info = {
                         "train_no": train_no,
                         "train_name": train.get("trainName", ""),
@@ -178,17 +191,11 @@ def find_routes(
                         "total_halts": train.get("totalHalts", 0),
                         "running_days": days_list,
                         "all_days": all_days,
-                        "data_source": train.get("provider", "rail_api"),
+                        "data_source": "scraped",
                         # These are used by ML/engineer downstream
                         "stops_between": train.get("totalHalts", 0),
                         "total_train_stops": train.get("totalHalts", 0) + 2,
                         "total_train_distance": train.get("distanceKm", 0) or 0,
-                        # ConfirmTkt-rich fields for UI + ML.
-                        "confirmtkt_raw": train.get("confirmtkt_raw"),
-                        "confirmtkt_availability_cache": train.get("confirmtkt_availability_cache", {}),
-                        "confirmtkt_availability_cache_tatkal": train.get("confirmtkt_availability_cache_tatkal", {}),
-                        "confirmtkt_avl_classes": train.get("confirmtkt_avl_classes", []),
-                        "confirmtkt_train_rating": train.get("confirmtkt_train_rating"),
                     }
 
                     routes.append({
@@ -199,7 +206,7 @@ def find_routes(
                         "total_duration_hours": round(duration_min / 60, 2) if duration_min > 0 else 0,
                         "has_transfer": False,
                         "transfer_details": [],
-                        "data_source": train.get("provider", "rail_api"),
+                        "data_source": "scraped",
                         "segments": [{
                             "mode": "Rail",
                             "from": actual_fs or fs,
@@ -215,7 +222,6 @@ def find_routes(
                             "duration_minutes": duration_min,
                             "avg_speed_kmph": avg_speed,
                             "running_days": days_list,
-                            "confirmtkt_raw": train.get("confirmtkt_raw"),
                         }],
                     })
 
