@@ -92,11 +92,6 @@ def generate_port_paths(
             new_score = score + d_km + penalty
             heapq.heappush(heap, (new_score, path + [nxt]))
 
-    # Ensure at least one direct attempt if adjacency is missing
-    if not out and origin_port_id in SEA_LANES:
-        if dest_port_id in SEA_LANES.get(origin_port_id, []):
-            out.append([origin_port_id, dest_port_id])
-
     return out
 
 
