@@ -6,6 +6,18 @@ from app.pipelines.water.ports import map_city_to_ports
 from app.pipelines.water.route_generator import generate_port_paths
 
 
+def _no_routes(message: str) -> dict:
+    """Standard no-routes response consistent with rail/air pipelines."""
+    return {
+        "mode": "water",
+        "status": "no_routes",
+        "message": message,
+        "best": None,
+        "alternatives": [],
+        "all": [],
+    }
+
+
 class WaterPipeline(BasePipeline):
     mode = "water"
     name = "Water Transport (Maritime)"
@@ -14,26 +26,28 @@ class WaterPipeline(BasePipeline):
         payload = payload or {}
         constraints = payload.get("constraints") or {}
 
-        # Default: allow at most 1 transshipment unless user overrides.
+        # Default: allow at most 3 transshipments (Indian coastal routes chain
+        # through multiple ports along the coastline).
         if constraints.get("max_transshipments") is None:
-            constraints = {**constraints, "max_transshipments": 1}
+            constraints = {**constraints, "max_transshipments": 3}
             payload = {**payload, "constraints": constraints}
 
         origin_ports = map_city_to_ports(source, n=2, context=context)
         dest_ports = map_city_to_ports(destination, n=2, context=context)
 
-        if not origin_ports or not dest_ports:
-            return [
-                {
-                    "type": "Water",
-                    "mode": "water",
-                    "time": 30.0,
-                    "cost": 9000,
-                    "risk": 0.55,
-                    "segments": [{"mode": "Water", "from": source, "to": destination}],
-                    "notes": "Port mapping failed; returning a fallback route.",
-                }
-            ]
+        # --- Fix #5: Handle empty port mapping ---
+        if not origin_ports and not dest_ports:
+            return _no_routes(
+                f"Neither {source} nor {destination} is close enough to the coastline for water transport"
+            )
+        if not origin_ports:
+            return _no_routes(
+                f"{source} is too far from the coastline for water transport"
+            )
+        if not dest_ports:
+            return _no_routes(
+                f"{destination} is too far from the coastline for water transport"
+            )
 
         all_routes: list[dict] = []
 
@@ -53,32 +67,22 @@ class WaterPipeline(BasePipeline):
                 routes = engineer_routes(port_paths, source, destination, payload)
                 all_routes.extend(routes)
 
+        # --- Fix #3: No fake route injection ---
         if not all_routes:
-            return [
-                {
-                    "type": "Water",
-                    "mode": "water",
-                    "time": 30.0,
-                    "cost": 9000,
-                    "risk": 0.55,
-                    "segments": [{"mode": "Water", "from": source, "to": destination}],
-                    "notes": "No maritime paths found in the current port network.",
-                }
-            ]
+            return _no_routes(
+                f"No maritime routes found between {source} and {destination} in the current port network"
+            )
 
-        # Apply constraint filtering; if everything is filtered out, fall back to unfiltered.
+        # --- Fix #4: Respect constraint filters ---
         filtered = [r for r in all_routes if not r.get("_filtered_out")]
-        if filtered:
-            for r in filtered:
-                r.pop("_filtered_out", None)
-            # Lower is better for central scorer, so provide a consistent ordering hint:
-            filtered.sort(key=lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18)))
-            return filtered
+        if not filtered:
+            return _no_routes(
+                f"No water routes between {source} and {destination} satisfy the given constraints"
+            )
 
-        note = "No routes satisfy constraints; returning closest available alternatives."
-        for r in all_routes:
+        for r in filtered:
             r.pop("_filtered_out", None)
-            r["notes"] = note
 
-        all_routes.sort(key=lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18)))
-        return all_routes
+        # Lower is better for central scorer, so provide a consistent ordering hint:
+        filtered.sort(key=lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18)))
+        return filtered

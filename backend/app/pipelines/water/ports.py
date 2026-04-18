@@ -37,12 +37,12 @@ def iter_ports() -> Iterable[dict]:
     return PORTS
 
 
-def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0, context=None) -> list[PortCandidate]:
+def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 400.0, context=None) -> list[PortCandidate]:
     """
     Map a city name to the nearest N ports by geodesic distance.
 
-    If all ports are beyond max_distance_km, returns the single closest port
-    (so the pipeline still generates something).
+    Returns an empty list if no port is within max_distance_km — water
+    transport is not viable for deeply inland cities.
     """
     if not city_name:
         return []
@@ -79,6 +79,7 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0
     if within:
         return within[: max(1, n)]
 
-    # Fallback: if the city is far from all ports, return just the closest.
-    return candidates[:1]
+    # No port within threshold — water transport not viable for this city.
+    print(f"[WATER] No ports within {max_distance_km}km of {city_name} (nearest: {candidates[0].distance_km:.0f}km)")
+    return []
 
