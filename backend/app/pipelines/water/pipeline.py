@@ -26,6 +26,9 @@ class WaterPipeline(BasePipeline):
         payload = payload or {}
         constraints = payload.get("constraints") or {}
 
+        if source.strip().lower() == destination.strip().lower():
+            return _no_routes("Source and destination are the same city.")
+
         # Default: allow at most 3 transshipments (Indian coastal routes chain
         # through multiple ports along the coastline).
         if constraints.get("max_transshipments") is None:

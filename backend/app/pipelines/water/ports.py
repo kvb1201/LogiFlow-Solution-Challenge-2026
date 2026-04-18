@@ -47,6 +47,34 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 400.0
     if not city_name:
         return []
 
+    normalized_city = city_name.strip().lower()
+
+    # Step 2 & 3: Direct port detection — bypass geocoding/distance if city matches a port
+    direct_matches: list[PortCandidate] = []
+    for p in iter_ports():
+        p_id_norm = str(p["id"]).lower()
+        p_name_norm = str(p["name"]).lower()
+        
+        # Check for strict alias matching like "mumbai" -> "mumbai" or "nhava sheva" -> jnpt
+        # A simple check: if the normalized city matches the id, or is in the name.
+        if normalized_city == p_id_norm or normalized_city in p_name_norm:
+            direct_matches.append(
+                PortCandidate(
+                    port_id=str(p["id"]),
+                    name=str(p["name"]),
+                    lat=float(p["lat"]),
+                    lng=float(p["lng"]),
+                    coast=str(p.get("coast", "unknown")),
+                    base_congestion=float(p.get("base_congestion", 0.4)),
+                    base_security_risk=float(p.get("base_security_risk", 0.2)),
+                    distance_km=0.0,
+                )
+            )
+
+    if direct_matches:
+        print(f"[WATER] Direct port match for '{city_name}': {[m.port_id for m in direct_matches]}")
+        return direct_matches[: max(1, n)]
+
     cache_key = f"coords:{city_name}"
     if context and context.has(cache_key):
         city_lat, city_lng = context.get(cache_key)
