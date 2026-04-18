@@ -13,6 +13,8 @@ export default function AirPageClient() {
   const airRoutes = useLogiFlowStore((state) => state.airRoutes);
   const source = useLogiFlowStore((state) => state.source);
   const destination = useLogiFlowStore((state) => state.destination);
+  const hasSearched = useLogiFlowStore((state) => state.hasSearched);
+  const searchMode = useLogiFlowStore((state) => state.searchMode);
   const hasResults = airRoutes.length > 0;
   const showAirLoading = loading && loadingMode === 'air';
 
@@ -83,10 +85,34 @@ export default function AirPageClient() {
           </div>
         )}
 
-        {!loading && !hasResults && (
+        {!loading && !hasResults && !hasSearched && (
           <div className="rounded-2xl border border-outline-variant/12 bg-surface-container-low/35 p-6 text-sm text-on-surface-variant leading-relaxed">
             Enter origin and destination cities, set cargo and priority, then submit to see ranked air
             routes with airlines, stops, cost, and confidence.
+          </div>
+        )}
+
+        {!loading && !hasResults && hasSearched && searchMode === 'air' && (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex items-start gap-3">
+            <span
+              className="material-symbols-outlined text-amber-400 mt-0.5"
+              style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
+            >
+              info
+            </span>
+            <div>
+              <p className="text-sm font-medium text-on-surface mb-1">
+                No air routes found between {source || 'origin'} and {destination || 'destination'}
+              </p>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                There are no verified air cargo routes for this city pair in our dataset. Try a different
+                origin or destination, or explore{' '}
+                <a href="/railway" className="text-primary hover:underline underline-offset-2">rail</a>{' '}
+                and{' '}
+                <a href="/road" className="text-secondary hover:underline underline-offset-2">road</a>{' '}
+                alternatives.
+              </p>
+            </div>
           </div>
         )}
 
