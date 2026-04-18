@@ -37,17 +37,53 @@ def iter_ports() -> Iterable[dict]:
     return PORTS
 
 
-def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0) -> list[PortCandidate]:
+def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 400.0, context=None) -> list[PortCandidate]:
     """
     Map a city name to the nearest N ports by geodesic distance.
 
-    If all ports are beyond max_distance_km, returns the single closest port
-    (so the pipeline still generates something).
+    Returns an empty list if no port is within max_distance_km — water
+    transport is not viable for deeply inland cities.
     """
     if not city_name:
         return []
 
-    city_lat, city_lng = get_coords(city_name)
+    normalized_city = city_name.strip().lower()
+
+    # Step 2 & 3: Direct port detection — bypass geocoding/distance if city matches a port
+    direct_matches: list[PortCandidate] = []
+    for p in iter_ports():
+        p_id_norm = str(p["id"]).lower()
+        p_name_norm = str(p["name"]).lower()
+        
+        # Check for strict alias matching like "mumbai" -> "mumbai" or "nhava sheva" -> jnpt
+        # A simple check: if the normalized city matches the id, or is in the name.
+        if normalized_city == p_id_norm or normalized_city in p_name_norm:
+            direct_matches.append(
+                PortCandidate(
+                    port_id=str(p["id"]),
+                    name=str(p["name"]),
+                    lat=float(p["lat"]),
+                    lng=float(p["lng"]),
+                    coast=str(p.get("coast", "unknown")),
+                    base_congestion=float(p.get("base_congestion", 0.4)),
+                    base_security_risk=float(p.get("base_security_risk", 0.2)),
+                    distance_km=0.0,
+                )
+            )
+
+    if direct_matches:
+        print(f"[WATER] Direct port match for '{city_name}': {[m.port_id for m in direct_matches]}")
+        return direct_matches[: max(1, n)]
+
+    cache_key = f"coords:{city_name}"
+    if context and context.has(cache_key):
+        city_lat, city_lng = context.get(cache_key)
+        print(f"[CACHE HIT] {cache_key}")
+    else:
+        city_lat, city_lng = get_coords(city_name)
+        print(f"[API CALL] {cache_key}")
+        if context:
+            context.set(cache_key, (city_lat, city_lng))
 
     candidates: list[PortCandidate] = []
     for p in iter_ports():
@@ -71,6 +107,7 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 600.0
     if within:
         return within[: max(1, n)]
 
-    # Fallback: if the city is far from all ports, return just the closest.
-    return candidates[:1]
+    # No port within threshold — water transport not viable for this city.
+    print(f"[WATER] No ports within {max_distance_km}km of {city_name} (nearest: {candidates[0].distance_km:.0f}km)")
+    return []
 

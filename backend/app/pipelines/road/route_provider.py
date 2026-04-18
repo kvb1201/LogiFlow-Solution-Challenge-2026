@@ -20,8 +20,15 @@ if not TOMTOM_API_KEY:
     raise Exception("TOMTOM_API_KEY not set (expected in backend/.env or repo-root .env)")
 
 
-def geocode_city(city: str):
+def geocode_city(city: str, context=None):
     import urllib.parse
+
+    # Check request-level cache first
+    cache_key = f"geocode:{city}"
+    if context and context.has(cache_key):
+        print(f"[CACHE HIT] {cache_key}")
+        return context.get(cache_key)
+
     encoded_city = urllib.parse.quote(city)
     url = f"https://api.tomtom.com/search/2/geocode/{encoded_city}.json"
     params = {"key": TOMTOM_API_KEY}
@@ -33,21 +40,34 @@ def geocode_city(city: str):
             if "," in city:
                 fallback_city = city.split(",")[0].strip()
                 print(f"Geocoding failed for '{city}', trying fallback: '{fallback_city}'")
-                return geocode_city(fallback_city)
+                return geocode_city(fallback_city, context=context)
             fallback_lat, fallback_lon = get_coords(city)
             print(f"Geocoding fallback for '{city}' -> cached/openstreetmap coordinates")
-            return fallback_lat, fallback_lon
+            result = (fallback_lat, fallback_lon)
+            if context:
+                context.set(cache_key, result)
+            return result
 
         pos = res["results"][0]["position"]
-        return pos["lat"], pos["lon"]
+        result = (pos["lat"], pos["lon"])
+        print(f"[API CALL] {cache_key}")
+        if context:
+            context.set(cache_key, result)
+        return result
     except RequestException as e:
         print(f"DEBUG: TomTom geocode timeout/network error for '{city}': {str(e)}")
         fallback_lat, fallback_lon = get_coords(city)
-        return fallback_lat, fallback_lon
+        result = (fallback_lat, fallback_lon)
+        if context:
+            context.set(cache_key, result)
+        return result
     except Exception as e:
         print(f"DEBUG: Geocode error for '{city}': {str(e)}")
         fallback_lat, fallback_lon = get_coords(city)
-        return fallback_lat, fallback_lon
+        result = (fallback_lat, fallback_lon)
+        if context:
+            context.set(cache_key, result)
+        return result
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -130,7 +150,7 @@ def estimate_toll(distance_km, highway_ratio):
     return int(highway_ratio * distance_km * 2.5)
 
 
-def get_routes(source, destination, payload=None):
+def get_routes(source, destination, payload=None, context=None):
     payload = payload or {}
 
     simulation_mode = payload.get("mode") == "simulation"
@@ -142,8 +162,8 @@ def get_routes(source, destination, payload=None):
     if simulation_mode:
         print("[ROUTE_PROVIDER] Simulation mode active → using real routes (no synthetic generation)")
 
-    lat1, lon1 = geocode_city(source)
-    lat2, lon2 = geocode_city(destination)
+    lat1, lon1 = geocode_city(source, context=context)
+    lat2, lon2 = geocode_city(destination, context=context)
 
     url = f"https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 
@@ -187,31 +207,39 @@ def get_routes(source, destination, payload=None):
     result = []
 
     for i, r in enumerate(res["routes"]):
-        # --- Fetch incidents for risk enhancement ---
-        incident_count = 0
-        try:
-            # Bounding box around route (simple min/max from geometry)
-            lats = []
-            lons = []
-            for leg in r.get("legs", []):
-                for point in leg.get("points", []):
-                    lats.append(point["latitude"])
-                    lons.append(point["longitude"])
+        # --- Fetch incidents ONCE for the route corridor, reuse for all alternatives ---
+        if context and context.has("road_incidents"):
+            incident_count = context.get("road_incidents")
+            print(f"[CACHE HIT] road_incidents")
+        else:
+            incident_count = 0
+            try:
+                # Bounding box around route (simple min/max from geometry)
+                lats = []
+                lons = []
+                for leg in r.get("legs", []):
+                    for point in leg.get("points", []):
+                        lats.append(point["latitude"])
+                        lons.append(point["longitude"])
 
-            if lats and lons:
-                lat_mid = sum(lats) / len(lats)
-                lon_mid = sum(lons) / len(lons)
-                bbox = f"{lat_mid-0.1},{lon_mid-0.1},{lat_mid+0.1},{lon_mid+0.1}"
-                incident_url = "https://api.tomtom.com/traffic/services/5/incidentDetails"
-                incident_params = {
-                    "key": TOMTOM_API_KEY,
-                    "bbox": bbox,
-                    "fields": "{incidents{type}}",
-                }
-                inc_res = requests.get(incident_url, params=incident_params, timeout=5).json()
-                incident_count = len(inc_res.get("incidents", []))
-        except Exception as e:
-            print("DEBUG incident fetch failed:", str(e))
+                if lats and lons:
+                    lat_mid = sum(lats) / len(lats)
+                    lon_mid = sum(lons) / len(lons)
+                    bbox = f"{lat_mid-0.1},{lon_mid-0.1},{lat_mid+0.1},{lon_mid+0.1}"
+                    incident_url = "https://api.tomtom.com/traffic/services/5/incidentDetails"
+                    incident_params = {
+                        "key": TOMTOM_API_KEY,
+                        "bbox": bbox,
+                        "fields": "{incidents{type}}",
+                    }
+                    inc_res = requests.get(incident_url, params=incident_params, timeout=5).json()
+                    incident_count = len(inc_res.get("incidents", []))
+                    print(f"[API CALL] road_incidents (count={incident_count})")
+            except Exception as e:
+                print("DEBUG incident fetch failed:", str(e))
+
+            if context:
+                context.set("road_incidents", incident_count)
 
         summary = r["summary"]
 

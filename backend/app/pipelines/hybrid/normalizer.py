@@ -40,7 +40,6 @@ def normalize_road(route):
             "congestion_risk": traffic_level,
             "stops": 0
         },
-        "raw": route
     }
 
 
@@ -78,7 +77,6 @@ def normalize_rail(route):
             "congestion_risk": 0.2,
             "stops": 1 if route.get("has_transfer") else 0
         },
-        "raw": route
     }
 
 
@@ -132,5 +130,4 @@ def normalize_air(route):
             "congestion_risk": congestion_risk,
             "stops": stops
         },
-        "raw": route
     }
