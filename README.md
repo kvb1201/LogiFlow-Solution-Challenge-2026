@@ -83,8 +83,8 @@ Key differentiators:
 
 | Platform | Link |
 |----------|------|
-| 🌐 Web | *deployment URL placeholder* |
-| 📱 APK | *download link placeholder* |
+| 🌐 Web | *https://logi-flow-solution-challenge-2026.vercel.app/* |
+| 📱 APK | *https://drive.google.com/file/d/11l_qnlY7JiAerHGyBcq2wIVn0NtWNXNl/view?usp=sharing* |
 
 ---
 
@@ -153,7 +153,7 @@ npm run dev
 
 ## Team
 
-Built by [Team Name] for the Google Solution Challenge 2026.
+Built by Neural Foundry for the Google Solution Challenge 2026.
 
 ## License
 
