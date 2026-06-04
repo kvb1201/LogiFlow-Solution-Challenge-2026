@@ -1,27 +1,15 @@
 'use client';
 
-import Link from 'next/link';
-<<<<<<< Updated upstream
-import React, { useMemo, useState } from 'react';
-import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
-=======
 import React, { useCallback, useMemo, useState } from 'react';
-import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
-import { hasShipmentAutorunPending } from '@/lib/shipmentAutorun';
-import {
-  optimizeHybridRoute,
-  type AiConstraintsApplied,
-  type HybridComparisonRow,
-  type HybridOptimizeResult,
-} from '@/services/api';
+import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import AiBriefPanel from '@/components/AiBriefPanel';
-import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
-import { formInputClass } from '@/components/forms/pipeline-form-ui';
-import { Sparkles } from 'lucide-react';
->>>>>>> Stashed changes
+import { FormField, formInputClass } from '@/components/forms/pipeline-form-ui';
+
+const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
 type Priority = 'cost' | 'time' | 'balanced';
 type Mode = 'road' | 'rail' | 'air';
@@ -43,18 +31,18 @@ function toNum(v: unknown): number | null {
 
 function formatHours(v: unknown): string {
   const n = toNum(v);
-  return n == null ? 'N/A' : `${n.toFixed(2)} hrs`;
+  return n == null ? '-' : `${n.toFixed(2)} hrs`;
 }
 
 function formatInr(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return 'N/A';
+  if (n == null) return '-';
   return `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(n))}`;
 }
 
 function formatRisk(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return 'N/A';
+  if (n == null) return '-';
   return `${Math.round(n * 100)}%`;
 }
 
@@ -140,9 +128,21 @@ function ComparisonTable({ rows, recommendedMode }: { rows: HybridComparisonRow[
 }
 
 export default function HybridPageClient() {
-  const [source, setSource] = useState('');
-  const [destination, setDestination] = useState('');
-  const [priority, setPriority] = useState<Priority>('balanced');
+  const source = useLogiFlowStore(s => s.source);
+  const setSource = useLogiFlowStore(s => s.setSource);
+  const destination = useLogiFlowStore(s => s.destination);
+  const setDestination = useLogiFlowStore(s => s.setDestination);
+  const priority = useLogiFlowStore(s => s.priority);
+  const setPriority = useLogiFlowStore(s => s.setPriority);
+  const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
+  const setCargoWeight = useLogiFlowStore(s => s.setCargoWeight);
+  const cargoType = useLogiFlowStore(s => s.cargoType);
+  const setCargoType = useLogiFlowStore(s => s.setCargoType);
+  const budgetMax = useLogiFlowStore(s => s.budgetMax);
+  const setBudgetMax = useLogiFlowStore(s => s.setBudgetMax);
+  const departureDate = useLogiFlowStore(s => s.departureDate);
+  const deadlineHours = useLogiFlowStore(s => s.deadlineHours);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
@@ -153,11 +153,10 @@ export default function HybridPageClient() {
   const recommendedMode = normalizeMode(result?.recommended_mode);
   const recommendedRow = useMemo(() => {
     if (!comparisonRows.length || !recommendedMode) return null;
-    return comparisonRows.find((row) => normalizeMode(row.mode) === recommendedMode) ?? null;
+    return comparisonRows.find((row: HybridComparisonRow) => normalizeMode(row.mode) === recommendedMode) ?? null;
   }, [comparisonRows, recommendedMode]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const runOptimize = useCallback(async () => {
     if (!source.trim() || !destination.trim()) return;
     setError(null);
     setLoading(true);
@@ -166,6 +165,15 @@ export default function HybridPageClient() {
         source: source.trim(),
         destination: destination.trim(),
         priority,
+        departure_date: departureDate,
+        cargo_weight_kg: cargoWeight,
+        cargo_type: cargoType,
+        cargo: { weight: cargoWeight, type: cargoType.toLowerCase() },
+        constraints: {
+          budget_max_inr: budgetMax,
+          budget_limit: budgetMax,
+          delay_tolerance_hours: deadlineHours,
+        },
       });
       setResult(data);
     } catch (err: unknown) {
@@ -174,288 +182,106 @@ export default function HybridPageClient() {
     } finally {
       setLoading(false);
     }
+  }, [
+    source,
+    destination,
+    priority,
+    departureDate,
+    cargoWeight,
+    cargoType,
+    budgetMax,
+    deadlineHours,
+  ]);
+
+  useShipmentAutorun('hybrid', () => void runOptimize(), Boolean(source.trim() && destination.trim()));
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await runOptimize();
   }
 
-<<<<<<< Updated upstream
-  return (
-    <div className="flex-1 flex flex-col overflow-x-hidden bg-[#06080d] min-h-0">
-      <div className="relative border-b border-outline-variant/10 overflow-hidden">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute w-[520px] h-[520px] rounded-full opacity-[0.11] blur-[100px] bg-tertiary -top-[44%] right-[-12%] animate-mesh-1" />
-          <div className="absolute w-[420px] h-[420px] rounded-full opacity-[0.09] blur-[90px] bg-primary bottom-[-35%] left-[-12%] animate-mesh-2" />
-        </div>
-        <div className="relative max-w-5xl mx-auto px-5 sm:px-8 py-10 sm:py-11">
-          <div className="inline-flex items-center gap-2 rounded-full border border-tertiary/30 bg-tertiary/10 px-3 py-1.5 mb-4">
-            <span className="text-sm">🔀</span>
-            <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-tertiary">Hybrid logistics</span>
-          </div>
-          <h1 className="font-headline text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-on-surface mb-3">
-            Hybrid Route Optimizer
-          </h1>
-          <p className="text-[15px] text-on-surface-variant max-w-2xl leading-relaxed">
-            Compare road, rail, and air side by side to get a final recommendation with clear tradeoffs.
-            Works seamlessly with your existing{' '}
-            <Link href="/road" className="text-secondary hover:underline underline-offset-2">
-              road
-            </Link>
-            ,{' '}
-            <Link href="/railway" className="text-primary hover:underline underline-offset-2">
-              rail
-            </Link>
-            , and{' '}
-            <Link href="/air" className="text-sky-300 hover:underline underline-offset-2">
-              air
-            </Link>{' '}
-            workflows.
-          </p>
-        </div>
-      </div>
+  const formCardClass = 'panel-hard scanline rounded-2xl p-5 sm:p-6';
 
-      <div className="flex-1 max-w-5xl w-full mx-auto px-5 sm:px-8 py-8 sm:py-10 space-y-6">
-        <form
-          onSubmit={onSubmit}
-          className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/70 p-5 sm:p-6 backdrop-blur-xl"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label className="block">
-              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Source</span>
+  return (
+    <PipelineModeLanding mode="hybrid" compact={!!result}>
+      <div className="mx-auto w-full max-w-5xl space-y-6 pb-10">
+        <AiBriefPanel contextMode="hybrid" />
+        <form onSubmit={onSubmit} className={`${formCardClass} space-y-5`}>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <FormField label="Origin">
               <input
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="Delhi, India"
-                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+                className={formInputClass}
               />
-            </label>
-            <label className="block">
-              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Destination</span>
+            </FormField>
+            <FormField label="Destination">
               <input
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
                 placeholder="Mumbai, India"
-                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+                className={formInputClass}
               />
-            </label>
-            <label className="block">
-              <span className="block text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest mb-2 ml-1">Priority</span>
+            </FormField>
+            <FormField label="Priority">
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority)}
-                className="w-full px-4 py-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25"
+                onChange={(e) => setPriority(e.target.value)}
+                className={formInputClass}
               >
                 <option value="balanced">Balanced</option>
                 <option value="cost">Cost</option>
                 <option value="time">Time</option>
               </select>
-            </label>
-          </div>
-=======
-  const formCardClass =
-    'panel-hard scanline rounded-2xl p-5 sm:p-6 transition-shadow duration-300';
-
-  const headerActions = (
-    <>
-      <button
-        type="button"
-        onClick={loadDemo}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 py-2 text-sm font-medium text-foreground transition-all duration-300 hover:border-hybrid/40 hover:bg-hybrid/10 hover:shadow-[0_0_28px_-12px_var(--hybrid)]"
-      >
-        <Sparkles className="h-4 w-4 text-hybrid" />
-        Demo scenario
-      </button>
-      <Link
-        href="/railway"
-        className="inline-flex items-center rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
-        Railways
-      </Link>
-    </>
-  );
-
-  return (
-    <PipelineModeLanding mode="hybrid" headerActions={headerActions} compact={step > 1}>
-      <div className="w-full pb-8">
-        <nav aria-label="Progress" className="mb-6">
-          <ol className="grid grid-cols-3 gap-2">
-            {[
-              { n: 1, label: 'Corridor' },
-              { n: 2, label: 'Scenario' },
-              { n: 3, label: 'Results' },
-            ].map(({ n, label }) => {
-              const active = step === n;
-              const done = step > n;
-              return (
-                <li key={n}>
-                  <button
-                    type="button"
-                    onClick={() => setStep(n as 1 | 2 | 3)}
-                    className={`flex w-full flex-col items-center gap-1 rounded-xl border px-2 py-3 text-center transition-all duration-300 ${
-                      active
-                        ? 'border-hybrid/45 bg-hybrid/10 text-foreground shadow-[0_0_32px_-14px_var(--hybrid)]'
-                        : done
-                          ? 'border-border bg-surface/30 text-muted-foreground'
-                          : 'border-border bg-transparent text-muted-foreground hover:border-border-strong hover:bg-surface/40'
-                    }`}
-                  >
-                    <span
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                        active || done ? 'bg-hybrid text-background' : 'bg-surface-2 text-muted-foreground'
-                      }`}
-                    >
-                      {n}
-                    </span>
-                    <span className="text-xs font-semibold leading-tight">{label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
-
-        <form onSubmit={onSubmit} className="space-y-6">
-          {step === 1 && (
-            <section className={`${formCardClass} space-y-5`}>
-              <h2 className="text-base font-semibold text-foreground">Where is the shipment moving?</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Origin</span>
-                  <input
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    placeholder="Delhi"
-                    className={formInputClass}
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Destination</span>
-                  <input
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="Mumbai"
-                    className={formInputClass}
-                  />
-                </label>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Weight (kg)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={cargoWeight}
-                    onChange={(e) => setCargoWeight(Number(e.target.value))}
-                    className={formInputClass}
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Cargo type</span>
-                  <select
-                    value={cargoType}
-                    onChange={(e) => setCargoType(e.target.value)}
-                    className={formInputClass}
-                  >
-                    <option value="General">General</option>
-                    <option value="Perishable">Perishable</option>
-                    <option value="Fragile">Fragile</option>
-                  </select>
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Max budget (₹)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={budgetMax}
-                    onChange={(e) => setBudgetMax(Number(e.target.value))}
-                    className={formInputClass}
-                  />
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                disabled={!canProceedStep1}
-                className="w-full rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 sm:w-auto"
-              >
-                Continue to scenario →
-              </button>
-            </section>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-5">
-              <AiBriefPanel contextMode="hybrid" />
-              <div className={`${formCardClass} space-y-4`}>
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Scenario for multimodal compare</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Edit below or use AI above — sent to Gemini before scoring all four modes.
-                </p>
-              </div>
-              <ParagraphInputWithStt
-                value={scenarioBrief}
-                onChange={setScenarioBrief}
-                rows={4}
-                placeholder="e.g. Monsoon season, perishable cargo, max ₹8,000, deliver within 36 hours, avoid air if risky…"
-                className={`${formInputClass} min-h-[120px] resize-y`}
-                lang="en-IN"
+            </FormField>
+            <FormField label="Cargo weight (kg)">
+              <input
+                type="number"
+                value={cargoWeight}
+                onChange={(e) => setCargoWeight(Number(e.target.value))}
+                className={formInputClass}
               />
-              <div className="flex flex-wrap gap-2">
-                {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer water/rail'].map(
-                  (chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() =>
-                        setScenarioBrief(scenarioBrief ? `${scenarioBrief}. ${chip}` : chip)
-                      }
-                      className="rounded-full border border-border bg-background/40 px-3 py-1.5 text-xs text-muted-foreground hover:border-border-strong hover:text-foreground"
-                    >
-                      + {chip}
-                    </button>
-                  )
-                )}
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={loading || !canProceedStep1}
-                  className="flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all duration-300 hover:brightness-110 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 border-2 border-[#001b3f]/30 border-t-[#001b3f] rounded-full animate-spin" />
-                      Comparing 4 modes…
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[18px]">bolt</span>
-                      Get recommendation
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="rounded-lg border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
-                >
-                  Back
-                </button>
-              </div>
-              </div>
-            </div>
-          )}
->>>>>>> Stashed changes
+            </FormField>
+            <FormField label="Cargo type">
+              <select
+                value={cargoType}
+                onChange={(e) => setCargoType(e.target.value)}
+                className={formInputClass}
+              >
+                <option value="General">General</option>
+                <option value="Perishable">Perishable</option>
+                <option value="Fragile">Fragile</option>
+              </select>
+            </FormField>
+            <FormField label="Max budget (₹)">
+              <input
+                type="number"
+                value={budgetMax}
+                onChange={(e) => setBudgetMax(Number(e.target.value))}
+                className={formInputClass}
+              />
+            </FormField>
+          </div>
 
           <button
             type="submit"
             disabled={loading || !source.trim() || !destination.trim()}
-            className="mt-4 w-full sm:w-auto px-6 py-3 rounded-xl bg-primary text-on-primary font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+            className="btn-app btn-app-primary inline-flex h-11 items-center gap-2 rounded-lg bg-foreground px-6 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {loading ? 'Optimizing...' : 'Optimize'}
+            {loading ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
+                Comparing modes…
+              </>
+            ) : (
+              'Get recommendation'
+            )}
           </button>
         </form>
 
         {error && (
-          <div className="bg-error/10 border border-error/20 px-4 py-3 rounded-xl text-sm text-error flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-risk/30 bg-risk/10 px-4 py-3 text-sm text-risk">
             <span className="material-symbols-outlined text-sm">error</span>
             {error}
           </div>
@@ -497,16 +323,50 @@ export default function HybridPageClient() {
             <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
 
             <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5">
-              <h3 className="text-sm font-semibold text-on-surface mb-3">Tradeoffs</h3>
+              <h3 className="text-sm font-semibold text-on-surface mb-4">Tradeoffs & Considerations</h3>
               {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 ? (
-                <ul className="space-y-2 text-sm text-on-surface-variant">
-                  {result.tradeoffs.map((line, idx) => (
-                    <li key={`tradeoff-${idx}`} className="flex items-start gap-2">
-                      <span className="text-primary mt-0.5">•</span>
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {result.tradeoffs.map((line: string, idx: number) => {
+                    const l = line.toLowerCase();
+                    const isTime = l.includes('time') || l.includes('hrs') || l.includes('slower') || l.includes('faster');
+                    const isCost = l.includes('cost') || l.includes('rs') || l.includes('cheaper') || l.includes('expensive');
+                    const isRisk = l.includes('risk') || l.includes('delay') || l.includes('safe');
+                    const isHigher = l.includes('higher') || l.includes('more') || l.includes('slower') || l.includes('expensive');
+                    
+                    let bgClass = 'bg-surface-container/50 border-outline-variant/15';
+                    let textClass = 'text-primary';
+                    let icon = 'info';
+
+                    if (isTime) {
+                      icon = 'schedule';
+                      bgClass = isHigher ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-amber-400' : 'text-emerald-400';
+                    } else if (isCost) {
+                      icon = 'payments';
+                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
+                    } else if (isRisk) {
+                      icon = 'warning';
+                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
+                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
+                    }
+
+                    return (
+                      <div
+                        key={`tradeoff-${idx}`}
+                        className={`flex items-start gap-3 rounded-xl border p-4 transition-transform hover:scale-[1.02] hover:bg-opacity-80 ${bgClass}`}
+                      >
+                        <span
+                          className={`material-symbols-outlined shrink-0 ${textClass}`}
+                          style={{ fontSize: '20px' }}
+                        >
+                          {icon}
+                        </span>
+                        <span className="text-sm font-medium leading-relaxed text-on-surface">{line}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <p className="text-sm text-on-surface-variant">No tradeoffs were returned for this route set.</p>
               )}
@@ -529,43 +389,39 @@ export default function HybridPageClient() {
                         <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">Top pick</span>
                       )}
                     </div>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-on-surface"><span className="text-outline">Time:</span> {formatHours(modeData?.time_hr)}</p>
-                      <p className="text-on-surface"><span className="text-outline">Cost:</span> {formatInr(modeData?.cost_inr)}</p>
-                      <p className="text-on-surface"><span className="text-outline">Risk:</span> {formatRisk(modeData?.risk)}</p>
-                      {mode === 'rail' && <p className="text-on-surface"><span className="text-outline">Train:</span> {modeData?.train_name || 'N/A'}</p>}
-                      {mode === 'air' && <p className="text-on-surface"><span className="text-outline">Airline:</span> {modeData?.airline || 'N/A'}</p>}
-                      {mode === 'road' && <p className="text-on-surface"><span className="text-outline">Distance:</span> {toNum(modeData?.distance_km) == null ? 'N/A' : `${toNum(modeData?.distance_km)?.toFixed(1)} km`}</p>}
+                    <div className="space-y-1.5 text-sm">
+                      {modeData ? (
+                        <>
+                          {toNum(modeData?.time_hr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Time:</span> <span className="font-medium">{formatHours(modeData?.time_hr)}</span></p>}
+                          {toNum(modeData?.cost_inr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Cost:</span> <span className="font-medium">{formatInr(modeData?.cost_inr)}</span></p>}
+                          {toNum(modeData?.risk) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Risk:</span> <span className="font-medium">{formatRisk(modeData?.risk)}</span></p>}
+                          {mode === 'rail' && modeData?.train_name && modeData.train_name !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Train:</span> <span className="font-medium text-right ml-2">{modeData.train_name}</span></p>}
+                          {mode === 'air' && modeData?.airline && modeData.airline !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Airline:</span> <span className="font-medium text-right ml-2">{modeData.airline}</span></p>}
+                          {mode === 'road' && toNum(modeData?.distance_km) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Distance:</span> <span className="font-medium">{toNum(modeData?.distance_km)?.toFixed(1)} km</span></p>}
+                          {toNum(modeData?.time_hr) == null && toNum(modeData?.cost_inr) == null && toNum(modeData?.risk) == null && (
+                            <p className="text-outline italic text-[11px]">No data extracted for this mode.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-outline italic text-[11px]">No viable route generated.</p>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-<<<<<<< Updated upstream
-=======
 
-            {Boolean(
-              (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
-            ) && (
-              <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
-                <MapView
-                  routes={[result.best_per_mode!.road! as { geometry: [number, number][]; time: number; cost: number; risk: number }]}
-                  selectedRoute={0}
-                />
+            {(result.best_per_mode?.road as any)?.geometry && (
+              <div className="mt-4 rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5 flex flex-col h-[400px]">
+                <h3 className="text-sm font-semibold text-on-surface mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary" style={{ fontSize: '18px' }}>map</span>
+                  Road Segment Map
+                </h3>
+                <div className="flex-1 rounded-xl overflow-hidden min-h-0 border border-outline-variant/10">
+                  <MapView routes={[result.best_per_mode?.road as any]} selectedRoute={0} />
+                </div>
               </div>
             )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setStep(2);
-                setResult(null);
-              }}
-              className="text-sm font-semibold text-hybrid hover:underline"
-            >
-              ← Adjust scenario and re-run
-            </button>
->>>>>>> Stashed changes
           </div>
         )}
       </div>

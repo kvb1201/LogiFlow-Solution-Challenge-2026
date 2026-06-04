@@ -3,8 +3,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { searchCities, type StationSearchResult } from '@/services/api';
-<<<<<<< Updated upstream
-=======
 import AiBriefPanel from '@/components/AiBriefPanel';
 import {
   AdvancedToggle,
@@ -15,7 +13,6 @@ import {
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
->>>>>>> Stashed changes
 
 // ── Debounced city search ─────────────────────────────────────────────
 
@@ -312,57 +309,6 @@ export default function RoadInputForm() {
   };
 
   return (
-<<<<<<< Updated upstream
-    <div className="form-container-glow relative">
-      <div className="absolute -inset-1 bg-gradient-to-r from-primary/15 via-secondary/8 to-primary/15 rounded-3xl blur-2xl opacity-35 animate-pulse-slow pointer-events-none" />
-
-      <div className="relative bg-surface-container-low/75 backdrop-blur-2xl border border-outline-variant/12 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-secondary/40 to-transparent animate-shimmer" />
-
-        <div className="p-5 sm:p-7">
-          {/* Header */}
-          <div
-            className={`flex items-center justify-between mb-6 transition-all duration-600 ${
-              formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary/20 to-primary/15 flex items-center justify-center border border-secondary/20">
-                  <span
-                    className="material-symbols-outlined text-secondary leading-none"
-                    style={{
-                      fontSize: '18px',
-                      fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24",
-                    }}
-                  >
-                    local_shipping
-                  </span>
-                </div>
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-tertiary rounded-full animate-ping opacity-60" />
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-tertiary rounded-full" />
-              </div>
-              <div>
-                <h2 className="text-[15px] font-headline font-bold text-on-surface tracking-tight">
-                  Road Logistics
-                </h2>
-                <p className="text-[10px] text-outline mt-0.5">Powered by LogiFlow · Smart Road Routing</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-[11px] text-on-surface-variant hover:text-primary transition-colors px-2.5 py-1.5 rounded-lg hover:bg-surface-container border border-transparent hover:border-outline-variant/15"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                {showAdvanced ? 'unfold_less' : 'tune'}
-              </span>
-              {showAdvanced ? 'Less' : 'Advanced'}
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-=======
     <div className="w-full space-y-4">
       <AiBriefPanel contextMode="road" />
       <FormShell
@@ -388,7 +334,6 @@ export default function RoadInputForm() {
         }
       >
         <form onSubmit={handleSubmit} className="space-y-5">
->>>>>>> Stashed changes
             {/* Origin / Destination */}
             <div
               className={`relative z-[100] transition-all duration-600 ${
@@ -498,89 +443,6 @@ export default function RoadInputForm() {
               </div>
             </div>
 
-<<<<<<< Updated upstream
-            {/* Cargo type */}
-            <div
-              className={`transition-all duration-600 delay-100 ${
-                formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
-                Cargo Type
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {CARGO_TYPES.map(ct => (
-                  <button
-                    key={ct.value}
-                    type="button"
-                    onClick={() => setCargoType(ct.value)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200 ${
-                      cargoType === ct.value
-                        ? 'bg-primary/10 border-primary/30 shadow-sm'
-                        : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 hover:bg-surface-container/30'
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined leading-none transition-colors ${
-                        cargoType === ct.value ? 'text-primary' : 'text-outline'
-                      }`}
-                      style={{
-                        fontSize: '18px',
-                        fontVariationSettings: `'FILL' ${cargoType === ct.value ? 1 : 0}, 'wght' 400`,
-                      }}
-                    >
-                      {ct.icon}
-                    </span>
-                    <span
-                      className={`text-[11px] font-medium ${
-                        cargoType === ct.value ? 'text-on-surface' : 'text-on-surface-variant'
-                      }`}
-                    >
-                      {ct.value}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Priority */}
-            <div
-              className={`transition-all duration-600 delay-150 ${
-                formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
-                Optimization Priority
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {PRIORITY_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPriority(opt.value)}
-                    className={`flex flex-col items-center gap-2 py-3.5 px-3 rounded-xl border transition-all duration-200 ${
-                      priority === opt.value
-                        ? `${opt.activeClass} shadow-sm scale-[1.02]`
-                        : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 text-on-surface-variant'
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined leading-none ${
-                        priority === opt.value ? opt.iconColor : 'text-outline'
-                      }`}
-                      style={{
-                        fontSize: '22px',
-                        fontVariationSettings: `'FILL' ${priority === opt.value ? 1 : 0}, 'wght' 400`,
-                      }}
-                    >
-                      {opt.icon}
-                    </span>
-                    <span className="text-[12px] font-semibold">{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-=======
             <FormField label="Cargo type">
               <ChoicePills
                 options={CARGO_TYPES.map((ct) => ({
@@ -606,7 +468,6 @@ export default function RoadInputForm() {
                 accentVar="--road"
               />
             </FormField>
->>>>>>> Stashed changes
 
             {/* Route preferences */}
             <div
@@ -824,77 +685,8 @@ export default function RoadInputForm() {
               )}
             </div>
 
-<<<<<<< Updated upstream
-            {/* Submit */}
-            <div
-              className={`transition-all duration-600 delay-200 ${
-                formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <div className="text-[11px] text-outline mb-2.5 mono">
-                Budget: <span className="text-primary">₹{budgetMax.toLocaleString()}</span>
-                {' · '}
-                Deadline: <span className="text-primary">{deadlineHours}h</span>
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !source.trim() || !destination.trim() || cargoWeight <= 0}
-                className="relative w-full py-3.5 font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden group"
-              >
-                <div
-                  className={`absolute inset-0 transition-all duration-300 ${
-                    loading
-                      ? 'bg-surface-container'
-                      : 'bg-gradient-to-r from-primary via-primary-container to-primary group-hover:opacity-90'
-                  }`}
-                />
-                {!loading && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/8 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span
-                    className={`material-symbols-outlined leading-none ${
-                      loading ? 'animate-spin text-outline' : 'text-on-primary'
-                    }`}
-                    style={{
-                      fontSize: '18px',
-                      fontVariationSettings: "'FILL' 1",
-                    }}
-                  >
-                    {loading ? 'progress_activity' : 'local_shipping'}
-                  </span>
-                  <span
-                    className={`text-sm tracking-wide font-semibold ${
-                      loading ? 'text-outline' : 'text-on-primary'
-                    }`}
-                  >
-                    {loading ? 'Finding Routes...' : 'Find Optimal Routes'}
-                  </span>
-                </div>
-              </button>
-              {source.trim() && destination.trim() && !loading && (
-                <p className="text-center text-[10px] text-outline/50 mt-2.5 flex items-center justify-center gap-1.5 animate-fade-in">
-                  <span
-                    className="material-symbols-outlined text-tertiary"
-                    style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    check_circle
-                  </span>
-                  <span className="mono text-primary">{source}</span>
-                  {' → '}
-                  <span className="mono text-tertiary">{destination}</span>
-                  {' · '}
-                  {cargoWeight}kg {cargoType}
-                </p>
-              )}
-            </div>
-          </form>
-        </div>
-      </div>
-=======
           </form>
       </FormShell>
->>>>>>> Stashed changes
     </div>
   );
 }
