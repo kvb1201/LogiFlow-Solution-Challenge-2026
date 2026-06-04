@@ -1,108 +1,167 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  parseShipmentIntent,
+  type IntentContextMode,
+  type ParsedIntent,
+} from '@/services/api';
+import { routeForMode } from '@/lib/applyParsedIntent';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import { setShipmentAutorun } from '@/lib/shipmentAutorun';
 
-type ContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'hybrid';
-
-const MODE_ROUTES: Record<string, string> = {
-  home: '/hybrid',
-  rail: '/railway',
-  road: '/road',
-  air: '/air',
-  water: '/water',
-  hybrid: '/hybrid',
+type AiBriefPanelProps = {
+  contextMode: IntentContextMode;
+  /** Home: navigate after parse. Mode pages: stay and fill form only */
+  navigateOnApply?: boolean;
+  /** Show secondary button to parse + navigate (home / hybrid) */
+  showRouteButton?: boolean;
+  className?: string;
 };
 
-function targetRoute(contextMode: ContextMode): string {
-  return MODE_ROUTES[contextMode] ?? '/hybrid';
-}
-
-function autorunKey(contextMode: ContextMode): string {
-  if (contextMode === 'home') return 'hybrid';
-  return contextMode;
+function IntentChips({ parsed }: { parsed: ParsedIntent }) {
+  const chips: string[] = [];
+  if (parsed.source && parsed.destination) chips.push(`${parsed.source} → ${parsed.destination}`);
+  if (parsed.suggested_mode) chips.push(`Mode: ${parsed.suggested_mode}`);
+  if (parsed.priority) chips.push(`Priority: ${parsed.priority}`);
+  if (parsed.cargo_weight_kg != null) chips.push(`${parsed.cargo_weight_kg} kg`);
+  if (parsed.cargo_type) chips.push(parsed.cargo_type);
+  if (parsed.budget_max_inr != null) chips.push(`Budget ₹${Math.round(parsed.budget_max_inr)}`);
+  if (parsed.deadline_hours != null) chips.push(`Deadline ${parsed.deadline_hours}h`);
+  if (!chips.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      {chips.map((c) => (
+        <span
+          key={c}
+          className="text-[10px] font-semibold px-2.5 py-1 rounded-full border border-violet-400/25 bg-violet-500/10 text-violet-100"
+        >
+          {c}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export default function AiBriefPanel({
-  contextMode = 'home',
-  navigateOnApply = true,
+  contextMode,
+  navigateOnApply = false,
   showRouteButton = false,
   className = '',
-}: {
-  contextMode?: ContextMode;
-  navigateOnApply?: boolean;
-  showRouteButton?: boolean;
-  className?: string;
-}) {
+}: AiBriefPanelProps) {
   const router = useRouter();
-  const { source, setSource, destination, setDestination } = useLogiFlowStore();
-  const [brief, setBrief] = useState('');
+  const applyParsedIntent = useLogiFlowStore((s) => s.applyParsedIntent);
+  const setScenarioBrief = useLogiFlowStore((s) => s.setScenarioBrief);
+  const scenarioBrief = useLogiFlowStore((s) => s.scenarioBrief);
+  const lastParsed = useLogiFlowStore((s) => s.lastParsedIntent);
 
-  function applyLocally() {
-    const text = brief.trim();
-    if (!text) return;
-    const fromMatch = text.match(/\bfrom\s+([^,.\n]+)/i);
-    const toMatch = text.match(/\bto\s+([^,.\n]+)/i);
-    if (fromMatch) setSource(fromMatch[1].trim());
-    if (toMatch) setDestination(toMatch[1].trim());
+  const [text, setText] = useState(scenarioBrief || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<ParsedIntent | null>(lastParsed);
+
+  async function runParse(andNavigate: boolean) {
+    const brief = text.trim();
+    if (brief.length < 3) {
+      setError('Write at least a short description of your shipment.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await parseShipmentIntent(brief, contextMode);
+      if (result.error || result.applied === false) {
+        throw new Error(result.error || 'Could not understand that description.');
+      }
+      result.scenario_brief = result.scenario_brief || brief;
+      applyParsedIntent(result);
+      setScenarioBrief(result.scenario_brief);
+      setParsed(result);
+
+      if (andNavigate || navigateOnApply) {
+        const path = routeForMode(result.suggested_mode || contextMode);
+        router.push(path);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'AI parse failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function goToMode(autorun: boolean) {
-    applyLocally();
-    const route = targetRoute(contextMode);
-    const key = autorunKey(contextMode);
-    if (autorun) setShipmentAutorun(key);
-    if (navigateOnApply) router.push(route);
-  }
+  const title =
+    contextMode === 'home'
+      ? 'Describe your shipment (AI)'
+      : 'Or describe in your own words';
 
   return (
     <div
-      className={`rounded-xl border border-outline-variant/15 bg-surface-container-low/40 p-4 ${className}`}
+      className={`rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/[0.08] via-surface-container-low/60 to-transparent p-5 sm:p-6 ${className}`}
     >
-      <p className="mb-2 text-xs text-on-surface-variant">
-        Describe your shipment in plain English (optional). We extract origin/destination when possible.
-      </p>
+      <div className="flex items-start gap-2 mb-3">
+        <span
+          className="material-symbols-outlined text-violet-300 shrink-0"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+          aria-hidden
+        >
+          auto_awesome
+        </span>
+        <div>
+          <h3 className="text-sm font-bold text-on-surface">{title}</h3>
+          <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
+            Write freely — Gemini turns it into origin, destination, budget, deadlines, and mode
+            preferences. You can still use the form below the traditional way.
+          </p>
+        </div>
+      </div>
+
       <textarea
-        value={brief}
-        onChange={(e) => setBrief(e.target.value)}
-        rows={3}
-        placeholder="e.g. 500 kg general cargo from Delhi to Mumbai, need it in 2 days…"
-        className="w-full resize-y rounded-lg border border-outline-variant/20 bg-surface-container-lowest/50 px-3 py-2 text-sm text-on-surface"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={contextMode === 'home' ? 5 : 4}
+        placeholder="e.g. I have 80kg medicines from Delhi to Chennai, max ₹12,000, need delivery within 2 days, prefer train not flight…"
+        className="w-full px-4 py-3 rounded-xl border border-violet-400/25 bg-surface-container-lowest text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-violet-400/35 resize-y min-h-[100px]"
       />
-      <div className="mt-3 flex flex-wrap gap-2">
+
+      <div className="flex flex-wrap gap-2 mt-3">
         <button
           type="button"
-          onClick={() => applyLocally()}
-          className="rounded-lg border border-outline-variant/25 px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container/60"
+          disabled={loading}
+          onClick={() => runParse(false)}
+          className="px-4 py-2.5 rounded-xl bg-violet-500/20 border border-violet-400/35 text-sm font-semibold text-violet-100 hover:bg-violet-500/30 disabled:opacity-50"
         >
-          Apply to form
+          {loading ? 'Understanding…' : 'Understand & fill form'}
         </button>
-        {showRouteButton && (
-          <>
-            <button
-              type="button"
-              onClick={() => goToMode(true)}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary"
-            >
-              Route &amp; run
-            </button>
-            <button
-              type="button"
-              onClick={() => goToMode(false)}
-              className="rounded-lg border border-primary/30 px-3 py-1.5 text-xs font-semibold text-primary"
-            >
-              Edit in mode
-            </button>
-          </>
+        {(showRouteButton || navigateOnApply) && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => runParse(true)}
+            className="px-4 py-2.5 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50"
+          >
+            {contextMode === 'home' ? 'Route me to the right tool' : 'Fill & open results page'}
+          </button>
         )}
       </div>
-      {(source || destination) && (
-        <p className="mt-2 text-[10px] text-outline">
-          Current: {source || '—'} → {destination || '—'}
+
+      {error && (
+        <p className="mt-3 text-xs text-red-300 border border-red-400/20 bg-red-500/10 rounded-lg px-3 py-2">
+          {error}
         </p>
       )}
+
+      {parsed?.scenario_summary && (
+        <p className="mt-3 text-xs text-on-surface-variant border-l-2 border-violet-400/40 pl-3">
+          {parsed.scenario_summary}
+          {parsed.source_engine && (
+            <span className="block mt-1 text-[10px] text-outline">
+              via {parsed.source_engine}
+              {parsed.parse_warning ? ` · ${parsed.parse_warning}` : ''}
+            </span>
+          )}
+        </p>
+      )}
+      {parsed && <IntentChips parsed={parsed} />}
     </div>
   );
 }

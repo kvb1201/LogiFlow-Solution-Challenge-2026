@@ -271,6 +271,18 @@ export interface HybridComparisonRow {
   cost_inr?: number | null;
   risk?: number | null;
   confidence?: number | null;
+  explanation?: string | null;
+}
+
+export interface AiConstraintsApplied {
+  priority?: string;
+  scenario_summary?: string;
+  constraints?: {
+    budget_max_inr?: number;
+    delay_tolerance_hours?: number;
+    risk_threshold?: number;
+    excluded_modes?: string[];
+  };
 }
 
 export interface HybridModeRoute {
@@ -287,12 +299,11 @@ export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
   tradeoffs?: string[] | null;
+  ai_constraints?: AiConstraintsApplied | null;
+  demo_mode?: boolean;
+  unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
-  best_per_mode?: {
-    road?: HybridModeRoute | null;
-    rail?: HybridModeRoute | null;
-    air?: HybridModeRoute | null;
-  } | null;
+  best_per_mode?: Partial<Record<'road' | 'rail' | 'air' | 'water', HybridModeRoute | null>> | null;
 }
 
 export interface HybridPayload {
@@ -303,6 +314,7 @@ export interface HybridPayload {
   cargo_weight_kg?: number;
   cargo_type?: string;
   cargo?: { weight: number; type: string };
+  scenario_brief?: string;
   preferences?: { preferred_mode?: string };
   constraints?: {
     excluded_modes?: string[];
@@ -624,6 +636,52 @@ export async function fetchExplanation(payload: {
   } catch {
     return null;
   }
+}
+
+// ── Natural-language intent (Gemini / heuristic) ────────────────────
+
+export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'hybrid';
+
+export interface ParsedIntent {
+  applied?: boolean;
+  error?: string;
+  source?: string | null;
+  destination?: string | null;
+  suggested_mode?: string;
+  priority?: string;
+  cargo_weight_kg?: number | null;
+  cargo_type?: string | null;
+  budget_max_inr?: number | null;
+  deadline_hours?: number | null;
+  departure_date?: string | null;
+  scenario_summary?: string;
+  scenario_brief?: string;
+  avoid_tolls?: boolean | null;
+  avoid_highways?: boolean | null;
+  traffic_aware?: boolean | null;
+  vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck' | null;
+  max_stops?: number | null;
+  max_transshipments?: number | null;
+  excluded_modes?: string[];
+  special_notes?: string | null;
+  source_engine?: string;
+  parse_warning?: string;
+}
+
+export async function parseShipmentIntent(
+  user_brief: string,
+  context_mode: IntentContextMode = 'home'
+): Promise<ParsedIntent> {
+  const res = await fetch(`${BACKEND_BASE}/intent/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_brief, context_mode }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || data?.error || `Intent parse failed (${res.status})`);
+  }
+  return data;
 }
 
 // ── Legacy fallback (for the old /optimize endpoint) ─────────────────
