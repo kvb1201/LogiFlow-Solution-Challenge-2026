@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import Link from 'next/link';
 
 const modes = [
@@ -215,4 +216,11 @@ export default function HomePage() {
       </div>
     </div>
   );
+=======
+import HomeIntentSection from '@/components/HomeIntentSection';
+import { HomePage as HomePageView } from '@/components/cockpit/HomePage';
+
+export default function Home() {
+  return <HomePageView intentSection={<HomeIntentSection />} />;
+>>>>>>> Stashed changes
 }

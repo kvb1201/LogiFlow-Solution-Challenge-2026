@@ -4,7 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
+<<<<<<< Updated upstream
 import type { Recommendation, RankedOption } from '@/services/api';
+=======
+import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
+import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
+import { fetchExplanation, type Recommendation, type RankedOption } from '@/services/api';
+>>>>>>> Stashed changes
 
 
 // ── Metric Chip ──────────────────────────────────────────────────────
@@ -562,6 +568,7 @@ export default function RailwayDashboard() {
     return (
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
+<<<<<<< Updated upstream
         <div
           className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
           style={{ background: '#06080d' }}
@@ -648,6 +655,11 @@ export default function RailwayDashboard() {
             </p>
           </div>
         </div>
+=======
+        <PipelineModeLanding mode="rail">
+          <InputForm />
+        </PipelineModeLanding>
+>>>>>>> Stashed changes
       </div>
     );
   }
@@ -679,42 +691,14 @@ export default function RailwayDashboard() {
 
   // ── Results dashboard ─────────────────────────────────────────────
   return (
+<<<<<<< Updated upstream
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-(--color-background) text-(--color-on-surface)">
+=======
+    <div className="flex flex-col w-full bg-background text-foreground lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
+>>>>>>> Stashed changes
       {showRailLoading && <RailwayLoading />}
 
-      {/* Sub-header */}
-      <div className="h-11 shrink-0 border-b border-outline-variant/8 bg-surface-container-low/50 backdrop-blur-sm flex items-center justify-between px-4 relative z-20">
-        {/* Route pill */}
-        <div className="flex items-center gap-2 text-[11px] bg-surface-container/50 border border-outline-variant/10 rounded-full px-3 py-1">
-          <span
-            className="material-symbols-outlined text-primary"
-            style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
-          >
-            my_location
-          </span>
-          <span className="font-medium text-on-surface max-w-[60px] sm:max-w-[100px] truncate">{source}</span>
-          <span
-            className="material-symbols-outlined text-outline"
-            style={{ fontSize: '11px' }}
-          >
-            arrow_forward
-          </span>
-          <span className="font-medium text-on-surface max-w-[60px] sm:max-w-[100px] truncate">{destination}</span>
-          <button
-            onClick={resetSearch}
-            className="ml-1 text-outline hover:text-primary transition-colors"
-            title="Edit search"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
-              edit
-            </span>
-          </button>
-        </div>
-
-        <div className="text-[10px] uppercase tracking-[0.16em] text-outline hidden sm:block">
-          Rail analytics panel
-        </div>
-      </div>
+      <PipelineResultsChrome mode="rail" />
 
       {/* Error */}
       {error && (

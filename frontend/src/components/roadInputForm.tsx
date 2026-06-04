@@ -3,6 +3,19 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { searchCities, type StationSearchResult } from '@/services/api';
+<<<<<<< Updated upstream
+=======
+import AiBriefPanel from '@/components/AiBriefPanel';
+import {
+  AdvancedToggle,
+  ChoicePills,
+  FormField,
+  FormShell,
+  FormSubmit,
+  formInputClass,
+  formLabelClass,
+} from '@/components/forms/pipeline-form-ui';
+>>>>>>> Stashed changes
 
 // ── Debounced city search ─────────────────────────────────────────────
 
@@ -135,42 +148,20 @@ function LocationInput({
   };
 
   return (
-    <div ref={wrapperRef} className="relative z-[9999]">
-      <label className="flex items-center gap-1.5 text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+    <div ref={wrapperRef} className="relative z-[50]">
+      <span className={`mb-1.5 block ${formLabelClass}`}>
         {label}
-        {loading && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
-      </label>
+        {loading && <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-live" />}
+      </span>
 
       <div className="relative">
-        <div
-          className={`absolute -inset-0.5 rounded-xl transition-all duration-400 ${
-            focused
-              ? 'opacity-100 bg-gradient-to-r from-primary/30 via-tertiary/25 to-primary/30 blur-sm'
-              : 'opacity-0'
-          }`}
-        />
-        <div
-          className={`relative flex items-center bg-surface-container-lowest/80 border rounded-xl overflow-hidden transition-all duration-200 ${
-            hasError
-              ? 'border-error/50'
-              : focused
-              ? 'border-primary/40 shadow-[0_0_12px_rgba(172,199,255,0.10)]'
-              : 'border-outline-variant/20 hover:border-outline-variant/40'
-          }`}
-        >
-          <div className="pl-3.5 pr-2.5 flex items-center justify-center shrink-0">
-            <span
-              className={`material-symbols-outlined transition-all duration-300 leading-none ${
-                focused ? `${iconColor} scale-110` : 'text-outline scale-100'
-              }`}
-              style={{
-                fontSize: '18px',
-                fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20",
-              }}
-            >
-              {icon}
-            </span>
-          </div>
+        <div className="relative flex items-center">
+          <span
+            className="pointer-events-none absolute left-3 material-symbols-outlined text-muted-foreground"
+            style={{ fontSize: '18px' }}
+          >
+            {icon}
+          </span>
           <input
             type="text"
             value={value}
@@ -180,7 +171,7 @@ function LocationInput({
               if (results.length) setShowDropdown(true);
             }}
             onBlur={() => setFocused(false)}
-            className="w-full py-3.5 pr-3 bg-transparent text-on-surface placeholder:text-outline/40 focus:outline-none text-sm font-medium"
+            className={`${formInputClass} pl-10 pr-9 ${hasError ? 'border-risk/50' : ''}`}
             placeholder={placeholder}
           />
           {value && (
@@ -192,18 +183,16 @@ function LocationInput({
                 clear();
                 setShowDropdown(false);
               }}
-              className="absolute right-2.5 p-1 rounded-full text-outline/50 hover:text-on-surface hover:bg-surface-container transition-colors"
+              className="absolute right-2 rounded-md p-1 text-muted-foreground hover:bg-surface/80 hover:text-foreground"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                close
-              </span>
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
           )}
         </div>
       </div>
 
       {showDropdown && results.length > 0 && (
-        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 bg-surface-container-low/95 backdrop-blur-xl border border-outline-variant/20 rounded-2xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.7)] overflow-hidden animate-slide-up origin-top">
+        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 overflow-hidden rounded-xl border border-border bg-surface/95 p-1 shadow-2xl backdrop-blur-xl animate-slide-up origin-top">
           <div className="max-h-[240px] overflow-y-auto p-1.5">
             {results.map((s, i) => (
               <button
@@ -323,6 +312,7 @@ export default function RoadInputForm() {
   };
 
   return (
+<<<<<<< Updated upstream
     <div className="form-container-glow relative">
       <div className="absolute -inset-1 bg-gradient-to-r from-primary/15 via-secondary/8 to-primary/15 rounded-3xl blur-2xl opacity-35 animate-pulse-slow pointer-events-none" />
 
@@ -372,6 +362,33 @@ export default function RoadInputForm() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+=======
+    <div className="w-full space-y-4">
+      <AiBriefPanel contextMode="road" />
+      <FormShell
+        mode="road"
+        title="Road route search"
+        subtitle="Traffic-aware routing · tolls · ML risk scoring"
+        advancedToggle={
+          <AdvancedToggle
+            open={showAdvanced}
+            onToggle={() => setShowAdvanced((v) => !v)}
+            accentVar="--road"
+          />
+        }
+        footer={
+          <FormSubmit
+            loading={loading}
+            disabled={!source.trim() || !destination.trim()}
+            label="Find optimal routes"
+            loadingLabel="Finding routes…"
+            accentVar="--road"
+            icon="local_shipping"
+          />
+        }
+      >
+        <form onSubmit={handleSubmit} className="space-y-5">
+>>>>>>> Stashed changes
             {/* Origin / Destination */}
             <div
               className={`relative z-[100] transition-all duration-600 ${
@@ -481,6 +498,7 @@ export default function RoadInputForm() {
               </div>
             </div>
 
+<<<<<<< Updated upstream
             {/* Cargo type */}
             <div
               className={`transition-all duration-600 delay-100 ${
@@ -562,6 +580,33 @@ export default function RoadInputForm() {
                 ))}
               </div>
             </div>
+=======
+            <FormField label="Cargo type">
+              <ChoicePills
+                options={CARGO_TYPES.map((ct) => ({
+                  value: ct.value,
+                  label: ct.value,
+                  icon: ct.icon,
+                }))}
+                value={cargoType}
+                onChange={setCargoType}
+                accentVar="--road"
+              />
+            </FormField>
+
+            <FormField label="Priority">
+              <ChoicePills
+                options={PRIORITY_OPTIONS.map((opt) => ({
+                  value: opt.value,
+                  label: opt.label,
+                  icon: opt.icon,
+                }))}
+                value={priority}
+                onChange={setPriority}
+                accentVar="--road"
+              />
+            </FormField>
+>>>>>>> Stashed changes
 
             {/* Route preferences */}
             <div
@@ -779,6 +824,7 @@ export default function RoadInputForm() {
               )}
             </div>
 
+<<<<<<< Updated upstream
             {/* Submit */}
             <div
               className={`transition-all duration-600 delay-200 ${
@@ -845,6 +891,10 @@ export default function RoadInputForm() {
           </form>
         </div>
       </div>
+=======
+          </form>
+      </FormShell>
+>>>>>>> Stashed changes
     </div>
   );
 }

@@ -1,44 +1,61 @@
 'use client';
 
+<<<<<<< Updated upstream
 import React, { useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+=======
+import { useCallback, useState } from 'react';
+import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
+import AiBriefPanel from '@/components/AiBriefPanel';
+import {
+  AdvancedToggle,
+  ChoicePills,
+  FormField,
+  FormShell,
+  FormSubmit,
+  formInputClass,
+} from '@/components/forms/pipeline-form-ui';
+>>>>>>> Stashed changes
 
 const CARGO_TYPES = [
-  { value: 'General', icon: 'inventory_2', note: 'Standard airport cargo handling' },
-  { value: 'Fragile', icon: 'package_2', note: 'Prefers fewer transfers and reinforced handling' },
-  { value: 'Perishable', icon: 'ac_unit', note: 'Cold-chain bias toward direct uplift' },
+  { value: 'General' as const, label: 'General', icon: 'inventory_2' },
+  { value: 'Fragile' as const, label: 'Fragile', icon: 'package_2' },
+  { value: 'Perishable' as const, label: 'Perishable', icon: 'ac_unit' },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'cost', label: 'Lower Cost', icon: 'savings' },
-  { value: 'time', label: 'Faster ETA', icon: 'bolt' },
-  { value: 'safe', label: 'Lower Risk', icon: 'shield' },
+  { value: 'cost' as const, label: 'Lower cost', icon: 'savings' },
+  { value: 'time' as const, label: 'Faster', icon: 'bolt' },
+  { value: 'safe' as const, label: 'Lower risk', icon: 'shield' },
 ];
-
-const MAX_STOPS_HINT: Record<string, string> = {
-  General: 'Up to 2 stops are acceptable for general cargo.',
-  Fragile: 'Fragile cargo is capped to 1 stop for safer handling.',
-  Perishable: 'Perishable cargo is forced to direct-first routing.',
-};
 
 export default function AirInputForm() {
   const {
-    source, setSource,
-    destination, setDestination,
-    priority, setPriority,
-    cargoWeight, setCargoWeight,
-    cargoType, setCargoType,
-    departureDate, setDepartureDate,
-    budgetMax, setBudgetMax,
-    deadlineHours, setDeadlineHours,
+    source,
+    setSource,
+    destination,
+    setDestination,
+    priority,
+    setPriority,
+    cargoWeight,
+    setCargoWeight,
+    cargoType,
+    setCargoType,
+    departureDate,
+    setDepartureDate,
+    budgetMax,
+    setBudgetMax,
+    deadlineHours,
+    setDeadlineHours,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-
   const today = new Date().toISOString().split('T')[0];
 
+<<<<<<< Updated upstream
   return (
     <div className="w-full overflow-x-hidden min-h-fit">
       <div className="form-container-glow relative w-full">
@@ -216,9 +233,143 @@ export default function AirInputForm() {
                 </button>
               </div>
             </form>
+=======
+  const runAirOptimize = useCallback(() => {
+    if (!source.trim() || !destination.trim()) return;
+    handleOptimize({ mode: 'air' });
+  }, [source, destination, handleOptimize]);
+
+  useShipmentAutorun('air', runAirOptimize, Boolean(source.trim() && destination.trim()));
+
+  return (
+    <div className="w-full space-y-4">
+      <AiBriefPanel contextMode="air" />
+      <FormShell
+        mode="air"
+        title="Air cargo search"
+        subtitle="Airport pairs · cargo rules · cut-offs and confidence scoring"
+        advancedToggle={
+          <AdvancedToggle
+            open={showAdvanced}
+            onToggle={() => setShowAdvanced((v) => !v)}
+            accentVar="--air"
+          />
+        }
+        footer={
+          <FormSubmit
+            loading={loading}
+            disabled={!source.trim() || !destination.trim()}
+            label="Optimize air route"
+            loadingLabel="Evaluating corridors…"
+            accentVar="--air"
+            icon="flight_takeoff"
+          />
+        }
+      >
+        <form
+          className="space-y-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            runAirOptimize();
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Origin city">
+              <input
+                type="text"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="Delhi"
+                className={formInputClass}
+              />
+            </FormField>
+            <FormField label="Destination city">
+              <input
+                type="text"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Mumbai"
+                className={formInputClass}
+              />
+            </FormField>
+>>>>>>> Stashed changes
           </div>
-        </div>
-      </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField label="Weight">
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={2000}
+                  value={cargoWeight}
+                  onChange={(e) => setCargoWeight(Number(e.target.value))}
+                  className={`${formInputClass} pr-10`}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  kg
+                </span>
+              </div>
+            </FormField>
+            <FormField label="Departure">
+              <input
+                type="date"
+                min={today}
+                value={departureDate}
+                onChange={(e) => setDepartureDate(e.target.value)}
+                className={formInputClass}
+              />
+            </FormField>
+            <FormField label={`Window · ${deadlineHours}h`}>
+              <input
+                type="range"
+                min={4}
+                max={72}
+                step={2}
+                value={deadlineHours}
+                onChange={(e) => setDeadlineHours(Number(e.target.value))}
+                className="mt-4 w-full"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Cargo type">
+            <ChoicePills
+              options={CARGO_TYPES}
+              value={cargoType as (typeof CARGO_TYPES)[number]['value']}
+              onChange={setCargoType}
+              accentVar="--air"
+            />
+          </FormField>
+
+          <FormField label="Priority">
+            <ChoicePills
+              options={PRIORITY_OPTIONS}
+              value={priority as (typeof PRIORITY_OPTIONS)[number]['value']}
+              onChange={setPriority}
+              accentVar="--air"
+            />
+          </FormField>
+
+          <div
+            className={`overflow-hidden transition-all duration-300 ${
+              showAdvanced ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+            }`}
+          >
+            <FormField label={`Budget · ₹${budgetMax.toLocaleString('en-IN')}`}>
+              <input
+                type="range"
+                min={5000}
+                max={150000}
+                step={1000}
+                value={budgetMax}
+                onChange={(e) => setBudgetMax(Number(e.target.value))}
+                className="w-full"
+              />
+            </FormField>
+          </div>
+        </form>
+      </FormShell>
     </div>
   );
 }
