@@ -4,13 +4,9 @@ import React, { useState, useMemo } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
-<<<<<<< Updated upstream
-import type { Recommendation, RankedOption } from '@/services/api';
-=======
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import { fetchExplanation, type Recommendation, type RankedOption } from '@/services/api';
->>>>>>> Stashed changes
 
 
 // ── Metric Chip ──────────────────────────────────────────────────────
@@ -568,98 +564,9 @@ export default function RailwayDashboard() {
     return (
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
-<<<<<<< Updated upstream
-        <div
-          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
-          style={{ background: '#06080d' }}
-        >
-          {/* Animated background */}
-          <div className="absolute inset-0 z-0 pointer-events-none">
-            <div className="absolute w-[700px] h-[700px] rounded-full opacity-[0.09] blur-[130px] bg-primary animate-mesh-1 top-[-20%] left-[-10%]" />
-            <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-tertiary animate-mesh-2 bottom-[-10%] right-[-8%]" />
-            <div className="absolute w-[400px] h-[400px] rounded-full opacity-[0.05] blur-[90px] bg-primary-fixed-dim animate-mesh-3 top-[50%] left-[55%]" />
-            <div className="absolute w-[300px] h-[300px] rounded-full opacity-[0.04] blur-[80px] bg-secondary animate-mesh-4 top-[15%] right-[15%]" />
-            <div className="absolute inset-0 hero-dot-grid opacity-[0.28]" />
-            <div
-              className="absolute inset-0"
-              style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #06080d 75%)' }}
-            />
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/15 to-transparent" />
-          </div>
-
-          <div className="relative z-10 w-full max-w-[860px] animate-slide-up">
-            {/* Badge */}
-            <div className="flex justify-center mb-8">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/8 border border-primary/15 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary/90">
-                  Railway Cargo Intelligence · RailRadar Powered
-                </span>
-              </div>
-            </div>
-
-            {/* Headline */}
-            <div className="text-center mb-10">
-              <h1 className="text-[2.5rem] xs:text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
-                <span
-                  className="bg-gradient-to-r from-primary via-primary-fixed-dim to-primary bg-clip-text text-transparent animate-gradient-shift"
-                  style={{ backgroundSize: '200% auto' }}
-                >
-                  Logi
-                </span>
-                <span className="text-on-surface">Flow</span>
-              </h1>
-              <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-lg mx-auto leading-relaxed">
-                AI-powered cargo routing across{' '}
-                <span className="text-primary font-medium">Indian Railways</span> with real schedule
-                data, <span className="text-tertiary font-medium">live tracking</span> &{' '}
-                <span className="text-secondary font-medium">ML delay prediction</span>
-              </p>
-            </div>
-
-            {/* Feature pills */}
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {[
-                { icon: 'train', label: 'Live Schedule Data' },
-                { icon: 'radar', label: 'RailRadar Tracking' },
-                { icon: 'psychology', label: 'ML Predictions' },
-                { icon: 'route', label: 'Optimal Routing' },
-              ].map((f, i) => (
-                <div
-                  key={f.label}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container/35 border border-outline-variant/10 rounded-full text-[11px] text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{ animationDelay: `${0.3 + i * 0.1}s`, animationFillMode: 'backwards' }}
-                >
-                  <span
-                    className="material-symbols-outlined text-primary"
-                    style={{
-                      fontSize: '14px',
-                      fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20",
-                    }}
-                  >
-                    {f.icon}
-                  </span>
-                  {f.label}
-                </div>
-              ))}
-            </div>
-
-            {/* Form */}
-            <InputForm />
-
-            <p
-              className="text-center mt-6 text-[10px] text-outline/35 tracking-[0.2em] uppercase animate-fade-in"
-              style={{ animationDelay: '1s', animationFillMode: 'backwards' }}
-            >
-              Powered by RailRadar API · Real Indian Railways Data
-            </p>
-          </div>
-        </div>
-=======
         <PipelineModeLanding mode="rail">
           <InputForm />
         </PipelineModeLanding>
->>>>>>> Stashed changes
       </div>
     );
   }
@@ -691,11 +598,7 @@ export default function RailwayDashboard() {
 
   // ── Results dashboard ─────────────────────────────────────────────
   return (
-<<<<<<< Updated upstream
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-(--color-background) text-(--color-on-surface)">
-=======
     <div className="flex flex-col w-full bg-background text-foreground lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
->>>>>>> Stashed changes
       {showRailLoading && <RailwayLoading />}
 
       <PipelineResultsChrome mode="rail" />

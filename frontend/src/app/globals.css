@@ -210,15 +210,9 @@
   }
 
   body {
-<<<<<<< Updated upstream
-    height: 100%;
-    background-color: var(--color-background);
-    color: var(--color-on-surface);
-=======
     min-height: 100dvh;
     background-color: var(--background);
     color: var(--foreground);
->>>>>>> Stashed changes
     font-family: var(--font-body);
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
