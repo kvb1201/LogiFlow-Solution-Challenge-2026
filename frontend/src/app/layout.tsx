@@ -28,14 +28,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body
-        className="min-h-dvh h-full flex flex-col overflow-x-hidden font-body bg-background text-foreground"
-        suppressHydrationWarning
-      >
+      <body className="min-h-dvh flex flex-col overflow-x-hidden font-body" suppressHydrationWarning>
         <NavBar />
-        <main className="relative isolate flex flex-1 flex-col min-h-0 overflow-x-hidden overflow-y-auto">
+        <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
           <AmbientBackdrop variant="subtle" className="opacity-60" />
-          <div className="relative z-10 flex flex-1 flex-col min-h-0 w-full">{children}</div>
+          <div className="relative z-10 w-full">{children}</div>
         </main>
       </body>
     </html>

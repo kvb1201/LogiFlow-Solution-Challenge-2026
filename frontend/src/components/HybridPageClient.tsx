@@ -1,24 +1,61 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useCallback, useMemo, useState } from 'react';
-import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
+import {
+  optimizeHybridRoute,
+  type AiConstraintsApplied,
+  type HybridComparisonRow,
+  type HybridOptimizeResult,
+} from '@/services/api';
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
-import AiBriefPanel from '@/components/AiBriefPanel';
-import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
-import { FormField, formInputClass } from '@/components/forms/pipeline-form-ui';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
-type Priority = 'cost' | 'time' | 'balanced';
-type Mode = 'road' | 'rail' | 'air';
+type Priority = 'cost' | 'time' | 'balanced' | 'safety';
+type Mode = 'road' | 'rail' | 'air' | 'water';
 
-const MODE_META: Record<Mode, { label: string; icon: string; tint: string; cardTint: string }> = {
-  road: { label: 'Road', icon: '🚚', tint: 'text-secondary', cardTint: 'border-secondary/30 bg-secondary/10' },
-  rail: { label: 'Rail', icon: '🚆', tint: 'text-primary', cardTint: 'border-primary/30 bg-primary/10' },
-  air: { label: 'Air', icon: '✈️', tint: 'text-sky-300', cardTint: 'border-sky-400/30 bg-sky-400/10' },
+const DEMO_SOURCE = 'Delhi';
+const DEMO_DEST = 'Mumbai';
+const DEMO_SCENARIO =
+  'Monsoon season, perishable pharma cargo, max budget ₹8,000, must arrive within 36 hours — avoid high-risk air if weather is poor.';
+
+const MODE_META: Record<
+  Mode,
+  { label: string; icon: string; tint: string; cardTint: string; symbol: string }
+> = {
+  road: {
+    label: 'Road',
+    icon: '🚚',
+    tint: 'text-secondary',
+    cardTint: 'border-secondary/35 bg-secondary/10',
+    symbol: 'local_shipping',
+  },
+  rail: {
+    label: 'Rail',
+    icon: '🚆',
+    tint: 'text-primary',
+    cardTint: 'border-primary/35 bg-primary/10',
+    symbol: 'train',
+  },
+  air: {
+    label: 'Air',
+    icon: '✈️',
+    tint: 'text-sky-300',
+    cardTint: 'border-sky-400/35 bg-sky-400/10',
+    symbol: 'flight_takeoff',
+  },
+  water: {
+    label: 'Water',
+    icon: '🚢',
+    tint: 'text-teal-300',
+    cardTint: 'border-teal-400/35 bg-teal-400/10',
+    symbol: 'directions_boat',
+  },
 };
+
+const ALL_MODES: Mode[] = ['road', 'rail', 'air', 'water'];
 
 function toNum(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -31,92 +68,105 @@ function toNum(v: unknown): number | null {
 
 function formatHours(v: unknown): string {
   const n = toNum(v);
-  return n == null ? '-' : `${n.toFixed(2)} hrs`;
+  return n == null ? '—' : `${n.toFixed(1)}h`;
 }
 
 function formatInr(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return '-';
+  if (n == null) return '—';
   return `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(n))}`;
 }
 
 function formatRisk(v: unknown): string {
   const n = toNum(v);
-  if (n == null) return '-';
-  return `${Math.round(n * 100)}%`;
+  if (n == null) return '—';
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return `${pct}%`;
 }
 
 function normalizeMode(value: unknown): Mode | null {
   const v = String(value ?? '').trim().toLowerCase();
-  if (v === 'road' || v === 'rail' || v === 'air') return v;
+  if (v === 'road' || v === 'rail' || v === 'air' || v === 'water') return v;
   return null;
 }
 
-function ComparisonTable({ rows, recommendedMode }: { rows: HybridComparisonRow[]; recommendedMode: Mode | null }) {
+function ComparisonTable({
+  rows,
+  recommendedMode,
+}: {
+  rows: HybridComparisonRow[];
+  recommendedMode: Mode | null;
+}) {
   const validRows = rows.filter((row) => normalizeMode(row.mode));
   if (!validRows.length) return null;
 
   const minTime = Math.min(...validRows.map((row) => toNum(row.time_hr) ?? Number.POSITIVE_INFINITY));
   const minCost = Math.min(...validRows.map((row) => toNum(row.cost_inr) ?? Number.POSITIVE_INFINITY));
-  const maxRisk = Math.max(...validRows.map((row) => toNum(row.risk) ?? Number.NEGATIVE_INFINITY));
 
   return (
-    <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 overflow-hidden">
-      <div className="px-4 sm:px-5 py-3 border-b border-outline-variant/10">
-        <h3 className="text-sm font-semibold text-on-surface">Mode Comparison</h3>
+    <div className="rounded-2xl border border-white/[0.06] bg-[#0c1018]/80 overflow-hidden shadow-[0_24px_80px_-40px_rgba(0,0,0,0.9)]">
+      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-on-surface tracking-tight">Multimodal comparison</h3>
+        <span className="text-[10px] uppercase tracking-widest text-outline">4 modes · delay-adjusted</span>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-surface-container/45 text-on-surface-variant">
+          <thead className="bg-white/[0.03] text-on-surface-variant text-[11px] uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold">Mode</th>
-              <th className="px-4 py-3 text-left font-semibold">Time</th>
-              <th className="px-4 py-3 text-left font-semibold">Cost</th>
-              <th className="px-4 py-3 text-left font-semibold">Risk</th>
-              <th className="px-4 py-3 text-left font-semibold">Confidence</th>
+              <th className="px-5 py-3 text-left font-semibold">Mode</th>
+              <th className="px-5 py-3 text-left font-semibold">Time</th>
+              <th className="px-5 py-3 text-left font-semibold">Cost</th>
+              <th className="px-5 py-3 text-left font-semibold">Risk</th>
+              <th className="px-5 py-3 text-left font-semibold hidden md:table-cell">Insight</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-outline-variant/10">
+          <tbody className="divide-y divide-white/[0.04]">
             {validRows.map((row) => {
               const mode = normalizeMode(row.mode) as Mode;
-              const modeMeta = MODE_META[mode];
+              const meta = MODE_META[mode];
               const time = toNum(row.time_hr);
               const cost = toNum(row.cost_inr);
-              const risk = toNum(row.risk);
-              const conf = toNum(row.confidence);
-              const isRecommended = mode === recommendedMode;
+              const isRec = mode === recommendedMode;
               return (
-                <tr key={`hybrid-row-${mode}`} className={isRecommended ? 'bg-primary/10' : 'bg-transparent'}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span>{modeMeta.icon}</span>
-                      <span className={`font-semibold ${modeMeta.tint}`}>{modeMeta.label}</span>
-                      {isRecommended && (
-                        <span className="rounded-full border border-primary/30 bg-primary/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
-                          Recommended
+                <tr
+                  key={`row-${mode}`}
+                  className={isRec ? 'bg-primary/[0.08]' : 'hover:bg-white/[0.02] transition-colors'}
+                >
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border ${meta.cardTint}`}
+                      >
+                        <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>
+                          {meta.symbol}
                         </span>
-                      )}
+                      </span>
+                      <div>
+                        <span className={`font-semibold ${meta.tint}`}>{meta.label}</span>
+                        {isRec && (
+                          <span className="ml-2 text-[9px] font-bold uppercase tracking-wider text-primary border border-primary/30 rounded-full px-2 py-0.5">
+                            Pick
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-on-surface">
+                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">
                     {formatHours(time)}
                     {time != null && time === minTime && (
-                      <span className="ml-2 text-[10px] text-emerald-300 font-semibold">Fastest</span>
+                      <span className="ml-2 text-[9px] text-emerald-400 font-sans font-semibold">fastest</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-on-surface">
+                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">
                     {formatInr(cost)}
                     {cost != null && cost === minCost && (
-                      <span className="ml-2 text-[10px] text-sky-300 font-semibold">Cheapest</span>
+                      <span className="ml-2 text-[9px] text-sky-300 font-sans font-semibold">cheapest</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-on-surface">
-                    {formatRisk(risk)}
-                    {risk != null && risk === maxRisk && (
-                      <span className="ml-2 text-[10px] text-red-300 font-semibold">High risk</span>
-                    )}
+                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">{formatRisk(row.risk)}</td>
+                  <td className="px-5 py-4 text-on-surface-variant text-xs leading-relaxed hidden md:table-cell max-w-xs">
+                    {row.explanation?.trim() || '—'}
                   </td>
-                  <td className="px-4 py-3 text-on-surface">{conf == null ? 'N/A' : `${Math.round(conf)}%`}</td>
                 </tr>
               );
             })}
@@ -127,39 +177,95 @@ function ComparisonTable({ rows, recommendedMode }: { rows: HybridComparisonRow[
   );
 }
 
-export default function HybridPageClient() {
-  const source = useLogiFlowStore(s => s.source);
-  const setSource = useLogiFlowStore(s => s.setSource);
-  const destination = useLogiFlowStore(s => s.destination);
-  const setDestination = useLogiFlowStore(s => s.setDestination);
-  const priority = useLogiFlowStore(s => s.priority);
-  const setPriority = useLogiFlowStore(s => s.setPriority);
-  const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
-  const setCargoWeight = useLogiFlowStore(s => s.setCargoWeight);
-  const cargoType = useLogiFlowStore(s => s.cargoType);
-  const setCargoType = useLogiFlowStore(s => s.setCargoType);
-  const budgetMax = useLogiFlowStore(s => s.budgetMax);
-  const setBudgetMax = useLogiFlowStore(s => s.setBudgetMax);
-  const departureDate = useLogiFlowStore(s => s.departureDate);
-  const deadlineHours = useLogiFlowStore(s => s.deadlineHours);
+function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
+  const c = ai.constraints || {};
+  const chips: string[] = [];
+  if (ai.priority) chips.push(`Priority → ${ai.priority}`);
+  if (c.budget_max_inr) chips.push(`Budget cap ₹${Math.round(c.budget_max_inr)}`);
+  if (c.delay_tolerance_hours) chips.push(`Deadline ${c.delay_tolerance_hours}h`);
+  if (c.risk_threshold != null) chips.push(`Max risk ${Math.round(Number(c.risk_threshold) * 100)}%`);
+  if (c.excluded_modes?.length) chips.push(`Exclude: ${c.excluded_modes.join(', ')}`);
 
+  return (
+    <div className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/10 via-transparent to-primary/5 p-5">
+      <div className="flex items-start gap-3">
+        <span className="material-symbols-outlined text-violet-300 shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+          auto_awesome
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
+            Gemini adjusted your plan
+          </p>
+          <p className="text-sm text-on-surface leading-relaxed">
+            {ai.scenario_summary || 'Scenario parsed into optimization constraints before scoring.'}
+          </p>
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {chips.map((chip) => (
+                <span
+                  key={chip}
+                  className="text-[10px] font-semibold px-2.5 py-1 rounded-full border border-violet-400/20 bg-violet-500/10 text-violet-100"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function HybridPageClient() {
+  const source = useLogiFlowStore((s) => s.source);
+  const setSource = useLogiFlowStore((s) => s.setSource);
+  const destination = useLogiFlowStore((s) => s.destination);
+  const setDestination = useLogiFlowStore((s) => s.setDestination);
+  const priority = useLogiFlowStore((s) => s.priority);
+  const setPriority = useLogiFlowStore((s) => s.setPriority);
+  const cargoWeight = useLogiFlowStore((s) => s.cargoWeight);
+  const setCargoWeight = useLogiFlowStore((s) => s.setCargoWeight);
+  const cargoType = useLogiFlowStore((s) => s.cargoType);
+  const setCargoType = useLogiFlowStore((s) => s.setCargoType);
+  const budgetMax = useLogiFlowStore((s) => s.budgetMax);
+  const setBudgetMax = useLogiFlowStore((s) => s.setBudgetMax);
+  const departureDate = useLogiFlowStore((s) => s.departureDate);
+  const deadlineHours = useLogiFlowStore((s) => s.deadlineHours);
+
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [scenarioBrief, setScenarioBrief] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
 
-  const comparisonRows = useMemo(() => {
-    return Array.isArray(result?.comparison) ? result?.comparison : [];
-  }, [result]);
+  const loadDemo = useCallback(() => {
+    setSource(DEMO_SOURCE);
+    setDestination(DEMO_DEST);
+    setScenarioBrief(DEMO_SCENARIO);
+    setPriority('balanced');
+    setCargoWeight(120);
+    setCargoType('Perishable');
+    setBudgetMax(8000);
+    setStep(2);
+    setError(null);
+  }, [setSource, setDestination, setPriority, setCargoWeight, setCargoType, setBudgetMax]);
+
+  const comparisonRows = useMemo(
+    () => (Array.isArray(result?.comparison) ? result!.comparison! : []),
+    [result]
+  );
   const recommendedMode = normalizeMode(result?.recommended_mode);
   const recommendedRow = useMemo(() => {
     if (!comparisonRows.length || !recommendedMode) return null;
-    return comparisonRows.find((row: HybridComparisonRow) => normalizeMode(row.mode) === recommendedMode) ?? null;
+    return comparisonRows.find((row) => normalizeMode(row.mode) === recommendedMode) ?? null;
   }, [comparisonRows, recommendedMode]);
 
-  const runOptimize = useCallback(async () => {
+  async function runOptimize() {
     if (!source.trim() || !destination.trim()) return;
     setError(null);
     setLoading(true);
+    setStep(3);
     try {
       const data = await optimizeHybridRoute({
         source: source.trim(),
@@ -168,6 +274,7 @@ export default function HybridPageClient() {
         departure_date: departureDate,
         cargo_weight_kg: cargoWeight,
         cargo_type: cargoType,
+        scenario_brief: scenarioBrief.trim() || undefined,
         cargo: { weight: cargoWeight, type: cargoType.toLowerCase() },
         constraints: {
           budget_max_inr: budgetMax,
@@ -175,256 +282,403 @@ export default function HybridPageClient() {
           delay_tolerance_hours: deadlineHours,
         },
       });
+      if ((data as { error?: string }).error) {
+        throw new Error((data as { error?: string }).error);
+      }
       setResult(data);
     } catch (err: unknown) {
       setResult(null);
-      setError(err instanceof Error ? err.message : 'Failed to optimize hybrid route.');
+      setError(err instanceof Error ? err.message : 'Optimization failed. Try the demo corridor or simplify constraints.');
     } finally {
       setLoading(false);
     }
-  }, [
-    source,
-    destination,
-    priority,
-    departureDate,
-    cargoWeight,
-    cargoType,
-    budgetMax,
-    deadlineHours,
-  ]);
-
-  useShipmentAutorun('hybrid', () => void runOptimize(), Boolean(source.trim() && destination.trim()));
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await runOptimize();
   }
 
-  const formCardClass = 'panel-hard scanline rounded-2xl p-5 sm:p-6';
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    runOptimize();
+  }
 
   return (
-    <PipelineModeLanding mode="hybrid" compact={!!result}>
-      <div className="mx-auto w-full max-w-5xl space-y-6 pb-10">
-        <AiBriefPanel contextMode="hybrid" />
-        <form onSubmit={onSubmit} className={`${formCardClass} space-y-5`}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <FormField label="Origin">
-              <input
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                placeholder="Delhi, India"
-                className={formInputClass}
-              />
-            </FormField>
-            <FormField label="Destination">
-              <input
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                placeholder="Mumbai, India"
-                className={formInputClass}
-              />
-            </FormField>
-            <FormField label="Priority">
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                className={formInputClass}
-              >
-                <option value="balanced">Balanced</option>
-                <option value="cost">Cost</option>
-                <option value="time">Time</option>
-              </select>
-            </FormField>
-            <FormField label="Cargo weight (kg)">
-              <input
-                type="number"
-                value={cargoWeight}
-                onChange={(e) => setCargoWeight(Number(e.target.value))}
-                className={formInputClass}
-              />
-            </FormField>
-            <FormField label="Cargo type">
-              <select
-                value={cargoType}
-                onChange={(e) => setCargoType(e.target.value)}
-                className={formInputClass}
-              >
-                <option value="General">General</option>
-                <option value="Perishable">Perishable</option>
-                <option value="Fragile">Fragile</option>
-              </select>
-            </FormField>
-            <FormField label="Max budget (₹)">
-              <input
-                type="number"
-                value={budgetMax}
-                onChange={(e) => setBudgetMax(Number(e.target.value))}
-                className={formInputClass}
-              />
-            </FormField>
+    <div className="flex-1 flex flex-col overflow-x-hidden bg-[#05070c] min-h-0">
+      {/* Hero */}
+      <section className="relative border-b border-white/[0.06] overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute w-[min(90vw,640px)] h-[min(90vw,640px)] rounded-full opacity-[0.14] blur-[110px] bg-violet-600 -top-[50%] right-[-20%]" />
+          <div className="absolute w-[min(70vw,480px)] h-[min(70vw,480px)] rounded-full opacity-[0.1] blur-[90px] bg-primary bottom-[-40%] left-[-15%]" />
+        </div>
+        <div className="relative max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
+              Smart Supply Chain
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200">
+              Gemini constraints
+            </span>
           </div>
+          <h1 className="font-headline text-3xl sm:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.05] max-w-3xl">
+            Decide the best way to move cargo — not just display routes
+          </h1>
+          <p className="mt-4 text-[15px] sm:text-base text-on-surface-variant max-w-2xl leading-relaxed">
+            Compare <strong className="text-on-surface">road, rail, air, and water</strong> on delay-adjusted time,
+            cost, and risk. Describe your shipment in plain English —{' '}
+            <strong className="text-violet-200">Google Gemini</strong> turns it into optimization constraints before
+            scoring.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={loadDemo}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary/90 transition-all shadow-[0_0_40px_-12px_rgba(172,199,255,0.5)]"
+            >
+              <span className="material-symbols-outlined text-lg">play_circle</span>
+              Run judge demo (Delhi → Mumbai)
+            </button>
+            <Link
+              href="/railway"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:border-white/20 transition-colors"
+            >
+              Deep-dive rail
+            </Link>
+          </div>
+          {/* Impact strip — alignment scoring */}
+          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { k: 'SDG 9', v: 'Resilient logistics infra' },
+              { k: '< 60s', v: 'Multimodal compare' },
+              { k: '4 modes', v: 'Single decision view' },
+              { k: 'MSME', v: 'India freight operators' },
+            ].map((item) => (
+              <div
+                key={item.k}
+                className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 backdrop-blur-sm"
+              >
+                <div className="text-lg font-black text-primary font-headline">{item.k}</div>
+                <div className="text-[11px] text-on-surface-variant mt-0.5">{item.v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-          <button
-            type="submit"
-            disabled={loading || !source.trim() || !destination.trim()}
-            className="btn-app btn-app-primary inline-flex h-11 items-center gap-2 rounded-lg bg-foreground px-6 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {loading ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-background/30 border-t-background" />
-                Comparing modes…
-              </>
-            ) : (
-              'Get recommendation'
-            )}
-          </button>
+      {/* Steps */}
+      <div className="max-w-6xl mx-auto w-full px-5 sm:px-8 pt-8">
+        <div className="flex items-center gap-2 sm:gap-4 mb-8">
+          {[
+            { n: 1, label: 'Corridor' },
+            { n: 2, label: 'Scenario (AI)' },
+            { n: 3, label: 'Decision' },
+          ].map(({ n, label }) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setStep(n as 1 | 2 | 3)}
+              className={`flex-1 flex items-center gap-2 sm:gap-3 py-3 px-3 sm:px-4 rounded-xl border transition-all ${
+                step === n
+                  ? 'border-primary/40 bg-primary/10 text-on-surface'
+                  : 'border-white/[0.06] bg-white/[0.02] text-on-surface-variant hover:border-white/10'
+              }`}
+            >
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                  step >= n ? 'bg-primary text-on-primary' : 'bg-white/10'
+                }`}
+              >
+                {n}
+              </span>
+              <span className="text-xs sm:text-sm font-semibold truncate">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-6">
+          {step === 1 && (
+            <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
+              <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
+                    Origin
+                  </span>
+                  <input
+                    value={source}
+                    onChange={(e) => setSource(e.target.value)}
+                    placeholder="Delhi, India"
+                    className="w-full px-4 py-3.5 rounded-xl border border-white/10 bg-black/30 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
+                    Destination
+                  </span>
+                  <input
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="Mumbai, India"
+                    className="w-full px-4 py-3.5 rounded-xl border border-white/10 bg-black/30 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </label>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
+                    Weight (kg)
+                  </span>
+                  <input
+                    type="number"
+                    value={cargoWeight}
+                    onChange={(e) => setCargoWeight(Number(e.target.value))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
+                    Cargo type
+                  </span>
+                  <select
+                    value={cargoType}
+                    onChange={(e) => setCargoType(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
+                  >
+                    <option value="General">General</option>
+                    <option value="Perishable">Perishable</option>
+                    <option value="Fragile">Fragile</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
+                    Max budget (₹)
+                  </span>
+                  <input
+                    type="number"
+                    value={budgetMax}
+                    onChange={(e) => setBudgetMax(Number(e.target.value))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                disabled={!source.trim() || !destination.trim()}
+                className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 font-semibold text-sm disabled:opacity-40"
+              >
+                Next: describe scenario →
+              </button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-b from-violet-500/[0.06] to-transparent p-6 sm:p-8 space-y-5 animate-fade-in">
+              <div>
+                <h2 className="text-lg font-bold text-on-surface">What constraints matter?</h2>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  Gemini reads this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
+                  and excluded modes.
+                </p>
+              </div>
+              <textarea
+                value={scenarioBrief}
+                onChange={(e) => setScenarioBrief(e.target.value)}
+                rows={4}
+                placeholder="e.g. Monsoon delays expected, budget under ₹10k, must deliver within 48h, prefer rail over air…"
+                className="w-full px-4 py-3.5 rounded-xl border border-violet-400/20 bg-black/40 text-on-surface placeholder:text-outline/60 focus:outline-none focus:ring-2 focus:ring-violet-400/30 resize-y min-h-[100px]"
+              />
+              <div className="flex flex-wrap gap-2">
+                {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer water/rail'].map(
+                  (chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() =>
+                        setScenarioBrief((prev) => (prev ? `${prev}. ${chip}` : chip))
+                      }
+                      className="text-[11px] px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:border-white/20"
+                    >
+                      + {chip}
+                    </button>
+                  )
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-3 rounded-xl bg-primary text-on-primary font-semibold text-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <span className="h-4 w-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                      Scoring 4 modes…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-lg">bolt</span>
+                      Get recommendation
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="px-5 py-3 rounded-xl border border-white/10 text-sm font-semibold text-on-surface-variant"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && !result && !loading && (
+            <div className="text-center py-12 text-on-surface-variant text-sm">
+              Complete steps 1–2 and run optimization, or use the demo button above.
+            </div>
+          )}
         </form>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-risk/30 bg-risk/10 px-4 py-3 text-sm text-risk">
-            <span className="material-symbols-outlined text-sm">error</span>
-            {error}
+          <div className="mt-6 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex gap-2 items-start">
+            <span className="material-symbols-outlined text-base shrink-0">error</span>
+            <span>{error}</span>
           </div>
         )}
 
-        {result && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/15 via-tertiary/10 to-transparent p-5 sm:p-6">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-2">Recommended mode</div>
-              <div className="flex flex-wrap items-center gap-3 mb-3">
+        {loading && (
+          <div className="mt-8 flex flex-col items-center gap-4 py-16">
+            <div className="h-12 w-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+            <p className="text-sm text-on-surface-variant">Running road, rail, air & water pipelines…</p>
+          </div>
+        )}
+
+        {result && !loading && (
+          <div className="mt-8 pb-16 space-y-6 animate-fade-in">
+            {result.demo_mode && (
+              <p className="text-[11px] text-amber-200/90 border border-amber-400/20 bg-amber-500/10 rounded-lg px-3 py-2 inline-block">
+                Demo cache mode — stable snapshot for judging (set LOGIFLOW_DEMO_MODE=0 for live APIs).
+              </p>
+            )}
+
+            {result.ai_constraints && <AiConstraintsPanel ai={result.ai_constraints} />}
+
+            {/* Verdict card */}
+            <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-[#0c1018] to-[#05070c] p-6 sm:p-8 shadow-[0_32px_100px_-48px_rgba(172,199,255,0.35)]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary mb-3">Recommended mode</p>
+              <div className="flex flex-wrap items-center gap-4 mb-4">
                 {recommendedMode ? (
-                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${MODE_META[recommendedMode].cardTint}`}>
-                    <span>{MODE_META[recommendedMode].icon}</span>
-                    {MODE_META[recommendedMode].label}
-                  </span>
+                  <>
+                    <span
+                      className={`inline-flex h-14 w-14 items-center justify-center rounded-2xl border text-2xl ${MODE_META[recommendedMode].cardTint}`}
+                    >
+                      {MODE_META[recommendedMode].icon}
+                    </span>
+                    <div>
+                      <h2 className={`text-3xl font-black font-headline ${MODE_META[recommendedMode].tint}`}>
+                        {MODE_META[recommendedMode].label}
+                      </h2>
+                      <p className="text-sm text-on-surface-variant mt-1">Best fit for your stated priority & constraints</p>
+                    </div>
+                  </>
                 ) : (
-                  <span className="text-on-surface text-lg font-semibold">Not available</span>
+                  <span className="text-lg font-semibold">No single mode won</span>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl border border-outline-variant/12 bg-surface-container/35 p-3">
+              <div className="grid grid-cols-3 gap-3 max-w-md">
+                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-outline">Time</div>
-                  <div className="text-sm font-semibold text-on-surface">{formatHours(recommendedRow?.time_hr)}</div>
+                  <div className="text-lg font-bold font-mono text-on-surface">{formatHours(recommendedRow?.time_hr)}</div>
                 </div>
-                <div className="rounded-xl border border-outline-variant/12 bg-surface-container/35 p-3">
+                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-outline">Cost</div>
-                  <div className="text-sm font-semibold text-on-surface">{formatInr(recommendedRow?.cost_inr)}</div>
+                  <div className="text-lg font-bold font-mono text-on-surface">{formatInr(recommendedRow?.cost_inr)}</div>
                 </div>
-                <div className="rounded-xl border border-outline-variant/12 bg-surface-container/35 p-3">
+                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-outline">Risk</div>
-                  <div className="text-sm font-semibold text-on-surface">{formatRisk(recommendedRow?.risk)}</div>
+                  <div className="text-lg font-bold font-mono text-on-surface">{formatRisk(recommendedRow?.risk)}</div>
                 </div>
               </div>
-              <p className="mt-4 text-sm text-on-surface-variant leading-relaxed">
-                {result.reason?.trim() || 'No reason provided by the backend for this recommendation.'}
+              <p className="mt-5 text-[15px] text-on-surface leading-relaxed border-l-2 border-primary/50 pl-4">
+                {result.reason?.trim() || 'Recommendation based on multimodal scoring.'}
               </p>
             </div>
 
             <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
 
-            <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5">
-              <h3 className="text-sm font-semibold text-on-surface mb-4">Tradeoffs & Considerations</h3>
-              {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {result.tradeoffs.map((line: string, idx: number) => {
-                    const l = line.toLowerCase();
-                    const isTime = l.includes('time') || l.includes('hrs') || l.includes('slower') || l.includes('faster');
-                    const isCost = l.includes('cost') || l.includes('rs') || l.includes('cheaper') || l.includes('expensive');
-                    const isRisk = l.includes('risk') || l.includes('delay') || l.includes('safe');
-                    const isHigher = l.includes('higher') || l.includes('more') || l.includes('slower') || l.includes('expensive');
-                    
-                    let bgClass = 'bg-surface-container/50 border-outline-variant/15';
-                    let textClass = 'text-primary';
-                    let icon = 'info';
+            {result.unavailable_modes && result.unavailable_modes.length > 0 && (
+              <p className="text-xs text-on-surface-variant">
+                No live route for: {result.unavailable_modes.join(', ')} (shown honestly — not fabricated).
+              </p>
+            )}
 
-                    if (isTime) {
-                      icon = 'schedule';
-                      bgClass = isHigher ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
-                      textClass = isHigher ? 'text-amber-400' : 'text-emerald-400';
-                    } else if (isCost) {
-                      icon = 'payments';
-                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
-                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
-                    } else if (isRisk) {
-                      icon = 'warning';
-                      bgClass = isHigher ? 'bg-red-500/10 border-red-500/20' : 'bg-emerald-500/10 border-emerald-500/20';
-                      textClass = isHigher ? 'text-red-400' : 'text-emerald-400';
-                    }
+            {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
+              <div className="rounded-2xl border border-white/[0.06] bg-[#0a0e16]/60 p-5">
+                <h3 className="text-sm font-semibold mb-3">Tradeoffs</h3>
+                <ul className="space-y-2">
+                  {result.tradeoffs.map((line, i) => (
+                    <li key={i} className="text-sm text-on-surface-variant flex gap-2">
+                      <span className="text-primary">•</span>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-                    return (
-                      <div
-                        key={`tradeoff-${idx}`}
-                        className={`flex items-start gap-3 rounded-xl border p-4 transition-transform hover:scale-[1.02] hover:bg-opacity-80 ${bgClass}`}
-                      >
-                        <span
-                          className={`material-symbols-outlined shrink-0 ${textClass}`}
-                          style={{ fontSize: '20px' }}
-                        >
-                          {icon}
-                        </span>
-                        <span className="text-sm font-medium leading-relaxed text-on-surface">{line}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-on-surface-variant">No tradeoffs were returned for this route set.</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(['road', 'rail', 'air'] as Mode[]).map((mode) => {
-                const modeData = result.best_per_mode?.[mode] ?? null;
-                const isWinner = mode === recommendedMode;
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {ALL_MODES.map((mode) => {
+                const data = result.best_per_mode?.[mode];
+                const won = mode === recommendedMode;
                 return (
                   <div
-                    key={`best-mode-${mode}`}
-                    className={`rounded-2xl border p-4 ${isWinner ? 'border-primary/40 bg-primary/10' : 'border-outline-variant/15 bg-surface-container-low/35'}`}
+                    key={mode}
+                    className={`rounded-xl border p-4 ${won ? MODE_META[mode].cardTint : 'border-white/[0.06] bg-white/[0.02]'}`}
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className={`text-base font-semibold ${MODE_META[mode].tint}`}>
-                        {MODE_META[mode].icon} {MODE_META[mode].label}
-                      </h4>
-                      {isWinner && (
-                        <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">Top pick</span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5 text-sm">
-                      {modeData ? (
-                        <>
-                          {toNum(modeData?.time_hr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Time:</span> <span className="font-medium">{formatHours(modeData?.time_hr)}</span></p>}
-                          {toNum(modeData?.cost_inr) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Cost:</span> <span className="font-medium">{formatInr(modeData?.cost_inr)}</span></p>}
-                          {toNum(modeData?.risk) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Risk:</span> <span className="font-medium">{formatRisk(modeData?.risk)}</span></p>}
-                          {mode === 'rail' && modeData?.train_name && modeData.train_name !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Train:</span> <span className="font-medium text-right ml-2">{modeData.train_name}</span></p>}
-                          {mode === 'air' && modeData?.airline && modeData.airline !== 'N/A' && <p className="text-on-surface flex justify-between"><span className="text-outline">Airline:</span> <span className="font-medium text-right ml-2">{modeData.airline}</span></p>}
-                          {mode === 'road' && toNum(modeData?.distance_km) != null && <p className="text-on-surface flex justify-between"><span className="text-outline">Distance:</span> <span className="font-medium">{toNum(modeData?.distance_km)?.toFixed(1)} km</span></p>}
-                          {toNum(modeData?.time_hr) == null && toNum(modeData?.cost_inr) == null && toNum(modeData?.risk) == null && (
-                            <p className="text-outline italic text-[11px]">No data extracted for this mode.</p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-outline italic text-[11px]">No viable route generated.</p>
-                      )}
-                    </div>
+                    <h4 className={`font-semibold text-sm ${MODE_META[mode].tint} mb-2`}>
+                      {MODE_META[mode].label}
+                    </h4>
+                    {data ? (
+                      <div className="text-xs space-y-1 font-mono text-on-surface-variant">
+                        <p>Time {formatHours(data.time_hr ?? (data as { time?: number }).time)}</p>
+                        <p>Cost {formatInr(data.cost_inr ?? (data as { cost?: number }).cost)}</p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {(result.best_per_mode?.road as any)?.geometry && (
-              <div className="mt-4 rounded-2xl border border-outline-variant/15 bg-surface-container-low/35 p-5 flex flex-col h-[400px]">
-                <h3 className="text-sm font-semibold text-on-surface mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary" style={{ fontSize: '18px' }}>map</span>
-                  Road Segment Map
-                </h3>
-                <div className="flex-1 rounded-xl overflow-hidden min-h-0 border border-outline-variant/10">
-                  <MapView routes={[result.best_per_mode?.road as any]} selectedRoute={0} />
-                </div>
+            {Boolean(
+              (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
+            ) && (
+              <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
+                <MapView
+                  routes={[
+                    result.best_per_mode!.road! as {
+                      geometry: [number, number][];
+                      time: number;
+                      cost: number;
+                      risk: number;
+                    },
+                  ]}
+                  selectedRoute={0}
+                />
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep(2);
+                setResult(null);
+              }}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              ← Adjust scenario and re-run
+            </button>
           </div>
         )}
       </div>
-    </PipelineModeLanding>
+    </div>
   );
 }
