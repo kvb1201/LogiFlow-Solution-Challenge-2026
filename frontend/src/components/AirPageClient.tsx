@@ -1,22 +1,12 @@
 'use client';
 
-import Link from 'next/link';
-import React from 'react';
 import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
-import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { PipelineModePage } from '@/components/cockpit/PipelineModePage';
 
 export default function AirPageClient() {
-  const error = useLogiFlowStore((state) => state.error);
-  const loading = useLogiFlowStore((state) => state.loading);
-  const loadingMode = useLogiFlowStore((state) => state.loadingMode);
-  const airRoutes = useLogiFlowStore((state) => state.airRoutes);
-  const source = useLogiFlowStore((state) => state.source);
-  const destination = useLogiFlowStore((state) => state.destination);
-  const hasResults = airRoutes.length > 0;
-  const showAirLoading = loading && loadingMode === 'air';
-
   return (
+<<<<<<< Updated upstream
     <div className="flex-1 flex flex-col overflow-x-hidden bg-[#06080d] min-h-0">
       <div className="relative border-b border-outline-variant/10 overflow-hidden">
         <div className="pointer-events-none absolute inset-0">
@@ -104,5 +94,8 @@ export default function AirPageClient() {
         )}
       </div>
     </div>
+=======
+    <PipelineModePage mode="air" form={<AirInputForm />} results={<AirResults />} />
+>>>>>>> Stashed changes
   );
 }

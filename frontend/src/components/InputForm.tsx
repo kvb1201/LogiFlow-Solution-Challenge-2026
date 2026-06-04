@@ -1,15 +1,29 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { searchStations, type StationSearchResult } from '@/services/api';
+<<<<<<< Updated upstream
 
 // ── Debounced station search ──────────────────────────────────────────
+=======
+import AiBriefPanel from '@/components/AiBriefPanel';
+import { FormAutocomplete } from '@/components/forms/FormAutocomplete';
+import {
+  AdvancedToggle,
+  ChoicePills,
+  CorridorRow,
+  FormField,
+  FormShell,
+  FormSubmit,
+  formInputClass,
+} from '@/components/forms/pipeline-form-ui';
+>>>>>>> Stashed changes
 
 function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
   const [results, setResults] = useState<StationSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = useCallback(
     (query: string) => {
@@ -38,210 +52,48 @@ function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) =>
   return { results, loading, search, clear };
 }
 
-// ── Constants ─────────────────────────────────────────────────────────
-
 const CARGO_TYPES = [
-  { value: 'General', icon: 'inventory_2', desc: 'Standard goods' },
-  { value: 'Fragile', icon: 'local_shipping', desc: 'Handle with care' },
-  { value: 'Perishable', icon: 'ac_unit', desc: 'Cold chain' },
+  { value: 'General' as const, label: 'General', icon: 'inventory_2' },
+  { value: 'Fragile' as const, label: 'Fragile', icon: 'local_shipping' },
+  { value: 'Perishable' as const, label: 'Perishable', icon: 'ac_unit' },
 ];
 
 const PRIORITY_OPTIONS = [
-  {
-    value: 'cost',
-    label: 'Cheapest',
-    icon: 'savings',
-    activeClass: 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300',
-    iconColor: 'text-emerald-400',
-  },
-  {
-    value: 'time',
-    label: 'Fastest',
-    icon: 'bolt',
-    activeClass: 'bg-amber-500/10 border-amber-500/35 text-amber-300',
-    iconColor: 'text-amber-400',
-  },
-  {
-    value: 'safe',
-    label: 'Safest',
-    icon: 'verified_user',
-    activeClass: 'bg-blue-500/10 border-blue-500/35 text-blue-300',
-    iconColor: 'text-blue-400',
-  },
+  { value: 'cost' as const, label: 'Cheapest', icon: 'savings' },
+  { value: 'time' as const, label: 'Fastest', icon: 'bolt' },
+  { value: 'safe' as const, label: 'Safest', icon: 'verified_user' },
 ];
-
-// ── Station Input ─────────────────────────────────────────────────────
-
-function StationInput({
-  label,
-  value,
-  onChange,
-  icon,
-  iconColor,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (val: string) => void;
-  icon: string;
-  iconColor: string;
-  placeholder: string;
-}) {
-  const [focused, setFocused] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const setStationSuggestions = useLogiFlowStore(s => s.setStationSuggestions);
-  const { results, loading, search, clear } = useStationSearch(setStationSuggestions);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleChange = (val: string) => {
-    onChange(val);
-    search(val);
-    setShowDropdown(true);
-  };
-
-  const selectStation = (station: StationSearchResult) => {
-    onChange(station.name);
-    clear();
-    setShowDropdown(false);
-  };
-
-  return (
-    <div ref={wrapperRef} className="relative z-[9999]">
-      <label className="flex items-center gap-1.5 text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
-        {label}
-        {loading && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
-      </label>
-
-      <div className="relative">
-        {/* Focus glow */}
-        <div
-          className={`absolute -inset-0.5 rounded-xl transition-all duration-400 ${
-            focused
-              ? 'opacity-100 bg-gradient-to-r from-primary/30 via-tertiary/25 to-primary/30 blur-sm'
-              : 'opacity-0'
-          }`}
-        />
-        <div
-          className={`relative flex items-center bg-surface-container-lowest/80 border rounded-xl overflow-hidden transition-all duration-200 ${
-            focused
-              ? 'border-primary/40 shadow-[0_0_12px_rgba(172,199,255,0.12)]'
-              : 'border-outline-variant/20 hover:border-outline-variant/40'
-          }`}
-        >
-          <div className="pl-3.5 pr-2.5 flex items-center justify-center shrink-0">
-            <span
-              className={`material-symbols-outlined transition-all duration-300 leading-none ${
-                focused ? `${iconColor} scale-110` : 'text-outline scale-100'
-              }`}
-              style={{
-                fontSize: '18px',
-                fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20",
-              }}
-            >
-              {icon}
-            </span>
-          </div>
-          <input
-            type="text"
-            value={value}
-            onChange={e => handleChange(e.target.value)}
-            onFocus={() => {
-              setFocused(true);
-              if (results.length) setShowDropdown(true);
-            }}
-            onBlur={() => setFocused(false)}
-            className="w-full py-3.5 pr-3 bg-transparent text-on-surface placeholder:text-outline/40 focus:outline-none text-sm font-medium"
-            placeholder={placeholder}
-          />
-          {value && (
-            <button
-              type="button"
-              onMouseDown={e => {
-                e.preventDefault();
-                onChange('');
-                clear();
-                setShowDropdown(false);
-              }}
-              className="absolute right-2.5 p-1 rounded-full text-outline/50 hover:text-on-surface hover:bg-surface-container transition-colors"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                close
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Dropdown */}
-      {showDropdown && results.length > 0 && (
-        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 bg-surface-container-low/95 backdrop-blur-xl border border-outline-variant/20 rounded-2xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.7)] overflow-hidden animate-slide-up origin-top">
-          <div className="max-h-[240px] overflow-y-auto p-1.5">
-            {results.map((s, i) => (
-              <button
-                key={`${s.code}-${i}`}
-                type="button"
-                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-container/80 transition-all duration-150 text-left group"
-                onMouseDown={e => {
-                  e.preventDefault();
-                  selectStation(s);
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-surface-container/60 border border-outline-variant/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 group-hover:border-primary/25 transition-all">
-                  <span
-                    className="material-symbols-outlined text-outline group-hover:text-primary transition-colors"
-                    style={{ fontSize: '15px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    train
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-on-surface group-hover:text-on-surface truncate">
-                    {s.name}
-                  </div>
-                  <div className="text-[10px] text-outline mono mt-0.5 tracking-wider">{s.code}</div>
-                </div>
-                <span
-                  className="material-symbols-outlined text-outline/0 group-hover:text-primary/60 transition-all -translate-x-1 group-hover:translate-x-0"
-                  style={{ fontSize: '14px' }}
-                >
-                  subdirectory_arrow_left
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Main Form ─────────────────────────────────────────────────────────
 
 export default function InputForm() {
   const {
-    source, setSource,
-    destination, setDestination,
-    priority, setPriority,
-    cargoWeight, setCargoWeight,
-    cargoType, setCargoType,
-    departureDate, setDepartureDate,
-    budgetMax, setBudgetMax,
-    deadlineHours, setDeadlineHours,
+    source,
+    setSource,
+    destination,
+    setDestination,
+    priority,
+    setPriority,
+    cargoWeight,
+    setCargoWeight,
+    cargoType,
+    setCargoType,
+    departureDate,
+    setDepartureDate,
+    budgetMax,
+    setBudgetMax,
+    deadlineHours,
+    setDeadlineHours,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
 
+<<<<<<< Updated upstream
   const [formStep, setFormStep] = useState(0);
+=======
+  const setStationSuggestions = useLogiFlowStore((s) => s.setStationSuggestions);
+  const originSearch = useStationSearch(setStationSuggestions);
+  const destSearch = useStationSearch(setStationSuggestions);
+
+>>>>>>> Stashed changes
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -261,7 +113,14 @@ export default function InputForm() {
     handleOptimize();
   };
 
+  const swapCorridor = () => {
+    const t = source;
+    setSource(destination);
+    setDestination(t);
+  };
+
   return (
+<<<<<<< Updated upstream
     <div className="w-full max-w-5xl mx-auto px-4">
       <div className="form-container-glow relative">
         {/* Ambient glow */}
@@ -580,9 +439,144 @@ export default function InputForm() {
                 </div>
               </form>
             </div>
+=======
+    <div className="w-full space-y-4">
+      <AiBriefPanel contextMode="rail" />
+      <FormShell
+        mode="rail"
+        title="Route search"
+        subtitle="RailRadar · live Indian Railways data"
+        advancedToggle={
+          <AdvancedToggle
+            open={showAdvanced}
+            onToggle={() => setShowAdvanced((v) => !v)}
+            accentVar="--rail"
+          />
+        }
+        footer={
+          <FormSubmit
+            loading={loading}
+            disabled={!source.trim() || !destination.trim()}
+            label="Optimize route"
+            loadingLabel="Finding routes…"
+            accentVar="--rail"
+            icon="train"
+          />
+        }
+      >
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <CorridorRow onSwap={swapCorridor}>
+            <FormAutocomplete
+              label="Origin"
+              value={source}
+              onChange={setSource}
+              placeholder="City or station"
+              icon="trip_origin"
+              accentVar="--rail"
+              options={originSearch.results}
+              loading={originSearch.loading}
+              onSearch={originSearch.search}
+              onClear={originSearch.clear}
+              dropdownIcon={
+                <span className="material-symbols-outlined text-rail" style={{ fontSize: '16px' }}>
+                  train
+                </span>
+              }
+            />
+            <FormAutocomplete
+              label="Destination"
+              value={destination}
+              onChange={setDestination}
+              placeholder="City or station"
+              icon="location_on"
+              accentVar="--rail"
+              options={destSearch.results}
+              loading={destSearch.loading}
+              onSearch={destSearch.search}
+              onClear={destSearch.clear}
+              dropdownIcon={
+                <span className="material-symbols-outlined text-rail" style={{ fontSize: '16px' }}>
+                  train
+                </span>
+              }
+            />
+          </CorridorRow>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Cargo weight">
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={5000}
+                  value={cargoWeight}
+                  onChange={(e) => setCargoWeight(Number(e.target.value))}
+                  className={`${formInputClass} pr-12`}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">
+                  kg
+                </span>
+              </div>
+            </FormField>
+            <FormField label="Departure date">
+              <input
+                type="date"
+                value={departureDate}
+                onChange={(e) => setDepartureDate(e.target.value)}
+                className={formInputClass}
+              />
+            </FormField>
+>>>>>>> Stashed changes
           </div>
-        </div>
-      </div>
+
+          <FormField label="Cargo type">
+            <ChoicePills
+              options={CARGO_TYPES}
+              value={cargoType as (typeof CARGO_TYPES)[number]['value']}
+              onChange={(v) => setCargoType(v)}
+              accentVar="--rail"
+            />
+          </FormField>
+
+          <FormField label="Priority">
+            <ChoicePills
+              options={PRIORITY_OPTIONS}
+              value={priority as (typeof PRIORITY_OPTIONS)[number]['value']}
+              onChange={(v) => setPriority(v)}
+              accentVar="--rail"
+            />
+          </FormField>
+
+          <div
+            className={`grid gap-4 overflow-hidden transition-all duration-300 sm:grid-cols-2 ${
+              showAdvanced ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+            }`}
+          >
+            <FormField label={`Budget cap · ₹${budgetMax.toLocaleString('en-IN')}`}>
+              <input
+                type="range"
+                min={5000}
+                max={100000}
+                step={1000}
+                value={budgetMax}
+                onChange={(e) => setBudgetMax(Number(e.target.value))}
+                className="w-full"
+              />
+            </FormField>
+            <FormField label={`Deadline · ${deadlineHours}h`}>
+              <input
+                type="range"
+                min={4}
+                max={96}
+                step={2}
+                value={deadlineHours}
+                onChange={(e) => setDeadlineHours(Number(e.target.value))}
+                className="w-full"
+              />
+            </FormField>
+          </div>
+        </form>
+      </FormShell>
     </div>
   );
 }

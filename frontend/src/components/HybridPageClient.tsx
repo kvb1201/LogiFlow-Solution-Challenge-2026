@@ -1,8 +1,27 @@
 'use client';
 
 import Link from 'next/link';
+<<<<<<< Updated upstream
 import React, { useMemo, useState } from 'react';
 import { optimizeHybridRoute, type HybridComparisonRow, type HybridOptimizeResult } from '@/services/api';
+=======
+import React, { useCallback, useMemo, useState } from 'react';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
+import { hasShipmentAutorunPending } from '@/lib/shipmentAutorun';
+import {
+  optimizeHybridRoute,
+  type AiConstraintsApplied,
+  type HybridComparisonRow,
+  type HybridOptimizeResult,
+} from '@/services/api';
+import dynamic from 'next/dynamic';
+import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import AiBriefPanel from '@/components/AiBriefPanel';
+import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
+import { formInputClass } from '@/components/forms/pipeline-form-ui';
+import { Sparkles } from 'lucide-react';
+>>>>>>> Stashed changes
 
 type Priority = 'cost' | 'time' | 'balanced';
 type Mode = 'road' | 'rail' | 'air';
@@ -157,6 +176,7 @@ export default function HybridPageClient() {
     }
   }
 
+<<<<<<< Updated upstream
   return (
     <div className="flex-1 flex flex-col overflow-x-hidden bg-[#06080d] min-h-0">
       <div className="relative border-b border-outline-variant/10 overflow-hidden">
@@ -228,6 +248,202 @@ export default function HybridPageClient() {
               </select>
             </label>
           </div>
+=======
+  const formCardClass =
+    'panel-hard scanline rounded-2xl p-5 sm:p-6 transition-shadow duration-300';
+
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={loadDemo}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 py-2 text-sm font-medium text-foreground transition-all duration-300 hover:border-hybrid/40 hover:bg-hybrid/10 hover:shadow-[0_0_28px_-12px_var(--hybrid)]"
+      >
+        <Sparkles className="h-4 w-4 text-hybrid" />
+        Demo scenario
+      </button>
+      <Link
+        href="/railway"
+        className="inline-flex items-center rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+      >
+        Railways
+      </Link>
+    </>
+  );
+
+  return (
+    <PipelineModeLanding mode="hybrid" headerActions={headerActions} compact={step > 1}>
+      <div className="w-full pb-8">
+        <nav aria-label="Progress" className="mb-6">
+          <ol className="grid grid-cols-3 gap-2">
+            {[
+              { n: 1, label: 'Corridor' },
+              { n: 2, label: 'Scenario' },
+              { n: 3, label: 'Results' },
+            ].map(({ n, label }) => {
+              const active = step === n;
+              const done = step > n;
+              return (
+                <li key={n}>
+                  <button
+                    type="button"
+                    onClick={() => setStep(n as 1 | 2 | 3)}
+                    className={`flex w-full flex-col items-center gap-1 rounded-xl border px-2 py-3 text-center transition-all duration-300 ${
+                      active
+                        ? 'border-hybrid/45 bg-hybrid/10 text-foreground shadow-[0_0_32px_-14px_var(--hybrid)]'
+                        : done
+                          ? 'border-border bg-surface/30 text-muted-foreground'
+                          : 'border-border bg-transparent text-muted-foreground hover:border-border-strong hover:bg-surface/40'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                        active || done ? 'bg-hybrid text-background' : 'bg-surface-2 text-muted-foreground'
+                      }`}
+                    >
+                      {n}
+                    </span>
+                    <span className="text-xs font-semibold leading-tight">{label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
+        <form onSubmit={onSubmit} className="space-y-6">
+          {step === 1 && (
+            <section className={`${formCardClass} space-y-5`}>
+              <h2 className="text-base font-semibold text-foreground">Where is the shipment moving?</h2>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Origin</span>
+                  <input
+                    value={source}
+                    onChange={(e) => setSource(e.target.value)}
+                    placeholder="Delhi"
+                    className={formInputClass}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Destination</span>
+                  <input
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="Mumbai"
+                    className={formInputClass}
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Weight (kg)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={cargoWeight}
+                    onChange={(e) => setCargoWeight(Number(e.target.value))}
+                    className={formInputClass}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Cargo type</span>
+                  <select
+                    value={cargoType}
+                    onChange={(e) => setCargoType(e.target.value)}
+                    className={formInputClass}
+                  >
+                    <option value="General">General</option>
+                    <option value="Perishable">Perishable</option>
+                    <option value="Fragile">Fragile</option>
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Max budget (₹)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={budgetMax}
+                    onChange={(e) => setBudgetMax(Number(e.target.value))}
+                    className={formInputClass}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                disabled={!canProceedStep1}
+                className="w-full rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 sm:w-auto"
+              >
+                Continue to scenario →
+              </button>
+            </section>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-5">
+              <AiBriefPanel contextMode="hybrid" />
+              <div className={`${formCardClass} space-y-4`}>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Scenario for multimodal compare</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Edit below or use AI above — sent to Gemini before scoring all four modes.
+                </p>
+              </div>
+              <ParagraphInputWithStt
+                value={scenarioBrief}
+                onChange={setScenarioBrief}
+                rows={4}
+                placeholder="e.g. Monsoon season, perishable cargo, max ₹8,000, deliver within 36 hours, avoid air if risky…"
+                className={`${formInputClass} min-h-[120px] resize-y`}
+                lang="en-IN"
+              />
+              <div className="flex flex-wrap gap-2">
+                {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer water/rail'].map(
+                  (chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() =>
+                        setScenarioBrief(scenarioBrief ? `${scenarioBrief}. ${chip}` : chip)
+                      }
+                      className="rounded-full border border-border bg-background/40 px-3 py-1.5 text-xs text-muted-foreground hover:border-border-strong hover:text-foreground"
+                    >
+                      + {chip}
+                    </button>
+                  )
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  disabled={loading || !canProceedStep1}
+                  className="flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_0_36px_-12px_var(--hybrid)] transition-all duration-300 hover:brightness-110 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <span className="h-4 w-4 border-2 border-[#001b3f]/30 border-t-[#001b3f] rounded-full animate-spin" />
+                      Comparing 4 modes…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">bolt</span>
+                      Get recommendation
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="rounded-lg border border-border px-5 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  Back
+                </button>
+              </div>
+              </div>
+            </div>
+          )}
+>>>>>>> Stashed changes
 
           <button
             type="submit"
@@ -325,9 +541,34 @@ export default function HybridPageClient() {
                 );
               })}
             </div>
+<<<<<<< Updated upstream
+=======
+
+            {Boolean(
+              (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
+            ) && (
+              <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
+                <MapView
+                  routes={[result.best_per_mode!.road! as { geometry: [number, number][]; time: number; cost: number; risk: number }]}
+                  selectedRoute={0}
+                />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep(2);
+                setResult(null);
+              }}
+              className="text-sm font-semibold text-hybrid hover:underline"
+            >
+              ← Adjust scenario and re-run
+            </button>
+>>>>>>> Stashed changes
           </div>
         )}
       </div>
-    </div>
+    </PipelineModeLanding>
   );
 }

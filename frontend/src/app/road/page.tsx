@@ -1,18 +1,12 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
 import RoadInputForm from '@/components/roadInputForm';
 import RouteResults from '@/components/RouteResults';
-import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { PipelineModePage } from '@/components/cockpit/PipelineModePage';
 
 export default function RoadPage() {
-  const error = useLogiFlowStore((s) => s.error);
-  const loading = useLogiFlowStore((s) => s.loading);
-  const routes = useLogiFlowStore((s) => s.routes);
-  const hasResults = routes && routes.length > 0;
-
   return (
+<<<<<<< Updated upstream
     <div className="flex-1 flex flex-col overflow-x-hidden bg-[#06080d] min-h-0">
       <div className="relative border-b border-outline-variant/10 overflow-hidden">
         <div className="pointer-events-none absolute inset-0">
@@ -71,5 +65,12 @@ export default function RoadPage() {
         {!loading && <RouteResults />}
       </div>
     </div>
+=======
+    <PipelineModePage
+      mode="road"
+      form={<RoadInputForm />}
+      results={<RouteResults />}
+    />
+>>>>>>> Stashed changes
   );
 }
