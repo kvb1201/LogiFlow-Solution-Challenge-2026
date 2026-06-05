@@ -36,9 +36,11 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 # ── API Configuration ─────────────────────────────────────────────────
 # RapidAPI Keys (Standard pool)
-_keys_raw = os.environ.get(
-    "IRCTC_RAPIDAPI_KEYS",
-    os.environ.get("IRCTC_RAPIDAPI_KEY", os.environ.get("RAPIDAPI_KEY", "7db7242689msh94197c4edda6574p13c158jsn5cfbe0926100")),
+_keys_raw = (
+    os.environ.get("IRCTC_RAPIDAPI_KEYS")
+    or os.environ.get("IRCTC_RAPIDAPI_KEY")
+    or os.environ.get("RAPIDAPI_KEY")
+    or ""
 )
 # Deduplicate and shuffle to ensure fairness across restarts
 IRCTC_API_KEYS = list(dict.fromkeys([k.strip() for k in _keys_raw.split(",") if k.strip()]))
@@ -53,10 +55,7 @@ _connect_base = os.environ.get(
     "IRCTC_CONNECT_BASE_URL",
     "https://irctc-connect-api.rajivdubey.tech",
 ).rstrip("/")
-_connect_secret = os.environ.get(
-    "IRCTC_CONNECT_SDK_SECRET",
-    "97c56e08b27b161124f88acd4f24d1bd50f48075f11dc23b9ea6c0bc9b2f8794",
-)
+_connect_secret = os.environ.get("IRCTC_CONNECT_SDK_SECRET", "")
 # IRCTC Connect Keys (Signed pool)
 _connect_keys_raw = os.environ.get("IRCTC_CONNECT_API_KEYS", "")
 # Deduplicate and shuffle to ensure fairness across restarts
@@ -341,6 +340,8 @@ def _get(endpoint, params=None, timeout=15):
 
     # ── 3. Attempt across available keys with Retry Loop ──────────────
     n = len(IRCTC_API_KEYS)
+    if n == 0:
+        return None
     url = f"{IRCTC_BASE_URL}{endpoint}"
     
     for attempt in range(n):
