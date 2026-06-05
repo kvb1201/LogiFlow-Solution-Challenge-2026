@@ -166,6 +166,9 @@ export interface LogiFlowState {
       weather_level: number;
       incident_count: number;
     };
+    water?: {
+      max_transshipments?: number | null;
+    };
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
@@ -417,7 +420,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
             budget_max_inr: budgetMax || null,
             risk_threshold: null,
             delay_tolerance_hours: null,
-            max_transshipments: null,
+            max_transshipments: opts?.water?.max_transshipments ?? null,
           },
         });
 

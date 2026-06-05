@@ -67,18 +67,18 @@ export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'comparator'>, Pipe
     storeMode: 'air',
   },
   water: {
-    badge: 'Maritime Cargo · Port routing',
+    badge: 'Maritime Cargo · Global port routing',
     titleLead: 'Water',
     titleRest: ' operations',
     description:
-      'Port-to-port maritime routes with transshipment options, cost, and reliability scoring.',
+      'Route port-to-port cargo across India, Middle East, Southeast Asia, East Asia, and Europe with transshipment, cost, and reliability scoring.',
     pills: [
-      { icon: 'directions_boat', label: 'Indian ports' },
+      { icon: 'public', label: '28 global ports' },
       { icon: 'swap_horiz', label: 'Transshipment' },
       { icon: 'shield', label: 'Maritime risk' },
       { icon: 'anchor', label: 'Route compare' },
     ],
-    footer: 'Static port dataset · not live AIS',
+    footer: 'Global static port network · not live AIS',
     analyticsLabel: 'Water analytics panel',
     loadingMessage: 'Charting maritime routes…',
     storeMode: 'water',
