@@ -33,12 +33,13 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
 
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              href="/hybrid"
+              href="/comparator"
               className="inline-flex items-center gap-2 rounded-lg bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-[0_0_40px_-12px_var(--hybrid)] transition-all duration-300 hover:brightness-110 hover:shadow-[0_0_52px_-8px_var(--hybrid)]"
             >
               <Play className="h-4 w-4 fill-current" />
               Compare all modes
             </Link>
+            {/* ModeCard featured check updated below */}
             <Link
               href="/railway"
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface/70 px-5 py-2.5 text-sm font-semibold text-foreground backdrop-blur-sm transition-all duration-300 hover:border-border-strong hover:bg-surface-2"
@@ -61,7 +62,7 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2">
             {modeOrder.map((mode, i) => (
-              <ModeCard key={mode} mode={mode} featured={mode === 'hybrid'} index={i} />
+              <ModeCard key={mode} mode={mode} featured={mode === 'comparator'} index={i} />
             ))}
           </ul>
         </section>

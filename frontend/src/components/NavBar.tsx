@@ -10,7 +10,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 
 const navItems = [
   { href: '/', label: 'Home' },
-  { href: '/hybrid', label: 'Hybrid', mode: 'hybrid' as LogisticsMode },
+  { href: '/comparator', label: 'Comparator', mode: 'comparator' as LogisticsMode },
   { href: '/railway', label: 'Rail', mode: 'rail' as LogisticsMode },
   { href: '/road', label: 'Road', mode: 'road' as LogisticsMode },
   { href: '/air', label: 'Air', mode: 'air' as LogisticsMode },
@@ -87,8 +87,8 @@ export default function NavBar() {
             <Bell className="h-3.5 w-3.5" />
           </button>
           <Link
-            href="/hybrid"
-            className="btn-app btn-app-primary flex h-8 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
+            href="/comparator"
+            className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
           >
             <Plus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">New scenario</span>

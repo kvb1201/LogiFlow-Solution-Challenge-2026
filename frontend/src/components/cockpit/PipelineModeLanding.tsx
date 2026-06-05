@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { LogisticsMode } from '@/lib/mode-meta';
-import { hybridPageMeta, pipelinePageMeta } from '@/lib/pipeline-page-meta';
+import { comparatorPageMeta, pipelinePageMeta } from '@/lib/pipeline-page-meta';
 import { AmbientBackdrop } from './AmbientBackdrop';
 
 type LandingConfig = {
@@ -13,7 +13,7 @@ type LandingConfig = {
 };
 
 function getConfig(mode: LogisticsMode): LandingConfig {
-  if (mode === 'hybrid') return hybridPageMeta;
+  if (mode === 'comparator') return comparatorPageMeta;
   return pipelinePageMeta[mode];
 }
 
@@ -45,7 +45,7 @@ export function PipelineModeLanding({
         <div
           className="absolute inset-x-0 top-0 h-px"
           style={{
-            background: `linear-gradient(90deg, transparent, ${mode === 'hybrid' ? 'var(--hybrid)' : `var(--${mode})`}, transparent)`,
+              background: `linear-gradient(90deg, transparent, ${mode === 'comparator' ? 'var(--hybrid)' : `var(--${mode})`}, transparent)`,
           }}
         />
       </div>

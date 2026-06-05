@@ -13,7 +13,8 @@ export type PipelinePageConfig = {
   storeMode: 'rail' | 'road' | 'air' | 'water';
 };
 
-export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'hybrid'>, PipelinePageConfig> = {
+// Exclude the comparator mode from this generic mapping (it has its own page meta)
+export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'comparator'>, PipelinePageConfig> = {
   rail: {
     badge: 'Railway Cargo Intelligence · RailRadar Powered',
     titleLead: 'Rail',
@@ -84,9 +85,10 @@ export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'hybrid'>, Pipeline
   },
 };
 
-export const hybridPageMeta = {
-  badge: 'Hybrid · AI multimodal planner',
-  titleLead: 'Hybrid',
+// Comparator page meta (formerly hybrid)
+export const comparatorPageMeta = {
+  badge: 'Comparator · AI multimodal planner',
+  titleLead: 'Comparator',
   titleRest: ' compare',
   description:
     'One scenario across road, rail, air, and water — Gemini parses constraints before scoring all four modes.',
@@ -96,5 +98,5 @@ export const hybridPageMeta = {
     { icon: 'compare_arrows', label: 'Normalized rank' },
     { icon: 'verified', label: 'Explainable pick' },
   ],
-  footer: 'LogiFlow hybrid decision engine',
+  footer: 'LogiFlow comparator decision engine',
 };
