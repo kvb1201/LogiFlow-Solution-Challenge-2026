@@ -72,6 +72,9 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
         origin_name = port_name(origin_port)
         dest_name = port_name(dest_port)
 
+        origin_meta = _port_meta(origin_port)
+        dest_meta = _port_meta(dest_port)
+
         # Road legs
         pre_km, pre_hr, _ = _road_leg(source, origin_name, o_lat, o_lng)
         post_km, post_hr, _ = _road_leg(destination, dest_name, d_lat, d_lng)
@@ -83,51 +86,101 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
 
         # Transshipments (intermediate port calls)
         transshipments = max(len(path) - 2, 0)
-
-        # Port handling time:
-        # - origin + destination always
-        # - intermediate ports: extra transshipment handling
         port_calls = 2 if len(path) >= 2 else 1
-        handling_hr = PORT_HANDLING_HOURS * port_calls + TRANSSHIPMENT_EXTRA_HOURS * transshipments
 
-        # ETA adjustment hook
+        # 1. Infrastructure-adjusted efficiency multipliers
+        avg_infra = sum(float(_port_meta(pid).get("infrastructure_quality", 0.8)) for pid in path) / len(path)
+        
+        # Time efficiency multiplier maps quality [0.70, 0.98] to [1.0, 0.80]
+        time_efficiency_mult = max(0.8, min(1.0, 1.0 - 0.2 * (avg_infra - 0.7) / (0.98 - 0.7)))
+        
+        # Cost discount maps quality [0.70, 0.98] to [1.015, 0.973]
+        infra_cost_discount = 1.0 - 0.15 * (avg_infra - 0.8)
+
+        # 2. Customs clearance times as a distinct component
+        customs_hr = float(origin_meta.get("customs_hours", 8.0)) + (float(dest_meta.get("customs_hours", 8.0)) if len(path) >= 2 else 0.0)
+
+        # Port handling time (infrastructure quality adjusted)
+        handling_hr = (PORT_HANDLING_HOURS * port_calls + TRANSSHIPMENT_EXTRA_HOURS * transshipments) * time_efficiency_mult
+
+        # ETA adjustment hook (modern ports experience fewer delays)
         eta_mult, expected_delay_hr = predict_eta_adjustment(
             sea_distance_nm=sea_nm,
             transshipments=transshipments,
             coast=None,
             departure_dt=datetime.now(),
         )
+        expected_delay_hr = expected_delay_hr * time_efficiency_mult
 
-        time_hours = (pre_hr + post_hr) + (sea_hr * eta_mult) + handling_hr + expected_delay_hr
+        time_hours = (pre_hr + post_hr) + (sea_hr * eta_mult) + handling_hr + customs_hr + expected_delay_hr
 
-        # Cost model
+        # 3. Enhanced Cost Calculations with Regional intelligence & Surcharges
+        regional_multipliers = [1.2 if _port_meta(pid).get("region") == "europe" else 1.1 if _port_meta(pid).get("region") == "middle_east" else 1.0 for pid in path]
+        regional_cost_mult = max(regional_multipliers) if regional_multipliers else 1.0
+        
+        cross_region = len(set(_port_meta(pid).get("region", "india") for pid in path)) > 1
+        surcharge = 1.05 if cross_region else 1.0
+
         tons = max(weight_kg, 0.0) / 1000.0
         road_cost = (pre_km + post_km) * ROAD_COST_PER_KM_PER_TON_INR * tons + ROAD_HANDLING_BASE_INR
 
-        sea_cost = (SEA_COST_BASE_PER_KG_INR + SEA_COST_PER_KG_PER_NM_INR * sea_nm) * max(weight_kg, 0.0)
-        port_fees = PORT_FEE_BASE_INR * port_calls
+        sea_cost = (SEA_COST_BASE_PER_KG_INR + SEA_COST_PER_KG_PER_NM_INR * sea_nm) * max(weight_kg, 0.0) * regional_cost_mult * surcharge * infra_cost_discount
+
+        # Custom port fees adjusted by region and quality
+        def get_port_fee(meta):
+            if not meta:
+                return PORT_FEE_BASE_INR
+            region = meta.get("region", "india")
+            quality = meta.get("infrastructure_quality", 0.8)
+            reg_mult = 1.2 if region == "europe" else 1.1 if region == "middle_east" else 1.0
+            qual_mult = 1.0 - 0.1 * (quality - 0.8)
+            return PORT_FEE_BASE_INR * reg_mult * qual_mult
+
+        port_fees = get_port_fee(origin_meta) + (get_port_fee(dest_meta) if len(path) >= 2 else 0.0)
         trans_fee = TRANSSHIPMENT_FEE_INR * transshipments
 
         cost_inr = road_cost + sea_cost + port_fees + trans_fee
 
-        # Risk components (0..1)
-        # Weather: seasonal + longer distance
+        # 4. Regional weather risks (seasonal risks by location)
+        weather_risks = []
         month = datetime.now().month
-        monsoon = month in {6, 7, 8, 9}
-        weather_risk = 0.15 + (0.18 if monsoon else 0.05) + min(0.25, sea_nm / 4000.0)
+        for pid in path:
+            meta = _port_meta(pid)
+            region = meta.get("region", "india")
+            if region == "india":
+                monsoon = month in {6, 7, 8, 9}
+                base_w = 0.35 if monsoon else 0.15
+            elif region in {"southeast_asia", "east_asia"}:
+                typhoon = month in {7, 8, 9, 10}
+                base_w = 0.38 if typhoon else 0.12
+            elif region == "europe":
+                winter = month in {11, 12, 1, 2}
+                base_w = 0.30 if winter else 0.10
+            elif region == "middle_east":
+                summer = month in {5, 6, 7, 8}
+                base_w = 0.20 if summer else 0.08
+            else:
+                base_w = 0.15
+            weather_risks.append(base_w)
+        
+        weather_risk = max(weather_risks) + min(0.25, sea_nm / 4000.0)
         weather_risk = _clamp01(weather_risk)
 
-        # Congestion: average of involved ports (ML hook returns base for now)
-        cong_vals = [predict_port_congestion(pid) for pid in set(path)]
-        congestion_risk = _clamp01(sum(cong_vals) / max(len(cong_vals), 1))
+        congestion_risk = _clamp01(sum(predict_port_congestion(pid) for pid in set(path)) / max(len(path), 1))
 
-        # Security: base per port + a small penalty for transshipments
+        # Security risk (infrastructure quality reduces risk; piracy integrated)
         sec_vals = []
         for pid in set(path):
             meta = _port_meta(pid)
-            sec_vals.append(float(meta.get("base_security_risk", 0.2)))
+            base_sec = float(meta.get("base_security_risk", 0.2))
+            piracy = float(meta.get("piracy_risk", 0.02))
+            infra = float(meta.get("infrastructure_quality", 0.8))
+            # Infrastructure quality reduces security risk by up to 15%
+            infra_discount = 0.15 * (infra - 0.70) / (0.98 - 0.70)
+            sec_val = base_sec + piracy - infra_discount
+            sec_vals.append(max(0.0, sec_val))
+            
         security_risk = _clamp01((sum(sec_vals) / max(len(sec_vals), 1)) + 0.05 * (transshipments > 0))
-
         trans_risk = _clamp01(0.10 * transshipments)
 
         risk_breakdown = {
@@ -143,7 +196,6 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
             + RISK_WEIGHTS["transshipment"] * trans_risk
         )
 
-        # Delay probability proxy
         delay_prob = _clamp01(min(1.0, expected_delay_hr / max(sea_hr, 1.0)))
         reliability = _clamp01(1.0 - (0.65 * risk + 0.35 * delay_prob))
 
@@ -155,7 +207,6 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
             for a, b in zip(path, path[1:]):
                 segments.append({"mode": "Water", "from": port_name(a), "to": port_name(b)})
         else:
-            # Degenerate case: same port mapped on both ends
             segments.append({"mode": "Water", "from": origin_name, "to": dest_name})
 
         segments.append({"mode": "Road", "from": dest_name, "to": destination})
@@ -167,7 +218,6 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
             "cost": int(round(float(cost_inr))),
             "risk": round(float(risk), 3),
             "segments": segments,
-            # Extra metadata (ignored by validator, useful for UI/debugging)
             "origin_port": origin_name,
             "destination_port": dest_name,
             "distance_nm": round(float(sea_nm), 1),
@@ -178,7 +228,7 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
             "reliability_score": round(float(reliability), 3),
         }
 
-        # Constraints filtering (soft-fallback behavior handled in pipeline)
+        # Constraints filtering
         if risk_threshold is not None and float(route["risk"]) > float(risk_threshold):
             route["_filtered_out"] = True
         if delay_tol is not None and float(route.get("expected_delay_hours", 0.0)) > float(delay_tol):

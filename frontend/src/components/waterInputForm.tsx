@@ -18,6 +18,7 @@ import {
 // ── Static Ports Data ───────────────────────────────────────────────────
 
 const WATER_PORTS = [
+  // India
   { name: 'Mundra Port, Gujarat, India' },
   { name: 'Deendayal Port (Kandla), Gujarat, India' },
   { name: 'Jawaharlal Nehru Port (JNPT), Navi Mumbai, India' },
@@ -30,7 +31,26 @@ const WATER_PORTS = [
   { name: 'Kamarajar Port (Ennore), Tamil Nadu, India' },
   { name: 'Visakhapatnam Port, Andhra Pradesh, India' },
   { name: 'Paradip Port, Odisha, India' },
-  { name: 'Kolkata Port (Haldia Dock Complex), West Bengal, India' }
+  { name: 'Kolkata Port (Haldia Dock Complex), West Bengal, India' },
+  // Middle East
+  { name: 'Jebel Ali Port (Dubai), UAE' },
+  { name: 'Jeddah Islamic Port, Saudi Arabia' },
+  { name: 'Bandar Abbas Port, Iran' },
+  { name: 'Port of Salalah, Oman' },
+  { name: 'Port Said (Suez Canal), Egypt' },
+  // Southeast Asia
+  { name: 'Port of Singapore, Singapore' },
+  { name: 'Port Klang, Malaysia' },
+  { name: 'Laem Chabang Port, Thailand' },
+  { name: 'Cat Lai Port (Ho Chi Minh City), Vietnam' },
+  // East Asia
+  { name: 'Port of Shanghai, China' },
+  { name: 'Port of Hong Kong, Hong Kong' },
+  { name: 'Singapore Eastern Anchorage, Singapore' },
+  // Europe
+  { name: 'Port of Rotterdam, Netherlands' },
+  { name: 'Port of Antwerp, Belgium' },
+  { name: 'Port of Hamburg, Germany' }
 ];
 
 function useCitySearch(setGlobalSuggestions: (rows: { code: string; name: string }[]) => void) {
