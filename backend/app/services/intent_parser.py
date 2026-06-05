@@ -1,0 +1,358 @@
+"""
+Parse free-text shipment briefs into structured LogiFlow form fields.
+Order: heuristics first, then Gemini, then Groq — LLMs only fill gaps.
+"""
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+import requests
+
+from app.services.gemini_service import gemini_generate_content
+from app.services.groq_service import _groq_config
+
+# Common Indian freight corridors for heuristic extraction
+_CITY_ALIASES: dict[str, str] = {
+    "delhi": "Delhi, India",
+    "new delhi": "Delhi, India",
+    "mumbai": "Mumbai, India",
+    "bombay": "Mumbai, India",
+    "chennai": "Chennai, India",
+    "madras": "Chennai, India",
+    "kolkata": "Kolkata, India",
+    "calcutta": "Kolkata, India",
+    "bengaluru": "Bengaluru, India",
+    "bangalore": "Bengaluru, India",
+    "hyderabad": "Hyderabad, India",
+    "pune": "Pune, India",
+    "ahmedabad": "Ahmedabad, India",
+    "jaipur": "Jaipur, India",
+    "lucknow": "Lucknow, India",
+    "chandigarh": "Chandigarh, India",
+    "kochi": "Kochi, India",
+    "cochin": "Kochi, India",
+    "surat": "Surat, India",
+    "nagpur": "Nagpur, India",
+    "indore": "Indore, India",
+    "patna": "Patna, India",
+    "bhopal": "Bhopal, India",
+    "visakhapatnam": "Visakhapatnam, India",
+    "vizag": "Visakhapatnam, India",
+}
+
+_MODE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(train|rail|railway|indian railways)\b", re.I), "rail"),
+    (re.compile(r"\b(road|truck|highway|lorry)\b", re.I), "road"),
+    (re.compile(r"\b(flight|air|airway|air cargo)\b", re.I), "air"),
+    (re.compile(r"\b(ship|boat|maritime|water|port|sea)\b", re.I), "water"),
+    (re.compile(r"\b(compare all|multimodal|hybrid|all modes)\b", re.I), "hybrid"),
+]
+
+_PRIORITY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(cheapest|lowest cost|budget|sabse\s+sasta|sabse\s+saste|sasta\s+tarika|saste\s+tarike)\b", re.I), "cost"),
+    (re.compile(r"\b(fastest|urgent|asap|quickly|jaldi|within \d+ (?:day|hour))\b", re.I), "time"),
+    (re.compile(r"\b(safest|low risk|reliable)\b", re.I), "safe"),
+]
+
+
+def _find_cities(text: str) -> list[str]:
+    lower = text.lower()
+    found: list[str] = []
+    for key, label in sorted(_CITY_ALIASES.items(), key=lambda x: -len(x[0])):
+        if re.search(rf"\b{re.escape(key)}\b", lower):
+            if label not in found:
+                found.append(label)
+    return found[:4]
+
+
+def _extract_from_to(text: str) -> tuple[str | None, str | None]:
+    patterns = [
+        r"(?:from|pickup|origin)\s+([A-Za-z][A-Za-z\s]{1,40}?)\s+(?:to|→|->|destination|deliver)\s+([A-Za-z][A-Za-z\s]{1,40}?)(?:\s|,|\.|$)",
+        r"([A-Za-z][A-Za-z\s]{1,30}?)\s+se\s+([A-Za-z][A-Za-z\s]{1,30}?)(?:\s|,|\.|$)",
+        r"([A-Za-z][A-Za-z\s]{1,30}?)\s+(?:to|→|->)\s+([A-Za-z][A-Za-z\s]{1,30}?)(?:\s|,|\.|$)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            a, b = m.group(1).strip(), m.group(2).strip()
+            if len(a) > 2 and len(b) > 2:
+                return _normalize_place(a), _normalize_place(b)
+    cities = _find_cities(text)
+    if len(cities) >= 2:
+        return cities[0], cities[1]
+    if len(cities) == 1:
+        return cities[0], None
+    return None, None
+
+
+def _normalize_place(name: str) -> str:
+    key = name.strip().lower()
+    for alias, label in _CITY_ALIASES.items():
+        if alias in key or key in alias:
+            return label
+    if "india" not in key.lower():
+        return f"{name.strip().title()}, India"
+    return name.strip().title()
+
+
+def _scale_inr_amount(value: float, suffix: str | None) -> float:
+    if not suffix:
+        return value
+    s = suffix.lower()
+    if s == "k":
+        return value * 1_000
+    if s in ("lakh", "lakhs", "lac", "lacs"):
+        return value * 100_000
+    if s in ("cr", "crore", "crores"):
+        return value * 10_000_000
+    return value
+
+
+def _parse_budget_inr(text: str) -> float | None:
+    patterns = (
+        r"(?:max|under|budget|≤|<=|less than|upto|up to)\s*₹?\s*(\d[\d,]*(?:\.\d+)?)\s*([kK]|lakh|lakhs|lac|lacs|cr|crore)?\b",
+        r"₹\s*(\d[\d,]*(?:\.\d+)?)\s*([kK]|lakh|lakhs)?\b",
+        r"(\d[\d,]*(?:\.\d+)?)\s*([kK])\b",
+        r"(?:max|under|budget|₹|rs\.?|inr)\s*(\d[\d,]*(?:\.\d+)?)",
+        r"(\d[\d,]*(?:\.\d+)?)\s*(?:inr|rupees?|₹)",
+    )
+    for pat in patterns:
+        bm = re.search(pat, text, re.I)
+        if bm:
+            raw = float(bm.group(1).replace(",", ""))
+            suffix = bm.group(2) if bm.lastindex and bm.lastindex >= 2 else None
+            return _scale_inr_amount(raw, suffix)
+    return None
+
+
+def _normalize_llm_intent(parsed: dict[str, Any], user_brief: str, engine: str) -> dict[str, Any]:
+    parsed["applied"] = bool(parsed.get("source") and parsed.get("destination"))
+    parsed["scenario_brief"] = user_brief.strip()
+    parsed["source_engine"] = engine
+    if not parsed.get("scenario_summary"):
+        parsed["scenario_summary"] = user_brief[:120]
+    return parsed
+
+
+_INTENT_JSON_SCHEMA = (
+    "source, destination, suggested_mode (rail|road|air|water|hybrid), priority (cost|time|safe|balanced),\n"
+    "cargo_weight_kg, cargo_type (General|Fragile|Perishable), budget_max_inr, deadline_hours,\n"
+    "scenario_summary (one line), avoid_tolls, avoid_highways, traffic_aware, max_transshipments.\n"
+    "Use null for unknown fields. suggested_mode should reflect explicit user preference when stated."
+)
+
+
+def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
+    text = user_brief.strip()
+    source, destination = _extract_from_to(text)
+
+    weight_kg: float | None = None
+    for wpat, is_grams in (
+        (r"(\d+(?:\.\d+)?)\s*(?:kg|kgs|kilograms?|kilogram|kilo)\b", False),
+        (r"(\d+(?:\.\d+)?)\s*(?:gram|grams|g)\b", True),
+    ):
+        wm = re.search(wpat, text, re.I)
+        if wm:
+            weight_kg = float(wm.group(1))
+            if is_grams:
+                weight_kg /= 1000
+            break
+
+    budget = _parse_budget_inr(text)
+
+    deadline_hours: float | None = None
+    dm = re.search(r"within\s+(\d+(?:\.\d+)?)\s*(day|days|hour|hours|hr|hrs)\b", text, re.I)
+    if dm:
+        n = float(dm.group(1))
+        unit = dm.group(2).lower()
+        deadline_hours = n * 24 if unit.startswith("day") else n
+
+    suggested_mode = context_mode if context_mode not in ("home",) else "hybrid"
+    for pat, mode in _MODE_PATTERNS:
+        if pat.search(text):
+            suggested_mode = mode
+            break
+
+    priority = "balanced"
+    for pat, pri in _PRIORITY_PATTERNS:
+        if pat.search(text):
+            priority = pri
+            break
+
+    cargo_type = None
+    for ct in ("Perishable", "Fragile", "General"):
+        if re.search(rf"\b{ct.lower()}\b", text, re.I):
+            cargo_type = ct
+            break
+    if cargo_type is None and re.search(r"\b(medicine|medical|pharma|anar|pomegranate|fruit|fruits|perishable)\b", text, re.I):
+        cargo_type = "Perishable"
+
+    applied = bool(source and destination)
+    summary_parts = []
+    if source and destination:
+        summary_parts.append(f"{source} → {destination}")
+    if weight_kg:
+        summary_parts.append(f"{int(weight_kg)} kg")
+    if budget:
+        summary_parts.append(f"budget ₹{int(budget):,}")
+    if suggested_mode:
+        summary_parts.append(f"mode: {suggested_mode}")
+
+    return {
+        "applied": applied,
+        "source": source,
+        "destination": destination,
+        "suggested_mode": suggested_mode,
+        "priority": priority,
+        "cargo_weight_kg": weight_kg,
+        "cargo_type": cargo_type,
+        "budget_max_inr": budget,
+        "deadline_hours": deadline_hours,
+        "scenario_brief": text,
+        "scenario_summary": " · ".join(summary_parts) if summary_parts else text[:120],
+        "source_engine": "heuristic",
+        "parse_warning": None if applied else "Could not detect both origin and destination — fill the form manually.",
+    }
+
+
+def _intent_is_complete(result: dict[str, Any]) -> bool:
+    return bool(result.get("source") and result.get("destination"))
+
+
+def _merge_llm_into_heuristic(
+    base: dict[str, Any],
+    llm: dict[str, Any],
+    engine_label: str,
+) -> dict[str, Any]:
+    for key, val in llm.items():
+        if val is not None and base.get(key) in (None, "", []):
+            base[key] = val
+    if _intent_is_complete(base):
+        base["applied"] = True
+        base["parse_warning"] = None
+    if llm.get("scenario_summary") and base.get("scenario_summary") in (None, "", base.get("scenario_brief", "")[:120]):
+        base["scenario_summary"] = llm["scenario_summary"]
+    base["source_engine"] = engine_label
+    return base
+
+
+def _compose_engine_label(*parts: str) -> str:
+    return "+".join(p for p in parts if p)
+
+
+def _parse_gemini(user_brief: str, context_mode: str, timeout_s: int = 10) -> tuple[dict[str, Any] | None, str | None]:
+    prompt = (
+        "You are LogiFlow's shipment intent parser for Indian multimodal freight.\n"
+        "Extract structured fields from the user brief. Return ONLY valid JSON with these keys:\n"
+        f"{_INTENT_JSON_SCHEMA}\n"
+        f"UI context mode: {context_mode}\n"
+        f"User brief: {user_brief}\n"
+    )
+
+    raw, err = gemini_generate_content(
+        prompt,
+        response_mime_type="application/json",
+        temperature=0.2,
+        max_output_tokens=600,
+        timeout_s=timeout_s,
+    )
+    if not raw:
+        return None, f"Gemini unavailable ({err or 'no response'})"
+
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return None, "Gemini returned non-object JSON"
+        return _normalize_llm_intent(parsed, user_brief, "gemini"), None
+    except Exception as exc:
+        return None, f"Gemini JSON error ({exc})"
+
+
+def _parse_groq(user_brief: str, context_mode: str, timeout_s: int = 10) -> tuple[dict[str, Any] | None, str | None]:
+    api_key, model = _groq_config()
+    if not api_key:
+        return None, "Groq API key not configured"
+
+    prompt = (
+        "You are LogiFlow's shipment intent parser for Indian multimodal freight.\n"
+        "Extract structured fields from the user brief. Return ONLY valid JSON with these keys:\n"
+        f"{_INTENT_JSON_SCHEMA}\n"
+        f"UI context mode: {context_mode}\n"
+        f"User brief: {user_brief}\n"
+    )
+
+    try:
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.15,
+                "max_tokens": 600,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=timeout_s,
+        )
+        if not resp.ok:
+            detail = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+            return None, f"Groq unavailable ({detail})"
+        data = resp.json() if resp.content else {}
+        choices = data.get("choices") or []
+        if not choices:
+            return None, "Groq returned no choices"
+        raw = ((choices[0] or {}).get("message") or {}).get("content") or ""
+        raw = raw.strip()
+        if not raw:
+            return None, "Groq returned empty content"
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return None, "Groq returned non-object JSON"
+        return _normalize_llm_intent(parsed, user_brief, "groq"), None
+    except Exception as exc:
+        return None, f"Groq error ({exc})"
+
+
+def parse_shipment_intent(user_brief: str, context_mode: str = "home") -> dict[str, Any]:
+    brief = (user_brief or "").strip()
+    if len(brief) < 3:
+        return {
+            "applied": False,
+            "error": "Brief too short",
+            "scenario_brief": brief,
+        }
+
+    result = _parse_heuristic(brief, context_mode)
+    if _intent_is_complete(result):
+        return result
+
+    llm_warnings: list[str] = []
+    engines_used = ["heuristic"]
+
+    gemini, gemini_err = _parse_gemini(brief, context_mode)
+    if gemini_err:
+        llm_warnings.append(gemini_err)
+    if gemini:
+        engines_used.append("gemini")
+        result = _merge_llm_into_heuristic(result, gemini, _compose_engine_label(*engines_used))
+        if _intent_is_complete(result):
+            return result
+
+    groq, groq_err = _parse_groq(brief, context_mode)
+    if groq_err:
+        llm_warnings.append(groq_err)
+    if groq:
+        engines_used.append("groq")
+        result = _merge_llm_into_heuristic(result, groq, _compose_engine_label(*engines_used))
+
+    if not result.get("applied") and llm_warnings:
+        warning = result.get("parse_warning") or ""
+        llm_note = "LLM could not complete parse: " + "; ".join(llm_warnings[:2])
+        result["parse_warning"] = f"{warning} {llm_note}".strip() if warning else llm_note
+
+    return result

@@ -1,0 +1,3455 @@
+{
+  "completed_corridors": {
+    "AGC|ADI": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192ADI",
+      "at": "2026-06-04T16:06:52Z"
+    },
+    "AGC|AII": {
+      "status": "ok",
+      "trains_found": 6,
+      "label": "AGC\u2192AII",
+      "at": "2026-06-04T16:06:54Z"
+    },
+    "AGC|ALD": {
+      "status": "ok",
+      "trains_found": 28,
+      "label": "AGC\u2192ALD",
+      "at": "2026-06-04T16:06:56Z"
+    },
+    "AGC|UMB": {
+      "status": "ok",
+      "trains_found": 13,
+      "label": "AGC\u2192UMB",
+      "at": "2026-06-04T16:06:58Z"
+    },
+    "AGC|ASR": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192ASR",
+      "at": "2026-06-04T16:07:00Z"
+    },
+    "AGC|AWB": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192AWB",
+      "at": "2026-06-04T16:07:02Z"
+    },
+    "AGC|BE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192BE",
+      "at": "2026-06-04T16:07:04Z"
+    },
+    "AGC|SBC": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192SBC",
+      "at": "2026-06-04T16:07:05Z"
+    },
+    "AGC|BPL": {
+      "status": "ok",
+      "trains_found": 31,
+      "label": "AGC\u2192BPL",
+      "at": "2026-06-04T16:07:07Z"
+    },
+    "AGC|BBS": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192BBS",
+      "at": "2026-06-04T16:07:09Z"
+    },
+    "AGC|BSL": {
+      "status": "ok",
+      "trains_found": 11,
+      "label": "AGC\u2192BSL",
+      "at": "2026-06-04T16:07:12Z"
+    },
+    "AGC|BSP": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192BSP",
+      "at": "2026-06-04T16:07:13Z"
+    },
+    "AGC|MAS": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192MAS",
+      "at": "2026-06-04T16:07:15Z"
+    },
+    "AGC|CBE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192CBE",
+      "at": "2026-06-04T16:07:17Z"
+    },
+    "AGC|CTC": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192CTC",
+      "at": "2026-06-04T16:07:19Z"
+    },
+    "AGC|DDN": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192DDN",
+      "at": "2026-06-04T16:07:21Z"
+    },
+    "AGC|NDLS": {
+      "status": "ok",
+      "trains_found": 68,
+      "label": "AGC\u2192NDLS",
+      "at": "2026-06-04T16:07:24Z"
+    },
+    "AGC|DHN": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192DHN",
+      "at": "2026-06-04T16:07:25Z"
+    },
+    "AGC|DURG": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192DURG",
+      "at": "2026-06-04T16:07:27Z"
+    },
+    "AGC|ED": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192ED",
+      "at": "2026-06-04T16:07:29Z"
+    },
+    "AGC|MAO": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192MAO",
+      "at": "2026-06-04T16:07:31Z"
+    },
+    "AGC|G": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192G",
+      "at": "2026-06-04T16:07:33Z"
+    },
+    "AGC|GKP": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192GKP",
+      "at": "2026-06-04T16:07:35Z"
+    },
+    "AGC|GHY": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192GHY",
+      "at": "2026-06-04T16:07:37Z"
+    },
+    "AGC|GWL": {
+      "status": "ok",
+      "trains_found": 43,
+      "label": "AGC\u2192GWL",
+      "at": "2026-06-04T16:07:39Z"
+    },
+    "AGC|HW": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192HW",
+      "at": "2026-06-04T16:08:19Z"
+    },
+    "AGC|HWH": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192HWH",
+      "at": "2026-06-04T16:08:22Z"
+    },
+    "AGC|SC": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192SC",
+      "at": "2026-06-04T16:08:24Z"
+    },
+    "AGC|INDB": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192INDB",
+      "at": "2026-06-04T16:08:26Z"
+    },
+    "AGC|ET": {
+      "status": "ok",
+      "trains_found": 22,
+      "label": "AGC\u2192ET",
+      "at": "2026-06-04T16:08:29Z"
+    },
+    "AGC|JBP": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192JBP",
+      "at": "2026-06-04T16:08:31Z"
+    },
+    "AGC|JP": {
+      "status": "ok",
+      "trains_found": 11,
+      "label": "AGC\u2192JP",
+      "at": "2026-06-04T16:08:33Z"
+    },
+    "AGC|JUC": {
+      "status": "ok",
+      "trains_found": 9,
+      "label": "AGC\u2192JUC",
+      "at": "2026-06-04T16:08:36Z"
+    },
+    "AGC|JAT": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192JAT",
+      "at": "2026-06-04T16:08:38Z"
+    },
+    "AGC|JHS": {
+      "status": "ok",
+      "trains_found": 42,
+      "label": "AGC\u2192JHS",
+      "at": "2026-06-04T16:08:41Z"
+    },
+    "AGC|JSG": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192JSG",
+      "at": "2026-06-04T16:08:44Z"
+    },
+    "AGC|JU": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192JU",
+      "at": "2026-06-04T16:08:46Z"
+    },
+    "AGC|KYN": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192KYN",
+      "at": "2026-06-04T16:08:48Z"
+    },
+    "AGC|CNB": {
+      "status": "ok",
+      "trains_found": 39,
+      "label": "AGC\u2192CNB",
+      "at": "2026-06-04T16:08:51Z"
+    },
+    "AGC|CAPE": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "AGC\u2192CAPE",
+      "at": "2026-06-04T16:08:54Z"
+    },
+    "AGC|KTE": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192KTE",
+      "at": "2026-06-04T16:08:56Z"
+    },
+    "AGC|KGP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192KGP",
+      "at": "2026-06-04T16:08:58Z"
+    },
+    "AGC|ERS": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192ERS",
+      "at": "2026-06-04T16:09:01Z"
+    },
+    "AGC|KOTA": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192KOTA",
+      "at": "2026-06-04T16:09:03Z"
+    },
+    "AGC|LNL": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "AGC\u2192LNL",
+      "at": "2026-06-04T16:09:05Z"
+    },
+    "AGC|LKO": {
+      "status": "ok",
+      "trains_found": 12,
+      "label": "AGC\u2192LKO",
+      "at": "2026-06-04T16:09:08Z"
+    },
+    "AGC|LDH": {
+      "status": "ok",
+      "trains_found": 9,
+      "label": "AGC\u2192LDH",
+      "at": "2026-06-04T16:09:11Z"
+    },
+    "AGC|MDU": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192MDU",
+      "at": "2026-06-04T16:09:13Z"
+    },
+    "AGC|MAJN": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192MAJN",
+      "at": "2026-06-04T16:09:15Z"
+    },
+    "AGC|MTJ": {
+      "status": "ok",
+      "trains_found": 36,
+      "label": "AGC\u2192MTJ",
+      "at": "2026-06-04T16:09:18Z"
+    },
+    "AGC|MTC": {
+      "status": "ok",
+      "trains_found": 8,
+      "label": "AGC\u2192MTC",
+      "at": "2026-06-04T16:09:20Z"
+    },
+    "AGC|MB": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192MB",
+      "at": "2026-06-04T16:09:22Z"
+    },
+    "AGC|CSMT": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192CSMT",
+      "at": "2026-06-04T16:09:25Z"
+    },
+    "AGC|NCJ": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "AGC\u2192NCJ",
+      "at": "2026-06-04T16:09:28Z"
+    },
+    "AGC|NGP": {
+      "status": "ok",
+      "trains_found": 14,
+      "label": "AGC\u2192NGP",
+      "at": "2026-06-04T16:09:30Z"
+    },
+    "AGC|NED": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192NED",
+      "at": "2026-06-04T16:09:32Z"
+    },
+    "AGC|NK": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192NK",
+      "at": "2026-06-04T16:09:34Z"
+    },
+    "AGC|PNVL": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192PNVL",
+      "at": "2026-06-04T16:09:37Z"
+    },
+    "AGC|PTKC": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192PTKC",
+      "at": "2026-06-04T16:09:39Z"
+    },
+    "AGC|PNBE": {
+      "status": "ok",
+      "trains_found": 11,
+      "label": "AGC\u2192PNBE",
+      "at": "2026-06-04T16:09:42Z"
+    },
+    "AGC|PUNE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192PUNE",
+      "at": "2026-06-04T16:09:44Z"
+    },
+    "AGC|R": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192R",
+      "at": "2026-06-04T16:09:46Z"
+    },
+    "AGC|RJT": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "AGC\u2192RJT",
+      "at": "2026-06-04T16:09:49Z"
+    },
+    "AGC|RNC": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192RNC",
+      "at": "2026-06-04T16:09:51Z"
+    },
+    "AGC|RTM": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192RTM",
+      "at": "2026-06-04T16:09:54Z"
+    },
+    "AGC|RN": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192RN",
+      "at": "2026-06-04T16:09:56Z"
+    },
+    "AGC|RK": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192RK",
+      "at": "2026-06-04T16:09:58Z"
+    },
+    "AGC|ROU": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192ROU",
+      "at": "2026-06-04T16:10:00Z"
+    },
+    "AGC|SA": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "AGC\u2192SA",
+      "at": "2026-06-04T16:10:03Z"
+    },
+    "AGC|SBP": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192SBP",
+      "at": "2026-06-04T16:10:05Z"
+    },
+    "AGC|STA": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192STA",
+      "at": "2026-06-04T16:10:07Z"
+    },
+    "AGC|SUR": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192SUR",
+      "at": "2026-06-04T16:10:10Z"
+    },
+    "AGC|ST": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192ST",
+      "at": "2026-06-04T16:10:12Z"
+    },
+    "AGC|TATA": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192TATA",
+      "at": "2026-06-04T16:10:14Z"
+    },
+    "AGC|TNA": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "AGC\u2192TNA",
+      "at": "2026-06-04T16:10:17Z"
+    },
+    "AGC|TPJ": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "AGC\u2192TPJ",
+      "at": "2026-06-04T16:10:19Z"
+    },
+    "AGC|TUP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192TUP",
+      "at": "2026-06-04T16:10:22Z"
+    },
+    "AGC|TVC": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192TVC",
+      "at": "2026-06-04T16:10:24Z"
+    },
+    "AGC|UDZ": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "AGC\u2192UDZ",
+      "at": "2026-06-04T16:10:26Z"
+    },
+    "AGC|UJN": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192UJN",
+      "at": "2026-06-04T16:10:28Z"
+    },
+    "AGC|BRC": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192BRC",
+      "at": "2026-06-04T16:10:31Z"
+    },
+    "AGC|BSB": {
+      "status": "ok",
+      "trains_found": 10,
+      "label": "AGC\u2192BSB",
+      "at": "2026-06-04T16:10:33Z"
+    },
+    "AGC|BZA": {
+      "status": "ok",
+      "trains_found": 8,
+      "label": "AGC\u2192BZA",
+      "at": "2026-06-04T16:10:36Z"
+    },
+    "AGC|VSKP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "AGC\u2192VSKP",
+      "at": "2026-06-04T16:10:38Z"
+    },
+    "AGC|WL": {
+      "status": "ok",
+      "trains_found": 11,
+      "label": "AGC\u2192WL",
+      "at": "2026-06-04T16:10:40Z"
+    },
+    "AGC|WR": {
+      "status": "ok",
+      "trains_found": 14,
+      "label": "AGC\u2192WR",
+      "at": "2026-06-04T16:10:43Z"
+    },
+    "ADI|AGC": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "ADI\u2192AGC",
+      "at": "2026-06-04T16:10:45Z"
+    },
+    "ADI|AII": {
+      "status": "ok",
+      "trains_found": 12,
+      "label": "ADI\u2192AII",
+      "at": "2026-06-04T16:10:48Z"
+    },
+    "ADI|ALD": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "ADI\u2192ALD",
+      "at": "2026-06-04T16:10:50Z"
+    },
+    "ADI|UMB": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192UMB",
+      "at": "2026-06-04T16:10:52Z"
+    },
+    "ADI|ASR": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192ASR",
+      "at": "2026-06-04T16:10:55Z"
+    },
+    "ADI|AWB": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192AWB",
+      "at": "2026-06-04T16:10:57Z"
+    },
+    "ADI|BE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192BE",
+      "at": "2026-06-04T16:11:00Z"
+    },
+    "ADI|SBC": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "ADI\u2192SBC",
+      "at": "2026-06-04T16:11:02Z"
+    },
+    "ADI|BPL": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "ADI\u2192BPL",
+      "at": "2026-06-04T16:11:04Z"
+    },
+    "ADI|BBS": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192BBS",
+      "at": "2026-06-04T16:11:07Z"
+    },
+    "ADI|BSL": {
+      "status": "ok",
+      "trains_found": 7,
+      "label": "ADI\u2192BSL",
+      "at": "2026-06-04T16:11:09Z"
+    },
+    "ADI|BSP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192BSP",
+      "at": "2026-06-04T16:11:11Z"
+    },
+    "ADI|MAS": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192MAS",
+      "at": "2026-06-04T16:11:14Z"
+    },
+    "ADI|CBE": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192CBE",
+      "at": "2026-06-04T16:11:17Z"
+    },
+    "ADI|CTC": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192CTC",
+      "at": "2026-06-04T16:11:19Z"
+    },
+    "ADI|DDN": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192DDN",
+      "at": "2026-06-04T16:11:21Z"
+    },
+    "ADI|NDLS": {
+      "status": "ok",
+      "trains_found": 7,
+      "label": "ADI\u2192NDLS",
+      "at": "2026-06-04T16:11:24Z"
+    },
+    "ADI|DHN": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192DHN",
+      "at": "2026-06-04T16:11:26Z"
+    },
+    "ADI|DURG": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "ADI\u2192DURG",
+      "at": "2026-06-04T16:11:28Z"
+    },
+    "ADI|ED": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192ED",
+      "at": "2026-06-04T16:11:31Z"
+    },
+    "ADI|MAO": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192MAO",
+      "at": "2026-06-04T16:11:33Z"
+    },
+    "ADI|G": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "ADI\u2192G",
+      "at": "2026-06-04T16:11:35Z"
+    },
+    "ADI|GKP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192GKP",
+      "at": "2026-06-04T16:11:38Z"
+    },
+    "ADI|GHY": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192GHY",
+      "at": "2026-06-04T16:11:40Z"
+    },
+    "ADI|GWL": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192GWL",
+      "at": "2026-06-04T16:11:43Z"
+    },
+    "ADI|HW": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192HW",
+      "at": "2026-06-04T16:11:45Z"
+    },
+    "ADI|HWH": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192HWH",
+      "at": "2026-06-04T16:11:47Z"
+    },
+    "ADI|SC": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192SC",
+      "at": "2026-06-04T16:11:50Z"
+    },
+    "ADI|INDB": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192INDB",
+      "at": "2026-06-04T16:11:52Z"
+    },
+    "ADI|ET": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192ET",
+      "at": "2026-06-04T16:11:55Z"
+    },
+    "ADI|JBP": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192JBP",
+      "at": "2026-06-04T16:11:57Z"
+    },
+    "ADI|JP": {
+      "status": "ok",
+      "trains_found": 11,
+      "label": "ADI\u2192JP",
+      "at": "2026-06-04T16:11:59Z"
+    },
+    "ADI|JUC": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192JUC",
+      "at": "2026-06-04T16:12:02Z"
+    },
+    "ADI|JAT": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192JAT",
+      "at": "2026-06-04T16:12:04Z"
+    },
+    "ADI|JHS": {
+      "status": "ok",
+      "trains_found": 3,
+      "label": "ADI\u2192JHS",
+      "at": "2026-06-04T16:12:06Z"
+    },
+    "ADI|JSG": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192JSG",
+      "at": "2026-06-04T16:12:09Z"
+    },
+    "ADI|JU": {
+      "status": "ok",
+      "trains_found": 12,
+      "label": "ADI\u2192JU",
+      "at": "2026-06-04T16:12:11Z"
+    },
+    "ADI|KYN": {
+      "status": "ok",
+      "trains_found": 37,
+      "label": "ADI\u2192KYN",
+      "at": "2026-06-04T16:12:14Z"
+    },
+    "ADI|CNB": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "ADI\u2192CNB",
+      "at": "2026-06-04T16:12:16Z"
+    },
+    "ADI|CAPE": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192CAPE",
+      "at": "2026-06-04T16:12:18Z"
+    },
+    "ADI|KTE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192KTE",
+      "at": "2026-06-04T16:12:21Z"
+    },
+    "ADI|KGP": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192KGP",
+      "at": "2026-06-04T16:12:23Z"
+    },
+    "ADI|ERS": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192ERS",
+      "at": "2026-06-04T16:12:25Z"
+    },
+    "ADI|KOTA": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192KOTA",
+      "at": "2026-06-04T16:12:28Z"
+    },
+    "ADI|LNL": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192LNL",
+      "at": "2026-06-04T16:12:30Z"
+    },
+    "ADI|LKO": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "ADI\u2192LKO",
+      "at": "2026-06-04T16:12:32Z"
+    },
+    "ADI|LDH": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192LDH",
+      "at": "2026-06-04T16:12:35Z"
+    },
+    "ADI|MDU": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192MDU",
+      "at": "2026-06-04T16:12:37Z"
+    },
+    "ADI|MAJN": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192MAJN",
+      "at": "2026-06-04T16:12:39Z"
+    },
+    "ADI|MTJ": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192MTJ",
+      "at": "2026-06-04T16:12:41Z"
+    },
+    "ADI|MTC": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192MTC",
+      "at": "2026-06-04T16:12:44Z"
+    },
+    "ADI|MB": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192MB",
+      "at": "2026-06-04T16:12:46Z"
+    },
+    "ADI|CSMT": {
+      "status": "ok",
+      "trains_found": 37,
+      "label": "ADI\u2192CSMT",
+      "at": "2026-06-04T16:12:49Z"
+    },
+    "ADI|NCJ": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192NCJ",
+      "at": "2026-06-04T16:12:51Z"
+    },
+    "ADI|NGP": {
+      "status": "ok",
+      "trains_found": 6,
+      "label": "ADI\u2192NGP",
+      "at": "2026-06-04T16:12:53Z"
+    },
+    "ADI|NED": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192NED",
+      "at": "2026-06-04T16:12:56Z"
+    },
+    "ADI|NK": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192NK",
+      "at": "2026-06-04T16:12:58Z"
+    },
+    "ADI|PNVL": {
+      "status": "ok",
+      "trains_found": 37,
+      "label": "ADI\u2192PNVL",
+      "at": "2026-06-04T16:13:01Z"
+    },
+    "ADI|PTKC": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192PTKC",
+      "at": "2026-06-04T16:13:04Z"
+    },
+    "ADI|PNBE": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192PNBE",
+      "at": "2026-06-04T16:13:06Z"
+    },
+    "ADI|PUNE": {
+      "status": "ok",
+      "trains_found": 5,
+      "label": "ADI\u2192PUNE",
+      "at": "2026-06-04T16:13:08Z"
+    },
+    "ADI|R": {
+      "status": "ok",
+      "trains_found": 4,
+      "label": "ADI\u2192R",
+      "at": "2026-06-04T16:13:11Z"
+    },
+    "ADI|RJT": {
+      "status": "ok",
+      "trains_found": 16,
+      "label": "ADI\u2192RJT",
+      "at": "2026-06-04T16:13:13Z"
+    },
+    "ADI|RNC": {
+      "status": "empty",
+      "trains_found": 0,
+      "label": "ADI\u2192RNC",
+      "at": "2026-06-04T16:13:15Z"
+    },
+    "ADI|RTM": {
+      "status": "ok",
+      "trains_found": 9,
+      "label": "ADI\u2192RTM",
+      "at": "2026-06-04T16:13:18Z"
+    },
+    "ADI|RN": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192RN",
+      "at": "2026-06-04T16:13:20Z"
+    },
+    "ADI|RK": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192RK",
+      "at": "2026-06-04T16:13:23Z"
+    },
+    "ADI|ROU": {
+      "status": "ok",
+      "trains_found": 2,
+      "label": "ADI\u2192ROU",
+      "at": "2026-06-04T16:13:25Z"
+    },
+    "ADI|SA": {
+      "status": "ok",
+      "trains_found": 1,
+      "label": "ADI\u2192SA",
+      "at": "2026-06-04T16:13:27Z"
+    }
+  },
+  "trains": {
+    "12942": {
+      "train_name": "Parasnath Express",
+      "corridors": [
+        "AGC\u2192ADI",
+        "AGC\u2192KOTA",
+        "AGC\u2192RTM",
+        "AGC\u2192BRC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:52Z"
+    },
+    "20178": {
+      "train_name": "Agra Cantt - Asarva (Ahmedabad) SF Express",
+      "corridors": [
+        "AGC\u2192ADI",
+        "AGC\u2192UDZ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:52Z"
+    },
+    "12547": {
+      "train_name": "Agra Cantt - Sabarmati SF Express",
+      "corridors": [
+        "AGC\u2192ADI",
+        "AGC\u2192AII",
+        "AGC\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:52Z"
+    },
+    "12195": {
+      "train_name": "Agra Fort - Ajmer InterCity SF Express",
+      "corridors": [
+        "AGC\u2192AII",
+        "AGC\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:54Z"
+    },
+    "12315": {
+      "train_name": "Ananya SF Express",
+      "corridors": [
+        "AGC\u2192AII",
+        "AGC\u2192JP",
+        "AGC\u2192UDZ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:54Z"
+    },
+    "22988": {
+      "train_name": "Agra Fort - Ajmer SF Express",
+      "corridors": [
+        "AGC\u2192AII",
+        "AGC\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:54Z"
+    },
+    "19665": {
+      "train_name": "Khajuraho - Udaipur City Express",
+      "corridors": [
+        "AGC\u2192AII",
+        "AGC\u2192JP",
+        "AGC\u2192UDZ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:54Z"
+    },
+    "12987": {
+      "train_name": "Sealdah - Ajmer SF Express",
+      "corridors": [
+        "AGC\u2192AII",
+        "AGC\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:54Z"
+    },
+    "20176": {
+      "train_name": "Agra Cantt - Banaras Vande Bharat Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "14114": {
+      "train_name": "Dehradun - Subedarganj Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "20802": {
+      "train_name": "Magadh Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "02418": {
+      "train_name": "Dadri - Prayagraj Summer Special",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "14218": {
+      "train_name": "Unchahar Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12582": {
+      "train_name": "New Delhi - Banaras SF Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "14118": {
+      "train_name": "Kalindi Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "15657": {
+      "train_name": "Brahmaputra Mail",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192GHY",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "04072": {
+      "train_name": "New Delhi - Supaul Summer Special",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "20434": {
+      "train_name": "Jammu Mail",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "13052": {
+      "train_name": "Netaji Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192DHN",
+        "AGC\u2192HWH",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12308": {
+      "train_name": "JODHPUR - HOWRAH SF Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192DHN",
+        "AGC\u2192HWH",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "18310": {
+      "train_name": "Jammu Tawi - Sambalpur Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192JSG",
+        "AGC\u2192CNB",
+        "AGC\u2192RNC",
+        "AGC\u2192ROU",
+        "AGC\u2192SBP"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12506": {
+      "train_name": "North East SF Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192GHY",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12396": {
+      "train_name": "Ziyarat Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12488": {
+      "train_name": "Seemanchal Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "15484": {
+      "train_name": "Sikkim Mahananda Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "04464": {
+      "train_name": "FIROZPUR CANTT - LUDHIANA Express Special (UnReserved)",
+      "corridors": [
+        "AGC\u2192ALD"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "22969": {
+      "train_name": "Okha - Banaras SF Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "13698": {
+      "train_name": "Delhi - Gaya Amrit Bharat Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12988": {
+      "train_name": "Ajmer - Sealdah SF Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192DHN",
+        "AGC\u2192HWH",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "04088": {
+      "train_name": "New Delhi - Danapur SF Summer Special",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "22406": {
+      "train_name": "Anand Vihar T - Bhagalpur Garib Rath Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12382": {
+      "train_name": "Poorva Express (Via Gaya)",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192DHN",
+        "AGC\u2192HWH",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "14006": {
+      "train_name": "Lichchavi Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12404": {
+      "train_name": "Lalgarh - Prayagraj SF Express (Via Fatehpur Shekhawati)",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "04052": {
+      "train_name": "New Delhi - Howrah Summer Special",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192HWH",
+        "AGC\u2192CNB",
+        "AGC\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "14164": {
+      "train_name": "Sangam Express",
+      "corridors": [
+        "AGC\u2192ALD",
+        "AGC\u2192CNB"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:56Z"
+    },
+    "12919": {
+      "train_name": "Malwa SF Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192JAT",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ",
+        "AGC\u2192PTKC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "12715": {
+      "train_name": "Sachkhand SF Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192ASR",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "20433": {
+      "train_name": "Jammu Mail",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "18237": {
+      "train_name": "Chhattisgarh Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192ASR",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ",
+        "AGC\u2192MTC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "18309": {
+      "train_name": "Sambalpur - Jammu Tawi Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192ASR",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192JAT",
+        "AGC\u2192LDH"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "13051": {
+      "train_name": "Netaji Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "11077": {
+      "train_name": "Jhelum Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192JAT",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ",
+        "AGC\u2192PTKC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "20493": {
+      "train_name": "Madurai - Chandigarh SF Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS",
+        "AGC\u2192MTC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "11905": {
+      "train_name": "AGC HSX EXP",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "19307": {
+      "train_name": "Indore - Una Himachal Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ",
+        "AGC\u2192MTC"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "15707": {
+      "train_name": "Amrapali Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192ASR",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192LDH"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "11057": {
+      "train_name": "Mumbai CSMT - Amritsar Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192ASR",
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "14217": {
+      "train_name": "Unchahar Express",
+      "corridors": [
+        "AGC\u2192UMB",
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:06:58Z"
+    },
+    "12716": {
+      "train_name": "Sachkhand Express",
+      "corridors": [
+        "AGC\u2192AWB",
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NED"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:02Z"
+    },
+    "14622": {
+      "train_name": "Firozpur Cantt - Hazur Sahib Nanded Express",
+      "corridors": [
+        "AGC\u2192AWB",
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NED"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:02Z"
+    },
+    "14319": {
+      "train_name": "Indore - Bareilly Weekly Express",
+      "corridors": [
+        "AGC\u2192BE"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:04Z"
+    },
+    "15055": {
+      "train_name": "Agra Fort - Ramnagar Express",
+      "corridors": [
+        "AGC\u2192BE",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:04Z"
+    },
+    "22692": {
+      "train_name": "Hazrat Nizamuddin - K S R Bengaluru Rajdhani Express",
+      "corridors": [
+        "AGC\u2192SBC",
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192SC",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:05Z"
+    },
+    "12628": {
+      "train_name": "Karnataka SF Express",
+      "corridors": [
+        "AGC\u2192SBC",
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192SUR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:05Z"
+    },
+    "20172": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "22456": {
+      "train_name": "Kalka - Sainagar Shirdi SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12722": {
+      "train_name": "Dakshin SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192SC",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "22710": {
+      "train_name": "Amb Andaura - Hazur Sahib Nanded SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NED"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "18238": {
+      "train_name": "Chhattisgarh Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSP",
+        "AGC\u2192DURG",
+        "AGC\u2192G",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192R",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12644": {
+      "train_name": "Hazrat Nizamuddin - Thiruvananthapuram Central Swarna Jayanti SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192CBE",
+        "AGC\u2192ED",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192ERS",
+        "AGC\u2192NGP",
+        "AGC\u2192SA",
+        "AGC\u2192TUP",
+        "AGC\u2192TVC",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12002": {
+      "train_name": "Shatabdi Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12138": {
+      "train_name": "Punjab Mail",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192KYN",
+        "AGC\u2192CSMT",
+        "AGC\u2192NK",
+        "AGC\u2192PNVL",
+        "AGC\u2192TNA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12618": {
+      "train_name": "Mangala Lakshadweep SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192MAO",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192KYN",
+        "AGC\u2192ERS",
+        "AGC\u2192MAJN",
+        "AGC\u2192CSMT",
+        "AGC\u2192NK",
+        "AGC\u2192PNVL",
+        "AGC\u2192RN",
+        "AGC\u2192TNA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12808": {
+      "train_name": "Samata Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192DURG",
+        "AGC\u2192G",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192R",
+        "AGC\u2192VSKP",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "11078": {
+      "train_name": "Jhelum Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "20424": {
+      "train_name": "Patalkot Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12191": {
+      "train_name": "Shridham SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JBP",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "20494": {
+      "train_name": "Chandigarh - Madurai SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192MAS",
+        "AGC\u2192ED",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192MDU",
+        "AGC\u2192NGP",
+        "AGC\u2192SA",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "16788": {
+      "train_name": "Shri Mata Vaishno Devi Katra - Tirunelveli Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192ED",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192MDU",
+        "AGC\u2192NGP",
+        "AGC\u2192SA",
+        "AGC\u2192TPJ",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12406": {
+      "train_name": "Hazrat Nizamuddin - Bhusaval Gondwana SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12434": {
+      "train_name": "H Nizamuddin - Chennai Central Rajdhani Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192MAS",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12780": {
+      "train_name": "Goa Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192MAO",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12724": {
+      "train_name": "Telangana Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192SC",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12616": {
+      "train_name": "Grand Trunk Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192MAS",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "22222": {
+      "train_name": "Hazrat Nizamuddin - Mumbai CSMT Rajdhani Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192KYN",
+        "AGC\u2192CSMT",
+        "AGC\u2192NK",
+        "AGC\u2192PNVL",
+        "AGC\u2192TNA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "20806": {
+      "train_name": "Andhra Pradesh Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192BZA",
+        "AGC\u2192VSKP",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12626": {
+      "train_name": "Kerala Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192CBE",
+        "AGC\u2192ED",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192ERS",
+        "AGC\u2192NGP",
+        "AGC\u2192SA",
+        "AGC\u2192TUP",
+        "AGC\u2192TVC",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12156": {
+      "train_name": "Shaan-E-Bhopal SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12920": {
+      "train_name": "Malwa SF Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192GWL",
+        "AGC\u2192INDB",
+        "AGC\u2192JHS",
+        "AGC\u2192UJN"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12622": {
+      "train_name": "Tamil Nadu Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192MAS",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192NGP",
+        "AGC\u2192BZA",
+        "AGC\u2192WL",
+        "AGC\u2192WR"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "11058": {
+      "train_name": "Amritsar - Mumbai CSMT Express",
+      "corridors": [
+        "AGC\u2192BPL",
+        "AGC\u2192BSL",
+        "AGC\u2192GWL",
+        "AGC\u2192ET",
+        "AGC\u2192JHS",
+        "AGC\u2192KYN",
+        "AGC\u2192CSMT",
+        "AGC\u2192NK",
+        "AGC\u2192PNVL",
+        "AGC\u2192TNA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:07Z"
+    },
+    "12876": {
+      "train_name": "Neelachal Express",
+      "corridors": [
+        "AGC\u2192BBS",
+        "AGC\u2192CTC",
+        "AGC\u2192CNB",
+        "AGC\u2192KGP",
+        "AGC\u2192LKO",
+        "AGC\u2192TATA",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:09Z"
+    },
+    "18478": {
+      "train_name": "Kalinga Utkal Express",
+      "corridors": [
+        "AGC\u2192BBS",
+        "AGC\u2192BSP",
+        "AGC\u2192CTC",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192JSG",
+        "AGC\u2192KTE",
+        "AGC\u2192KGP",
+        "AGC\u2192ROU",
+        "AGC\u2192TATA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:09Z"
+    },
+    "20848": {
+      "train_name": "MTYR Captain Tushar Mahajan - Durg SF Express",
+      "corridors": [
+        "AGC\u2192BSP",
+        "AGC\u2192DURG",
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192KTE",
+        "AGC\u2192R"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:13Z"
+    },
+    "14113": {
+      "train_name": "Subedarganj - Dehradun Express",
+      "corridors": [
+        "AGC\u2192DDN",
+        "AGC\u2192HW",
+        "AGC\u2192MB"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:21Z"
+    },
+    "20171": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22469": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "14005": {
+      "train_name": "Lichchavi Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "20423": {
+      "train_name": "Patalkot Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "04063": {
+      "train_name": "Gaya - New Delhi Summer Special",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12721": {
+      "train_name": "Dakshin SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15658": {
+      "train_name": "Brahmaputra Mail",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15743": {
+      "train_name": "Farakka Express (Via Ayodhya Cantt )",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "14117": {
+      "train_name": "Kalindi Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22407": {
+      "train_name": "Ambikapur - Hazrat Nizamuddin SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22181": {
+      "train_name": "Jabalpur - Hazrat Nizamuddin Gondwana SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12615": {
+      "train_name": "Grand Trunk Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12447": {
+      "train_name": "Uttar Pradesh Sampark Kranti Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12409": {
+      "train_name": "Raigarh - Hazrat Nizamuddin Gondwana Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15565": {
+      "train_name": "Vaishali Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "20805": {
+      "train_name": "Andhra Pradesh Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12381": {
+      "train_name": "Poorva Express (Via Gaya)",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22691": {
+      "train_name": "K.S.R. Bengaluru - Hazrat Nizamuddin Rajdhani Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12621": {
+      "train_name": "Tamil Nadu Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12779": {
+      "train_name": "Goa Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12171": {
+      "train_name": "Mumbai LTT - Haridwar AC SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192HW",
+        "AGC\u2192MTC",
+        "AGC\u2192RK"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "11841": {
+      "train_name": "Gita Jayanti Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12723": {
+      "train_name": "Telangana Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12155": {
+      "train_name": "RANI KAMLAPATI - HAZRAT NIZAMUDDIN Shaan E Bhopal SF Exp",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12627": {
+      "train_name": "Karnataka SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "14211": {
+      "train_name": "Intercity Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "14309": {
+      "train_name": "Ujjaini Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192HW",
+        "AGC\u2192MTJ",
+        "AGC\u2192MTC",
+        "AGC\u2192RK"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "13697": {
+      "train_name": "Gaya - Delhi Amrit Bharat Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22405": {
+      "train_name": "Bhagalpur - Anand Vihar T Garib Rath Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12581": {
+      "train_name": "Banaras - New Delhi SF Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12485": {
+      "train_name": "Hazur Sahib Nanded - Shri Ganganagar SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "04087": {
+      "train_name": "Danapur - New Delhi SF Summer Special",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12189": {
+      "train_name": "Mahakoshal Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "22221": {
+      "train_name": "Mumbai CSMT - Hazrat Nizamuddin Rajdhani Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "20801": {
+      "train_name": "Magadh Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12192": {
+      "train_name": "Shridham SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "18477": {
+      "train_name": "Kalinga Utkal Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192HW",
+        "AGC\u2192MTJ",
+        "AGC\u2192MTC",
+        "AGC\u2192RK"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15557": {
+      "train_name": "Amrit Bharat Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "82501": {
+      "train_name": "Lucknow Jn. - New Delhi IRCTC Tejas Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12617": {
+      "train_name": "Mangala Lakshadweep SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12625": {
+      "train_name": "Kerala SF Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "04071": {
+      "train_name": "Supaul - New Delhi Summer Special",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12419": {
+      "train_name": "Gomti Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12815": {
+      "train_name": "Nandan Kanan Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12807": {
+      "train_name": "Samata Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12641": {
+      "train_name": "Thirukkural SF Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15483": {
+      "train_name": "Sikkim Mahananda Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "16031": {
+      "train_name": "Andaman Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192JUC",
+        "AGC\u2192JAT",
+        "AGC\u2192LDH",
+        "AGC\u2192MTJ",
+        "AGC\u2192PTKC"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12487": {
+      "train_name": "Seemanchal Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12505": {
+      "train_name": "North East SF Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12137": {
+      "train_name": "Punjab Mail",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12279": {
+      "train_name": "Taj Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12003": {
+      "train_name": "Lucknow Jn - New Delhi Swarn Shatabdi Express",
+      "corridors": [
+        "AGC\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "12001": {
+      "train_name": "Shatabdi Express",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "06597": {
+      "train_name": "Yesvantpur - Yog Nagari Rishikesh Fare Special",
+      "corridors": [
+        "AGC\u2192NDLS",
+        "AGC\u2192HW",
+        "AGC\u2192MTJ",
+        "AGC\u2192MTC",
+        "AGC\u2192RK"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:24Z"
+    },
+    "15558": {
+      "train_name": "Amrit Bharat Express",
+      "corridors": [
+        "AGC\u2192GKP",
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:35Z"
+    },
+    "19037": {
+      "train_name": "Avadh Express",
+      "corridors": [
+        "AGC\u2192GKP",
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:35Z"
+    },
+    "15708": {
+      "train_name": "Amrapali Express",
+      "corridors": [
+        "AGC\u2192GKP",
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:35Z"
+    },
+    "15566": {
+      "train_name": "Vaishali Express",
+      "corridors": [
+        "AGC\u2192GKP",
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:35Z"
+    },
+    "22470": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "22168": {
+      "train_name": "Urjadhani Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS",
+        "AGC\u2192KTE"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "22200": {
+      "train_name": "Sushasan Express",
+      "corridors": [
+        "AGC\u2192GWL"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "11902": {
+      "train_name": "Agra Cantt - Virangana Lakshmibai Jhansi Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "12280": {
+      "train_name": "Taj Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "19666": {
+      "train_name": "Udaipur City - Khajuraho Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "12190": {
+      "train_name": "Mahakaushal SF Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JBP",
+        "AGC\u2192JHS",
+        "AGC\u2192KTE",
+        "AGC\u2192STA"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "14318": {
+      "train_name": "Yog Nagari Rishikesh - Laxmi Bai Nagar Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192INDB",
+        "AGC\u2192UJN"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "22182": {
+      "train_name": "Gondwana SF Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JBP",
+        "AGC\u2192JHS",
+        "AGC\u2192KTE"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "11842": {
+      "train_name": "Gita Jayanti Express",
+      "corridors": [
+        "AGC\u2192GWL",
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:07:39Z"
+    },
+    "12403": {
+      "train_name": "Prayagraj - Lalgarh SF Express (via Fatehpur Shekhawati)",
+      "corridors": [
+        "AGC\u2192JP",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:33Z"
+    },
+    "14865": {
+      "train_name": "Marudhar Express",
+      "corridors": [
+        "AGC\u2192JP",
+        "AGC\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:33Z"
+    },
+    "04814": {
+      "train_name": "Danapur - Bhagat Ki Kothi Special",
+      "corridors": [
+        "AGC\u2192JP",
+        "AGC\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:33Z"
+    },
+    "15632": {
+      "train_name": "Guwahati - Barmer Express",
+      "corridors": [
+        "AGC\u2192JP",
+        "AGC\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:33Z"
+    },
+    "22307": {
+      "train_name": "Howrah - Bikaner SF Express",
+      "corridors": [
+        "AGC\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:33Z"
+    },
+    "12448": {
+      "train_name": "Uttar Pradesh Sampark Kranti Express",
+      "corridors": [
+        "AGC\u2192JHS"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:41Z"
+    },
+    "19038": {
+      "train_name": "Avadh Express",
+      "corridors": [
+        "AGC\u2192KYN",
+        "AGC\u2192KOTA",
+        "AGC\u2192CSMT",
+        "AGC\u2192PNVL",
+        "AGC\u2192RTM",
+        "AGC\u2192ST",
+        "AGC\u2192TNA",
+        "AGC\u2192BRC"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:48Z"
+    },
+    "13238": {
+      "train_name": "Kota - Patna Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO",
+        "AGC\u2192PNBE",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "15744": {
+      "train_name": "Farakka Express (Via Ayodhya Cantt.)",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO",
+        "AGC\u2192PNBE",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "12180": {
+      "train_name": "Agra Fort - Lucknow Jn. InterCity SF Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "12004": {
+      "train_name": "New Delhi - Lucknow Jn. Swarn Shatabdi Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "12420": {
+      "train_name": "Gomti Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "82502": {
+      "train_name": "New Delhi - Lucknow Jn. IRCTC Tejas Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "14864": {
+      "train_name": "Marudhar Express",
+      "corridors": [
+        "AGC\u2192CNB",
+        "AGC\u2192LKO",
+        "AGC\u2192BSB"
+      ],
+      "first_seen_utc": "2026-06-04T16:08:51Z"
+    },
+    "13239": {
+      "train_name": "Patna - Kota Express",
+      "corridors": [
+        "AGC\u2192KOTA",
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:09:03Z"
+    },
+    "19818": {
+      "train_name": "Haldighati Express",
+      "corridors": [
+        "AGC\u2192KOTA",
+        "AGC\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:09:03Z"
+    },
+    "04495": {
+      "train_name": "AGRA CANTT - PALWAL MEMU Express Special (UnReserved)",
+      "corridors": [
+        "AGC\u2192MTJ"
+      ],
+      "first_seen_utc": "2026-06-04T16:09:18Z"
+    },
+    "14163": {
+      "train_name": "Sangam Express",
+      "corridors": [
+        "AGC\u2192MTC"
+      ],
+      "first_seen_utc": "2026-06-04T16:09:20Z"
+    },
+    "20177": {
+      "train_name": "Asarva (Ahmedabad) - Agra Cantt SF Express",
+      "corridors": [
+        "ADI\u2192AGC"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:45Z"
+    },
+    "22548": {
+      "train_name": "Gwalior - Sabarmati SF Express",
+      "corridors": [
+        "ADI\u2192AGC",
+        "ADI\u2192AII",
+        "ADI\u2192GWL",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:45Z"
+    },
+    "15635": {
+      "train_name": "Okha - Guwahati Dwarka Express",
+      "corridors": [
+        "ADI\u2192AGC",
+        "ADI\u2192GHY",
+        "ADI\u2192CNB",
+        "ADI\u2192KOTA",
+        "ADI\u2192PNBE",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:45Z"
+    },
+    "19269": {
+      "train_name": "Porbandar - Muzaffarpur Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192BE",
+        "ADI\u2192NDLS",
+        "ADI\u2192GKP",
+        "ADI\u2192JP",
+        "ADI\u2192LKO",
+        "ADI\u2192MB"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "14702": {
+      "train_name": "Amrapur Aravali Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "19411": {
+      "train_name": "Gandhinagar Capital - Daulatpur Chowk Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192UMB",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "19031": {
+      "train_name": "Yoga Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192NDLS",
+        "ADI\u2192HW",
+        "ADI\u2192JP",
+        "ADI\u2192MTC",
+        "ADI\u2192RK"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "09257": {
+      "train_name": "Bhavnagar T - Shakur Basti Summer Special",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192NDLS"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "12216": {
+      "train_name": "Mumbai Bandra T - Delhi Sarai Rohilla Garib Rath Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192NDLS",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "12957": {
+      "train_name": "Swarna Jayanti Rajdhani Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192NDLS",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "12915": {
+      "train_name": "Ashram Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192NDLS",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "12982": {
+      "train_name": "Asarva - Jaipur SF Express",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "14312": {
+      "train_name": "Ala Hazrat Express (via Mahesana)",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192BE",
+        "ADI\u2192NDLS",
+        "ADI\u2192JP",
+        "ADI\u2192MB"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "54805": {
+      "train_name": "AHMEDABAD - JAIPUR Passenger",
+      "corridors": [
+        "ADI\u2192AII",
+        "ADI\u2192JP"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:48Z"
+    },
+    "22586": {
+      "train_name": "Gandhinagar Capital - Banaras SF Express",
+      "corridors": [
+        "ADI\u2192ALD",
+        "ADI\u2192BPL",
+        "ADI\u2192JHS",
+        "ADI\u2192CNB",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:50Z"
+    },
+    "19483": {
+      "train_name": "Ahmedabad - Saharsa Express",
+      "corridors": [
+        "ADI\u2192ALD",
+        "ADI\u2192BPL",
+        "ADI\u2192BSL",
+        "ADI\u2192ET",
+        "ADI\u2192PNBE"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:50Z"
+    },
+    "19489": {
+      "train_name": "Ahmedabad - Gorakhpur Express",
+      "corridors": [
+        "ADI\u2192ALD",
+        "ADI\u2192BPL",
+        "ADI\u2192KTE",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:10:50Z"
+    },
+    "14806": {
+      "train_name": "Barmer - Yesvantpur AC Express",
+      "corridors": [
+        "ADI\u2192SBC",
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:02Z"
+    },
+    "19568": {
+      "train_name": "Vivek Express",
+      "corridors": [
+        "ADI\u2192SBC",
+        "ADI\u2192ED",
+        "ADI\u2192KYN",
+        "ADI\u2192MDU",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192PUNE",
+        "ADI\u2192SA"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:02Z"
+    },
+    "16209": {
+      "train_name": "Ajmer - Mysuru Express",
+      "corridors": [
+        "ADI\u2192SBC",
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:02Z"
+    },
+    "11463": {
+      "train_name": "Somnath - Jabalpur Express",
+      "corridors": [
+        "ADI\u2192BPL",
+        "ADI\u2192ET",
+        "ADI\u2192JBP",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:04Z"
+    },
+    "20824": {
+      "train_name": "Ajmer - Puri SF Express",
+      "corridors": [
+        "ADI\u2192BBS",
+        "ADI\u2192BSL",
+        "ADI\u2192DURG",
+        "ADI\u2192G",
+        "ADI\u2192NGP",
+        "ADI\u2192R"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:07Z"
+    },
+    "20862": {
+      "train_name": "Ahmedabad - Puri SF Express",
+      "corridors": [
+        "ADI\u2192BBS",
+        "ADI\u2192BSL",
+        "ADI\u2192DURG",
+        "ADI\u2192G",
+        "ADI\u2192NGP",
+        "ADI\u2192R"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:07Z"
+    },
+    "12833": {
+      "train_name": "Ahmedabad - Howrah SF Express",
+      "corridors": [
+        "ADI\u2192BSL",
+        "ADI\u2192BSP",
+        "ADI\u2192DURG",
+        "ADI\u2192G",
+        "ADI\u2192HWH",
+        "ADI\u2192JSG",
+        "ADI\u2192KGP",
+        "ADI\u2192NGP",
+        "ADI\u2192R",
+        "ADI\u2192ROU"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:09Z"
+    },
+    "20626": {
+      "train_name": "Bhagat Ki Kothi - MGR Chennai Central SF Express",
+      "corridors": [
+        "ADI\u2192BSL",
+        "ADI\u2192MAS",
+        "ADI\u2192NGP"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:09Z"
+    },
+    "12949": {
+      "train_name": "Kavi Guru SF Express",
+      "corridors": [
+        "ADI\u2192BSL",
+        "ADI\u2192BSP",
+        "ADI\u2192DURG",
+        "ADI\u2192G",
+        "ADI\u2192HWH",
+        "ADI\u2192JSG",
+        "ADI\u2192KGP",
+        "ADI\u2192NGP",
+        "ADI\u2192R",
+        "ADI\u2192ROU"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:09Z"
+    },
+    "12655": {
+      "train_name": "Navjeevan SF Express",
+      "corridors": [
+        "ADI\u2192BSL",
+        "ADI\u2192MAS",
+        "ADI\u2192NGP"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:09Z"
+    },
+    "20910": {
+      "train_name": "Porbandar - Thiruvananthapuram North (Kochuveli) SF Express",
+      "corridors": [
+        "ADI\u2192MAO",
+        "ADI\u2192KYN",
+        "ADI\u2192ERS",
+        "ADI\u2192MAJN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192RN"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:33Z"
+    },
+    "16335": {
+      "train_name": "Gandhidham - Nagercoil Express",
+      "corridors": [
+        "ADI\u2192MAO",
+        "ADI\u2192KYN",
+        "ADI\u2192CAPE",
+        "ADI\u2192ERS",
+        "ADI\u2192MAJN",
+        "ADI\u2192CSMT",
+        "ADI\u2192NCJ",
+        "ADI\u2192PNVL",
+        "ADI\u2192RN"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:33Z"
+    },
+    "09451": {
+      "train_name": "Gandhidham - Bhagalpur Summer Special",
+      "corridors": [
+        "ADI\u2192GKP",
+        "ADI\u2192CNB",
+        "ADI\u2192KOTA",
+        "ADI\u2192LKO",
+        "ADI\u2192MTJ",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:38Z"
+    },
+    "19316": {
+      "train_name": "VIRBHUMI EXP",
+      "corridors": [
+        "ADI\u2192INDB",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:52Z"
+    },
+    "19309": {
+      "train_name": "SHANTI EXPRESS",
+      "corridors": [
+        "ADI\u2192INDB",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:11:52Z"
+    },
+    "09465": {
+      "train_name": "Ahmedabad - Darbhanga Clone Special",
+      "corridors": [
+        "ADI\u2192JHS",
+        "ADI\u2192CNB",
+        "ADI\u2192LKO",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:06Z"
+    },
+    "19165": {
+      "train_name": "Sabarmati Express",
+      "corridors": [
+        "ADI\u2192JHS",
+        "ADI\u2192CNB",
+        "ADI\u2192LKO",
+        "ADI\u2192RTM"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:06Z"
+    },
+    "12462": {
+      "train_name": "SABARMATI - JODHPUR Vande Bharat Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "22723": {
+      "train_name": "Hazur Sahib Nanded - Shri Ganganagar SF Express (via Ahmedabad)",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20943": {
+      "train_name": "Humsafar Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20694": {
+      "train_name": "KSR Bengaluru - Jodhpur SF Express (via Davangere)",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20486": {
+      "train_name": "Sabarmati - Jaisalmer Intercity SF Express (via Jalor)",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20496": {
+      "train_name": "Hadapsar - Jodhpur SF Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "19223": {
+      "train_name": "Sabarmati - Jammu Tawi Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "22931": {
+      "train_name": "Mumbai Bandra T - Jaisalmer SF Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "12480": {
+      "train_name": "SURYANAGARI EXP",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "14708": {
+      "train_name": "Ranakpur Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20492": {
+      "train_name": "Sabarmati - Jaisalmer SF Express",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "20484": {
+      "train_name": "DDR BGKT SF EXP",
+      "corridors": [
+        "ADI\u2192JU"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:11Z"
+    },
+    "22962": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "20902": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12215": {
+      "train_name": "Delhi Sarai Rohilla - Mumbai Bandra T Garib Rath Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12268": {
+      "train_name": "Duronto Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22990": {
+      "train_name": "Mahuva - Mumbai Bandra T SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22956": {
+      "train_name": "Kutch SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12479": {
+      "train_name": "Suryanagari SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22952": {
+      "train_name": "Gandhidham - Mumbai Bandra T SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "20483": {
+      "train_name": "BGKT DDR EXP",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12934": {
+      "train_name": "Karnavati SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "20908": {
+      "train_name": "Sayaji Nagari SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "20495": {
+      "train_name": "Jodhpur - Hadapsar SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192LNL",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12932": {
+      "train_name": "Ahmedabad - Mumbai Central AC Double Decker Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "82902": {
+      "train_name": "IRCTC Tejas Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22954": {
+      "train_name": "Gujarat SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "19016": {
+      "train_name": "Saurashtra Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22950": {
+      "train_name": "Delhi Sarai Rohilla - Mumbai Bandra T SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12998": {
+      "train_name": "Humsafar Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "14807": {
+      "train_name": "Jodhpur - Mumbai Dadar Western Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12010": {
+      "train_name": "Shatabdi Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "19218": {
+      "train_name": "Saurashtra Janta Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22946": {
+      "train_name": "Saurashtra Mail",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "22928": {
+      "train_name": "Lokshakti SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "14701": {
+      "train_name": "Amrapur Aravali Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12297": {
+      "train_name": "Duronto Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192LNL",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL",
+        "ADI\u2192PUNE"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "09082": {
+      "train_name": "Maninagar - Mumbai Central AC SF Special",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12902": {
+      "train_name": "Gujarat Mail",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "14707": {
+      "train_name": "Ranakpur Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "59440": {
+      "train_name": "AHMEDABAD - MUMBAI CENTRAL Passenger",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "19418": {
+      "train_name": "Ahmedabad - Borivali Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "12972": {
+      "train_name": "Bhavnagar T - Mumbai Bandra T SF Express",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "09038": {
+      "train_name": "Bhuj - Mumbai Bandra T AC SF Special",
+      "corridors": [
+        "ADI\u2192KYN",
+        "ADI\u2192CSMT",
+        "ADI\u2192PNVL"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:14Z"
+    },
+    "15560": {
+      "train_name": "JanSadharan Express (UnReserved)",
+      "corridors": [
+        "ADI\u2192KTE"
+      ],
+      "first_seen_utc": "2026-06-04T16:12:21Z"
+    },
+    "26901": {
+      "train_name": "Sabarmati - Veraval Vande Bharat Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "22925": {
+      "train_name": "Vande Bharat Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "12267": {
+      "train_name": "Duronto Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "22945": {
+      "train_name": "Saurashtra Mail",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "16338": {
+      "train_name": "Ernakulam - Okha Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "11088": {
+      "train_name": "Pune - Veraval Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "22923": {
+      "train_name": "Humsafar Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "11464": {
+      "train_name": "Jabalpur - Veraval Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "19576": {
+      "train_name": "Nathdwara - Okha Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "19119": {
+      "train_name": "InterCity Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "09206": {
+      "train_name": "Asansol - Porbandar Summer Special",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "22959": {
+      "train_name": "Vadodara - Jamnagar Intercity Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "15045": {
+      "train_name": "Gorakhpur - Okha Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "19015": {
+      "train_name": "Saurashtra Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "22957": {
+      "train_name": "Somnath SF Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    },
+    "19217": {
+      "train_name": "Saurashtra Janta Express",
+      "corridors": [
+        "ADI\u2192RJT"
+      ],
+      "first_seen_utc": "2026-06-04T16:13:13Z"
+    }
+  },
+  "stats": {
+    "corridors_ok": 137,
+    "corridors_empty": 18,
+    "corridors_error": 0
+  }
+}

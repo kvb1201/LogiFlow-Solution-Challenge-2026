@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.optimize import router as optimize_router
+from app.routes.comparator import router as comparator_router
 from app.routes.rail_routes import router as rail_router
 from app.routes.road_routes import road_router
 from app.routes.water_routes import water_router
 from app.routes.air_routes import air_router
 from app.routes.explain_routes import router as explain_router
+from app.routes.intent_routes import intent_router
 
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
@@ -23,13 +25,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
+
 app.include_router(optimize_router)
+app.include_router(comparator_router)
 app.include_router(rail_router)
 app.include_router(road_router)
 app.include_router(water_router)
 app.include_router(air_router)
 app.include_router(explain_router)
+app.include_router(intent_router)

@@ -1,10 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import React from 'react';
 import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
-import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { PipelineModePage } from '@/components/cockpit/PipelineModePage';
 
 export default function AirPageClient() {
   const error = useLogiFlowStore((state) => state.error);
