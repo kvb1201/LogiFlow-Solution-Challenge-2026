@@ -62,4 +62,4 @@ build/
 *.tmp
 *.bak
 backend/.env
-backend/.env
+backend/test_irctc.mjs
