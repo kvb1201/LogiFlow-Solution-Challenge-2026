@@ -1,23 +1,13 @@
-# This service calls the Gemini API to turn structured route comparison data into natural-language explanations.
+# Gemini-backed natural-language explanations for hybrid multimodal comparisons.
 import json
-import os
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
-import requests
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-
-GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
-GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
-GEMINI_API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-)
+from app.services.gemini_service import _gemini_config, gemini_generate_content
 
 
 def is_gemini_enabled() -> bool:
-    return bool(GEMINI_API_KEY)
+    key, _ = _gemini_config()
+    return bool(key)
 
 
 def _clean_json_block(text: str) -> str:
@@ -34,9 +24,9 @@ def _clean_json_block(text: str) -> str:
 def generate_hybrid_explanations(
     *,
     priority: str,
-    ranked_routes: List[Dict[str, Any]],
+    ranked_routes: list[dict[str, Any]],
     recommended_mode: str,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     if not is_gemini_enabled():
         return None
 
@@ -63,44 +53,26 @@ def generate_hybrid_explanations(
         },
     }
 
-    request_body = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": (
-                            "You are generating explainability text for a multimodal cargo optimizer. "
-                            "Return JSON only.\n"
-                            f"{json.dumps(prompt_payload, ensure_ascii=True)}"
-                        )
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.4,
-            "responseMimeType": "application/json",
-        },
-    }
+    prompt = (
+        "You are generating explainability text for a multimodal cargo optimizer. "
+        "Return JSON only.\n"
+        f"{json.dumps(prompt_payload, ensure_ascii=True)}"
+    )
+
+    text, err = gemini_generate_content(
+        prompt,
+        response_mime_type="application/json",
+        temperature=0.4,
+        max_output_tokens=1500,
+        timeout_s=16,
+    )
+    if not text:
+        if err:
+            print(f"[GeminiExplainer] Gemini explanation failed: {err}")
+        return None
 
     try:
-        response = requests.post(
-            GEMINI_API_URL,
-            params={"key": GEMINI_API_KEY},
-            json=request_body,
-            timeout=12,
-        )
-        response.raise_for_status()
-        data = response.json()
-        text = (
-            data.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-        )
-        if not text:
-            return None
         return json.loads(_clean_json_block(text))
     except Exception as exc:
-        print(f"[GeminiExplainer] Gemini explanation failed: {exc}")
+        print(f"[GeminiExplainer] JSON parse failed: {exc}")
         return None

@@ -1,22 +1,26 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { consumeShipmentAutorun } from '@/lib/shipmentAutorun';
+import {
+  markShipmentAutorunStarted,
+  shouldRunShipmentAutorun,
+} from '@/lib/shipmentAutorun';
 
 /**
- * Runs `run` once when landing after home intent confirmation (session flag).
+ * Runs `run` once when landing after home intent confirmation.
  */
 export function useShipmentAutorun(
   mode: string,
   run: () => void,
   ready: boolean
 ) {
-  const ran = useRef(false);
+  const runRef = useRef(run);
+  runRef.current = run;
 
   useEffect(() => {
-    if (!ready || ran.current) return;
-    if (!consumeShipmentAutorun(mode)) return;
-    ran.current = true;
-    run();
-  }, [mode, run, ready]);
+    if (!ready) return;
+    if (!shouldRunShipmentAutorun(mode)) return;
+    markShipmentAutorunStarted(mode);
+    runRef.current();
+  }, [mode, ready]);
 }

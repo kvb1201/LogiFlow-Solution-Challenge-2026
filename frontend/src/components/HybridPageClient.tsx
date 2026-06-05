@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   optimizeHybridRoute,
   type AiConstraintsApplied,
@@ -10,6 +10,12 @@ import {
 } from '@/services/api';
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import {
+  markShipmentAutorunStarted,
+  shouldRunShipmentAutorun,
+  syncAutorunFromSession,
+} from '@/lib/shipmentAutorun';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -232,12 +238,16 @@ export default function HybridPageClient() {
   const setBudgetMax = useLogiFlowStore((s) => s.setBudgetMax);
   const departureDate = useLogiFlowStore((s) => s.departureDate);
   const deadlineHours = useLogiFlowStore((s) => s.deadlineHours);
+  const storeScenarioBrief = useLogiFlowStore((s) => s.scenarioBrief);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [scenarioBrief, setScenarioBrief] = useState('');
+  const [scenarioBrief, setScenarioBrief] = useState(() => useLogiFlowStore.getState().scenarioBrief || '');
   const [loading, setLoading] = useState(false);
+  const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
+
+  const skipWizard = loading || Boolean(result) || (autoTriggered && !error);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -261,25 +271,32 @@ export default function HybridPageClient() {
     return comparisonRows.find((row) => normalizeMode(row.mode) === recommendedMode) ?? null;
   }, [comparisonRows, recommendedMode]);
 
-  async function runOptimize() {
-    if (!source.trim() || !destination.trim()) return;
+  const runOptimize = useCallback(async () => {
+    const state = useLogiFlowStore.getState();
+    const origin = state.source.trim();
+    const dest = state.destination.trim();
+    if (!origin || !dest) return;
+
+    const brief = (scenarioBrief || state.scenarioBrief || '').trim();
     setError(null);
     setLoading(true);
     setStep(3);
+    setAutoTriggered(true);
+
     try {
       const data = await optimizeHybridRoute({
-        source: source.trim(),
-        destination: destination.trim(),
-        priority,
-        departure_date: departureDate,
-        cargo_weight_kg: cargoWeight,
-        cargo_type: cargoType,
-        scenario_brief: scenarioBrief.trim() || undefined,
-        cargo: { weight: cargoWeight, type: cargoType.toLowerCase() },
+        source: origin,
+        destination: dest,
+        priority: state.priority,
+        departure_date: state.departureDate,
+        cargo_weight_kg: state.cargoWeight,
+        cargo_type: state.cargoType,
+        scenario_brief: brief || undefined,
+        cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
         constraints: {
-          budget_max_inr: budgetMax,
-          budget_limit: budgetMax,
-          delay_tolerance_hours: deadlineHours,
+          budget_max_inr: state.budgetMax,
+          budget_limit: state.budgetMax,
+          delay_tolerance_hours: state.deadlineHours,
         },
       });
       if ((data as { error?: string }).error) {
@@ -288,26 +305,56 @@ export default function HybridPageClient() {
       setResult(data);
     } catch (err: unknown) {
       setResult(null);
-      setError(err instanceof Error ? err.message : 'Optimization failed. Try the demo corridor or simplify constraints.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Optimization failed. Try the demo corridor or simplify constraints.'
+      );
     } finally {
       setLoading(false);
     }
-  }
+  }, [scenarioBrief]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    runOptimize();
+    void runOptimize();
   }
+
+  const runOptimizeRef = useRef(runOptimize);
+  runOptimizeRef.current = runOptimize;
+
+  useEffect(() => {
+    if (storeScenarioBrief?.trim()) {
+      setScenarioBrief(storeScenarioBrief);
+    }
+  }, [storeScenarioBrief]);
+
+  useLayoutEffect(() => {
+    syncAutorunFromSession();
+    if (!shouldRunShipmentAutorun('hybrid')) return;
+
+    const state = useLogiFlowStore.getState();
+    if (!state.source.trim() || !state.destination.trim()) return;
+
+    if (state.scenarioBrief?.trim()) {
+      setScenarioBrief(state.scenarioBrief);
+    }
+    markShipmentAutorunStarted('hybrid');
+    setAutoTriggered(true);
+    setStep(3);
+    setLoading(true);
+    void runOptimizeRef.current();
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col overflow-x-hidden bg-[#05070c] min-h-0">
       {/* Hero */}
       <section className="relative border-b border-white/[0.06] overflow-hidden">
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 [&_*]:pointer-events-none">
           <div className="absolute w-[min(90vw,640px)] h-[min(90vw,640px)] rounded-full opacity-[0.14] blur-[110px] bg-violet-600 -top-[50%] right-[-20%]" />
           <div className="absolute w-[min(70vw,480px)] h-[min(70vw,480px)] rounded-full opacity-[0.1] blur-[90px] bg-primary bottom-[-40%] left-[-15%]" />
         </div>
-        <div className="relative max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
+        <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
           <div className="flex flex-wrap items-center gap-2 mb-5">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
               Smart Supply Chain
@@ -362,7 +409,7 @@ export default function HybridPageClient() {
       </section>
 
       {/* Steps */}
-      <div className="max-w-6xl mx-auto w-full px-5 sm:px-8 pt-8">
+      <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto w-full px-5 sm:px-8 pt-8">
         <div className="flex items-center gap-2 sm:gap-4 mb-8">
           {[
             { n: 1, label: 'Corridor' },
@@ -391,8 +438,25 @@ export default function HybridPageClient() {
           ))}
         </div>
 
+        {skipWizard && (
+          <div className="mb-6 rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4">
+            <p className="text-sm font-semibold text-on-surface">
+              {loading
+                ? 'Running multimodal comparison with your confirmed shipment…'
+                : result
+                  ? 'Recommendation ready — based on your confirmed shipment'
+                  : 'Preparing your multimodal comparison…'}
+            </p>
+            <p className="text-xs text-on-surface-variant mt-1">
+              {source && destination ? `${source} → ${destination}` : 'Using parsed corridor from home'}
+              {cargoWeight ? ` · ${cargoWeight} kg` : ''}
+              {priority ? ` · priority: ${priority}` : ''}
+            </p>
+          </div>
+        )}
+
         <form onSubmit={onSubmit} className="space-y-6">
-          {step === 1 && (
+          {!skipWizard && step === 1 && (
             <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
               <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -468,7 +532,7 @@ export default function HybridPageClient() {
             </div>
           )}
 
-          {step === 2 && (
+          {!skipWizard && step === 2 && (
             <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-b from-violet-500/[0.06] to-transparent p-6 sm:p-8 space-y-5 animate-fade-in">
               <div>
                 <h2 className="text-lg font-bold text-on-surface">What constraints matter?</h2>
@@ -477,12 +541,13 @@ export default function HybridPageClient() {
                   and excluded modes.
                 </p>
               </div>
-              <textarea
+              <ParagraphInputWithStt
                 value={scenarioBrief}
-                onChange={(e) => setScenarioBrief(e.target.value)}
+                onChange={setScenarioBrief}
                 rows={4}
                 placeholder="e.g. Monsoon delays expected, budget under ₹10k, must deliver within 48h, prefer rail over air…"
                 className="w-full px-4 py-3.5 rounded-xl border border-violet-400/20 bg-black/40 text-on-surface placeholder:text-outline/60 focus:outline-none focus:ring-2 focus:ring-violet-400/30 resize-y min-h-[100px]"
+                lang="en-IN"
               />
               <div className="flex flex-wrap gap-2">
                 {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer water/rail'].map(
@@ -529,7 +594,7 @@ export default function HybridPageClient() {
             </div>
           )}
 
-          {step === 3 && !result && !loading && (
+          {!skipWizard && step === 3 && !result && !loading && (
             <div className="text-center py-12 text-on-surface-variant text-sm">
               Complete steps 1–2 and run optimization, or use the demo button above.
             </div>
@@ -537,9 +602,23 @@ export default function HybridPageClient() {
         </form>
 
         {error && (
-          <div className="mt-6 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex gap-2 items-start">
-            <span className="material-symbols-outlined text-base shrink-0">error</span>
-            <span>{error}</span>
+          <div className="mt-6 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex flex-col gap-3">
+            <div className="flex gap-2 items-start">
+              <span className="material-symbols-outlined text-base shrink-0">error</span>
+              <span>{error}</span>
+            </div>
+            {autoTriggered && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAutoTriggered(false);
+                  setStep(1);
+                }}
+                className="self-start text-xs font-semibold text-red-100 underline"
+              >
+                Edit shipment details and try again
+              </button>
+            )}
           </div>
         )}
 

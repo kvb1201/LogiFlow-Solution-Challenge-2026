@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { searchCities, type StationSearchResult } from '@/services/api';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import {
@@ -10,6 +11,7 @@ import {
   FormField,
   FormShell,
   FormSubmit,
+  LOGIFLOW_FORM_IDS,
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
@@ -258,6 +260,28 @@ export default function RoadInputForm() {
   const [simWeather, setSimWeather] = useState(0.5);
   const [simIncidents, setSimIncidents] = useState(0);
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  const runRoadOptimize = useCallback(() => {
+    if (!source.trim() || !destination.trim()) return;
+    handleOptimize({
+      mode: 'road',
+      simulation_mode: simulationMode,
+      simulation: simulationMode
+        ? {
+            traffic_level: simTraffic,
+            weather_level: simWeather,
+            incident_count: simIncidents,
+          }
+        : undefined,
+    });
+  }, [
+    source,
+    destination,
+    handleOptimize,
+    simulationMode,
+    simTraffic,
+    simWeather,
+    simIncidents,
+  ]);
 
   useEffect(() => {
     const timers = [
@@ -269,6 +293,8 @@ export default function RoadInputForm() {
     ];
     return () => timers.forEach(clearTimeout);
   }, []);
+
+  useShipmentAutorun('road', runRoadOptimize, Boolean(source.trim() && destination.trim()));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,17 +321,7 @@ export default function RoadInputForm() {
       destination,
       priority,
     });
-    handleOptimize({
-      mode: 'road',
-      simulation_mode: simulationMode,
-      simulation: simulationMode
-        ? {
-            traffic_level: simTraffic,
-            weather_level: simWeather,
-            incident_count: simIncidents,
-          }
-        : undefined,
-    });
+    runRoadOptimize();
   };
 
   return (
@@ -324,6 +340,7 @@ export default function RoadInputForm() {
         }
         footer={
           <FormSubmit
+            formId={LOGIFLOW_FORM_IDS.road}
             loading={loading}
             disabled={!source.trim() || !destination.trim()}
             label="Find optimal routes"
@@ -333,11 +350,13 @@ export default function RoadInputForm() {
           />
         }
       >
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form id={LOGIFLOW_FORM_IDS.road} onSubmit={handleSubmit} className="space-y-5">
             {/* Origin / Destination */}
             <div
               className={`relative z-[100] transition-all duration-600 ${
-                formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                formStep >= 1
+                  ? 'pointer-events-auto opacity-100 translate-y-0'
+                  : 'pointer-events-none opacity-0 translate-y-3'
               }`}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
@@ -392,7 +411,9 @@ export default function RoadInputForm() {
             {/* Weight + Date */}
             <div
               className={`grid grid-cols-2 gap-4 transition-all duration-600 delay-75 ${
-                formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                formStep >= 2
+                  ? 'pointer-events-auto opacity-100 translate-y-0'
+                  : 'pointer-events-none opacity-0 translate-y-3'
               }`}
             >
               <div>
@@ -472,7 +493,9 @@ export default function RoadInputForm() {
             {/* Route preferences */}
             <div
               className={`transition-all duration-600 delay-150 ${
-                formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                formStep >= 4
+                  ? 'pointer-events-auto opacity-100 translate-y-0'
+                  : 'pointer-events-none opacity-0 translate-y-3'
               }`}
             >
               <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">

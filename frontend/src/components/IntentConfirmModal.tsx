@@ -34,11 +34,11 @@ export default function IntentConfirmModal({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 z-0 bg-black/70 backdrop-blur-sm"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-lg rounded-2xl border border-violet-400/30 bg-[#0c1018] shadow-[0_32px_120px_-24px_rgba(0,0,0,0.9)] animate-fade-in overflow-hidden">
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-violet-400/30 bg-[#0c1018] shadow-[0_32px_120px_-24px_rgba(0,0,0,0.9)] animate-fade-in overflow-hidden pointer-events-auto">
         <div className="px-5 sm:px-6 py-5 border-b border-outline-variant/15 bg-gradient-to-r from-violet-500/10 to-primary/5">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
             Confirm your shipment
@@ -47,7 +47,7 @@ export default function IntentConfirmModal({
             {headline}
           </h2>
           <p className="text-xs text-on-surface-variant mt-2 leading-relaxed">
-            Check this once. If it looks right, we run optimization and show results — no extra clicks.
+            Choose one: if this summary looks right, we open final results directly. Otherwise, we take you to the suggested tool to edit details.
           </p>
         </div>
 
@@ -77,7 +77,7 @@ export default function IntentConfirmModal({
             onClick={onEdit}
             className="flex-1 px-4 py-3 rounded-xl border border-outline-variant/25 text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:border-outline-variant/40 disabled:opacity-50"
           >
-            Edit details first
+            Not correct — open suggested tool
           </button>
           <button
             type="button"
@@ -95,7 +95,7 @@ export default function IntentConfirmModal({
                 <span className="material-symbols-outlined text-[18px]" aria-hidden>
                   check_circle
                 </span>
-                Yes — show my results
+                Yes, this is right — show final results
               </>
             )}
           </button>

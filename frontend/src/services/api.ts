@@ -677,9 +677,23 @@ export async function parseShipmentIntent(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_brief, context_mode }),
   });
-  const data = await res.json();
+  const raw = await res.text();
+  let data: ParsedIntent;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'Intent parse returned invalid JSON'
+        : `Backend unavailable — start the API server (got: ${raw.slice(0, 80)})`
+    );
+  }
   if (!res.ok) {
-    throw new Error(data?.detail || data?.error || `Intent parse failed (${res.status})`);
+    throw new Error(
+      (typeof data?.detail === 'string' ? data.detail : null) ||
+        data?.error ||
+        `Intent parse failed (${res.status})`
+    );
   }
   return data;
 }

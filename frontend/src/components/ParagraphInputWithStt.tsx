@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 
 type ParagraphInputWithSttProps = {
@@ -35,6 +35,13 @@ export default function ParagraphInputWithStt({
     lang,
     onFinalTranscript: appendTranscript,
   });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const showMic = mounted && supported;
 
   return (
     <div className="space-y-2">
@@ -45,9 +52,9 @@ export default function ParagraphInputWithStt({
           onChange={(e) => onChange(e.target.value)}
           rows={rows}
           placeholder={placeholder}
-          className={`w-full pr-12 ${className}`}
+          className={`w-full ${showMic ? 'pr-12' : ''} ${className}`}
         />
-        {supported && (
+        {showMic && (
           <button
             type="button"
             onClick={toggle}
@@ -71,7 +78,7 @@ export default function ParagraphInputWithStt({
           Listening… speak your corridor, cargo, budget, and deadline.
         </p>
       )}
-      {!supported && (
+      {mounted && !supported && (
         <p className="text-[10px] text-outline">
           Voice input works best in Chrome or Edge (browser speech recognition).
         </p>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   parseShipmentIntent,
@@ -8,7 +8,10 @@ import {
   type ParsedIntent,
 } from '@/services/api';
 import { routeForMode } from '@/lib/applyParsedIntent';
+import { setShipmentAutorun } from '@/lib/shipmentAutorun';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import IntentConfirmModal from '@/components/IntentConfirmModal';
 
 type AiBriefPanelProps = {
   contextMode: IntentContextMode;
@@ -56,9 +59,46 @@ export default function AiBriefPanel({
   const lastParsed = useLogiFlowStore((s) => s.lastParsedIntent);
 
   const [text, setText] = useState(scenarioBrief || '');
+
+  useEffect(() => {
+    if (scenarioBrief?.trim()) setText(scenarioBrief);
+  }, [scenarioBrief]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedIntent | null>(lastParsed);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingRouteIntent, setPendingRouteIntent] = useState<ParsedIntent | null>(null);
+
+  function resolveTargetMode(result: ParsedIntent): Exclude<IntentContextMode, 'home'> | 'hybrid' {
+    const llmMode = result.suggested_mode;
+    if (
+      llmMode === 'rail' ||
+      llmMode === 'road' ||
+      llmMode === 'air' ||
+      llmMode === 'water' ||
+      llmMode === 'hybrid'
+    ) {
+      return llmMode;
+    }
+    // If we came from `home` and the model didn't choose a mode, we want the multimodal `hybrid`.
+    return contextMode === 'home' ? 'hybrid' : (contextMode as Exclude<IntentContextMode, 'home'>);
+  }
+
+  function getModePath(result: ParsedIntent): string {
+    return routeForMode(resolveTargetMode(result));
+  }
+
+  function navigateToPipeline(result: ParsedIntent, runImmediately: boolean) {
+    const path = getModePath(result);
+    const mode = resolveTargetMode(result);
+    if (runImmediately && result.applied) {
+      setShipmentAutorun(mode);
+    }
+    setConfirmOpen(false);
+    setPendingRouteIntent(null);
+    router.push(path);
+  }
 
   async function runParse(andNavigate: boolean) {
     const brief = text.trim();
@@ -70,17 +110,24 @@ export default function AiBriefPanel({
     setLoading(true);
     try {
       const result = await parseShipmentIntent(brief, contextMode);
-      if (result.error || result.applied === false) {
-        throw new Error(result.error || 'Could not understand that description.');
+      if (result.error) {
+        throw new Error(result.error);
       }
       result.scenario_brief = result.scenario_brief || brief;
       applyParsedIntent(result);
       setScenarioBrief(result.scenario_brief);
       setParsed(result);
 
+      if (!result.applied) {
+        setError(
+          result.parse_warning ||
+            'Could not detect both origin and destination — we filled what we could; check the form.'
+        );
+      }
+
       if (andNavigate || navigateOnApply) {
-        const path = routeForMode(result.suggested_mode || contextMode);
-        router.push(path);
+        setPendingRouteIntent(result);
+        setConfirmOpen(true);
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'AI parse failed');
@@ -109,18 +156,19 @@ export default function AiBriefPanel({
         <div>
           <h3 className="text-sm font-bold text-on-surface">{title}</h3>
           <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
-            Write freely — Gemini turns it into origin, destination, budget, deadlines, and mode
+            Write freely — AI turns it into origin, destination, budget, deadlines, and mode
             preferences. You can still use the form below the traditional way.
           </p>
         </div>
       </div>
 
-      <textarea
+      <ParagraphInputWithStt
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
         rows={contextMode === 'home' ? 5 : 4}
         placeholder="e.g. I have 80kg medicines from Delhi to Chennai, max ₹12,000, need delivery within 2 days, prefer train not flight…"
-        className="w-full px-4 py-3 rounded-xl border border-violet-400/25 bg-surface-container-lowest text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-violet-400/35 resize-y min-h-[100px]"
+        className="px-4 py-3 rounded-xl border border-violet-400/25 bg-surface-container-lowest text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-violet-400/35 resize-y min-h-[100px]"
+        lang="en-IN"
       />
 
       <div className="flex flex-wrap gap-2 mt-3">
@@ -162,6 +210,24 @@ export default function AiBriefPanel({
         </p>
       )}
       {parsed && <IntentChips parsed={parsed} />}
+
+      <IntentConfirmModal
+        open={confirmOpen}
+        parsed={pendingRouteIntent}
+        loading={loading}
+        onClose={() => {
+          setConfirmOpen(false);
+          setPendingRouteIntent(null);
+        }}
+        onConfirmRun={() => {
+          if (!pendingRouteIntent) return;
+          navigateToPipeline(pendingRouteIntent, true);
+        }}
+        onEdit={() => {
+          if (!pendingRouteIntent) return;
+          navigateToPipeline(pendingRouteIntent, false);
+        }}
+      />
     </div>
   );
 }

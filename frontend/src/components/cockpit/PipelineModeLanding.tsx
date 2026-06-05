@@ -33,7 +33,7 @@ export function PipelineModeLanding({
 
   return (
     <div className="relative w-full">
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden [&_*]:pointer-events-none">
         <AmbientBackdrop variant={mode} />
         <div
           className="absolute inset-0"
@@ -51,7 +51,7 @@ export function PipelineModeLanding({
       </div>
 
       <div
-        className={`relative z-10 mx-auto w-full px-4 animate-slide-up ${
+        className={`relative z-10 pointer-events-auto mx-auto w-full px-4 animate-slide-up ${
           compact ? 'max-w-3xl py-8 sm:py-10' : 'max-w-3xl py-10 sm:py-14'
         }`}
       >

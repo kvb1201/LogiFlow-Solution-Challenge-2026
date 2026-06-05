@@ -25,7 +25,7 @@ export function PageShell({
     <div className="relative w-full overflow-hidden">
       {mode ? <AmbientBackdrop variant={mode} className="opacity-50" /> : null}
 
-      <div className={`relative z-10 mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 ${contentClassName}`}>
+      <div className={`relative z-10 pointer-events-auto mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 ${contentClassName}`}>
         <header
           className="panel-hard mb-8 animate-slide-up overflow-hidden rounded-2xl p-5 sm:p-6"
           style={{ boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 20%, transparent)` }}
