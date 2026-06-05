@@ -1,12 +1,24 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Next 16 picks the nearest lockfile as workspace root; repo root has an empty
+// package-lock.json, which breaks Tailwind resolution (looks in ../ not frontend/).
+const turbopackRoot = path.dirname(fileURLToPath(import.meta.url));
+
+const backendBase =
+  process.env.BACKEND_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8000';
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: turbopackRoot,
+  },
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        // Proxy to FastAPI backend
-        destination: 'http://127.0.0.1:8000/:path*',
+        // Local: localhost. Vercel: set BACKEND_URL to your deployed FastAPI host.
+        destination: `${backendBase}/:path*`,
       },
       {
         source: '/railradar/:path*',

@@ -5,8 +5,10 @@ import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip } from 'react
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { LatLngTuple, Map as LeafletMap } from 'leaflet';
+import IndiaBoundaryOverlay from '@/components/IndiaBoundaryOverlay';
 
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+type IconDefaultProto = typeof L.Icon.Default.prototype & { _getIconUrl?: unknown };
+delete (L.Icon.Default.prototype as IconDefaultProto)._getIconUrl;
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
@@ -50,9 +52,9 @@ function midpointLatLng(geometry: [number, number][]): LatLngTuple | null {
 }
 
 export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRoute[]; selectedRoute?: number }) {
-  if (!routes || routes.length === 0) return null;
-
   const mapRef = useRef<LeafletMap | null>(null);
+  const hasRoutes = Array.isArray(routes) && routes.length > 0;
+  const safeRoutes = hasRoutes ? routes : [];
 
   const convert = (coords: [number, number][]): LatLngTuple[] =>
     coords.map(([lng, lat]) => [lat, lng] as LatLngTuple);
@@ -91,15 +93,15 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
     return '#ef4444';
   }
 
-  const bestRoute = routes[selectedRoute];
-  const bestCoords = convert(bestRoute.geometry);
-  const center = bestCoords[0];
-  const allCoords = routes
+  const bestRoute = safeRoutes[selectedRoute] ?? safeRoutes[0];
+  const bestCoords = bestRoute ? convert(bestRoute.geometry) : [];
+  const center = bestCoords[0] ?? ([20.5937, 78.9629] as LatLngTuple);
+  const allCoords = safeRoutes
     .filter((route) => Array.isArray(route.geometry) && route.geometry.length > 0)
     .flatMap((route) => convert(route.geometry));
 
   const routeLabelMarkers = useMemo(() => {
-    return routes.map((route, index) => {
+    return safeRoutes.map((route, index) => {
       const position = midpointLatLng(route.geometry);
       if (!position) return null;
       const label = `Route ${index + 1} · ${formatCostK(route.cost)} · ${Number(route.time).toFixed(1)}h`;
@@ -115,14 +117,15 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
       });
       return { position, icon, index };
     });
-  }, [routes, selectedRoute]);
+  }, [safeRoutes, selectedRoute]);
 
   useEffect(() => {
-    if (!mapRef.current) return;
-    if (!allCoords.length) return;
+    if (!hasRoutes || !mapRef.current || !allCoords.length) return;
     const bounds = L.latLngBounds(allCoords);
     mapRef.current.fitBounds(bounds, { padding: [20, 20] });
-  }, [allCoords]);
+  }, [hasRoutes, allCoords]);
+
+  if (!hasRoutes || !bestRoute || bestCoords.length === 0) return null;
 
   return (
     <div className="h-full w-full min-h-[260px] rounded-xl overflow-hidden border border-outline-variant/20">
@@ -133,6 +136,7 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer attribution="© OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <IndiaBoundaryOverlay theme="light" />
 
         {routeLabelMarkers.map((item) =>
           item ? (
@@ -146,7 +150,7 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
           ) : null
         )}
 
-        {routes.map((route, index) => {
+        {safeRoutes.map((route, index) => {
           if (!route.geometry || route.geometry.length === 0) return null;
           const pts = downsample(convert(route.geometry), 500);
           const segments = chunk(pts, 10);

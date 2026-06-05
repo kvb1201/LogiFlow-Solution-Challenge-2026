@@ -3,6 +3,7 @@ import {
   optimizeCargoRoute,
   optimizeAirRoute,
   getLiveTrainMap,
+  getStationInfo,
   getStationInfoDirect,
   getLocationCoords,
   fetchRoadRoutes,
@@ -470,6 +471,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         ...(result.cheapest?.segments || []),
         ...(result.fastest?.segments || []),
         ...(result.safest?.segments || []),
+        ...(result.all_options || []).flatMap((opt) => opt.segments || []),
       ];
       const codes = new Set<string>();
       allSegments.forEach(seg => {
@@ -524,27 +526,38 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   // ── Station coordinate lookup ──────────────────────────────────────
   fetchStationCoord: async (code: string): Promise<StationCoord | null> => {
-    const existing = get().stationCoords[code];
+    const key = code.trim().toUpperCase();
+    const existing = get().stationCoords[key] ?? get().stationCoords[code];
     if (existing) return existing;
 
+    const storeCoord = (info: { code?: string; name?: string; lat?: number; lng?: number }) => {
+      if (info.lat == null || info.lng == null) return null;
+      const coord: StationCoord = {
+        code: (info.code || key).toUpperCase(),
+        name: info.name || key,
+        lat: info.lat,
+        lng: info.lng,
+      };
+      set((state) => ({
+        stationCoords: { ...state.stationCoords, [coord.code]: coord },
+      }));
+      return coord;
+    };
+
     try {
-      const info = await getStationInfoDirect(code);
-      if (info && info.lat && info.lng) {
-        const coord: StationCoord = {
-          code: info.code || code,
-          name: info.name || code,
-          lat: info.lat,
-          lng: info.lng,
-        };
-        set(state => ({
-          stationCoords: { ...state.stationCoords, [code]: coord },
-        }));
-        return coord;
-      }
+      const backend = await getStationInfo(key);
+      const fromBackend = backend ? storeCoord(backend) : null;
+      if (fromBackend) return fromBackend;
     } catch {
-      // Ignore
+      // fall through
     }
-    return null;
+
+    try {
+      const direct = await getStationInfoDirect(key);
+      return direct ? storeCoord(direct) : null;
+    } catch {
+      return null;
+    }
   },
 
   fetchTrainDelayAndLive: async (trainNumber: string) => {

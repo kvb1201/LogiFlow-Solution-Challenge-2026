@@ -11,19 +11,19 @@ def enrich_segment(segment):
     frm = segment.get("from")
     to = segment.get("to")
 
-    frm_lat, frm_lng = get_coords(frm)
-    to_lat, to_lng = get_coords(to)
+    frm_coords = get_coords(frm)
+    to_coords = get_coords(to)
 
     return {
         "mode": segment.get("mode"),
         "from": {
             "name": frm,
-            "lat": frm_lat,
-            "lng": frm_lng,
+            "lat": frm_coords[0] if frm_coords else None,
+            "lng": frm_coords[1] if frm_coords else None,
         },
         "to": {
             "name": to,
-            "lat": to_lat,
-            "lng": to_lng,
+            "lat": to_coords[0] if to_coords else None,
+            "lng": to_coords[1] if to_coords else None,
         },
     }

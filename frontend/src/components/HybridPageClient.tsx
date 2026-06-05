@@ -111,11 +111,62 @@ function ComparisonTable({
 
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-[#0c1018]/80 overflow-hidden shadow-[0_24px_80px_-40px_rgba(0,0,0,0.9)]">
-      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+      <div className="flex flex-col gap-1 border-b border-white/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
         <h3 className="text-sm font-semibold text-on-surface tracking-tight">Multimodal comparison</h3>
         <span className="text-[10px] uppercase tracking-widest text-outline">4 modes · delay-adjusted</span>
       </div>
-      <div className="overflow-x-auto">
+
+      {/* Mobile cards */}
+      <div className="space-y-3 p-4 md:hidden">
+        {validRows.map((row) => {
+          const mode = normalizeMode(row.mode) as Mode;
+          const meta = MODE_META[mode];
+          const time = toNum(row.time_hr);
+          const cost = toNum(row.cost_inr);
+          const isRec = mode === recommendedMode;
+          return (
+            <div
+              key={`mobile-${mode}`}
+              className={`rounded-xl border p-4 ${isRec ? 'border-primary/35 bg-primary/[0.08]' : 'border-white/[0.08] bg-white/[0.02]'}`}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${meta.cardTint}`}>
+                    <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {meta.symbol}
+                    </span>
+                  </span>
+                  <span className={`font-semibold ${meta.tint}`}>{meta.label}</span>
+                  {isRec && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-primary border border-primary/30 rounded-full px-2 py-0.5">
+                      Pick
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 px-2 py-2">
+                  <div className="text-outline">Time</div>
+                  <div className="font-mono font-semibold text-on-surface">{formatHours(time)}</div>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 px-2 py-2">
+                  <div className="text-outline">Cost</div>
+                  <div className="font-mono font-semibold text-on-surface">{formatInr(cost)}</div>
+                </div>
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 px-2 py-2">
+                  <div className="text-outline">Risk</div>
+                  <div className="font-mono font-semibold text-on-surface">{formatRisk(row.risk)}</div>
+                </div>
+              </div>
+              {row.explanation?.trim() && (
+                <p className="mt-3 text-xs leading-relaxed text-on-surface-variant">{row.explanation}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full text-sm">
           <thead className="bg-white/[0.03] text-on-surface-variant text-[11px] uppercase tracking-wider">
             <tr>
@@ -354,7 +405,7 @@ export default function HybridPageClient() {
           <div className="absolute w-[min(90vw,640px)] h-[min(90vw,640px)] rounded-full opacity-[0.14] blur-[110px] bg-violet-600 -top-[50%] right-[-20%]" />
           <div className="absolute w-[min(70vw,480px)] h-[min(70vw,480px)] rounded-full opacity-[0.1] blur-[90px] bg-primary bottom-[-40%] left-[-15%]" />
         </div>
-        <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
+        <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-6xl px-5 py-10 sm:px-8 sm:py-12">
           <div className="flex flex-wrap items-center gap-2 mb-5">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
               Smart Supply Chain
@@ -363,7 +414,7 @@ export default function HybridPageClient() {
               Gemini constraints
             </span>
           </div>
-          <h1 className="font-headline text-3xl sm:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.05] max-w-3xl">
+          <h1 className="font-headline text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.08] max-w-3xl break-words">
             Decide the best way to move cargo — not just display routes
           </h1>
           <p className="mt-4 text-[15px] sm:text-base text-on-surface-variant max-w-2xl leading-relaxed">
@@ -372,18 +423,18 @@ export default function HybridPageClient() {
             <strong className="text-violet-200">Google Gemini</strong> turns it into optimization constraints before
             scoring.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <button
               type="button"
               onClick={loadDemo}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary/90 transition-all shadow-[0_0_40px_-12px_rgba(172,199,255,0.5)]"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-on-primary transition-all hover:bg-primary/90 shadow-[0_0_40px_-12px_rgba(172,199,255,0.5)] sm:w-auto sm:py-2.5"
             >
               <span className="material-symbols-outlined text-lg">play_circle</span>
               Run judge demo (Delhi → Mumbai)
             </button>
             <Link
               href="/railway"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:border-white/20 transition-colors"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-sm font-semibold text-on-surface-variant transition-colors hover:border-white/20 hover:text-on-surface sm:w-auto sm:py-2.5"
             >
               Deep-dive rail
             </Link>
@@ -409,8 +460,8 @@ export default function HybridPageClient() {
       </section>
 
       {/* Steps */}
-      <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto w-full px-5 sm:px-8 pt-8">
-        <div className="flex items-center gap-2 sm:gap-4 mb-8">
+      <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-6xl px-5 pt-8 sm:px-8">
+        <div className="mb-6 flex flex-col gap-2 sm:mb-8 sm:flex-row sm:items-center sm:gap-4">
           {[
             { n: 1, label: 'Corridor' },
             { n: 2, label: 'Scenario (AI)' },
@@ -420,7 +471,7 @@ export default function HybridPageClient() {
               key={n}
               type="button"
               onClick={() => setStep(n as 1 | 2 | 3)}
-              className={`flex-1 flex items-center gap-2 sm:gap-3 py-3 px-3 sm:px-4 rounded-xl border transition-all ${
+              className={`flex w-full items-center gap-2 rounded-xl border px-3 py-3 transition-all sm:flex-1 sm:gap-3 sm:px-4 ${
                 step === n
                   ? 'border-primary/40 bg-primary/10 text-on-surface'
                   : 'border-white/[0.06] bg-white/[0.02] text-on-surface-variant hover:border-white/10'
@@ -630,7 +681,7 @@ export default function HybridPageClient() {
         )}
 
         {result && !loading && (
-          <div className="mt-8 pb-16 space-y-6 animate-fade-in">
+          <div className="mt-8 space-y-6 animate-fade-in pb-[max(4rem,env(safe-area-inset-bottom))]">
             {result.demo_mode && (
               <p className="text-[11px] text-amber-200/90 border border-amber-400/20 bg-amber-500/10 rounded-lg px-3 py-2 inline-block">
                 Demo cache mode — stable snapshot for judging (set LOGIFLOW_DEMO_MODE=0 for live APIs).
@@ -642,7 +693,7 @@ export default function HybridPageClient() {
             {/* Verdict card */}
             <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-[#0c1018] to-[#05070c] p-6 sm:p-8 shadow-[0_32px_100px_-48px_rgba(172,199,255,0.35)]">
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary mb-3">Recommended mode</p>
-              <div className="flex flex-wrap items-center gap-4 mb-4">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                 {recommendedMode ? (
                   <>
                     <span
@@ -651,7 +702,7 @@ export default function HybridPageClient() {
                       {MODE_META[recommendedMode].icon}
                     </span>
                     <div>
-                      <h2 className={`text-3xl font-black font-headline ${MODE_META[recommendedMode].tint}`}>
+                      <h2 className={`text-2xl font-black font-headline sm:text-3xl ${MODE_META[recommendedMode].tint}`}>
                         {MODE_META[recommendedMode].label}
                       </h2>
                       <p className="text-sm text-on-surface-variant mt-1">Best fit for your stated priority & constraints</p>
@@ -661,7 +712,7 @@ export default function HybridPageClient() {
                   <span className="text-lg font-semibold">No single mode won</span>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-3 max-w-md">
+              <div className="grid max-w-md grid-cols-1 gap-3 min-[400px]:grid-cols-3">
                 <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
                   <div className="text-[10px] uppercase tracking-wider text-outline">Time</div>
                   <div className="text-lg font-bold font-mono text-on-surface">{formatHours(recommendedRow?.time_hr)}</div>
@@ -730,7 +781,7 @@ export default function HybridPageClient() {
             {Boolean(
               (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
             ) && (
-              <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
+              <div className="h-[min(50vh,360px)] min-h-[220px] overflow-hidden rounded-2xl border border-white/[0.06] sm:min-h-[280px]">
                 <MapView
                   routes={[
                     result.best_per_mode!.road! as {

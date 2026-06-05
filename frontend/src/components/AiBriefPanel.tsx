@@ -171,7 +171,7 @@ export default function AiBriefPanel({
         lang="en-IN"
       />
 
-      <div className="flex flex-wrap gap-2 mt-3">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           disabled={loading}
