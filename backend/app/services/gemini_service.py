@@ -227,3 +227,37 @@ def generate_train_explanation(
         timeout_s=timeout_s,
     )
     return text
+
+
+def generate_generic_explanation(
+    pipeline: str,
+    priority: str,
+    route_data: dict[str, Any],
+    context: dict[str, Any] | None = None,
+    timeout_s: int = 15,
+) -> str | None:
+    """Generic pipeline route explanation for /explain API."""
+    ctx = context or {}
+    prompt = (
+        "You are LogiFlow, an intelligent multimodal cargo assistant.\n"
+        f"You are explaining a {pipeline} route option to the user.\n"
+        f"The user prioritized: {priority}.\n"
+        "Write a concise, pointwise explanation analyzing this route. Highlight why it's good or why it might not be ideal.\n"
+        "Use the provided fields only; do not invent distances or costs.\n"
+        "Keep the explanation practical and keep constraints in mind.\n"
+        f"Route Details: {route_data}\n"
+        f"Context/Best Options: {ctx}\n\n"
+        "Structure your response strictly as:\n"
+        "- A concise 1-2 sentence overview of the route's value proposition.\n"
+        "- 3 to 5 detailed bullet points analyzing specific tradeoffs (cost, speed, risk, and specialized constraints).\n"
+        "Keep each bullet point informative but under 25 words."
+    )
+    text, err = gemini_generate_content(
+        prompt,
+        temperature=0.3,
+        max_output_tokens=400,
+        timeout_s=timeout_s,
+    )
+    if not text and err:
+        print(f"[GeminiService] generic explanation error: {err}")
+    return text
