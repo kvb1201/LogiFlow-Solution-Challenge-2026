@@ -14,10 +14,12 @@ import {
   type TrainDelayData,
   type LiveTrainStatus,
   type StationSearchResult,
-  type WaterRoute,
   type AirRoute,
   type AirOptimizeResult,
+  type WaterRoute,
+  type ParsedIntent,
 } from '@/services/api';
+import { buildIntentPatch } from '@/lib/applyParsedIntent';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -62,7 +64,7 @@ type RoadOptimizeResponse = {
   safest?: RoadRoute;
 };
 
-interface LogiFlowState {
+export interface LogiFlowState {
   // Core inputs
   source: string;
   destination: string;
@@ -72,9 +74,11 @@ interface LogiFlowState {
   departureDate: string;
   budgetMax: number;
   deadlineHours: number;
+  scenarioBrief: string;
+  lastParsedIntent: ParsedIntent | null;
 
   // Results
-  searchMode: 'rail' | 'road' | 'air';
+  searchMode: 'rail' | 'road' | 'air' | 'water';
   recommendations: {
     cheapest: Recommendation | null;
     fastest: Recommendation | null;
@@ -136,6 +140,8 @@ interface LogiFlowState {
   setDepartureDate: (val: string) => void;
   setBudgetMax: (val: number) => void;
   setDeadlineHours: (val: number) => void;
+  setScenarioBrief: (val: string) => void;
+  applyParsedIntent: (parsed: ParsedIntent) => void;
   setSelectedOptionIndex: (idx: number) => void;
   setSelectedAirRouteIndex: (idx: number) => void;
   setActiveView: (view: 'recommendations' | 'all_options') => void;
@@ -179,6 +185,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   departureDate: new Date().toISOString().split('T')[0],
   budgetMax: 50000,
   deadlineHours: 48,
+  scenarioBrief: '',
+  lastParsedIntent: null,
 
   recommendations: { cheapest: null, fastest: null, safest: null },
   allOptions: [],
@@ -229,6 +237,11 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setDepartureDate: (val) => set({ departureDate: val }),
   setBudgetMax: (val) => set({ budgetMax: val }),
   setDeadlineHours: (val) => set({ deadlineHours: val }),
+  setScenarioBrief: (val) => set({ scenarioBrief: val }),
+  applyParsedIntent: (parsed) => {
+    const state = get();
+    buildIntentPatch(parsed, set, state);
+  },
   setSelectedOptionIndex: (idx) => set({ selectedOptionIndex: idx }),
   setSelectedAirRouteIndex: (idx) => set({ selectedAirRouteIndex: idx }),
   setActiveView: (view) => set({ activeView: view }),
@@ -254,8 +267,6 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     selectedOptionIndex: 0,
     routes: [],
     selectedRoute: 0,
-    waterRoutes: [],
-    selectedWaterRoute: 0,
     searchMode: 'rail',
     error: null,
     trainDelayDetail: null,
@@ -263,6 +274,10 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     detailTrainNumber: null,
     mapFocusedTrainNumber: null,
     stationSuggestions: [],
+    waterRoutes: [],
+    selectedWaterRoute: 0,
+    scenarioBrief: '',
+    lastParsedIntent: null,
   }),
 
   // ── Main optimize call ─────────────────────────────────────────────
@@ -407,8 +422,16 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         });
 
         set({
+          searchMode: 'water',
           waterRoutes: Array.isArray(raw) ? raw : [],
           selectedWaterRoute: 0,
+          recommendations: { cheapest: null, fastest: null, safest: null },
+          allOptions: [],
+          airRoutes: [],
+          selectedAirRouteIndex: 0,
+          airConstraintsApplied: null,
+          routes: [],
+          selectedRoute: 0,
         });
         return;
       }
