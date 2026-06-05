@@ -5,6 +5,8 @@ Cost uses official IRCA tariff tables (slab-based, not formula).
 Integrates OpenWeather API for live weather-aware risk and ETA adjustment.
 """
 
+from __future__ import annotations
+
 import os
 import time
 from datetime import datetime
