@@ -35,8 +35,15 @@ class WaterPipeline(BasePipeline):
             constraints = {**constraints, "max_transshipments": 3}
             payload = {**payload, "constraints": constraints}
 
-        origin_ports = map_city_to_ports(source, n=2, context=context)
-        dest_ports = map_city_to_ports(destination, n=2, context=context)
+        try:
+            origin_ports = map_city_to_ports(source, n=2, context=context)
+        except ValueError as e:
+            return _no_routes(str(e))
+
+        try:
+            dest_ports = map_city_to_ports(destination, n=2, context=context)
+        except ValueError as e:
+            return _no_routes(str(e))
 
         # --- Fix #5: Handle empty port mapping ---
         if not origin_ports and not dest_ports:
@@ -51,6 +58,7 @@ class WaterPipeline(BasePipeline):
             return _no_routes(
                 f"{destination} is too far from the coastline for water transport"
             )
+
 
         all_routes: list[dict] = []
 

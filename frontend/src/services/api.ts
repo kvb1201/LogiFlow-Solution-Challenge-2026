@@ -439,11 +439,21 @@ export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRout
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Water optimize failed (${res.status}): ${text}`);
+    let detail = '';
+    const rawBody = await res.text();
+    try {
+      const data = rawBody ? JSON.parse(rawBody) : null;
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      detail = rawBody.trim();
+    }
+    throw new Error(detail || `Water optimize failed (${res.status})`);
   }
   return res.json();
 }
+
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];

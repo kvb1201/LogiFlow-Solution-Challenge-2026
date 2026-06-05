@@ -49,6 +49,41 @@ def get_coords(name):
         
     return (20.5937, 78.9629) # Fallback if API fails or city not found
 
+
+def get_coords_or_none(name):
+    """
+    Return latitude and longitude for a given location name dynamically using Nominatim.
+    Returns None if geocoding fails or location is not found.
+    """
+    if not name:
+        return None
+        
+    # Check cache first
+    if name in city_coords_cache:
+        return city_coords_cache[name]
+    
+    # Ignore fallback terms that aren't real places
+    if name.lower() in ['midpoint', 'port', 'express hub', 'central depot']:
+        return None
+        
+    try:
+        # Ask OpenStreetMap for the real-world coordinates! (Free Geocoding)
+        query = urllib.parse.quote(name)
+        url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}&limit=1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'LogiFlow-AI-Agent'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            if data and len(data) > 0:
+                lat = float(data[0]['lat'])
+                lon = float(data[0]['lon'])
+                city_coords_cache[name] = (lat, lon)
+                return (lat, lon)
+    except Exception as e:
+        print(f"Geocoding failed for {name}: {e}")
+        
+    return None
+
+
 midpoint_name_cache = {}
 
 def get_dynamic_midpoint(source: str, destination: str):
