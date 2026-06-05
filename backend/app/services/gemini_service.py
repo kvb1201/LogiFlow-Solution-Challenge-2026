@@ -227,3 +227,41 @@ def generate_train_explanation(
         timeout_s=timeout_s,
     )
     return text
+
+
+def generate_generic_explanation(
+    pipeline: str,
+    priority: str,
+    route_data: dict[str, Any],
+    context: dict[str, Any] | None = None,
+    timeout_s: int = 10,
+) -> str | None:
+    """
+    Generic Gemini explanation for any LogiFlow pipeline (road, air, water, comparator, etc.).
+    Returns a concise user-facing justification string or None on failure.
+    """
+    ctx = context or {}
+    route_summary = ", ".join(
+        f"{k}: {v}" for k, v in route_data.items() if v is not None
+    )[:600]  # cap length
+
+    prompt = (
+        "You are LogiFlow, an AI multimodal cargo optimizer.\n"
+        "Write a concise explanation of why this route/mode recommendation was made.\n"
+        "Use only the provided fields. Do not invent facts. Avoid mentioning 'Gemini' or 'LLM'.\n\n"
+        f"Pipeline: {pipeline}\n"
+        f"Priority: {priority}\n"
+        f"Route data: {route_summary}\n"
+        f"Additional context: {ctx}\n\n"
+        "Structure your response as:\n"
+        "- 1 sentence summary\n"
+        "- 3 to 4 bullet points\n"
+        "- Keep each bullet to one line\n"
+    )
+    text, _err = gemini_generate_content(
+        prompt,
+        temperature=0.4,
+        max_output_tokens=600,
+        timeout_s=timeout_s,
+    )
+    return text
