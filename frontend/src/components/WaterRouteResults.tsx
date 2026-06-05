@@ -599,7 +599,7 @@ export default function WaterRouteResults() {
               </span>
             </div>
             <DetailPanel
-              key={`${active.vessel ?? ''}-${active.cost}-${active.time}`}
+              key={`${active.origin_port ?? ''}-${active.destination_port ?? ''}-${active.cost}-${active.time}`}
               route={active}
               source={source}
               destination={destination}
