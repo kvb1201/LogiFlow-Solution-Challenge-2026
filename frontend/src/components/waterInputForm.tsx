@@ -10,6 +10,7 @@ import {
   FormField,
   FormShell,
   FormSubmit,
+  LOGIFLOW_FORM_IDS,
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
@@ -280,6 +281,7 @@ export default function WaterInputForm() {
         }
         footer={
           <FormSubmit
+            formId={LOGIFLOW_FORM_IDS.water}
             loading={loading}
             disabled={!source.trim() || !destination.trim() || cargoWeight <= 0}
             label="Find maritime routes"
@@ -289,7 +291,7 @@ export default function WaterInputForm() {
           />
         }
       >
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form id={LOGIFLOW_FORM_IDS.water} onSubmit={handleSubmit} className="space-y-5">
             {/* Origin / Destination */}
             <div
               className={`relative z-[100] transition-all duration-600 ${

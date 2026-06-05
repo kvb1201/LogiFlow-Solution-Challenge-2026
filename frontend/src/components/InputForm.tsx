@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { searchStations, type StationSearchResult } from '@/services/api';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { FormAutocomplete } from '@/components/forms/FormAutocomplete';
@@ -12,6 +13,7 @@ import {
   FormField,
   FormShell,
   FormSubmit,
+  LOGIFLOW_FORM_IDS,
   formInputClass,
 } from '@/components/forms/pipeline-form-ui';
 
@@ -86,11 +88,17 @@ export default function InputForm() {
   const destSearch = useStationSearch(setStationSuggestions);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const runRailOptimize = useCallback(() => {
+    if (!source.trim() || !destination.trim()) return;
+    handleOptimize();
+  }, [source, destination, handleOptimize]);
+
+  useShipmentAutorun('rail', runRailOptimize, Boolean(source.trim() && destination.trim()));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) return;
-    handleOptimize();
+    runRailOptimize();
   };
 
   const swapCorridor = () => {
@@ -115,6 +123,7 @@ export default function InputForm() {
         }
         footer={
           <FormSubmit
+            formId={LOGIFLOW_FORM_IDS.rail}
             loading={loading}
             disabled={!source.trim() || !destination.trim()}
             label="Optimize route"
@@ -124,7 +133,7 @@ export default function InputForm() {
           />
         }
       >
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form id={LOGIFLOW_FORM_IDS.rail} onSubmit={handleSubmit} className="space-y-5">
           <CorridorRow onSwap={swapCorridor}>
             <FormAutocomplete
               label="Origin"

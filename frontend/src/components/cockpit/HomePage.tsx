@@ -10,7 +10,7 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
     <div className="relative w-full overflow-hidden">
       <AmbientBackdrop variant="home" />
 
-      <div className="relative z-10 mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
+      <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
         <section className="mb-10 animate-slide-up">
           <div className="mb-5 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/70 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-sm">

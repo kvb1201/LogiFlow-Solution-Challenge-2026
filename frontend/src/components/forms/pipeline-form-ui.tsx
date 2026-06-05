@@ -77,7 +77,11 @@ export function FormShell({
           {advancedToggle}
         </div>
         {children}
-        {footer ? <div className="mt-6 border-t border-border/60 pt-5">{footer}</div> : null}
+        {footer ? (
+          <div className="pointer-events-auto relative z-20 mt-6 border-t border-border/60 pt-5">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -162,6 +166,14 @@ export function ChoicePills<T extends string>({
   );
 }
 
+/** Stable ids for mode forms — footer submit buttons use the HTML `form` attribute. */
+export const LOGIFLOW_FORM_IDS = {
+  rail: 'logiflow-form-rail',
+  road: 'logiflow-form-road',
+  air: 'logiflow-form-air',
+  water: 'logiflow-form-water',
+} as const;
+
 export function FormSubmit({
   loading,
   disabled,
@@ -169,6 +181,8 @@ export function FormSubmit({
   loadingLabel,
   accentVar = '--rail',
   icon = 'bolt',
+  formId,
+  onAction,
 }: {
   loading: boolean;
   disabled: boolean;
@@ -176,12 +190,24 @@ export function FormSubmit({
   loadingLabel: string;
   accentVar?: string;
   icon?: string;
+  /** Associates this button with a <form id="..."> rendered elsewhere in FormShell */
+  formId?: string;
+  /** Fallback when association fails (optional; form onSubmit still preferred) */
+  onAction?: () => void;
 }) {
   return (
     <button
       type="submit"
+      form={formId}
       disabled={disabled || loading}
-      className="flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-background transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110"
+      onClick={(e) => {
+        if (disabled || loading) return;
+        if (!formId && onAction) {
+          e.preventDefault();
+          onAction();
+        }
+      }}
+      className="flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-background transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 pointer-events-auto"
       style={{
         background: `linear-gradient(135deg, var(${accentVar}), color-mix(in oklab, var(${accentVar}) 55%, var(--foreground)))`,
         boxShadow: `0 8px 32px -10px var(${accentVar})`,

@@ -10,6 +10,7 @@ import {
   FormField,
   FormShell,
   FormSubmit,
+  LOGIFLOW_FORM_IDS,
   formInputClass,
 } from '@/components/forms/pipeline-form-ui';
 
@@ -73,6 +74,7 @@ export default function AirInputForm() {
         }
         footer={
           <FormSubmit
+            formId={LOGIFLOW_FORM_IDS.air}
             loading={loading}
             disabled={!source.trim() || !destination.trim()}
             label="Optimize air route"
@@ -83,6 +85,7 @@ export default function AirInputForm() {
         }
       >
         <form
+          id={LOGIFLOW_FORM_IDS.air}
           className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault();

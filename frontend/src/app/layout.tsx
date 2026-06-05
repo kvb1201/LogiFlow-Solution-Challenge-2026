@@ -32,7 +32,7 @@ export default function RootLayout({
         <NavBar />
         <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
           <AmbientBackdrop variant="subtle" className="opacity-60" />
-          <div className="relative z-10 w-full">{children}</div>
+          <div className="relative z-10 w-full pointer-events-auto">{children}</div>
         </main>
       </body>
     </html>

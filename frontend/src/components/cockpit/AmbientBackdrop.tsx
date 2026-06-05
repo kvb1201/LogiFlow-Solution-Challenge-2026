@@ -23,7 +23,7 @@ export function AmbientBackdrop({
 
   return (
     <div
-      className={`pointer-events-none absolute inset-0 z-0 overflow-hidden ${className}`}
+      className={`pointer-events-none absolute inset-0 z-0 overflow-hidden [&_*]:pointer-events-none ${className}`}
       aria-hidden
     >
       <div
