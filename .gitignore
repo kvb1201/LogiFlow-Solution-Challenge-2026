@@ -23,6 +23,9 @@ data/processed/
 data/synthetic/
 backend/data/ir_delay_scrape/*.csv
 backend/data/ir_delay_scrape/checkpoint.json
+backend/app/pipelines/rail/station_coords_geocode_checkpoint.json
+backend/data/railways_online/datameet_stations.json
+backend/data/railways_online/vstflugel_stations.json
 ml/models/*.pkl
 ml/models/*.joblib
 
@@ -40,6 +43,9 @@ Thumbs.db
 # =========================
 # 🔹 Node / Frontend
 # =========================
+# Stray root npm files break Next.js Turbopack (wrong workspace root → Tailwind hang)
+/package.json
+/package-lock.json
 node_modules/
 dist/
 build/

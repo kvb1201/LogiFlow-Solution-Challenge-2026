@@ -3,8 +3,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { addIndiaBoundaryToMap, loadIndiaGeojson } from '@/lib/indiaMapLayer';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
-import type { LiveTrainPosition, Recommendation, RankedOption } from '@/services/api';
+import type { LiveTrainPosition, Recommendation, RankedOption, RouteGeometryStop } from '@/services/api';
 
 // ── Custom train icon as SVG ─────────────────────────────────────────
 
@@ -67,14 +68,25 @@ interface MapProps {
   selectedRec?: Recommendation | null;
   selectedOption?: RankedOption | null;
   highlightType?: 'cheapest' | 'fastest' | 'safest' | 'selected';
+  /** Full corridor polyline [lng, lat] — preferred over straight segment chords */
+  routeGeometry?: [number, number][] | null;
+  /** City-labelled stops aligned with routeGeometry */
+  routeStops?: RouteGeometryStop[];
 }
 
-export default function MapView({ selectedRec, selectedOption, highlightType }: MapProps) {
+export default function MapView({
+  selectedRec,
+  selectedOption,
+  highlightType,
+  routeGeometry,
+  routeStops,
+}: MapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
   const trainLayerRef = useRef<L.LayerGroup | null>(null);
   const stationLayerRef = useRef<L.LayerGroup | null>(null);
+  const indiaBoundaryRef = useRef<L.LayerGroup | null>(null);
   const [mapTick, setMapTick] = useState(0);
   const [animPhase, setAnimPhase] = useState(0);
 
@@ -170,12 +182,24 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
     trainLayerRef.current = L.layerGroup().addTo(mapRef.current);
     stationLayerRef.current = L.layerGroup().addTo(mapRef.current);
 
+    void loadIndiaGeojson()
+      .then((geojson) => {
+        if (!mapRef.current) return;
+        indiaBoundaryRef.current?.remove();
+        indiaBoundaryRef.current = addIndiaBoundaryToMap(mapRef.current, geojson, 'dark');
+      })
+      .catch(() => {
+        /* boundary overlay optional */
+      });
+
     const map = mapRef.current;
     const bump = () => setMapTick(n => n + 1);
     map.on('moveend', bump);
     map.on('zoomend', bump);
 
     return () => {
+      indiaBoundaryRef.current?.remove();
+      indiaBoundaryRef.current = null;
       map.off('moveend', bump);
       map.off('zoomend', bump);
       map.remove();
@@ -396,13 +420,124 @@ export default function MapView({ selectedRec, selectedOption, highlightType }: 
     [stationCoords, fetchStationCoord, delayForCode]
   );
 
+  // ── Draw scraped schedule geometry (intermediate stations) ───────────
+  const drawGeometryPath = useCallback(
+    (geometry: [number, number][], stops: RouteGeometryStop[], color: string) => {
+      if (!routeLayerRef.current || !stationLayerRef.current || !mapRef.current) return;
+      if (geometry.length < 2) return;
+
+      routeLayerRef.current.clearLayers();
+      stationLayerRef.current.clearLayers();
+
+      const latLngs: [number, number][] = geometry.map(([lng, lat]) => [lat, lng]);
+      const stopMeta =
+        stops.length === geometry.length
+          ? stops
+          : stops.length > 0
+            ? stops
+            : geometry.map(([lng, lat], i) => ({
+                code: '',
+                name: '',
+                city: i === 0 ? 'Origin' : i === geometry.length - 1 ? 'Destination' : `Stop ${i + 1}`,
+                lng,
+                lat,
+              }));
+
+      const glow = L.polyline(latLngs, {
+        color,
+        weight: 14,
+        opacity: 0.18,
+        smoothFactor: 1.2,
+      });
+      const line = L.polyline(latLngs, {
+        color,
+        weight: 5,
+        opacity: 0.9,
+        smoothFactor: 1.2,
+      });
+
+      routeLayerRef.current.addLayer(glow);
+      routeLayerRef.current.addLayer(line);
+
+      line.bindTooltip(
+        `<div style="font-family:system-ui,sans-serif;font-size:11px">
+          ${selectedRec?.train_name || selectedOption?.train_name || 'Train route'}<br/>
+          ${selectedRec?.train_number || selectedOption?.train_number || ''}
+        </div>`,
+        { sticky: true }
+      );
+
+      stopMeta.forEach((stop, idx) => {
+        const latLng = latLngs[idx];
+        if (!latLng) return;
+        const isFirst = idx === 0;
+        const isLast = idx === stopMeta.length - 1;
+        const label = stop.city || stop.name || stop.code || (isFirst ? 'Origin' : isLast ? 'Destination' : `Stop ${idx + 1}`);
+        const dotColor = isFirst ? '#10b981' : isLast ? '#ef4444' : color;
+        const sub = stop.name && stop.city && stop.name.toUpperCase() !== stop.city.toUpperCase()
+          ? `<br/><span style="opacity:0.7;font-size:10px">${stop.name}${stop.code ? ` (${stop.code})` : ''}</span>`
+          : stop.code
+            ? `<br/><span style="opacity:0.7;font-size:10px">${stop.code}</span>`
+            : '';
+
+        if (isFirst || isLast) {
+          const marker = L.marker(latLng, {
+            icon: makeIcon(stationDotSvg(dotColor, true), 24),
+            zIndexOffset: 120,
+          });
+          marker.bindTooltip(`<strong>${label}</strong>${sub}`, { direction: 'top', permanent: true });
+          stationLayerRef.current!.addLayer(marker);
+          return;
+        }
+
+        const mid = L.circleMarker(latLng, {
+          radius: 4,
+          color: dotColor,
+          fillColor: dotColor,
+          fillOpacity: 0.75,
+          weight: 1,
+          opacity: 0.85,
+        });
+        mid.bindTooltip(`<strong>${label}</strong>${sub}`, { direction: 'top' });
+        stationLayerRef.current!.addLayer(mid);
+      });
+
+      mapRef.current.fitBounds(L.latLngBounds(latLngs), { padding: [60, 60], maxZoom: 8 });
+    },
+    [selectedRec, selectedOption]
+  );
+
   // ── React to selection + delay data ─────────────────────────────────
   useEffect(() => {
     const key = highlightType && ROUTE_COLORS[highlightType] ? highlightType : 'selected';
     const color = ROUTE_COLORS[key] ?? ROUTE_COLORS.selected;
     const segments = selectedRec?.segments || selectedOption?.segments;
-    drawRoute(segments, color);
-  }, [selectedRec, selectedOption, highlightType, drawRoute, trainDelayDetail]);
+
+    const embedded =
+      selectedRec?.geometry?.length && selectedRec.geometry.length >= 2
+        ? selectedRec.geometry
+        : selectedOption?.geometry?.length && selectedOption.geometry.length >= 2
+          ? selectedOption.geometry
+          : null;
+
+    const path = routeGeometry?.length && routeGeometry.length >= 2 ? routeGeometry : embedded;
+
+    if (path && path.length >= 2) {
+      drawGeometryPath(path, routeStops ?? [], color);
+      return;
+    }
+
+    void drawRoute(segments, color);
+  }, [
+    selectedRec,
+    selectedOption,
+    highlightType,
+    drawRoute,
+    trainDelayDetail,
+    routeGeometry,
+    routeStops,
+    drawGeometryPath,
+  ]);
 
   return <div ref={mapContainerRef} className="w-full h-full" />;
 }

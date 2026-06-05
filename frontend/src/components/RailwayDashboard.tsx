@@ -1,12 +1,21 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
-import { fetchExplanation, type Recommendation, type RankedOption } from '@/services/api';
+import {
+  buildTrainCorridorGeometry,
+  fetchExplanation,
+  type Recommendation,
+  type RankedOption,
+  type RouteGeometryStop,
+} from '@/services/api';
+
+const RailwayMap = dynamic(() => import('@/components/Map'), { ssr: false });
 
 
 // ── Metric Chip ──────────────────────────────────────────────────────
@@ -245,7 +254,7 @@ function OptionRow({
 
       {/* Delay badge */}
       <div
-        className={`text-[9px] mono px-1.5 py-0.5 rounded shrink-0 ${
+        className={`hidden text-[9px] mono px-1.5 py-0.5 rounded shrink-0 min-[400px]:block ${
           opt.delay_source === 'railradar_api'
             ? 'bg-tertiary/10 text-tertiary border border-tertiary/15'
             : 'bg-surface-container text-outline'
@@ -547,12 +556,58 @@ export default function RailwayDashboard() {
     selectedTrainLive,
     error,
     resetSearch,
+    setLiveMapMode,
   } = useLogiFlowStore();
 
   const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
+  const [routeGeometry, setRouteGeometry] = useState<[number, number][] | null>(null);
+  const [routeStops, setRouteStops] = useState<RouteGeometryStop[]>([]);
+  const [geometryLoading, setGeometryLoading] = useState(false);
 
   const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
   const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
+
+  const activeTrainNumber = activeRec?.train_number || activeOption?.train_number || '';
+  const activeTrainName = activeRec?.train_name || activeOption?.train_name || '';
+  const activeSegments = activeRec?.segments || activeOption?.segments || [];
+
+  useEffect(() => {
+    if (!hasSearched || loading) return;
+    setLiveMapMode('route');
+  }, [hasSearched, loading, setLiveMapMode]);
+
+  useEffect(() => {
+    const trainNo = activeRec?.train_number || activeOption?.train_number || '';
+    const segments = activeRec?.segments || activeOption?.segments || [];
+    const controller = new AbortController();
+
+    if (!trainNo || !segments.length) {
+      setRouteGeometry(null);
+      setRouteStops([]);
+      setGeometryLoading(false);
+      return () => controller.abort();
+    }
+
+    setGeometryLoading(true);
+
+    void buildTrainCorridorGeometry(trainNo, segments, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setRouteGeometry(result.geometry.length >= 2 ? result.geometry : null);
+        setRouteStops(result.stops);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setRouteGeometry(null);
+        setRouteStops([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setGeometryLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeRec, activeOption]);
 
   const showRailLoading = loading && loadingMode === 'rail';
   const showNoRoutePage =
@@ -605,16 +660,16 @@ export default function RailwayDashboard() {
 
       {/* Error */}
       {error && (
-        <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-xs text-error flex items-center gap-2 shrink-0">
-          <span className="material-symbols-outlined text-sm">error</span>
-          {error}
+        <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-xs text-error flex items-start gap-2 shrink-0">
+          <span className="material-symbols-outlined shrink-0 text-sm">error</span>
+          <span className="min-w-0 break-words">{error}</span>
         </div>
       )}
 
-      {/* 2-col main layout */}
-      <main className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden lg:overflow-hidden overflow-y-auto lg:overflow-y-clip">
-        {/* Left: route list */}
-        <aside className="w-full lg:w-[36%] xl:w-[34%] flex flex-col border-b lg:border-b-0 lg:border-r border-outline-variant/8 bg-surface-container-low/30 h-[44vh] lg:h-auto min-h-0 shrink-0 lg:shrink">
+      {/* List | map | detail — road-style map column on desktop */}
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-12 lg:overflow-hidden">
+        {/* Train list */}
+        <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-outline-variant/8 bg-surface-container-low/30 max-h-[min(38vh,340px)] lg:col-span-3 lg:max-h-none lg:h-auto lg:border-b-0 lg:border-r">
           {/* Toggle */}
           <div className="p-3 pb-2 shrink-0">
             <div className="flex bg-surface-container/50 rounded-lg p-0.5 border border-outline-variant/8">
@@ -703,8 +758,38 @@ export default function RailwayDashboard() {
           </div>
         </aside>
 
-        {/* Right: detail panel */}
-        <aside className="flex-1 bg-surface-container-lowest/35 p-4 sm:p-5 min-h-0 h-auto lg:h-auto overflow-y-auto shrink-0 lg:shrink border-t lg:border-t-0 border-outline-variant/8">
+        {/* Map — sticky center column like road results */}
+        <section className="flex min-h-[240px] shrink-0 flex-col border-b border-outline-variant/8 bg-surface-container-lowest/40 p-3 sm:min-h-[280px] sm:p-4 lg:col-span-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:border-b-0 lg:border-r">
+          <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-outline">
+              <span
+                className="material-symbols-outlined text-primary"
+                style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}
+              >
+                map
+              </span>
+              Route on map
+            </span>
+            <span className="max-w-[min(100%,240px)] truncate text-[10px] font-mono text-on-surface-variant">
+              {activeTrainNumber
+                ? `${activeTrainNumber} · ${activeTrainName}`
+                : 'Select a train'}
+              {geometryLoading ? ' · …' : ''}
+            </span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-outline-variant/15">
+            <RailwayMap
+              selectedRec={activeRec}
+              selectedOption={activeOption}
+              highlightType={activeView === 'recommendations' ? selectedRecType : 'selected'}
+              routeGeometry={routeGeometry}
+              routeStops={routeStops}
+            />
+          </div>
+        </section>
+
+        {/* Train detail */}
+        <aside className="min-h-0 overflow-y-auto bg-surface-container-lowest/35 p-4 sm:p-5 lg:col-span-4">
           <DetailPanel
             rec={activeRec}
             ranked={activeOption}

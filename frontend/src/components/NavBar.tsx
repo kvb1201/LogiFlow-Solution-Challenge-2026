@@ -27,7 +27,7 @@ export default function NavBar() {
 
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-border/70 bg-background/80 shadow-[0_12px_40px_-28px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
-      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-4 sm:px-5">
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-4 sm:h-16 sm:gap-4 sm:px-5">
         <Link
           href="/"
           onClick={resetSearch}
@@ -38,9 +38,9 @@ export default function NavBar() {
             <Radar className="h-4 w-4" strokeWidth={2.4} />
             <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background bg-live" />
           </div>
-          <div className="leading-tight">
-            <div className="text-[14px] font-bold">LogiFlow</div>
-            <div className="text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="min-w-0 leading-tight">
+            <div className="truncate text-[13px] font-bold sm:text-[14px]">LogiFlow</div>
+            <div className="hidden text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground sm:block">
               Multimodal freight
             </div>
           </div>

@@ -482,36 +482,43 @@ def get_station_info(station_code):
     Get station details. Uses searchStation + getTrainSchedule for lat/lng.
     Returns: {name, code, lat, lng, state, zone} or None
     """
-    data = search_offline_stations(station_code)
-    from app.utils.coordinates import get_coords
+    from app.pipelines.rail.station_coordinates import get_station_latlng, get_station_meta
+    from app.services.station_geocoder import geocode_station_name
 
-    if not data or not isinstance(data, list):
+    code_u = (station_code or "").strip().upper()
+    meta = get_station_meta(code_u)
+    offline = search_offline_stations(station_code)
+
+    target = meta
+    if not target and offline:
+        for s in offline:
+            if s.get("code", "").upper() == code_u:
+                target = s
+                break
+        if not target:
+            target = offline[0]
+
+    if not target:
         return None
 
-    # Try to find exact code match
-    target = None
-    for s in data:
-        if s.get("code", "").upper() == station_code.upper():
-            target = s
-            break
-    
-    if not target and data:
-        target = data[0]
-        
-    if target:
-        res = {
-            "name": target.get("name", ""),
-            "code": target.get("code", ""),
-            "state": target.get("state_name", ""),
-            "lat": None,
-            "lng": None,
-        }
-        # ENHANCEMENT: Get real coordinates if the API is empty
-        lat, lng = get_coords(res["name"] + " Railway Station")
-        res["lat"], res["lng"] = lat, lng
+    res = {
+        "name": target.get("name", ""),
+        "code": code_u or target.get("code", ""),
+        "state": target.get("state_name", ""),
+        "lat": None,
+        "lng": None,
+    }
+
+    coords = get_station_latlng(code_u)
+    if coords:
+        res["lat"], res["lng"] = coords
         return res
-    
-    return None
+
+    state = res.get("state") or ""
+    coords, _provider = geocode_station_name(res["name"], code=code_u, state=state)
+    if coords:
+        res["lat"], res["lng"] = coords
+    return res
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1507,57 +1514,213 @@ def _scrape_trains_between_html(from_code, to_code, date_of_journey):
         return None
 
 
+def _normalize_schedule_stop(stop: dict):
+    """Normalize one schedule stop from IRCTC Connect / RapidAPI payloads."""
+    if not isinstance(stop, dict):
+        return None
+    s_code = (
+        stop.get("station_code")
+        or stop.get("stationCode")
+        or stop.get("stnCode")
+        or ""
+    )
+    s_code = str(s_code).strip().upper()
+    if not s_code:
+        return None
+
+    arr_raw = (
+        stop.get("sta")
+        or stop.get("arrival_time")
+        or stop.get("arrival")
+        or stop.get("arrivalTime")
+        or ""
+    )
+    dep_raw = (
+        stop.get("std")
+        or stop.get("departure_time")
+        or stop.get("departure")
+        or stop.get("departureTime")
+        or ""
+    )
+    arr_min = _time_str_to_minutes(arr_raw)
+    dep_min = _time_str_to_minutes(dep_raw)
+    try:
+        dist = int(float(
+            stop.get("distance_from_source")
+            or stop.get("distance")
+            or stop.get("distanceFromSource")
+            or 0
+        ))
+    except (TypeError, ValueError):
+        dist = 0
+    try:
+        day = int(stop.get("day", 1))
+    except (TypeError, ValueError):
+        day = 1
+
+    station_name = (
+        stop.get("station_name")
+        or stop.get("stationName")
+        or stop.get("stnName")
+        or s_code
+    )
+    return {
+        "station_code": s_code,
+        "stationCode": s_code,
+        "station_name": str(station_name).strip() or s_code,
+        "arrival_time": str(arr_raw).strip(),
+        "departure_time": str(dep_raw).strip(),
+        "arrival_minutes": arr_min,
+        "departure_minutes": dep_min,
+        "distance_from_source": dist,
+        "day": day,
+        "halt_minutes": stop.get("halt_minutes") or stop.get("halt_stn") or 0,
+        "stop": True,
+        "on_time_rating": stop.get("on_time_rating"),
+    }
+
+
+def _running_days_dict(train_info: dict) -> dict:
+    runs_dict = {d: False for d in _DAY_ABBR}
+    rd = train_info.get("running_days") or train_info.get("days") or train_info.get("runDays")
+    if isinstance(rd, str) and rd.strip():
+        for i, ch in enumerate(rd.strip()[:7]):
+            if ch == "1" and i < len(_DAY_ABBR):
+                runs_dict[_DAY_ABBR[i]] = True
+    elif isinstance(rd, dict):
+        for day, active in rd.items():
+            if day in runs_dict:
+                runs_dict[day] = bool(active)
+    elif isinstance(rd, list):
+        for day in rd:
+            if day in runs_dict:
+                runs_dict[day] = True
+    return runs_dict
+
+
 def _format_connect_schedule_to_rapidapi(data):
     """Reformats irctc-connect getTrainInfo JSON to standard structure."""
     if not isinstance(data, dict):
         return None
-    train_info = data.get("trainInfo", {})
-    route_in = data.get("route", [])
-    
+    train_info = data.get("trainInfo") or data.get("train_info") or {}
+    route_in = data.get("route") or data.get("stops") or []
+
     route_out = []
-    for r in route_in:
-        s_code = r.get("station_code") or r.get("stationCode", "")
-        # Normalizing names
-        arr_min = _time_str_to_minutes(r.get("sta", r.get("arrival_time", "")))
-        dep_min = _time_str_to_minutes(r.get("std", r.get("departure_time", "")))
-        try: dist = int(float(r.get("distance_from_source") or r.get("distance", 0)))
-        except: dist = 0
-        try: day = int(r.get("day", 1))
-        except: day = 1
-        
-        route_out.append({
-            "station_code": s_code,
-            "station_name": r.get("station_name", s_code),
-            "arrival_time": r.get("sta", ""),
-            "departure_time": r.get("std", ""),
-            "arrival_minutes": arr_min,
-            "departure_minutes": dep_min,
-            "distance_from_source": dist,
-            "day": day,
-            "halt_minutes": r.get("halt_minutes", 0),
-        })
-        
-    runs_dict = {}
-    for d in _DAY_ABBR: runs_dict[d] = False
-    for d in (train_info.get("days") or train_info.get("running_days") or []):
-        if d in runs_dict: runs_dict[d] = True
+    for raw_stop in route_in:
+        stop = _normalize_schedule_stop(raw_stop)
+        if stop:
+            route_out.append(stop)
+
+    if not route_out:
+        return None
 
     return {
-        "trainNumber": train_info.get("train_no", train_info.get("trainNo", "")),
-        "trainName": train_info.get("name", train_info.get("train_name", "")),
-        "trainType": train_info.get("type", ""),
-        "runDays": runs_dict,
-        "route": route_out
+        "trainNumber": str(
+            train_info.get("train_no")
+            or train_info.get("trainNo")
+            or train_info.get("train_number")
+            or ""
+        ).strip(),
+        "trainName": train_info.get("name") or train_info.get("train_name") or "",
+        "trainType": train_info.get("type") or train_info.get("train_type") or "",
+        "runDays": _running_days_dict(train_info),
+        "route": route_out,
     }
+
+
+def _format_rapidapi_schedule_to_standard(data, train_number: str):
+    """Normalize IRCTC RapidAPI getTrainSchedule payload."""
+    if not isinstance(data, dict):
+        return None
+
+    train_meta = data
+    route_in = data.get("route") or data.get("stops") or []
+    if not route_in and isinstance(data.get("data"), dict):
+        train_meta = data["data"]
+        route_in = train_meta.get("route") or train_meta.get("stops") or []
+
+    route_out = []
+    for raw_stop in route_in:
+        stop = _normalize_schedule_stop(raw_stop)
+        if stop:
+            route_out.append(stop)
+
+    if not route_out:
+        return None
+
+    return {
+        "trainNumber": str(
+            train_meta.get("trainNumber")
+            or train_meta.get("train_number")
+            or train_meta.get("trainNo")
+            or train_number
+        ).strip(),
+        "trainName": train_meta.get("trainName") or train_meta.get("train_name") or "",
+        "trainType": train_meta.get("trainType") or train_meta.get("train_type") or "",
+        "runDays": _running_days_dict(train_meta),
+        "route": route_out,
+    }
+
+
+def fetch_schedule_from_irctc_connect(train_number: str):
+    """Fetch schedule via IRCTC Connect getTrainInfo (signed SDK API)."""
+    if not IRCTC_CONNECT_KEYS or not _connect_secret:
+        return None
+
+    tn = str(train_number).strip()
+    variants = list(dict.fromkeys([
+        tn,
+        tn.lstrip("0") or "0",
+        tn.zfill(5) if tn.isdigit() else tn,
+    ]))
+
+    ttl = _get_ttl_for_endpoint("getTrainSchedule")
+    for variant in variants:
+        path = f"/api/getTrainInfo/{variant}"
+        ck = _cache_key("schedule_connect_v1", {"train": variant})
+        cached = _cache_get(ck)
+        if cached is not None:
+            return cached
+
+        data = _irctc_connect_get(path)
+        if not data:
+            continue
+        formatted = _format_connect_schedule_to_rapidapi(data)
+        if not formatted or not formatted.get("route"):
+            continue
+        formatted["_schedule_source"] = "irctc_connect"
+        if ttl > 0:
+            _cache_set(ck, formatted, ttl)
+        return formatted
+    return None
+
+
+def fetch_schedule_from_irctc_rapidapi(train_number: str):
+    """Fetch schedule via IRCTC RapidAPI getTrainSchedule."""
+    if not IRCTC_API_KEYS:
+        return None
+
+    tn = str(train_number).strip()
+    raw = _get("/api/v1/getTrainSchedule", {"trainNo": tn})
+    if not raw:
+        return None
+    formatted = _format_rapidapi_schedule_to_standard(raw, tn)
+    if not formatted or not formatted.get("route"):
+        return None
+    formatted["_schedule_source"] = "irctc_rapidapi"
+    return formatted
 
 
 def get_train_schedule(train_number):
     """
     Get full schedule for a train with per-station details.
     Returns: {trainType, trainName, route: [{station_code, station_name, ...}]}
+
+    Sources (in order): 2017 CSV → local cache → runningstatus.in scrape → delay scrape.
     """
-    # IRCTC Connect / RapidAPI schedule APIs are deprecated in this flow.
-    return None
+    from app.pipelines.rail.schedule_resolver import resolve_train_schedule
+
+    return resolve_train_schedule(train_number)
 
 
 def get_train_data(train_number, data_type="static"):
@@ -1585,6 +1748,7 @@ def get_train_data(train_number, data_type="static"):
                 "days": [d for d, v in run_days.items() if v],
             },
             "route": route,
+            "_schedule_source": data.get("_schedule_source"),
         }
     }
 
@@ -1678,59 +1842,176 @@ def get_fare(train_number, from_code, to_code):
 def get_station_coords(station_code):
     """
     Helper to fetch and cache station coordinates to minimize API calls.
+    Returns [lng, lat] for map polylines.
     """
+    from app.pipelines.rail.station_coordinates import get_station_latlng
+
+    coords = get_station_latlng(station_code)
+    if coords:
+        lat, lng = coords
+        return [float(lng), float(lat)]
+
     info = get_station_info(station_code)
-    if info and "latitude" in info and "longitude" in info:
-        return [info["longitude"], info["latitude"]]
+    if not info:
+        return None
+    lat = info.get("latitude", info.get("lat"))
+    lng = info.get("longitude", info.get("lng"))
+    if lat is not None and lng is not None:
+        return [float(lng), float(lat)]
     return None
+
+
+def _stop_station_code(stop):
+    return (stop.get("stationCode") or stop.get("station_code") or "").strip().upper()
+
+
+def _equiv_set(code: str) -> set[str]:
+    from app.pipelines.rail.station_coordinates import equivalent_station_codes
+    return set(equivalent_station_codes(code.upper()))
+
+
+def _find_route_indices(route, from_station: str, to_station: str):
+    """Match schedule slice using station-code aliases (PRYJ ↔ ALD, etc.)."""
+    from_set = _equiv_set(from_station)
+    to_set = _equiv_set(to_station)
+    start_idx, end_idx = -1, -1
+    for i, stop in enumerate(route):
+        code = _stop_station_code(stop)
+        if not code:
+            continue
+        if code in from_set:
+            start_idx = i
+        if code in to_set:
+            end_idx = i
+    return start_idx, end_idx
+
+
+def _find_fuzzy_route_slice(route, from_station: str, to_station: str):
+    """
+    When the requested origin code is absent from the CSV schedule (common for PRYJ),
+    pick the onboard station closest to the requested origin before the destination.
+    """
+    _, end_idx = _find_route_indices(route, from_station, to_station)
+    if end_idx < 0:
+        to_set = _equiv_set(to_station)
+        for i, stop in enumerate(route):
+            if _stop_station_code(stop) in to_set:
+                end_idx = i
+                break
+    if end_idx < 0:
+        return -1, -1
+
+    start_idx, _ = _find_route_indices(route, from_station, to_station)
+    if start_idx >= 0 and start_idx <= end_idx:
+        return start_idx, end_idx
+
+    from_coord = get_station_coords(from_station)
+    if not from_coord:
+        return 0, end_idx
+
+    from_lng, from_lat = from_coord
+    best_i = 0
+    best_d = float("inf")
+    for i in range(end_idx + 1):
+        code = _stop_station_code(route[i])
+        coord = get_station_coords(code) if code else None
+        if not coord:
+            continue
+        lng, lat = coord
+        d = (lng - from_lng) ** 2 + (lat - from_lat) ** 2
+        if d < best_d:
+            best_d = d
+            best_i = i
+    return best_i, end_idx
+
+
+def _coords_from_route_leg(route_leg, max_points: int = 40):
+    if len(route_leg) > max_points:
+        indices = [0]
+        step = (len(route_leg) - 1) / float(max_points - 1)
+        for i in range(1, max_points - 1):
+            indices.append(int(round(i * step)))
+        indices.append(len(route_leg) - 1)
+        sampled = [route_leg[i] for i in sorted(set(indices))]
+    else:
+        sampled = route_leg
+
+    coords = []
+    for stop in sampled:
+        code = _stop_station_code(stop)
+        if code:
+            coord = get_station_coords(code)
+            if coord:
+                coords.append(coord)
+    return coords
+
+
+def _graph_corridor_geometry(from_station: str, to_station: str, max_hops: int = 12):
+    """Rail-network fallback: hop along CSV adjacency when schedule slice is missing."""
+    from collections import deque
+
+    from app.pipelines.rail.data_loader import get_station_graph
+
+    graph = get_station_graph()
+    starts = list(_equiv_set(from_station))
+    ends = _equiv_set(to_station)
+    if not starts or not ends:
+        return None
+
+    queue = deque([(s, [s]) for s in starts])
+    visited = set(starts)
+    while queue:
+        node, path = queue.popleft()
+        if node in ends:
+            coords = []
+            for code in path:
+                c = get_station_coords(code)
+                if c:
+                    coords.append(c)
+            return coords if len(coords) >= 2 else None
+        if len(path) >= max_hops:
+            continue
+        for nb in graph.get(node, []):
+            if nb not in visited:
+                visited.add(nb)
+                queue.append((nb, path + [nb]))
+    return None
+
+
+def _ensure_origin_anchor(coords, from_station: str):
+    """Prepend the requested origin when the schedule boards at a nearby station."""
+    if not coords:
+        return coords
+    origin = get_station_coords(from_station)
+    if not origin:
+        return coords
+    olng, olat = origin
+    flng, flat = coords[0]
+    if (olng - flng) ** 2 + (olat - flat) ** 2 > 0.02:
+        return [origin] + coords
+    return coords
+
+
+def _endpoint_geometry(from_station, to_station):
+    """Last-resort straight line between two station coordinates."""
+    from_c = get_station_coords(from_station.upper())
+    to_c = get_station_coords(to_station.upper())
+    if from_c and to_c:
+        return [from_c, to_c]
+    return None
+
 
 @lru_cache(maxsize=100)
 def get_train_geometry(train_no, from_station, to_station):
-    """
-    Helper to get the geometry coordinates for a train route from A to B.
-    Extracts intermediate stations using the static schedule, then 
-    fetches their coordinates utilizing the cache.
-    """
-    data = get_train_data(train_no, data_type="static")
-    if not data or "train" not in data or "route" not in data["train"]:
-        return None
-        
-    route = data["train"]["route"]
-    
-    start_idx, end_idx = -1, -1
-    for i, stop in enumerate(route):
-        code = stop.get("stationCode")
-        if not code:
-            continue
-        code = code.upper()
-        if code == from_station.upper():
-            start_idx = i
-        if code == to_station.upper():
-            end_idx = i
-            
-    if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
-        return None
+    """Polyline [lng, lat] — delegates to geometry_builder (Supabase-backed cache)."""
+    from app.pipelines.rail.geometry_builder import get_train_geometry_detail
 
-    # Limit to 10 intermediate points to avoid overloading API / rate limits
-    route_leg = route[start_idx:end_idx + 1]
-    
-    if len(route_leg) > 10:
-        # Sample evenly
-        indices = [0]
-        step = (len(route_leg) - 1) / 9.0
-        for i in range(1, 9):
-            indices.append(int(i * step))
-        indices.append(len(route_leg) - 1)
-        sampled_route = [route_leg[i] for i in sorted(list(set(indices)))]
-    else:
-        sampled_route = route_leg
-        
-    coords = []
-    for stop in sampled_route:
-        code = stop.get("stationCode")
-        if code:
-            coord = get_station_coords(code.upper())
-            if coord:
-                coords.append(coord)
-                
-    return coords if coords else None
+    detail = get_train_geometry_detail(train_no, from_station, to_station)
+    return detail.get("geometry") or None
+
+
+def get_train_geometry_with_stops(train_no, from_station, to_station):
+    """Full geometry payload including city-labelled stops."""
+    from app.pipelines.rail.geometry_builder import get_train_geometry_detail
+
+    return get_train_geometry_detail(train_no, from_station, to_station)

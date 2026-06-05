@@ -5,6 +5,10 @@ import urllib.parse
 # Cache to prevent spamming the geocoding API
 city_coords_cache = {
     "Delhi": (28.6139, 77.2090),
+    "Prayagraj": (25.4358, 81.8463),
+    "PRAYAGRAJ JN": (25.4358, 81.8463),
+    "PRAYAGRAJ JN railway station, Uttar Pradesh, India": (25.4358, 81.8463),
+    "Allahabad": (25.4358, 81.8463),
     "Mumbai": (19.0760, 72.8777),
     "Surat": (21.1702, 72.8311),
     "Vadodara": (22.3072, 73.1812),
@@ -16,38 +20,48 @@ city_coords_cache = {
     "Port": (21.3, 72.9)
 }
 
+# Deliberately invalid placeholder — never use as a real station/city location.
+INDIA_CENTER_PLACEHOLDER = (20.5937, 78.9629)
+
+
+def is_placeholder_coord(lat: float, lng: float) -> bool:
+    return abs(lat - INDIA_CENTER_PLACEHOLDER[0]) < 0.01 and abs(lng - INDIA_CENTER_PLACEHOLDER[1]) < 0.01
+
+
 def get_coords(name):
     """
-    Return latitude and longitude for a given location name dynamically using Nominatim.
-    Falls back to a default India center if not found.
+    Return (lat, lng) for a location name via cache or Nominatim.
+    Returns None when unknown — callers must not invent a fake map pin.
     """
     if not name:
-        return (20.5937, 78.9629)
-        
-    # Check cache first
+        return None
+
     if name in city_coords_cache:
         return city_coords_cache[name]
-    
-    # Ignore fallback terms that aren't real places
+
     if name.lower() in ['midpoint', 'port', 'express hub', 'central depot']:
-        return (20.5937, 78.9629) # Fallback center of India
-        
+        return None
+
     try:
-        # Ask OpenStreetMap for the real-world coordinates! (Free Geocoding)
         query = urllib.parse.quote(name)
-        url = f"https://nominatim.openstreetmap.org/search?format=json&q={query}&limit=1"
+        url = (
+            "https://nominatim.openstreetmap.org/search?"
+            f"format=json&q={query}&limit=1&countrycodes=in"
+        )
         req = urllib.request.Request(url, headers={'User-Agent': 'LogiFlow-AI-Agent'})
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode('utf-8'))
             if data and len(data) > 0:
                 lat = float(data[0]['lat'])
                 lon = float(data[0]['lon'])
+                if is_placeholder_coord(lat, lon):
+                    return None
                 city_coords_cache[name] = (lat, lon)
                 return (lat, lon)
     except Exception as e:
         print(f"Geocoding failed for {name}: {e}")
-        
-    return (20.5937, 78.9629) # Fallback if API fails or city not found
+
+    return None
 
 midpoint_name_cache = {}
 
@@ -60,9 +74,14 @@ def get_dynamic_midpoint(source: str, destination: str):
     if key in midpoint_name_cache:
         return midpoint_name_cache[key]
         
-    s_lat, s_lon = get_coords(source)
-    d_lat, d_lon = get_coords(destination)
-    
+    s = get_coords(source)
+    d = get_coords(destination)
+    if not s or not d:
+        return "Central Hub"
+
+    s_lat, s_lon = s
+    d_lat, d_lon = d
+
     mid_lat = (s_lat + d_lat) / 2
     mid_lon = (s_lon + d_lon) / 2
     
