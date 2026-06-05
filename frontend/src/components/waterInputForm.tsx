@@ -410,56 +410,49 @@ export default function WaterInputForm() {
               </div>
             </div>
 
+            <FormField
+              label="Max transshipments"
+              hint="Higher values allow more global lanes, but can increase transit time and route risk."
+            >
+              <div className="flex items-center gap-2">
+                {[0, 1, 2, 3].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setMaxTransshipments(n)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-bold mono transition-all ${
+                      maxTransshipments === n
+                        ? 'bg-teal-500/15 border-teal-400/40 text-teal-300'
+                        : 'bg-surface-container-lowest/30 border-outline-variant/15 text-on-surface-variant hover:border-outline-variant/30'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </FormField>
+
             {/* Advanced */}
             <div
               className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-in-out ${
-                showAdvanced ? 'max-h-[260px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+                showAdvanced ? 'max-h-[160px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
               }`}
             >
               <div className="pt-1 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
-                      Budget Cap
-                    </label>
-                    <input
-                      type="range"
-                      min={5000}
-                      max={500000}
-                      step={5000}
-                      value={budgetMax}
-                      onChange={(e) => setBudgetMax(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="text-right text-[11px] mono text-teal-400 mt-1">
-                      ₹{budgetMax.toLocaleString()}
-                    </div>
+                <FormField label="Budget cap">
+                  <input
+                    type="range"
+                    min={5000}
+                    max={500000}
+                    step={5000}
+                    value={budgetMax}
+                    onChange={(e) => setBudgetMax(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right text-[11px] mono text-teal-400 mt-1">
+                    ₹{budgetMax.toLocaleString()}
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
-                      Max Transshipments
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {[0, 1, 2, 3].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setMaxTransshipments(n)}
-                          className={`flex-1 py-2 rounded-xl border text-sm font-bold mono transition-all ${
-                            maxTransshipments === n
-                              ? 'bg-teal-500/15 border-teal-400/40 text-teal-300'
-                              : 'bg-surface-container-lowest/30 border-outline-variant/15 text-on-surface-variant hover:border-outline-variant/30'
-                          }`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="text-[10px] text-outline/60 mt-1.5 text-center">
-                      stops between origin and destination
-                    </div>
-                  </div>
-                </div>
+                </FormField>
               </div>
             </div>
 
