@@ -678,9 +678,9 @@ export async function parseShipmentIntent(
     body: JSON.stringify({ user_brief, context_mode }),
   });
   const raw = await res.text();
-  let data: ParsedIntent;
+  let parsed: unknown;
   try {
-    data = raw ? JSON.parse(raw) : {};
+    parsed = raw ? JSON.parse(raw) : {};
   } catch {
     throw new Error(
       res.ok
@@ -689,13 +689,14 @@ export async function parseShipmentIntent(
     );
   }
   if (!res.ok) {
+    const err = parsed as { detail?: string; error?: string };
     throw new Error(
-      (typeof data?.detail === 'string' ? data.detail : null) ||
-        data?.error ||
+      (typeof err.detail === 'string' ? err.detail : null) ||
+        err.error ||
         `Intent parse failed (${res.status})`
     );
   }
-  return data;
+  return parsed as ParsedIntent;
 }
 
 // ── Legacy fallback (for the old /optimize endpoint) ─────────────────
