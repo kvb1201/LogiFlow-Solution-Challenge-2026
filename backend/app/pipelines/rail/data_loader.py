@@ -22,6 +22,7 @@ _station_pairs = None       # {(from_stn, to_stn): [list of train options]}
 _station_graph = None       # {station: set(neighbor_stations)}
 _station_trains = None      # {station_code: set(train_numbers)}
 _train_metadata = None      # {train_no: {name, src, dst, total_distance, ...}}
+_station_catalog = None     # {station_code: {name}}
 _loaded = False
 
 
@@ -51,7 +52,7 @@ def _calc_duration_minutes(dep_time_str, arr_time_str, journey_days=0):
 def load_data():
     """Load and index the CSV data. Thread-safe singleton pattern."""
     global _train_df, _train_routes, _station_pairs, _station_graph
-    global _station_trains, _train_metadata, _loaded
+    global _station_trains, _train_metadata, _station_catalog, _loaded
 
     if _loaded:
         return
@@ -94,20 +95,25 @@ def load_data():
     # ── Build train routes index ──────────────────────────────────────
     _train_routes = {}
     _train_metadata = {}
+    _station_catalog = {}
     _station_trains = defaultdict(set)
 
     for train_no, group in df.groupby("train_no"):
         stops = []
         for _, row in group.iterrows():
+            code = row["station_code"]
+            name = str(row.get("station_name", ""))
             stops.append({
                 "seq": int(row["seq"]),
-                "station_code": row["station_code"],
-                "station_name": str(row.get("station_name", "")),
+                "station_code": code,
+                "station_name": name,
                 "arrival_time": str(row.get("arrival_time", "")),
                 "departure_time": str(row.get("departure_time", "")),
                 "distance": float(row["distance"]),
             })
-            _station_trains[row["station_code"]].add(train_no)
+            if code and code not in _station_catalog:
+                _station_catalog[code] = {"name": name}
+            _station_trains[code].add(train_no)
 
         _train_routes[train_no] = stops
 
@@ -306,6 +312,13 @@ def get_train_route(train_no):
     """Get the full stop sequence for a train."""
     load_data()
     return _train_routes.get(str(train_no), [])
+
+
+def get_station_name(station_code: str) -> str:
+    """Official station name from the schedule CSV."""
+    load_data()
+    row = (_station_catalog or {}).get(str(station_code).strip().upper(), {})
+    return str(row.get("name") or "")
 
 
 def get_route_stats():

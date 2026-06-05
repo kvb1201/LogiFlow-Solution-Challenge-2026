@@ -173,12 +173,47 @@ def train_live_status(train_number: str, journey_date: Optional[str] = None):
 
 @router.get("/trains/{train_number}/schedule")
 def train_schedule(train_number: str):
-    """Get full static schedule for a train from RailRadar API."""
+    """Get full static schedule (CSV → runningstatus scrape → delay-scrape fallback)."""
     from app.pipelines.rail.railradar_client import get_train_data
     data = get_train_data(train_number, data_type="static")
     if not data:
         raise HTTPException(status_code=404, detail="Train not found")
     return data
+
+
+@router.get("/trains/{train_number}/geometry")
+async def train_route_geometry(train_number: str, from_code: str, to_code: str):
+    """
+    Polyline coordinates for a train leg (intermediate stations sampled from schedule).
+    Returns [lng, lat] pairs suitable for map rendering.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.pipelines.rail.railradar_client import get_train_geometry_with_stops
+
+    if not from_code.strip() or not to_code.strip():
+        raise HTTPException(status_code=400, detail="from_code and to_code are required")
+
+    from_u = from_code.strip().upper()
+    to_u = to_code.strip().upper()
+    detail = await run_in_threadpool(
+        get_train_geometry_with_stops, train_number, from_u, to_u
+    )
+    coords = detail.get("geometry") or []
+    if not coords:
+        raise HTTPException(
+            status_code=404,
+            detail="Route geometry not available for this train and station pair",
+        )
+    return {
+        "train_number": train_number,
+        "from_code": from_u,
+        "to_code": to_u,
+        "geometry": coords,
+        "stops": detail.get("stops") or [],
+        "points": detail.get("point_count") or len(coords),
+        "source": detail.get("source") or "computed",
+    }
 
 
 @router.get("/stations/{station_code}")
@@ -232,7 +267,10 @@ def get_location_coords(name: str):
     Useful for centering the map when no routes are found.
     """
     from app.utils.coordinates import get_coords
-    lat, lng = get_coords(name)
+    coords = get_coords(name)
+    if not coords:
+        raise HTTPException(status_code=404, detail=f"Coordinates not found for: {name}")
+    lat, lng = coords
     return {"name": name, "lat": lat, "lng": lng}
 
 

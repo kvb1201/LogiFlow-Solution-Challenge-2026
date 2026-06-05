@@ -476,6 +476,29 @@
     box-shadow: 0 0 52px -8px var(--hybrid);
     filter: brightness(1.08);
   }
+
+  .results-shell {
+    padding: 1rem;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .results-shell {
+      padding: 1.25rem 1.5rem;
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    }
+  }
+
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  @media (max-width: 639px) {
+    .no-scale-mobile {
+      transform: none !important;
+    }
+  }
 }
 
 @keyframes live-pulse {

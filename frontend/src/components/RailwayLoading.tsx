@@ -44,15 +44,15 @@ export default function RailwayLoading() {
     <div className="fixed inset-0 z-[10000] bg-[#080b12] flex flex-col items-center justify-center overflow-hidden">
       {/* Background atmosphere */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px] animate-pulse-slow" />
-        <div className="absolute top-1/4 right-1/4 w-[350px] h-[350px] bg-tertiary/5 rounded-full blur-[100px] animate-mesh-1" />
-        <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[400px] bg-primary/4 rounded-full blur-[110px] animate-mesh-2" />
+        <div className="absolute top-1/2 left-1/2 h-[min(90vw,600px)] w-[min(90vw,600px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-[120px] animate-pulse-slow" />
+        <div className="absolute top-1/4 right-1/4 h-[min(70vw,350px)] w-[min(70vw,350px)] rounded-full bg-tertiary/5 blur-[100px] animate-mesh-1" />
+        <div className="absolute bottom-1/4 left-1/4 h-[min(75vw,400px)] w-[min(75vw,400px)] rounded-full bg-primary/4 blur-[110px] animate-mesh-2" />
         <div className="absolute inset-0 hero-dot-grid opacity-[0.15]" />
       </div>
 
       {/* Decorative corners */}
-      <div className="absolute top-10 left-10 w-20 h-20 border-t border-l border-primary/15 rounded-tl-2xl" />
-      <div className="absolute bottom-10 right-10 w-20 h-20 border-b border-r border-tertiary/15 rounded-br-2xl" />
+      <div className="absolute top-6 left-4 h-14 w-14 rounded-tl-2xl border-t border-l border-primary/15 sm:top-10 sm:left-10 sm:h-20 sm:w-20" />
+      <div className="absolute bottom-6 right-4 h-14 w-14 rounded-br-2xl border-b border-r border-tertiary/15 sm:bottom-10 sm:right-10 sm:h-20 sm:w-20" />
 
       {/* Central content */}
       <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">

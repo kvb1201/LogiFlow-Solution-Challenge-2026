@@ -501,7 +501,7 @@ export default function RoadInputForm() {
               <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
                 Route Preferences
               </label>
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-3">
                 {[
                   { key: 'tolls', label: 'Avoid Tolls', icon: 'toll', value: avoidTolls, set: setAvoidTolls },
                   { key: 'highways', label: 'Avoid Highways', icon: 'alt_route', value: avoidHighways, set: setAvoidHighways },
@@ -547,7 +547,7 @@ export default function RoadInputForm() {
               }`}
             >
               <div className="pt-1 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
                       Budget Cap
@@ -583,7 +583,7 @@ export default function RoadInputForm() {
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
                       Vehicle Type

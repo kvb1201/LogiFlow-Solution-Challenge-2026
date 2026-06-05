@@ -12,8 +12,8 @@ export function PipelineResultsChrome({ mode }: { mode: Exclude<LogisticsMode, '
   const accent = `var(--${mode})`;
 
   return (
-    <div className="relative z-20 flex h-11 shrink-0 items-center justify-between border-b border-border/80 bg-surface/50 px-4 backdrop-blur-sm">
-      <div className="flex max-w-[min(100%,420px)] items-center gap-2 rounded-full border border-border bg-background/50 px-3 py-1 text-[11px]">
+    <div className="relative z-20 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-surface/50 px-4 backdrop-blur-sm">
+      <div className="flex min-w-0 max-w-[min(100%,420px)] items-center gap-2 rounded-full border border-border bg-background/50 px-3 py-1 text-[11px]">
         <span
           className="material-symbols-outlined shrink-0"
           style={{ fontSize: '12px', color: accent, fontVariationSettings: "'FILL' 1" }}
@@ -36,7 +36,7 @@ export function PipelineResultsChrome({ mode }: { mode: Exclude<LogisticsMode, '
           </span>
         </button>
       </div>
-      <div className="hidden text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground sm:block">
+      <div className="hidden shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground sm:block">
         {config.analyticsLabel}
       </div>
     </div>

@@ -51,8 +51,8 @@ export function PipelineModeLanding({
       </div>
 
       <div
-        className={`relative z-10 pointer-events-auto mx-auto w-full px-4 animate-slide-up ${
-          compact ? 'max-w-3xl py-8 sm:py-10' : 'max-w-3xl py-10 sm:py-14'
+        className={`relative z-10 pointer-events-auto mx-auto w-full max-w-3xl px-4 animate-slide-up ${
+          compact ? 'py-8 sm:py-10' : 'py-10 sm:py-14'
         }`}
       >
         {!compact && (
@@ -72,7 +72,7 @@ export function PipelineModeLanding({
             <div className="mb-8 text-center">
               <h1
                 className={`text-balance font-display font-black leading-none tracking-tight text-gradient ${
-                  compact ? 'text-3xl sm:text-4xl' : 'text-[2.5rem] sm:text-5xl md:text-6xl'
+                  compact ? 'text-2xl sm:text-3xl md:text-4xl' : 'text-[1.75rem] sm:text-4xl md:text-5xl lg:text-6xl'
                 }`}
               >
                 {config.titleLead}
