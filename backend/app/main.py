@@ -12,6 +12,7 @@ from app.routes.water_routes import water_router
 from app.routes.air_routes import air_router
 from app.routes.explain_routes import router as explain_router
 from app.routes.intent_routes import intent_router
+from app.routes.compose import router as compose_router
 
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
@@ -30,6 +31,18 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def _warm_rail_data():
+    """Pre-load rail CSV so first compose on a new corridor is not blocked ~15s."""
+    try:
+        from app.pipelines.rail.data_loader import load_data
+
+        load_data()
+        print("[startup] Rail schedule data pre-loaded")
+    except Exception as exc:
+        print(f"[startup] Rail preload skipped: {exc}")
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -43,3 +56,4 @@ app.include_router(water_router)
 app.include_router(air_router)
 app.include_router(explain_router)
 app.include_router(intent_router)
+app.include_router(compose_router)

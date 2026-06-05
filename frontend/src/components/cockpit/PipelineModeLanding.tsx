@@ -14,6 +14,21 @@ type LandingConfig = {
 
 function getConfig(mode: LogisticsMode): LandingConfig {
   if (mode === 'comparator') return comparatorPageMeta;
+  if (mode === 'hybrid') {
+    return {
+      badge: 'Hybrid · Multimodal route composer',
+      titleLead: 'Hybrid',
+      titleRest: ' chains',
+      description: 'Chain rail, road, air, and water through hub cities into one itinerary.',
+      pills: [
+        { icon: 'hub', label: 'Hub routing' },
+        { icon: 'train', label: 'Rail legs' },
+        { icon: 'flight_takeoff', label: 'Air legs' },
+        { icon: 'swap_horiz', label: 'Transfers' },
+      ],
+      footer: 'LogiFlow multimodal composer',
+    };
+  }
   return pipelinePageMeta[mode];
 }
 

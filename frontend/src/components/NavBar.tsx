@@ -10,6 +10,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 
 const navItems = [
   { href: '/', label: 'Home' },
+  { href: '/hybrid', label: 'Hybrid', mode: 'hybrid' as LogisticsMode },
   { href: '/comparator', label: 'Comparator', mode: 'comparator' as LogisticsMode },
   { href: '/railway', label: 'Rail', mode: 'rail' as LogisticsMode },
   { href: '/road', label: 'Road', mode: 'road' as LogisticsMode },

@@ -1,0 +1,26 @@
+# Keeps the Render free-tier backend awake (spins down after ~15 min idle).
+# Add repo secret BACKEND_URL = https://your-service.onrender.com (no trailing slash).
+name: Warm Render backend
+
+on:
+  schedule:
+    # Every 14 minutes — just under Render's idle shutdown window
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Health check
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "BACKEND_URL secret not set — skip (add in GitHub repo Settings → Secrets)"
+            exit 0
+          fi
+          echo "Pinging ${BACKEND_URL}/health ..."
+          curl -fsS --retry 3 --retry-delay 10 --max-time 120 "${BACKEND_URL%/}/health"
+          echo "Backend is warm."

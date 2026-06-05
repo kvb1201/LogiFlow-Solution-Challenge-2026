@@ -13,8 +13,11 @@ export type PipelinePageConfig = {
   storeMode: 'rail' | 'road' | 'air' | 'water';
 };
 
-// Exclude the comparator mode from this generic mapping (it has its own page meta)
-export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'comparator'>, PipelinePageConfig> = {
+// Exclude comparator & hybrid — they have dedicated page clients
+export const pipelinePageMeta: Record<
+  Exclude<LogisticsMode, 'comparator' | 'hybrid'>,
+  PipelinePageConfig
+> = {
   rail: {
     badge: 'Railway Cargo Intelligence · RailRadar Powered',
     titleLead: 'Rail',
