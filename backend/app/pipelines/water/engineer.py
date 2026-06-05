@@ -211,6 +211,49 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
 
         segments.append({"mode": "Road", "from": dest_name, "to": destination})
 
+        # Item #3: Generate route insight text
+        regions_in_path = sorted(set(_port_meta(pid).get("region", "india") for pid in path))
+        key_factors: list[str] = []
+        if cross_region:
+            region_labels = [r.replace("_", " ").title() for r in regions_in_path]
+            key_factors.append(f"Multi-region route spanning {', '.join(region_labels)}")
+        if transshipments == 0:
+            key_factors.append("Direct port-to-port — no transshipment delay")
+        elif transshipments == 1:
+            key_factors.append("Single transshipment at intermediate port")
+        elif transshipments >= 3:
+            key_factors.append(f"{transshipments} transshipments — expect handling overhead")
+        if avg_infra >= 0.90:
+            key_factors.append("High-quality port infrastructure along full route")
+        elif avg_infra < 0.78:
+            key_factors.append("Some ports on this route have limited infrastructure")
+        if weather_risk > 0.35:
+            key_factors.append("Elevated seasonal weather risk on this corridor")
+        elif weather_risk < 0.15:
+            key_factors.append("Low weather risk — favorable seasonal window")
+        if reliability > 0.80:
+            key_factors.append(f"Strong reliability score ({reliability:.0%})")
+        elif reliability < 0.55:
+            key_factors.append(f"Below-average reliability ({reliability:.0%}) — consider alternatives")
+        if sea_nm > 3000:
+            key_factors.append(f"Long-haul route ({sea_nm:.0f} nm) — expect extended transit")
+        if surcharge > 1.0:
+            key_factors.append("International surcharge applied for cross-region transit")
+
+        # Build a concise reason sentence
+        reason_parts: list[str] = []
+        if transshipments == 0:
+            reason_parts.append("direct connection")
+        else:
+            reason_parts.append(f"{transshipments}-stop route")
+        if reliability >= 0.75:
+            reason_parts.append("strong reliability")
+        if risk < 0.3:
+            reason_parts.append("low risk profile")
+        elif risk > 0.5:
+            reason_parts.append("elevated risk")
+        reason = f"{origin_name} → {dest_name}: {', '.join(reason_parts)}."
+
         route = {
             "type": "Water",
             "mode": "water",
@@ -226,6 +269,17 @@ def engineer_routes(port_paths: list[list[str]], source: str, destination: str, 
             "expected_delay_hours": round(float(expected_delay_hr), 2),
             "delay_prob": round(float(delay_prob), 3),
             "reliability_score": round(float(reliability), 3),
+            # Item #2: Cost breakdown
+            "cost_breakdown": {
+                "sea_freight": round(float(sea_cost)),
+                "road_drayage": round(float(road_cost)),
+                "port_fees": round(float(port_fees)),
+                "transshipment_fees": round(float(trans_fee)),
+                "regional_surcharge": round(float(sea_cost * (surcharge - 1.0))),
+            },
+            # Item #3: Route insight
+            "reason": reason,
+            "key_factors": key_factors,
         }
 
         # Constraints filtering
