@@ -1,4 +1,4 @@
-.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume
+.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode
 
 # IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)
@@ -59,6 +59,14 @@ dev:
 dev-frontend:
 	@echo "💻 Starting Frontend (Next.js)..."
 	cd frontend && npm run dev
+
+# Fetch online IR catalogs (datameet + vstflugel) + build station_coords_cache.json
+build-station-coords:
+	cd backend && PYTHONUNBUFFERED=1 ./venv/bin/python -u scripts/build_station_coords_cache.py --force-fetch
+
+# Fill remaining gaps via ORS → TomTom (parallel, live progress logs)
+build-station-coords-geocode:
+	cd backend && PYTHONUNBUFFERED=1 ./venv/bin/python -u scripts/build_station_coords_cache.py --geocode-missing --workers 6 --log-every 25
 
 # Run backend only
 dev-backend:

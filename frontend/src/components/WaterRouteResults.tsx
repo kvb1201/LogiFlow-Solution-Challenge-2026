@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
 
@@ -105,7 +105,7 @@ function WaterRouteCard({
       className={[
         'w-full text-left rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden',
         isSelected
-          ? 'border-teal-400/50 bg-surface-container/60 shadow-[0_0_0_2px_rgba(45,212,191,0.12),0_0_24px_rgba(45,212,191,0.08)] scale-[1.01]'
+          ? 'border-teal-400/50 bg-surface-container/60 shadow-[0_0_0_2px_rgba(45,212,191,0.12),0_0_24px_rgba(45,212,191,0.08)] sm:scale-[1.01]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:bg-surface-container/30 hover:border-outline-variant/25',
       ].join(' ')}
     >
@@ -293,11 +293,6 @@ function DetailPanel({ route, source, destination }: { route: WaterRoute; source
 
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-
-  useEffect(() => {
-    setDynamicExplanation(null);
-    setIsLoadingExplanation(false);
-  }, [route]);
 
   const handleExplain = async () => {
     setIsLoadingExplanation(true);
@@ -528,7 +523,7 @@ export default function WaterRouteResults() {
   return (
     <section>
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-5">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline flex items-center gap-1.5">
             <span
@@ -543,14 +538,14 @@ export default function WaterRouteResults() {
             {routes.length} route{routes.length !== 1 ? 's' : ''} found
           </div>
         </div>
-        <div className="text-[10px] mono text-on-surface-variant">
+        <div className="text-[10px] mono text-on-surface-variant break-words sm:text-right">
           {source} → {destination}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Route cards */}
-        <div className="lg:col-span-1 space-y-4 max-h-[80vh] overflow-y-auto pr-1 overscroll-y-contain [scrollbar-gutter:stable]">
+        <div className="lg:col-span-1 space-y-4 max-h-none pr-0 sm:pr-1 lg:max-h-[80vh] lg:overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
           {/* Summary bar */}
           <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4 text-[12px] text-on-surface-variant space-y-1.5">
             <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-2">
@@ -603,7 +598,12 @@ export default function WaterRouteResults() {
                 ₹{fmt(active.cost)} · {Number(active.time).toFixed(1)}h
               </span>
             </div>
-            <DetailPanel route={active} source={source} destination={destination} />
+            <DetailPanel
+              key={`${active.vessel ?? ''}-${active.cost}-${active.time}`}
+              route={active}
+              source={source}
+              destination={destination}
+            />
           </div>
         </div>
       </div>

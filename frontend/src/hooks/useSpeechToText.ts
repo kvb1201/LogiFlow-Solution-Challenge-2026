@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 interface SpeechRecognitionInstance extends EventTarget {
   lang: string;
@@ -33,13 +33,16 @@ export type UseSpeechToTextOptions = {
 };
 
 export function useSpeechToText({ lang = 'en-IN', onFinalTranscript }: UseSpeechToTextOptions) {
-  const [supported, setSupported] = useState(false);
+  const supported = useSyncExternalStore(
+    () => () => {},
+    () => !!getSpeechRecognition(),
+    () => false
+  );
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   useEffect(() => {
-    setSupported(!!getSpeechRecognition());
     return () => {
       recognitionRef.current?.stop();
     };

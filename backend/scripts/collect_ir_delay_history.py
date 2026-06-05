@@ -414,6 +414,14 @@ def _run_collect(args: argparse.Namespace) -> int:
                 requests_remaining = max(0, requests_remaining - 1)
                 if all(task_key(train, d) in done for d in days):
                     trains_remaining = max(0, trains_remaining - 1)
+                    try:
+                        from app.pipelines.rail.schedule_resolver import (
+                            refresh_schedule_from_delay_scrape,
+                        )
+
+                        refresh_schedule_from_delay_scrape(train)
+                    except Exception:
+                        pass
 
                 now = time.time()
                 if completed_this_run % 25 == 0:

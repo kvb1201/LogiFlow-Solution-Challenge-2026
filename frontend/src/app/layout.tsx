@@ -28,7 +28,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-dvh flex flex-col overflow-x-hidden font-body" suppressHydrationWarning>
+      <body className="min-h-dvh flex flex-col overflow-x-hidden font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
         <NavBar />
         <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
           <AmbientBackdrop variant="subtle" className="opacity-60" />

@@ -23,10 +23,10 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
             </span>
           </div>
 
-          <h1 className="text-balance font-display text-4xl font-black leading-[1.05] text-gradient sm:text-5xl">
+          <h1 className="text-balance font-display text-3xl font-black leading-[1.05] text-gradient sm:text-4xl md:text-5xl">
             LogiFlow
           </h1>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px] break-words">
             Compare road, rail, air, and water on cost, time, and risk. Describe your shipment in
             plain English — we parse constraints and route you to the right tool.
           </p>

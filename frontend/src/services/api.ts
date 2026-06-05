@@ -84,6 +84,8 @@ export interface Recommendation {
   avg_speed_kmph: number;
   running_days: string[];
   segments: RouteSegment[];
+  /** [lng, lat] polyline from schedule + station coords (when available) */
+  geometry?: [number, number][];
   delay_info: DelayInfo;
   data_source: string;
   llm_explanation?: string;
@@ -107,6 +109,7 @@ export interface RankedOption {
   delay_source: string;
   running_days: string[];
   segments: RouteSegment[];
+  geometry?: [number, number][];
   data_source: string;
 }
 
@@ -502,6 +505,99 @@ export async function getTrainSchedule(trainNumber: string): Promise<Record<stri
   const res = await fetch(`${BACKEND_BASE}/railway/trains/${encodeURIComponent(trainNumber)}/schedule`);
   if (!res.ok) return null;
   return res.json();
+}
+
+export interface RouteGeometryStop {
+  code: string;
+  name: string;
+  city: string;
+  lng: number;
+  lat: number;
+}
+
+export interface TrainRouteGeometryResult {
+  geometry: [number, number][];
+  stops: RouteGeometryStop[];
+  source?: string;
+}
+
+/** Fetch map polyline + labelled stops for one train leg. */
+export async function getTrainRouteGeometry(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult> {
+  try {
+    const params = new URLSearchParams({
+      from_code: fromCode.trim(),
+      to_code: toCode.trim(),
+    });
+    const res = await fetch(
+      `${BACKEND_BASE}/railway/trains/${encodeURIComponent(trainNumber)}/geometry?${params}`,
+      { signal }
+    );
+    if (!res.ok) return { geometry: [], stops: [] };
+    const data = (await res.json()) as {
+      geometry?: [number, number][];
+      stops?: RouteGeometryStop[];
+      source?: string;
+    };
+    return {
+      geometry: Array.isArray(data.geometry) ? data.geometry : [],
+      stops: Array.isArray(data.stops) ? data.stops : [],
+      source: data.source,
+    };
+  } catch {
+    return { geometry: [], stops: [] };
+  }
+}
+
+function mergeGeometryLegs(legs: TrainRouteGeometryResult[]): TrainRouteGeometryResult {
+  const merged: [number, number][] = [];
+  const mergedStops: RouteGeometryStop[] = [];
+
+  for (const leg of legs) {
+    if (!leg.geometry.length) continue;
+
+    if (merged.length) {
+      const [plng, plat] = merged[merged.length - 1];
+      const [flng, flat] = leg.geometry[0];
+      if (Math.abs(plng - flng) < 1e-6 && Math.abs(plat - flat) < 1e-6) {
+        merged.push(...leg.geometry.slice(1));
+        mergedStops.push(...leg.stops.slice(1));
+        continue;
+      }
+    }
+    merged.push(...leg.geometry);
+    mergedStops.push(...leg.stops);
+  }
+
+  return { geometry: merged, stops: mergedStops };
+}
+
+/** Build a full corridor polyline (handles transfers with multiple segments). */
+export async function buildTrainCorridorGeometry(
+  trainNumber: string,
+  segments: RouteSegment[],
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult> {
+  if (!segments.length) return { geometry: [], stops: [] };
+
+  const legRequests = segments
+    .map((seg) => {
+      const from = (seg.from || '').trim();
+      const to = (seg.to || '').trim();
+      const tno = (seg.train_no || trainNumber || '').trim();
+      if (!from || !to || !tno) return null;
+      return getTrainRouteGeometry(tno, from, to, signal);
+    })
+    .filter((req): req is Promise<TrainRouteGeometryResult> => req !== null);
+
+  if (!legRequests.length) return { geometry: [], stops: [] };
+
+  const legs = await Promise.all(legRequests);
+  return mergeGeometryLegs(legs);
 }
 
 export async function getStationInfo(stationCode: string): Promise<StationInfo | null> {
