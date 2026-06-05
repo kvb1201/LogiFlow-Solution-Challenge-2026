@@ -364,6 +364,20 @@ class RouteComposer:
         if short_corridor:
             itineraries = [it for it in itineraries if it.get("type") == "direct"]
 
+        if not itineraries:
+            out = {
+                "error": "No direct routes could be composed for this short corridor",
+                "hubs_considered": [],
+                "unavailable_templates": unavailable,
+                "baselines": {},
+                "partial": False,
+                "short_corridor": True,
+                "corridor_distance_km": corridor_km,
+            }
+            if corridor_km is not None:
+                out["compose_note"] = _short_corridor_note(corridor_km)
+            return out
+
         ranked = score_itineraries(itineraries, priority)
         best = ranked[0]
         best["explanation"] = build_explanation(best)

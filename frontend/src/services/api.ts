@@ -539,10 +539,17 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
   }
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
-      throw new Error(BACKEND_UNAVAILABLE_MSG);
+    let message = text;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      /* use raw body */
     }
-    throw new Error(`Compose failed (${res.status}): ${text}`);
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      throw new Error(message || BACKEND_UNAVAILABLE_MSG);
+    }
+    throw new Error(`Compose failed (${res.status}): ${message}`);
   }
   return res.json();
 }
