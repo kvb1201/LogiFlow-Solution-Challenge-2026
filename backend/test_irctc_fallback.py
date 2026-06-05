@@ -1,10 +1,7 @@
 import time, os, hashlib, hmac, requests
 
 KEYS = [k.strip() for k in os.environ.get("IRCTC_CONNECT_API_KEYS", "").split(",") if k.strip()]
-_SECRET = os.environ.get(
-    "IRCTC_CONNECT_SDK_SECRET",
-    "97c56e08b27b161124f88acd4f24d1bd50f48075f11dc23b9ea6c0bc9b2f8794",
-)
+_SECRET = os.environ.get("IRCTC_CONNECT_SDK_SECRET", "")
 
 def _hash(p):
     return hashlib.sha256(p.encode()).hexdigest()
@@ -33,7 +30,7 @@ def request_api(path):
     ).rstrip("/")
     return requests.get(f"{base}{path}", headers=headers).json()
 
-if not KEYS:
-    raise SystemExit("Set IRCTC_CONNECT_API_KEYS (comma-separated irctc_* keys).")
+if not KEYS or not _SECRET:
+    raise SystemExit("Set IRCTC_CONNECT_API_KEYS and IRCTC_CONNECT_SDK_SECRET in backend/.env")
 
 print(request_api("/api/searchTrainBetweenStations/NDLS/BCT"))
