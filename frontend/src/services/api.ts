@@ -416,6 +416,17 @@ export type WaterRoute = {
   delay_prob?: number;
   reliability_score?: number;
   notes?: string;
+  // Cost breakdown (populated by engineer.py Item #2)
+  cost_breakdown?: {
+    sea_freight?: number;
+    road_drayage?: number;
+    port_fees?: number;
+    transshipment_fees?: number;
+    regional_surcharge?: number;
+  };
+  // Route insight (populated by engineer.py Item #3)
+  reason?: string;
+  key_factors?: string[];
 };
 
 export type WaterPayload = {

@@ -5,6 +5,8 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
 import { WATER_PORTS, WATER_PORT_REGION_COUNT } from '@/lib/water-ports';
 
+// ── Formatting helpers ────────────────────────────────────────────────
+
 function fmt(val: unknown) {
   const n = typeof val === 'number' ? val : Number(val);
   if (!Number.isFinite(n)) return '0';
@@ -17,11 +19,24 @@ function riskLabel(risk: number): string {
   return 'High risk';
 }
 
+function riskTone(risk: number) {
+  if (risk < 0.25) return { text: 'text-emerald-300', badge: 'green' as const };
+  if (risk < 0.5) return { text: 'text-amber-200', badge: 'amber' as const };
+  return { text: 'text-red-300', badge: 'neutral' as const };
+}
+
 function reliabilityLabel(score: number): string {
   if (score >= 0.85) return 'Excellent';
   if (score >= 0.7) return 'Good';
   if (score >= 0.5) return 'Fair';
   return 'Limited';
+}
+
+function reliabilityTone(score: number): string {
+  if (score >= 0.85) return 'text-emerald-300';
+  if (score >= 0.7) return 'text-teal-300';
+  if (score >= 0.5) return 'text-amber-200';
+  return 'text-red-300';
 }
 
 function routeKey(route: WaterRoute) {
@@ -31,10 +46,31 @@ function routeKey(route: WaterRoute) {
 function stopsLabel(route: WaterRoute) {
   const stops = Number(route.transshipments ?? 0);
   if (stops <= 0) return 'Direct';
-  return `${stops} transshipment${stops === 1 ? '' : 's'}`;
+  return `${stops} stop${stops === 1 ? '' : 's'}`;
+}
+
+/** Detect which regions a route spans based on port names */
+function routeRegions(route: WaterRoute): string[] {
+  const regionMap: Record<string, string> = {};
+  for (const port of WATER_PORTS) {
+    regionMap[port.name] = port.region;
+  }
+  const regions = new Set<string>();
+  for (const seg of route.segments ?? []) {
+    if (seg.mode === 'Water') {
+      const fromRegion = regionMap[seg.from];
+      const toRegion = regionMap[seg.to];
+      if (fromRegion) regions.add(fromRegion);
+      if (toRegion) regions.add(toRegion);
+    }
+  }
+  return [...regions];
 }
 
 function whyThisRoute(route: WaterRoute, minCost: number, minTime: number, minRisk: number) {
+  // Use backend-provided reason if available (Item #3)
+  if (route.reason) return route.reason;
+
   const reasons: string[] = [];
   if (Number(route.cost) === minCost) reasons.push('lowest cost');
   if (Number(route.time) === minTime) reasons.push('fastest transit');
@@ -42,6 +78,8 @@ function whyThisRoute(route: WaterRoute, minCost: number, minTime: number, minRi
   if (reasons.length) return `Best match for ${reasons.join(', ')} among the returned maritime options.`;
   return `${stopsLabel(route)} with ${riskLabel(Number(route.risk ?? 0)).toLowerCase()} and ${reliabilityLabel(Number(route.reliability_score ?? 0)).toLowerCase()} reliability.`;
 }
+
+// ── Reusable UI atoms ─────────────────────────────────────────────────
 
 function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'teal' | 'green' | 'amber' | 'blue' }) {
   const classes = {
@@ -59,21 +97,44 @@ function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone
 }
 
 function Metric({
+  icon,
   label,
   value,
+  unit,
   tone = 'text-teal-300',
 }: {
+  icon: string;
   label: string;
   value: React.ReactNode;
+  unit?: string;
   tone?: string;
 }) {
   return (
     <div className="rounded-lg border border-outline-variant/10 bg-surface-container-lowest/35 px-3 py-2">
-      <div className="text-[9px] font-label font-bold uppercase tracking-[0.12em] text-outline">{label}</div>
-      <div className={`mt-1 mono text-sm font-black tabular-nums ${tone}`}>{value}</div>
+      <div className="flex items-center gap-1 text-[9px] font-label font-bold uppercase tracking-[0.12em] text-outline">
+        <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>{icon}</span>
+        {label}
+      </div>
+      <div className={`mt-1 mono text-sm font-black tabular-nums ${tone}`}>
+        {value}
+        {unit && <span className="ml-0.5 text-[10px] font-medium text-outline">{unit}</span>}
+      </div>
     </div>
   );
 }
+
+function DetailDisclosure({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  return (
+    <details open={defaultOpen} className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest/25 px-3 py-2">
+      <summary className="cursor-pointer text-[10px] font-label font-bold uppercase tracking-[0.14em] text-on-surface-variant select-none">
+        {title}
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
+// ── Water Route Card ──────────────────────────────────────────────────
 
 function WaterRouteCard({
   route,
@@ -93,6 +154,11 @@ function WaterRouteCard({
   isSafest: boolean;
 }) {
   const risk = Number(route.risk ?? 0);
+  const reliability = Number(route.reliability_score ?? 0);
+  const distanceNm = Number(route.distance_nm ?? 0);
+  const transshipments = Number(route.transshipments ?? 0);
+  const rt = riskTone(risk);
+  const regions = routeRegions(route);
 
   return (
     <button
@@ -100,51 +166,81 @@ function WaterRouteCard({
       aria-pressed={isSelected}
       onClick={onSelect}
       className={[
-        'w-full rounded-2xl border p-4 text-left transition-all duration-200',
+        'w-full rounded-2xl border text-left transition-all duration-200 overflow-hidden',
         isSelected
           ? 'border-teal-400/50 bg-teal-500/10 shadow-[0_0_0_2px_rgba(45,212,191,0.10)]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:border-teal-400/25 hover:bg-surface-container/30',
       ].join(' ')}
     >
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline">
-            Route {index + 1}
+      {/* Summary bar */}
+      <div className="px-4 py-2 bg-surface-container/25 border-b border-outline-variant/8">
+        <p className="text-[10px] leading-relaxed text-on-surface-variant mono truncate">
+          {route.origin_port ?? 'Origin'} → {route.destination_port ?? 'Dest'}
+          {distanceNm > 0 ? ` · ${distanceNm.toFixed(0)} nm` : ''}
+          {` · ${stopsLabel(route)}`}
+        </p>
+      </div>
+
+      <div className="p-4">
+        {/* Header */}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              className={[
+                'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold mono shrink-0',
+                isSelected ? 'bg-teal-500 text-white' : 'bg-surface-container text-outline',
+              ].join(' ')}
+            >
+              {index + 1}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+                Route {index + 1}
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-1">
+                {index === 0 && <Badge tone="teal">Top pick</Badge>}
+                {isCheapest && <Badge tone="green">₹ Lowest</Badge>}
+                {isFastest && <Badge tone="amber">Fastest</Badge>}
+                {isSafest && <Badge tone="blue">Safest</Badge>}
+                {isSelected && <Badge tone="teal">Selected</Badge>}
+              </div>
+            </div>
           </div>
-          <div className="mt-1 truncate text-sm font-semibold text-on-surface">
-            {route.origin_port ?? 'Origin port'} → {route.destination_port ?? 'Destination port'}
+
+          <div className="text-right shrink-0">
+            <div className="text-[15px] font-black mono text-teal-300 leading-tight">
+              ₹{fmt(route.cost)}
+            </div>
           </div>
         </div>
-        {index === 0 ? <Badge tone="teal">Top pick</Badge> : null}
-      </div>
 
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        <Metric label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
-        <Metric label="Time" value={`${Number(route.time).toFixed(1)}h`} tone="text-amber-200" />
-        <Metric label="Risk" value={`${Math.round(risk * 100)}%`} tone={risk < 0.25 ? 'text-emerald-300' : risk < 0.5 ? 'text-amber-200' : 'text-red-300'} />
-      </div>
+        {/* Core metrics */}
+        <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Metric icon="schedule" label="Time" value={Number(route.time).toFixed(1)} unit="hrs" tone="text-amber-200" />
+          <Metric icon="savings" label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
+          <Metric icon="shield" label="Risk" value={`${Math.round(risk * 100)}%`} tone={rt.text} />
+          <Metric icon="straighten" label="Distance" value={distanceNm > 0 ? distanceNm.toFixed(0) : '—'} unit="nm" tone="text-teal-300" />
+        </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        <Badge tone={Number(route.transshipments ?? 0) <= 0 ? 'green' : 'neutral'}>{stopsLabel(route)}</Badge>
-        <Badge tone={risk < 0.25 ? 'green' : risk < 0.5 ? 'amber' : 'neutral'}>{riskLabel(risk)}</Badge>
-        {isCheapest ? <Badge tone="green">Best cost</Badge> : null}
-        {isFastest ? <Badge tone="amber">Fastest</Badge> : null}
-        {isSafest ? <Badge tone="blue">Safest</Badge> : null}
+        {/* Quick-glance pills */}
+        <div className="flex flex-wrap gap-1.5">
+          <Badge tone={transshipments <= 0 ? 'green' : transshipments <= 2 ? 'neutral' : 'amber'}>{stopsLabel(route)}</Badge>
+          <Badge tone={rt.badge}>{riskLabel(risk)}</Badge>
+          {reliability > 0 && (
+            <Badge tone={reliability >= 0.7 ? 'green' : 'neutral'}>
+              {reliabilityLabel(reliability)} reliability
+            </Badge>
+          )}
+          {regions.length > 1 && (
+            <Badge tone="blue">{regions.length} regions</Badge>
+          )}
+        </div>
       </div>
     </button>
   );
 }
 
-function DetailDisclosure({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <details className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest/25 px-3 py-2">
-      <summary className="cursor-pointer text-[10px] font-label font-bold uppercase tracking-[0.14em] text-on-surface-variant">
-        {title}
-      </summary>
-      <div className="mt-3">{children}</div>
-    </details>
-  );
-}
+// ── Detail Panel ──────────────────────────────────────────────────────
 
 function DetailPanel({
   route,
@@ -169,6 +265,11 @@ function DetailPanel({
   const risk = Number(route.risk ?? 0);
   const reliability = Number(route.reliability_score ?? 0);
   const delay = Number(route.expected_delay_hours ?? 0);
+  const distanceNm = Number(route.distance_nm ?? 0);
+  const transshipments = Number(route.transshipments ?? 0);
+  const regions = routeRegions(route);
+  const rt = riskTone(risk);
+  const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
 
   const handleExplain = async () => {
     setLoadingExplanation(true);
@@ -177,8 +278,11 @@ function DetailPanel({
     setLoadingExplanation(false);
   };
 
+  const bd = route.cost_breakdown;
+
   return (
     <div className="space-y-4">
+      {/* Why this route */}
       <div className="rounded-2xl border border-teal-400/15 bg-teal-500/5 p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -192,13 +296,30 @@ function DetailPanel({
           <Badge tone="teal">{stopsLabel(route)}</Badge>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <Metric label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
-          <Metric label="Time" value={`${Number(route.time).toFixed(1)}h`} tone="text-amber-200" />
-          <Metric label="Risk" value={`${Math.round(risk * 100)}%`} tone={risk < 0.25 ? 'text-emerald-300' : risk < 0.5 ? 'text-amber-200' : 'text-red-300'} />
-        </div>
+        {/* Key factors (Item #3 — shows when backend populates them) */}
+        {factors.length > 0 && (
+          <ul className="mt-2 space-y-1 text-[11px] text-on-surface-variant">
+            {factors.map((f, i) => (
+              <li key={`${f}-${i}`} className="flex gap-2">
+                <span className="text-teal-400/70 shrink-0">•</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
+      {/* Expanded metrics */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <Metric icon="savings" label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
+        <Metric icon="schedule" label="Time" value={`${Number(route.time).toFixed(1)}h`} tone="text-amber-200" />
+        <Metric icon="shield" label="Risk" value={`${Math.round(risk * 100)}%`} tone={rt.text} />
+        <Metric icon="straighten" label="Distance" value={distanceNm > 0 ? `${distanceNm.toFixed(0)}` : '—'} unit="nm" tone="text-teal-300" />
+        <Metric icon="swap_horiz" label="Stops" value={transshipments} tone={transshipments === 0 ? 'text-emerald-300' : 'text-on-surface'} />
+        <Metric icon="verified" label="Reliability" value={`${Math.round(reliability * 100)}%`} tone={reliabilityTone(reliability)} />
+      </div>
+
+      {/* Port lane / region info */}
       <div className="rounded-xl border border-outline-variant/10 bg-surface-container/20 p-3">
         <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline">
           Port lane
@@ -206,22 +327,46 @@ function DetailPanel({
         <div className="mt-1 text-sm font-semibold text-on-surface">
           {route.origin_port ?? source} → {route.destination_port ?? destination}
         </div>
-        <div className="mt-1 text-[11px] text-on-surface-variant">
-          {route.distance_nm != null ? `${Number(route.distance_nm).toFixed(0)} nautical miles · ` : ''}
-          {reliabilityLabel(reliability)} reliability
-          {delay > 0.1 ? ` · +${delay.toFixed(1)}h expected delay` : ' · no major expected delay'}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-on-surface-variant">
+          {distanceNm > 0 && <span>{distanceNm.toFixed(0)} nautical miles</span>}
+          {distanceNm > 0 && <span className="text-outline">·</span>}
+          <span>{reliabilityLabel(reliability)} reliability</span>
+          {delay > 0.1 && (
+            <>
+              <span className="text-outline">·</span>
+              <span className="text-amber-200">+{delay.toFixed(1)}h expected delay</span>
+            </>
+          )}
+          {regions.length > 1 && (
+            <>
+              <span className="text-outline">·</span>
+              <span>{regions.join(' → ')}</span>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Route segments */}
       {route.segments?.length ? (
-        <DetailDisclosure title="Route segments">
+        <DetailDisclosure title="Route segments" defaultOpen>
           <div className="space-y-1.5">
             {route.segments.map((segment, index) => (
               <div
                 key={`${index}-${segment.from}-${segment.to}`}
                 className="flex items-center gap-2 rounded-lg border border-outline-variant/8 bg-surface-container/20 px-2.5 py-2 text-[11px]"
               >
-                <span className="mono text-[9px] uppercase text-outline">{segment.mode}</span>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                    segment.mode === 'Water'
+                      ? 'bg-teal-500/15 text-teal-300'
+                      : 'bg-amber-500/12 text-amber-200'
+                  }`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>
+                    {segment.mode === 'Water' ? 'directions_boat' : 'local_shipping'}
+                  </span>
+                  {segment.mode}
+                </span>
                 <span className="truncate text-on-surface">{segment.from}</span>
                 <span className="material-symbols-outlined text-outline" style={{ fontSize: '11px' }}>
                   arrow_forward
@@ -233,8 +378,41 @@ function DetailPanel({
         </DetailDisclosure>
       ) : null}
 
+      {/* Cost breakdown (Item #2 — appears when backend populates cost_breakdown) */}
+      {bd && Object.keys(bd).length > 0 ? (
+        <DetailDisclosure title="Cost breakdown">
+          <div className="rounded-xl border border-outline-variant/10 overflow-hidden">
+            <table className="w-full text-[11px]">
+              <tbody className="divide-y divide-outline-variant/8">
+                {([
+                  ['Sea freight', bd.sea_freight],
+                  ['Road drayage', bd.road_drayage],
+                  ['Port fees', bd.port_fees],
+                  ['Transshipment fees', bd.transshipment_fees],
+                  ['Regional surcharge', bd.regional_surcharge],
+                ] as [string, number | undefined][])
+                  .filter(([, val]) => val != null && val > 0)
+                  .map(([label, val]) => (
+                    <tr key={label} className="bg-surface-container-lowest/15">
+                      <td className="py-2 pl-3 text-on-surface-variant">{label}</td>
+                      <td className="py-2 pr-3 text-right mono font-medium text-on-surface tabular-nums">
+                        ₹{fmt(val)}
+                      </td>
+                    </tr>
+                  ))}
+                <tr className="bg-surface-container/30 font-bold">
+                  <td className="py-2 pl-3 text-on-surface">Total</td>
+                  <td className="py-2 pr-3 text-right mono text-teal-300 tabular-nums">₹{fmt(route.cost)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </DetailDisclosure>
+      ) : null}
+
+      {/* Risk breakdown */}
       {route.risk_breakdown && Object.keys(route.risk_breakdown).length > 0 ? (
-        <DetailDisclosure title="Risk and performance">
+        <DetailDisclosure title="Risk & performance">
           <div className="grid gap-2 sm:grid-cols-2">
             {Object.entries(route.risk_breakdown).map(([key, value]) => (
               <div key={key} className="flex justify-between rounded-lg bg-surface-container/25 px-3 py-2 text-[11px]">
@@ -250,12 +428,13 @@ function DetailPanel({
             </div>
             <div className="flex justify-between rounded-lg bg-surface-container/25 px-3 py-2 text-[11px]">
               <span className="text-on-surface-variant">Reliability score</span>
-              <span className="mono font-bold text-emerald-300">{Math.round(reliability * 100)}%</span>
+              <span className={`mono font-bold ${reliabilityTone(reliability)}`}>{Math.round(reliability * 100)}%</span>
             </div>
           </div>
         </DetailDisclosure>
       ) : null}
 
+      {/* AI explanation */}
       <DetailDisclosure title="AI route explanation">
         {activeExplanation ? (
           <ul className="space-y-1.5 text-[11px] leading-relaxed text-on-surface-variant">
@@ -273,7 +452,7 @@ function DetailPanel({
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-[11px] text-on-surface-variant">
-              Generate this only when you need deeper reasoning.
+              Generate an AI-powered explanation for this specific route.
             </span>
             <button
               type="button"
@@ -281,7 +460,7 @@ function DetailPanel({
               disabled={loadingExplanation}
               className="rounded-lg bg-teal-500/10 px-3 py-1.5 text-[10px] font-semibold text-teal-300 transition hover:bg-teal-500/20 disabled:opacity-50"
             >
-              {loadingExplanation ? 'Analyzing...' : 'Analyze route'}
+              {loadingExplanation ? 'Analyzing…' : 'Analyze route'}
             </button>
           </div>
         )}
@@ -289,6 +468,8 @@ function DetailPanel({
     </div>
   );
 }
+
+// ── Main component ────────────────────────────────────────────────────
 
 export default function WaterRouteResults() {
   const routes = useLogiFlowStore((s) => s.waterRoutes);
@@ -312,7 +493,7 @@ export default function WaterRouteResults() {
   if (!routes.length || !active || !stats) return null;
 
   return (
-    <section>
+    <section className="px-4 sm:px-6 lg:px-8 py-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5 text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline">
@@ -331,13 +512,17 @@ export default function WaterRouteResults() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
+        {/* Route cards list */}
         <div className="space-y-3 lg:col-span-1 lg:max-h-[80vh] lg:overflow-y-auto lg:pr-1 [scrollbar-gutter:stable]">
+          {/* Quick read summary */}
           <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4">
             <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline">
-              Quick read
+              Recommendation
             </div>
             <p className="mt-2 text-[12px] leading-relaxed text-on-surface-variant">
-              Route {safeIndex + 1} is selected. Open details only when you need segments, risk breakdown, or AI reasoning.
+              Route {safeIndex + 1} is selected — {stopsLabel(active)} via{' '}
+              {active.origin_port ?? source} → {active.destination_port ?? destination}.
+              {Number(active.reliability_score ?? 0) >= 0.7 ? ' Strong reliability.' : ''}
             </p>
           </div>
 
@@ -355,6 +540,7 @@ export default function WaterRouteResults() {
           ))}
         </div>
 
+        {/* Detail panel (sticky) */}
         <div className="lg:sticky lg:top-4 lg:col-span-2">
           <div className="rounded-2xl border border-teal-400/10 bg-surface-container-lowest/25 p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2 border-b border-outline-variant/8 pb-3">
