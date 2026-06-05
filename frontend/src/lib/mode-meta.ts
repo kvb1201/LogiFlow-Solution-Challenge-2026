@@ -1,4 +1,4 @@
-export type LogisticsMode = 'rail' | 'road' | 'air' | 'water' | 'hybrid';
+export type LogisticsMode = 'rail' | 'road' | 'air' | 'water' | 'comparator';
 
 export const modeMeta: Record<
   LogisticsMode,
@@ -28,12 +28,12 @@ export const modeMeta: Record<
     tag: 'Port-to-port · transshipment',
     href: '/water',
   },
-  hybrid: {
-    label: 'Hybrid',
+  comparator: {
+    label: 'Comparator',
     accent: 'var(--hybrid)',
     tag: 'AI planning · all modes',
-    href: '/hybrid',
+    href: '/comparator',
   },
 };
 
-export const modeOrder: LogisticsMode[] = ['hybrid', 'rail', 'road', 'air', 'water'];
+export const modeOrder: LogisticsMode[] = ['comparator', 'rail', 'road', 'air', 'water'];
