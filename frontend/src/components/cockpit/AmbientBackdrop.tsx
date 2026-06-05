@@ -5,6 +5,7 @@ type AmbientVariant = 'home' | LogisticsMode | 'subtle';
 const accentBlob: Record<string, string> = {
   home: 'bg-hybrid',
   hybrid: 'bg-hybrid',
+  comparator: 'bg-hybrid',
   rail: 'bg-rail',
   road: 'bg-road',
   air: 'bg-air',

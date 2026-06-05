@@ -5,7 +5,7 @@ const MODE_LABELS: Record<string, string> = {
   road: 'Road freight',
   air: 'Air cargo',
   water: 'Water / ports',
-  hybrid: 'All modes compared (hybrid)',
+  comparator: 'All modes compared (comparator)',
 };
 
 export type IntentSummaryLine = { label: string; value: string };
@@ -31,7 +31,7 @@ export function buildIntentSummary(parsed: ParsedIntent): {
     ? parsed.priority.charAt(0).toUpperCase() + parsed.priority.slice(1)
     : 'Balanced';
 
-  const mode = (parsed.suggested_mode || 'hybrid').toLowerCase();
+  const mode = (parsed.suggested_mode || 'comparator').toLowerCase();
   const modeLabel = MODE_LABELS[mode] || 'Multimodal compare';
 
   const readyToRun = Boolean(parsed.source?.trim() && parsed.destination?.trim());
