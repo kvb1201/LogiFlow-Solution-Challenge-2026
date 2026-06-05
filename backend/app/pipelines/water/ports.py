@@ -17,6 +17,10 @@ class PortCandidate:
     base_congestion: float
     base_security_risk: float
     distance_km: float
+    region: str = "india"
+    infrastructure_quality: float = 0.8
+    customs_hours: float = 8.0
+    piracy_risk: float = 0.02
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -68,6 +72,10 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
                     base_congestion=float(p.get("base_congestion", 0.4)),
                     base_security_risk=float(p.get("base_security_risk", 0.2)),
                     distance_km=0.0,
+                    region=str(p.get("region", "india")),
+                    infrastructure_quality=float(p.get("infrastructure_quality", 0.8)),
+                    customs_hours=float(p.get("customs_hours", 8.0)),
+                    piracy_risk=float(p.get("piracy_risk", 0.02)),
                 )
             )
 
@@ -108,6 +116,10 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
                 base_congestion=float(p.get("base_congestion", 0.4)),
                 base_security_risk=float(p.get("base_security_risk", 0.2)),
                 distance_km=float(d_km),
+                region=str(p.get("region", "india")),
+                infrastructure_quality=float(p.get("infrastructure_quality", 0.8)),
+                customs_hours=float(p.get("customs_hours", 8.0)),
+                piracy_risk=float(p.get("piracy_risk", 0.02)),
             )
         )
 
@@ -120,4 +132,3 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
     # No port within threshold — water transport not viable for this city.
     print(f"[WATER] No ports within {max_distance_km}km of {city_name} (nearest: {candidates[0].distance_km:.0f}km)")
     return []
-
