@@ -332,6 +332,30 @@ export interface HybridPayload {
 
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
+export const BACKEND_UNAVAILABLE_MSG =
+  'Backend is still waking up. Wait ~30 seconds and try again — Render free tier sleeps after ~15 min idle.';
+
+async function fetchBackend(
+  path: string,
+  init: RequestInit,
+  options?: { retries?: number; retryDelayMs?: number }
+): Promise<Response> {
+  const retries = options?.retries ?? 2;
+  const retryDelayMs = options?.retryDelayMs ?? 4000;
+  const retryStatuses = new Set([502, 503, 504]);
+
+  let lastRes: Response | null = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const res = await fetch(`${BACKEND_BASE}${path}`, init);
+    if (res.ok || !retryStatuses.has(res.status) || attempt === retries) {
+      return res;
+    }
+    lastRes = res;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+  }
+  return lastRes!;
+}
+
 export async function optimizeCargoRoute(payload: CargoPayload): Promise<OptimizeResult> {
   const res = await fetch(`${BACKEND_BASE}/railway/optimize`, {
     method: 'POST',
@@ -390,14 +414,154 @@ export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimize
   return res.json();
 }
 
-export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
-  const res = await fetch(`${BACKEND_BASE}/optimize`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+// ── Multimodal compose (chained legs across modes) ───────────────────
+
+export interface ComposedLeg {
+  mode: string;
+  source: string;
+  destination: string;
+  time_hr: number;
+  cost_inr: number;
+  risk: number;
+  segments: Array<Record<string, unknown>>;
+  status?: string;
+  board_station?: string;
+  alight_station?: string;
+  train_no?: string;
+  train_name?: string;
+  departure?: string;
+  arrival?: string;
+  flight_label?: string;
+  vehicle_label?: string;
+}
+
+export interface ComposedTransfer {
+  at: string;
+  at_display?: string;
+  buffer_hr: number;
+  handling_fee_inr?: number;
+  from_mode: string;
+  to_mode: string;
+  notes?: string;
+  severity?: 'ok' | 'caution' | 'warning';
+  warnings?: string[];
+  leg1_alight_station?: string;
+  leg2_board_station?: string;
+  leg1_train?: string;
+  leg2_train?: string;
+  leg1_arrival?: string;
+  leg2_departure?: string;
+  scheduled_gap_hr?: number | null;
+}
+
+export interface ComposedItinerary {
+  id: string;
+  template_id: string;
+  type: 'direct' | 'multimodal';
+  hub_cities: string[];
+  legs: ComposedLeg[];
+  transfers: ComposedTransfer[];
+  total_time_hr: number;
+  total_cost_inr: number;
+  total_risk: number;
+  transshipments: number;
+  segments?: Array<Record<string, unknown>>;
+  explanation?: string;
+  score?: number;
+}
+
+export interface ComposePayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  scenario_brief?: string;
+  cargo?: { weight: number; type: string };
+  constraints?: {
+    excluded_modes?: string[];
+    max_transshipments?: number;
+    budget_max_inr?: number;
+    budget_limit?: number;
+    delay_tolerance_hours?: number;
+  };
+  compose_options?: {
+    max_hubs?: number;
+    budget_seconds?: number;
+    include_road_water?: boolean;
+  };
+}
+
+export interface ComposeResult {
+  priority?: string;
+  recommended?: ComposedItinerary;
+  alternatives?: ComposedItinerary[];
+  baselines?: Record<string, { time_hr: number; cost_inr: number; risk: number; type: string }>;
+  beats_single_mode?: {
+    baseline_mode?: string;
+    time_delta_hr?: number;
+    cost_delta_inr?: number;
+  } | null;
+  hubs_considered?: Array<{ city: string; display_name: string; rail_stations: string[]; airport_code?: string | null }>;
+  unavailable_templates?: Record<string, string>;
+  total_candidates?: number;
+  multimodal_count?: number;
+  partial?: boolean;
+  cold_corridor?: boolean;
+  short_corridor?: boolean;
+  corridor_distance_km?: number | null;
+  compose_note?: string | null;
+  error?: string;
+}
+
+export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
+  const budgetMs = ((payload.compose_options?.budget_seconds ?? 42) + 50) * 1000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), budgetMs);
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_BASE}/compose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Compose took too long for a new corridor. Retry in a few seconds — legs are cached after the first run.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      throw new Error(BACKEND_UNAVAILABLE_MSG);
+    }
+    throw new Error(`Compose failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
+  const res = await fetchBackend(
+    '/optimize',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    { retries: 2, retryDelayMs: 5000 }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      throw new Error(BACKEND_UNAVAILABLE_MSG);
+    }
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
   }
   return res.json();
@@ -736,7 +900,7 @@ export async function fetchExplanation(payload: {
 
 // ── Natural-language intent (Gemini / heuristic) ────────────────────
 
-export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'comparator';
+export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'hybrid' | 'comparator';
 
 export interface ParsedIntent {
   applied?: boolean;
@@ -768,11 +932,15 @@ export async function parseShipmentIntent(
   user_brief: string,
   context_mode: IntentContextMode = 'home'
 ): Promise<ParsedIntent> {
-  const res = await fetch(`${BACKEND_BASE}/intent/parse`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_brief, context_mode }),
-  });
+  const res = await fetchBackend(
+    '/intent/parse',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_brief, context_mode }),
+    },
+    { retries: 2, retryDelayMs: 4000 }
+  );
   const raw = await res.text();
   let parsed: unknown;
   try {
@@ -785,6 +953,9 @@ export async function parseShipmentIntent(
     );
   }
   if (!res.ok) {
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      throw new Error(BACKEND_UNAVAILABLE_MSG);
+    }
     const err = parsed as { detail?: string; error?: string };
     throw new Error(
       (typeof err.detail === 'string' ? err.detail : null) ||

@@ -1,7 +1,6 @@
 'use client';
-import { redirect } from 'next/navigation';
+import HybridPageClient from '@/components/HybridPageClient';
 
 export default function HybridPage() {
-  redirect('/comparator');
-  return null;
+  return <HybridPageClient />;
 }

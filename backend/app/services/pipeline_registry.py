@@ -33,11 +33,8 @@ try:
 except Exception as e:
     print(f"[pipeline_registry] skipping air: {e}")
 
-try:
-    from app.pipelines.hybrid import HybridPipeline
-    _safe_add(HybridPipeline, "hybrid")
-except Exception as e:
-    print(f"[pipeline_registry] skipping hybrid: {e}")
+# HybridPipeline is NOT registered here — pipeline.py imports get_pipeline and
+# eager loading causes a circular import. Use get_pipeline("hybrid") lazy path.
 
 
 def get_pipeline(mode: str):

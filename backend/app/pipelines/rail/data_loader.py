@@ -58,7 +58,7 @@ def load_data():
         return
 
     print("  [DataLoader] Loading Indian Railways schedule data...")
-    df = pd.read_csv(_CSV_PATH)
+    df = pd.read_csv(_CSV_PATH, low_memory=False)
 
     # Clean column names
     df.columns = df.columns.str.strip()

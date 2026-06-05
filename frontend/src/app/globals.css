@@ -18,6 +18,7 @@
   --water: oklch(0.79 0.14 185);
   --air: oklch(0.83 0.13 224);
   --hybrid: oklch(0.75 0.19 297);
+  --comparator: oklch(0.72 0.14 250);
   --live: oklch(0.78 0.18 150);
   --warn: oklch(0.82 0.16 80);
   --risk: oklch(0.7 0.22 28);
@@ -96,6 +97,7 @@
   --color-water: var(--water);
   --color-air: var(--air);
   --color-hybrid: var(--hybrid);
+  --color-comparator: var(--comparator);
   --color-live: var(--live);
   --color-warn: var(--warn);
   --color-risk: var(--risk);
