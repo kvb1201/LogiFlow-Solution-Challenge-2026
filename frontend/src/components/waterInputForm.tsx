@@ -14,47 +14,10 @@ import {
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
-
-// ── Static Ports Data ───────────────────────────────────────────────────
-
-const WATER_PORTS = [
-  // India
-  { name: 'Mundra Port, Gujarat, India' },
-  { name: 'Deendayal Port (Kandla), Gujarat, India' },
-  { name: 'Jawaharlal Nehru Port (JNPT), Navi Mumbai, India' },
-  { name: 'Mumbai Port, Maharashtra, India' },
-  { name: 'Mormugao Port, Goa, India' },
-  { name: 'New Mangalore Port, Karnataka, India' },
-  { name: 'Cochin Port (Kochi), Kerala, India' },
-  { name: 'V.O. Chidambaranar Port (Thoothukudi), Tamil Nadu, India' },
-  { name: 'Chennai Port, Tamil Nadu, India' },
-  { name: 'Kamarajar Port (Ennore), Tamil Nadu, India' },
-  { name: 'Visakhapatnam Port, Andhra Pradesh, India' },
-  { name: 'Paradip Port, Odisha, India' },
-  { name: 'Kolkata Port (Haldia Dock Complex), West Bengal, India' },
-  // Middle East
-  { name: 'Jebel Ali Port (Dubai), UAE' },
-  { name: 'Jeddah Islamic Port, Saudi Arabia' },
-  { name: 'Bandar Abbas Port, Iran' },
-  { name: 'Port of Salalah, Oman' },
-  { name: 'Port Said (Suez Canal), Egypt' },
-  // Southeast Asia
-  { name: 'Port of Singapore, Singapore' },
-  { name: 'Port Klang, Malaysia' },
-  { name: 'Laem Chabang Port, Thailand' },
-  { name: 'Cat Lai Port (Ho Chi Minh City), Vietnam' },
-  // East Asia
-  { name: 'Port of Shanghai, China' },
-  { name: 'Port of Hong Kong, Hong Kong' },
-  { name: 'Singapore Eastern Anchorage, Singapore' },
-  // Europe
-  { name: 'Port of Rotterdam, Netherlands' },
-  { name: 'Port of Antwerp, Belgium' },
-  { name: 'Port of Hamburg, Germany' }
-];
+import { WATER_PORTS, WATER_PORT_REGION_COUNT, type WaterPortOption } from '@/lib/water-ports';
 
 function useCitySearch(setGlobalSuggestions: (rows: { code: string; name: string }[]) => void) {
-  const [results, setResults] = useState<{ name: string }[]>(WATER_PORTS);
+  const [results, setResults] = useState<WaterPortOption[]>(WATER_PORTS);
   const loading = false;
 
   const search = useCallback((query: string) => {
@@ -63,9 +26,12 @@ function useCitySearch(setGlobalSuggestions: (rows: { code: string; name: string
       setGlobalSuggestions([]);
       return;
     }
-    const filtered = WATER_PORTS.filter(p => p.name.toLowerCase().includes(query.toLowerCase()));
+    const normalized = query.toLowerCase();
+    const filtered = WATER_PORTS.filter((p) =>
+      `${p.name} ${p.region}`.toLowerCase().includes(normalized)
+    );
     setResults(filtered);
-    setGlobalSuggestions(filtered.map(r => ({ code: r.name.slice(0, 5).toUpperCase(), name: r.name })));
+    setGlobalSuggestions(filtered.map((r) => ({ code: r.id.toUpperCase(), name: r.name })));
   }, [setGlobalSuggestions]);
 
   const clear = useCallback(() => {
@@ -127,7 +93,6 @@ function LocationInput({
   placeholder: string;
   hasError?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const setStationSuggestions = useLogiFlowStore((s) => s.setStationSuggestions);
   const { results, loading, search, clear } = useCitySearch(setStationSuggestions);
@@ -149,7 +114,7 @@ function LocationInput({
     setShowDropdown(true);
   };
 
-  const selectLocation = (location: { name: string }) => {
+  const selectLocation = (location: WaterPortOption) => {
     onChange(location.name);
     clear();
     setShowDropdown(false);
@@ -165,7 +130,7 @@ function LocationInput({
       <div className="relative">
         <div className="relative flex items-center">
           <span
-            className="pointer-events-none absolute left-3 material-symbols-outlined text-muted-foreground"
+            className={`pointer-events-none absolute left-3 material-symbols-outlined ${iconColor}`}
             style={{ fontSize: '18px' }}
           >
             {icon}
@@ -175,10 +140,8 @@ function LocationInput({
             value={value}
             onChange={(e) => handleChange(e.target.value)}
             onFocus={() => {
-              setFocused(true);
               if (results.length) setShowDropdown(true);
             }}
-            onBlur={() => setFocused(false)}
             className={`${formInputClass} pl-10 pr-9 ${hasError ? 'border-risk/50' : ''}`}
             placeholder={placeholder}
           />
@@ -222,6 +185,9 @@ function LocationInput({
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-on-surface truncate">{s.name}</div>
+                  <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-outline">
+                    {s.region}
+                  </div>
                 </div>
                 <span
                   className="material-symbols-outlined text-outline/0 group-hover:text-teal-400/60 transition-all -translate-x-1 group-hover:translate-x-0"
@@ -258,8 +224,8 @@ export default function WaterInputForm() {
 
   const runWaterOptimize = useCallback(() => {
     if (!source.trim() || !destination.trim()) return;
-    handleOptimize({ mode: 'water' });
-  }, [source, destination, handleOptimize]);
+    handleOptimize({ mode: 'water', water: { max_transshipments: maxTransshipments } });
+  }, [source, destination, handleOptimize, maxTransshipments]);
 
   useShipmentAutorun(
     'water',
@@ -291,7 +257,7 @@ export default function WaterInputForm() {
       <FormShell
         mode="water"
         title="Maritime route search"
-        subtitle="Port-to-port routing · transshipment · static port dataset (not live AIS)"
+        subtitle={`${WATER_PORTS.length} ports · ${WATER_PORT_REGION_COUNT} regions · transshipment-aware`}
         advancedToggle={
           <AdvancedToggle
             open={showAdvanced}
@@ -422,6 +388,27 @@ export default function WaterInputForm() {
                 accentVar="--water"
               />
             </FormField>
+
+            <div className="rounded-xl border border-teal-400/20 bg-teal-500/5 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-teal-300">
+                  Global coverage
+                </span>
+                <span className="mono text-[10px] text-on-surface-variant">
+                  {WATER_PORTS.length} ports / {WATER_PORT_REGION_COUNT} regions
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {['India', 'Middle East', 'Southeast Asia', 'East Asia', 'Europe'].map((region) => (
+                  <span
+                    key={region}
+                    className="rounded-full border border-outline-variant/15 bg-surface-container-lowest/35 px-2.5 py-1 text-[10px] font-medium text-on-surface-variant"
+                  >
+                    {region}
+                  </span>
+                ))}
+              </div>
+            </div>
 
             {/* Advanced */}
             <div
