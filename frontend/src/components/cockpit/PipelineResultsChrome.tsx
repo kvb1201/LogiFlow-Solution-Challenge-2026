@@ -4,7 +4,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
 
-export function PipelineResultsChrome({ mode }: { mode: Exclude<LogisticsMode, 'hybrid'> }) {
+export function PipelineResultsChrome({ mode }: { mode: Exclude<LogisticsMode, 'comparator'> }) {
   const source = useLogiFlowStore((s) => s.source);
   const destination = useLogiFlowStore((s) => s.destination);
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);

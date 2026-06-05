@@ -17,7 +17,7 @@ type AiBriefPanelProps = {
   contextMode: IntentContextMode;
   /** Home: navigate after parse. Mode pages: stay and fill form only */
   navigateOnApply?: boolean;
-  /** Show secondary button to parse + navigate (home / hybrid) */
+  /** Show secondary button to parse + navigate (home / comparator) */
   showRouteButton?: boolean;
   className?: string;
 };
@@ -70,19 +70,19 @@ export default function AiBriefPanel({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingRouteIntent, setPendingRouteIntent] = useState<ParsedIntent | null>(null);
 
-  function resolveTargetMode(result: ParsedIntent): Exclude<IntentContextMode, 'home'> | 'hybrid' {
+  function resolveTargetMode(result: ParsedIntent): Exclude<IntentContextMode, 'home'> | 'comparator' {
     const llmMode = result.suggested_mode;
     if (
       llmMode === 'rail' ||
       llmMode === 'road' ||
       llmMode === 'air' ||
       llmMode === 'water' ||
-      llmMode === 'hybrid'
+      llmMode === 'comparator'
     ) {
       return llmMode;
     }
-    // If we came from `home` and the model didn't choose a mode, we want the multimodal `hybrid`.
-    return contextMode === 'home' ? 'hybrid' : (contextMode as Exclude<IntentContextMode, 'home'>);
+    // If we came from `home` and the model didn't choose a mode, we want the multimodal `comparator`.
+    return contextMode === 'home' ? 'comparator' : (contextMode as Exclude<IntentContextMode, 'home'>);
   }
 
   function getModePath(result: ParsedIntent): string {

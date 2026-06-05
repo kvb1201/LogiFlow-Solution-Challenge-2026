@@ -3,7 +3,7 @@ import { Network, Plane, Ship, TrainFront, Truck } from 'lucide-react';
 import type { LogisticsMode } from '@/lib/mode-meta';
 
 const icons: Record<LogisticsMode, LucideIcon> = {
-  hybrid: Network,
+  comparator: Network,
   rail: TrainFront,
   road: Truck,
   air: Plane,

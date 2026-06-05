@@ -640,7 +640,7 @@ export async function fetchExplanation(payload: {
 
 // ── Natural-language intent (Gemini / heuristic) ────────────────────
 
-export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'hybrid';
+export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'comparator';
 
 export interface ParsedIntent {
   applied?: boolean;
