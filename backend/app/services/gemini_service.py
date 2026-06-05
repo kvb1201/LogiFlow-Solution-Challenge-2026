@@ -1,52 +1,78 @@
-import json
+"""
+Gemini REST client for LogiFlow.
+
+Uses the official generateContent API with X-goog-api-key header auth
+(AI Studio keys including AQ.* format). Tries fallback models on quota/unavailable errors.
+"""
+from __future__ import annotations
+
 import os
+import time
 from pathlib import Path
-from typing import Any, Optional, Union, Dict, List, Set, Tuple
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
 
-
-# Load backend/.env if present (same convention as other services).
 # gemini_service.py -> backend/app/services -> parents[2] = backend/
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-_MODEL_CACHE: Optional[Tuple[float, Set[str]]] = None
+_MODEL_CACHE: tuple[float, set[str]] | None = None
+_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+# Works on current free tier; gemini-2.0-flash often hits quota (429).
+_DEFAULT_MODEL = "gemini-2.5-flash"
+_MODEL_FALLBACKS = (
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+)
 
 
-def _gemini_config() -> tuple[str | None, str]:
-    # Reload .env on each call so API key/model edits are reflected without stale values.
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
-    # Prefer generic env vars, but support rail-scoped ones too.
-    key = (os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_RAIL") or "").strip()
-    # If you set GEMINI_MODEL globally for other pipelines, rail can override via GEMINI_MODEL_RAIL.
-    model = (
-        os.getenv("GEMINI_MODEL_RAIL")
-        or os.getenv("GEMINI_MODEL")
-        or "gemini-2.0-flash"
-    ).strip()
-    return (key or None), model
+def _gemini_config() -> Tuple[Optional[str], str]:
+    key = os.getenv("GEMINI_API_KEY")
+    model = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
+    return key, model
 
 
-def _list_models(api_key: str, timeout_s: int = 10) -> Set[str]:
+def _normalize_model_id(model: str) -> str:
+    """Return bare id: gemini-2.5-flash (no models/ prefix)."""
+    m = (model or "").strip()
+    if m.startswith("models/"):
+        m = m[len("models/") :]
+    return m or _DEFAULT_MODEL
+
+
+def _model_resource(model: str) -> str:
+    """Return API resource path: models/gemini-2.5-flash."""
+    mid = _normalize_model_id(model)
+    return f"models/{mid}"
+
+
+def _gemini_headers(api_key: str) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "X-goog-api-key": api_key,
+    }
+
+
+def _list_models(api_key: str, timeout_s: int = 10) -> set[str]:
     global _MODEL_CACHE
-    # Cache for 10 minutes to avoid extra calls.
-    import time
-
     if _MODEL_CACHE and (time.time() - _MODEL_CACHE[0]) < 600:
         return _MODEL_CACHE[1]
 
     try:
         resp = requests.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
-            params={"key": api_key},
+            f"{_API_BASE}/models",
+            headers=_gemini_headers(api_key),
             timeout=timeout_s,
         )
         if not resp.ok:
             return set()
         data = resp.json() if resp.content else {}
-        names = set()
-        for m in (data.get("models") or []):
+        names: set[str] = set()
+        for m in data.get("models") or []:
             n = (m or {}).get("name")
             methods = (m or {}).get("supportedGenerationMethods") or []
             if n and "generateContent" in methods:
@@ -59,47 +85,121 @@ def _list_models(api_key: str, timeout_s: int = 10) -> Set[str]:
 
 def _resolve_model_name(api_key: str, requested: str) -> str:
     """
-    Ensure model name exists and supports generateContent.
-    Accepts either 'gemini-2.0-flash' or 'models/gemini-2.0-flash'.
+    Pick a model resource that supports generateContent.
+    Accepts gemini-2.5-flash or models/gemini-2.5-flash.
     """
-    req = (requested or "").strip()
-    if not req:
-        req = "gemini-2.0-flash"
-    if not req.startswith("models/"):
-        req = f"models/{req}"
-
+    req = _model_resource(requested)
     available = _list_models(api_key)
     if req in available:
         return req
 
-    # Fallbacks: prefer a Flash model for latency/cost.
-    for fb in ("models/gemini-2.0-flash", "models/gemini-2.5-flash", "models/gemini-2.0-flash-lite"):
-        if fb in available:
-            return fb
-    # Last resort: return requested even if not in cache.
+    for fb in _MODEL_FALLBACKS:
+        resource = _model_resource(fb)
+        if resource in available:
+            return resource
     return req
 
 
-def generate_train_explanation(
-    recommendation: Dict[str, Any],
-    context: Optional[Dict[str, Any]] = None,
-    timeout_s: int = 4,
-) -> Optional[str]:
-    """
-    Use Gemini to produce a short, user-facing justification for why a train was chosen.
-    Reads GEMINI_API_KEY and GEMINI_MODEL from env.
-    """
-    api_key, model = _gemini_config()
-    if not api_key:
-        return None
-    # Support common alias used in curl examples.
-    if (model or "").strip() == "gemini-flash-latest":
-        model = "models/gemini-flash-latest"
-    model_name = _resolve_model_name(api_key, model)
+def _model_try_order(preferred: str) -> list[str]:
+    """Deduplicated model ids to try, preferred first."""
+    ordered = [_normalize_model_id(preferred), *_MODEL_FALLBACKS]
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in ordered:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
 
+
+def _extract_text(data: dict[str, Any]) -> str:
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
+    return " ".join(
+        (p.get("text") or "").strip() for p in parts if isinstance(p, dict)
+    ).strip()
+
+
+def _should_retry_model(status_code: int, body: dict[str, Any]) -> bool:
+    if status_code in (404, 429, 503):
+        return True
+    err = body.get("error") or {}
+    status = str(err.get("status") or "").upper()
+    return status in ("NOT_FOUND", "RESOURCE_EXHAUSTED", "UNAVAILABLE")
+
+
+def gemini_generate_content(
+    prompt: str,
+    *,
+    response_mime_type: str | None = None,
+    temperature: float = 0.3,
+    max_output_tokens: int = 600,
+    timeout_s: int = 12,
+    model: str | None = None,
+) -> tuple[str | None, str | None]:
+    """
+    Call Gemini generateContent. Returns (text, error_message).
+    Tries fallback models when the preferred one is quota-blocked or unavailable.
+    """
+    api_key, configured = _gemini_config()
+    if not api_key:
+        return None, "Gemini API key not configured"
+
+    preferred = model or configured
+    errors: list[str] = []
+
+    generation_config: dict[str, Any] = {
+        "temperature": temperature,
+        "maxOutputTokens": max_output_tokens,
+    }
+    if response_mime_type:
+        generation_config["responseMimeType"] = response_mime_type
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": generation_config,
+    }
+
+    for model_id in _model_try_order(preferred):
+        resource = _model_resource(model_id)
+        url = f"{_API_BASE}/{resource}:generateContent"
+        try:
+            resp = requests.post(
+                url,
+                headers=_gemini_headers(api_key),
+                json=payload,
+                timeout=timeout_s,
+            )
+            body = resp.json() if resp.content else {}
+            if resp.ok:
+                text = _extract_text(body)
+                if text:
+                    return text, None
+                errors.append(f"{model_id}: empty response")
+                continue
+
+            detail = (body.get("error") or {}).get("message") or resp.text[:160]
+            errors.append(f"{model_id}: HTTP {resp.status_code} — {detail}")
+            if _should_retry_model(resp.status_code, body):
+                continue
+            break
+        except Exception as exc:
+            errors.append(f"{model_id}: {exc}")
+            continue
+
+    return None, "; ".join(errors[:3])
+
+
+def generate_train_explanation(
+    recommendation: dict[str, Any],
+    context: dict[str, Any] | None = None,
+    timeout_s: int = 8,
+) -> str | None:
+    """Short user-facing rail recommendation justification via Gemini."""
     rec = recommendation or {}
     ctx = context or {}
-
     prompt = (
         "You are LogiFlow, a railway cargo assistant.\n"
         "Write a concise, pointwise explanation for why THIS train/route is recommended.\n"
@@ -120,170 +220,24 @@ def generate_train_explanation(
         "- Exactly 3 or 4 bullet points only\n"
         "- Keep each bullet to one line\n"
     )
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-    try:
-        resp = requests.post(
-            url,
-            # Prefer header auth (works with curl's X-goog-api-key); also pass query param for compatibility.
-            headers={"Content-Type": "application/json", "X-goog-api-key": api_key},
-            params={"key": api_key},
-            json={
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.4,
-                    "maxOutputTokens": 550,
-                },
-            },
-            timeout=timeout_s,
-        )
-        if not resp.ok:
-            return None
-        data = resp.json() if resp.content else {}
-        candidates = data.get("candidates") or []
-        if not candidates:
-            return None
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        text = " ".join([(p.get("text") or "").strip() for p in parts if isinstance(p, dict)]).strip()
-        return text or None
-    except Exception:
-        return None
-
-def generate_transport_followup_response(
-    question: str,
-    context: dict[str, Any] | None = None,
-    history: list[dict[str, Any]] | None = None,
-    timeout_s: int = 5,
-) -> dict[str, Any]:
-    """
-    Use Gemini to answer follow-up questions about a transport recommendation.
-
-    The prompt is intentionally constrained to transportation and logistics so the
-    assistant stays useful inside the route planner rather than drifting into a
-    general-purpose chatbot.
-    """
-    api_key, model = _gemini_config()
-    if not api_key:
-        return {"answer": None, "error_kind": "disabled"}
-
-    if (model or '').strip() == 'gemini-flash-latest':
-        model = 'models/gemini-flash-latest'
-    model_name = _resolve_model_name(api_key, model)
-
-    ctx = context or {}
-    turns = history or []
-
-    system_prompt = (
-        "You are LogiFlow, a transportation-only assistant for rail, road, and air cargo planning.\n"
-        "Answer only transportation, routing, scheduling, delay, cost, risk, capacity, and logistics questions.\n"
-        "If the user asks about anything unrelated to transport, politely say you can only help with transportation planning.\n"
-        "Use only the supplied context and conversation history. Do not invent prices, timings, route availability, train numbers, airport names, or schedules.\n"
-        "When the user asks for more detail, explain tradeoffs, route choice, transfer impact, and delay risk in a practical tone.\n"
-        "Keep the answer concise, specific, and conversational."
+    text, _err = gemini_generate_content(
+        prompt,
+        temperature=0.4,
+        max_output_tokens=550,
+        timeout_s=timeout_s,
     )
-
-    contents: list[dict[str, Any]] = []
-    for turn in turns[-8:]:
-        role = str(turn.get('role') or '').strip().lower()
-        text = str(turn.get('content') or '').strip()
-        if not text:
-            continue
-        if role == 'assistant':
-            role = 'model'
-        elif role != 'user':
-            continue
-        contents.append({'role': role, 'parts': [{'text': text}]})
-
-    contents.append(
-        {
-            'role': 'user',
-            'parts': [
-                {
-                    'text': (
-                        f'Context: {json.dumps(ctx, ensure_ascii=True)}\n\n'
-                        f'User question: {question.strip()}'
-                    )
-                }
-            ],
-        }
-    )
-
-    request_body = {
-        'systemInstruction': {'parts': [{'text': system_prompt}]},
-        'contents': contents,
-        'generationConfig': {
-            'temperature': 0.35,
-            'maxOutputTokens': 450,
-        },
-    }
-
-    url = f'https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent'
-    try:
-        resp = requests.post(
-            url,
-            headers={'Content-Type': 'application/json', 'X-goog-api-key': api_key},
-            params={'key': api_key},
-            json=request_body,
-            timeout=timeout_s,
-        )
-        if not resp.ok:
-            details = ""
-            retry_after_s = None
-            try:
-                err_data = resp.json() if resp.content else {}
-                details = str((err_data.get('error') or {}).get('message') or '').lower()
-                for d in (err_data.get('error') or {}).get('details', []):
-                    if isinstance(d, dict) and d.get('@type') == 'type.googleapis.com/google.rpc.RetryInfo':
-                        retry_after = str(d.get('retryDelay') or '').strip()
-                        if retry_after.endswith('s') and retry_after[:-1].isdigit():
-                            retry_after_s = int(retry_after[:-1])
-            except Exception:
-                details = (resp.text or '').lower()
-
-            if resp.status_code == 429 or 'quota' in details or 'rate limit' in details:
-                return {"answer": None, "error_kind": "quota_exceeded", "retry_after_s": retry_after_s, "provider_message": details}
-            if resp.status_code in (401, 403):
-                return {"answer": None, "error_kind": "auth_failed"}
-            if resp.status_code >= 500:
-                return {"answer": None, "error_kind": "provider_unavailable"}
-            return {"answer": None, "error_kind": "provider_error"}
-
-        data = resp.json() if resp.content else {}
-        candidates = data.get('candidates') or []
-        if not candidates:
-            return {"answer": None, "error_kind": "empty_response"}
-        content = (candidates[0] or {}).get('content') or {}
-        parts = content.get('parts') or []
-        text = ' '.join([(p.get('text') or '').strip() for p in parts if isinstance(p, dict)]).strip()
-        if text:
-            return {"answer": text, "error_kind": None}
-        return {"answer": None, "error_kind": "empty_response"}
-    except requests.Timeout:
-        return {"answer": None, "error_kind": "timeout"}
-    except Exception:
-        return {"answer": None, "error_kind": "provider_error"}
+    return text
 
 
 def generate_generic_explanation(
     pipeline: str,
     priority: str,
-    route_data: Dict[str, Any],
-    context: Optional[Dict[str, Any]] = None,
+    route_data: dict[str, Any],
+    context: dict[str, Any] | None = None,
     timeout_s: int = 15,
-) -> Optional[str]:
-    """
-    Use Gemini to produce a generic short, pointwise explanation for why a route is or isn't ideal in a pipeline.
-    """
-    api_key, model = _gemini_config()
-    if not api_key:
-        return None
-    if (model or "").strip() == "gemini-flash-latest":
-        model = "models/gemini-flash-latest"
-    model_name = _resolve_model_name(api_key, model)
-
+) -> str | None:
+    """Generic pipeline route explanation for /explain API."""
     ctx = context or {}
-
     prompt = (
         "You are LogiFlow, an intelligent multimodal cargo assistant.\n"
         f"You are explaining a {pipeline} route option to the user.\n"
@@ -298,32 +252,12 @@ def generate_generic_explanation(
         "- 3 to 5 detailed bullet points analyzing specific tradeoffs (cost, speed, risk, and specialized constraints).\n"
         "Keep each bullet point informative but under 25 words."
     )
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent"
-    try:
-        resp = requests.post(
-            url,
-            headers={"Content-Type": "application/json", "X-goog-api-key": api_key},
-            params={"key": api_key},
-            json={
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "maxOutputTokens": 400,
-                },
-            },
-            timeout=timeout_s,
-        )
-        if not resp.ok:
-            return None
-        data = resp.json() if resp.content else {}
-        candidates = data.get("candidates") or []
-        if not candidates:
-            return None
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        text = " ".join([(p.get("text") or "").strip() for p in parts if isinstance(p, dict)]).strip()
-        return text or None
-    except Exception as e:
-        print(f"[GeminiService] generic explanation error: {e}")
-        return None
+    text, err = gemini_generate_content(
+        prompt,
+        temperature=0.3,
+        max_output_tokens=400,
+        timeout_s=timeout_s,
+    )
+    if not text and err:
+        print(f"[GeminiService] generic explanation error: {err}")
+    return text

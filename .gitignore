@@ -21,6 +21,8 @@ venv/
 # =========================
 data/processed/
 data/synthetic/
+backend/data/ir_delay_scrape/*.csv
+backend/data/ir_delay_scrape/checkpoint.json
 ml/models/*.pkl
 ml/models/*.joblib
 
@@ -60,4 +62,4 @@ build/
 *.tmp
 *.bak
 backend/.env
-backend/.env
+backend/test_irctc.mjs
