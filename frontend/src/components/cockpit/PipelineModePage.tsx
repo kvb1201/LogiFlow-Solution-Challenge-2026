@@ -7,7 +7,7 @@ import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
 import { PipelineModeLanding } from './PipelineModeLanding';
 import { PipelineResultsChrome } from './PipelineResultsChrome';
 
-type PipelineMode = Exclude<LogisticsMode, 'hybrid'>;
+type PipelineMode = Exclude<LogisticsMode, 'comparator'>;
 
 export function PipelineModePage({
   mode,
