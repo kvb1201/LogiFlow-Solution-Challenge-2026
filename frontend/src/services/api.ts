@@ -3,7 +3,7 @@
  * Connects to the FastAPI backend and RailRadar API.
  */
 
-const BACKEND_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
+const BACKEND_BASE = '/api';
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -271,6 +271,18 @@ export interface HybridComparisonRow {
   cost_inr?: number | null;
   risk?: number | null;
   confidence?: number | null;
+  explanation?: string | null;
+}
+
+export interface AiConstraintsApplied {
+  priority?: string;
+  scenario_summary?: string;
+  constraints?: {
+    budget_max_inr?: number;
+    delay_tolerance_hours?: number;
+    risk_threshold?: number;
+    excluded_modes?: string[];
+  };
 }
 
 export interface HybridModeRoute {
@@ -287,12 +299,32 @@ export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
   tradeoffs?: string[] | null;
+  ai_constraints?: AiConstraintsApplied | null;
+  demo_mode?: boolean;
+  unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
-  best_per_mode?: {
-    road?: HybridModeRoute | null;
-    rail?: HybridModeRoute | null;
-    air?: HybridModeRoute | null;
-  } | null;
+  best_per_mode?: Partial<Record<'road' | 'rail' | 'air' | 'water', HybridModeRoute | null>> | null;
+}
+
+export interface HybridPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  cargo?: { weight: number; type: string };
+  scenario_brief?: string;
+  preferences?: { preferred_mode?: string };
+  constraints?: {
+    excluded_modes?: string[];
+    risk_threshold?: number;
+    delay_tolerance_hours?: number;
+    max_transshipments?: number;
+    budget_max_inr?: number;
+    max_stops?: number;
+    budget_limit?: number;
+  };
 }
 
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
@@ -353,26 +385,6 @@ export async function optimizeAirRoute(payload: AirPayload): Promise<AirOptimize
     throw new Error(`Air optimize failed (${res.status}): ${text}`);
   }
   return res.json();
-}
-
-export interface HybridPayload {
-  source: string;
-  destination: string;
-  priority: string;
-  departure_date?: string;
-  cargo_weight_kg?: number;
-  cargo_type?: string;
-  cargo?: { weight: number; type: string };
-  preferences?: { preferred_mode?: string };
-  constraints?: {
-    excluded_modes?: string[];
-    risk_threshold?: number;
-    delay_tolerance_hours?: number;
-    max_transshipments?: number;
-    budget_max_inr?: number;
-    max_stops?: number;
-    budget_limit?: number;
-  };
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
@@ -606,6 +618,86 @@ export async function getStationInfoDirect(code: string): Promise<StationInfo | 
   }
 }
 
+export async function fetchExplanation(payload: {
+  pipeline: string;
+  priority: string;
+  route_data: unknown;
+  context?: unknown;
+}): Promise<string | null> {
+  try {
+    const res = await fetch(`${BACKEND_BASE}/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.explanation ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Natural-language intent (Gemini / heuristic) ────────────────────
+
+export type IntentContextMode = 'home' | 'rail' | 'road' | 'air' | 'water' | 'hybrid';
+
+export interface ParsedIntent {
+  applied?: boolean;
+  error?: string;
+  source?: string | null;
+  destination?: string | null;
+  suggested_mode?: string;
+  priority?: string;
+  cargo_weight_kg?: number | null;
+  cargo_type?: string | null;
+  budget_max_inr?: number | null;
+  deadline_hours?: number | null;
+  departure_date?: string | null;
+  scenario_summary?: string;
+  scenario_brief?: string;
+  avoid_tolls?: boolean | null;
+  avoid_highways?: boolean | null;
+  traffic_aware?: boolean | null;
+  vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck' | null;
+  max_stops?: number | null;
+  max_transshipments?: number | null;
+  excluded_modes?: string[];
+  special_notes?: string | null;
+  source_engine?: string;
+  parse_warning?: string;
+}
+
+export async function parseShipmentIntent(
+  user_brief: string,
+  context_mode: IntentContextMode = 'home'
+): Promise<ParsedIntent> {
+  const res = await fetch(`${BACKEND_BASE}/intent/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_brief, context_mode }),
+  });
+  const raw = await res.text();
+  let data: ParsedIntent;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'Intent parse returned invalid JSON'
+        : `Backend unavailable — start the API server (got: ${raw.slice(0, 80)})`
+    );
+  }
+  if (!res.ok) {
+    throw new Error(
+      (typeof data?.detail === 'string' ? data.detail : null) ||
+        data?.error ||
+        `Intent parse failed (${res.status})`
+    );
+  }
+  return data;
+}
+
 // ── Legacy fallback (for the old /optimize endpoint) ─────────────────
 
 export async function fetchOptimizedRoute(
@@ -622,45 +714,4 @@ export async function fetchOptimizedRoute(
   });
   if (!res.ok) throw new Error(`API failed: ${res.status}`);
   return res.json();
-}
-
-export async function fetchExplanation(payload: { pipeline: string, priority: string, route_data: any, context?: any }): Promise<string | null> {
-  try {
-    const res = await fetch(`${BACKEND_BASE}/explain`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.explanation;
-  } catch (error) {
-    console.error("Explanation fetch error:", error);
-    return null;
-  }
-}
-
-let hasWoken = false;
-
-export function wakeBackend() {
-  if (hasWoken) return;
-  hasWoken = true;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    fetch(`${BACKEND_BASE}/health`, {
-      method: 'GET',
-      mode: 'no-cors',
-      keepalive: true,
-      signal: controller.signal,
-    }).catch(() => {
-      // Ignore silently
-    }).finally(() => {
-      clearTimeout(timeoutId);
-    });
-  } catch (error) {
-    // Ignore silently
-  }
 }

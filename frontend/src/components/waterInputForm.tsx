@@ -2,6 +2,18 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
+import AiBriefPanel from '@/components/AiBriefPanel';
+import {
+  AdvancedToggle,
+  ChoicePills,
+  FormField,
+  FormShell,
+  FormSubmit,
+  LOGIFLOW_FORM_IDS,
+  formInputClass,
+  formLabelClass,
+} from '@/components/forms/pipeline-form-ui';
 
 // ── Static Ports Data ───────────────────────────────────────────────────
 
@@ -124,42 +136,20 @@ function LocationInput({
   };
 
   return (
-    <div ref={wrapperRef} className="relative z-[9999]">
-      <label className="flex items-center gap-1.5 text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+    <div ref={wrapperRef} className="relative z-[50]">
+      <span className={`mb-1.5 block ${formLabelClass}`}>
         {label}
-        {loading && <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />}
-      </label>
+        {loading && <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-live" />}
+      </span>
 
       <div className="relative">
-        <div
-          className={`absolute -inset-0.5 rounded-xl transition-all duration-400 ${
-            focused
-              ? 'opacity-100 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-teal-400/25 blur-sm'
-              : 'opacity-0'
-          }`}
-        />
-        <div
-          className={`relative flex items-center bg-surface-container-lowest/80 border rounded-xl overflow-hidden transition-all duration-200 ${
-            hasError
-              ? 'border-error/50'
-              : focused
-              ? 'border-teal-400/40 shadow-[0_0_12px_rgba(45,212,191,0.10)]'
-              : 'border-outline-variant/20 hover:border-outline-variant/40'
-          }`}
-        >
-          <div className="pl-3.5 pr-2.5 flex items-center justify-center shrink-0">
-            <span
-              className={`material-symbols-outlined transition-all duration-300 leading-none ${
-                focused ? `${iconColor} scale-110` : 'text-outline scale-100'
-              }`}
-              style={{
-                fontSize: '18px',
-                fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20",
-              }}
-            >
-              {icon}
-            </span>
-          </div>
+        <div className="relative flex items-center">
+          <span
+            className="pointer-events-none absolute left-3 material-symbols-outlined text-muted-foreground"
+            style={{ fontSize: '18px' }}
+          >
+            {icon}
+          </span>
           <input
             type="text"
             value={value}
@@ -169,7 +159,7 @@ function LocationInput({
               if (results.length) setShowDropdown(true);
             }}
             onBlur={() => setFocused(false)}
-            className="w-full py-3.5 pr-3 bg-transparent text-on-surface placeholder:text-outline/40 focus:outline-none text-sm font-medium"
+            className={`${formInputClass} pl-10 pr-9 ${hasError ? 'border-risk/50' : ''}`}
             placeholder={placeholder}
           />
           {value && (
@@ -181,18 +171,16 @@ function LocationInput({
                 clear();
                 setShowDropdown(false);
               }}
-              className="absolute right-2.5 p-1 rounded-full text-outline/50 hover:text-on-surface hover:bg-surface-container transition-colors"
+              className="absolute right-2 rounded-md p-1 text-muted-foreground hover:bg-surface/80 hover:text-foreground"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                close
-              </span>
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
           )}
         </div>
       </div>
 
       {showDropdown && results.length > 0 && (
-        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 bg-surface-container-low/95 backdrop-blur-xl border border-outline-variant/20 rounded-2xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.7)] overflow-hidden animate-slide-up origin-top">
+        <div className="absolute z-[99999] top-full left-0 right-0 mt-1.5 overflow-hidden rounded-xl border border-border bg-surface/95 p-1 shadow-2xl backdrop-blur-xl animate-slide-up origin-top">
           <div className="max-h-[240px] overflow-y-auto p-1.5">
             {results.map((s, i) => (
               <button
@@ -244,21 +232,20 @@ export default function WaterInputForm() {
     loading,
   } = useLogiFlowStore();
 
-  const [formStep, setFormStep] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [maxTransshipments, setMaxTransshipments] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const timers = [
-      setTimeout(() => setFormStep(1), 80),
-      setTimeout(() => setFormStep(2), 220),
-      setTimeout(() => setFormStep(3), 360),
-      setTimeout(() => setFormStep(4), 500),
-      setTimeout(() => setFormStep(5), 640),
-    ];
-    return () => timers.forEach(clearTimeout);
-  }, []);
+  const runWaterOptimize = useCallback(() => {
+    if (!source.trim() || !destination.trim()) return;
+    handleOptimize({ mode: 'water' });
+  }, [source, destination, handleOptimize]);
+
+  useShipmentAutorun(
+    'water',
+    runWaterOptimize,
+    Boolean(source.trim() && destination.trim())
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -275,71 +262,40 @@ export default function WaterInputForm() {
       return;
     }
     setError(null);
-    handleOptimize({ mode: 'water' });
+    runWaterOptimize();
   };
 
   return (
-    <div className="form-container-glow relative">
-      {/* Ambient glow */}
-      <div className="absolute -inset-1 bg-gradient-to-r from-teal-500/12 via-cyan-400/6 to-teal-500/12 rounded-3xl blur-2xl opacity-40 animate-pulse-slow pointer-events-none" />
-
-      <div className="relative bg-surface-container-low/75 backdrop-blur-2xl border border-outline-variant/12 rounded-2xl shadow-2xl overflow-hidden">
-        {/* Top shimmer */}
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-teal-400/40 to-transparent animate-shimmer shrink-0" />
-
-        <div className="p-5 sm:p-7">
-          {/* Header */}
-          <div
-            className={`flex items-center justify-between mb-6 transition-all duration-600 ${
-              formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-400/15 flex items-center justify-center border border-teal-400/20">
-                  <span
-                    className="material-symbols-outlined text-teal-400 leading-none"
-                    style={{
-                      fontSize: '18px',
-                      fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24",
-                    }}
-                  >
-                    directions_boat
-                  </span>
-                </div>
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-teal-400 rounded-full animate-ping opacity-60" />
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-teal-400 rounded-full" />
-              </div>
-              <div>
-                <h2 className="text-[15px] font-headline font-bold text-on-surface tracking-tight">
-                  Water (Maritime) Routing
-                </h2>
-                <p className="text-[10px] text-outline mt-0.5">
-                  Port-based routes with transshipment options
-                </p>
-                <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
-                  <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>info</span>
-                  Note: The given data is limited and not real-time.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-[11px] text-on-surface-variant hover:text-teal-400 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-surface-container border border-transparent hover:border-outline-variant/15"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                {showAdvanced ? 'unfold_less' : 'tune'}
-              </span>
-              {showAdvanced ? 'Less' : 'Advanced'}
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
+    <div className="w-full space-y-4">
+      <AiBriefPanel contextMode="water" />
+      <FormShell
+        mode="water"
+        title="Maritime route search"
+        subtitle="Port-to-port routing · transshipment · static port dataset (not live AIS)"
+        advancedToggle={
+          <AdvancedToggle
+            open={showAdvanced}
+            onToggle={() => setShowAdvanced((v) => !v)}
+            accentVar="--water"
+          />
+        }
+        footer={
+          <FormSubmit
+            formId={LOGIFLOW_FORM_IDS.water}
+            loading={loading}
+            disabled={!source.trim() || !destination.trim() || cargoWeight <= 0}
+            label="Find maritime routes"
+            loadingLabel="Charting routes…"
+            accentVar="--water"
+            icon="directions_boat"
+          />
+        }
+      >
+        <form id={LOGIFLOW_FORM_IDS.water} onSubmit={handleSubmit} className="space-y-5">
             {/* Origin / Destination */}
             <div
               className={`relative z-[100] transition-all duration-600 ${
-                formStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                'opacity-100 translate-y-0'
               }`}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
@@ -394,7 +350,7 @@ export default function WaterInputForm() {
             {/* Weight */}
             <div
               className={`transition-all duration-600 delay-75 ${
-                formStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                'opacity-100 translate-y-0'
               }`}
             >
               <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
@@ -421,87 +377,31 @@ export default function WaterInputForm() {
               </div>
             </div>
 
-            {/* Cargo type */}
-            <div
-              className={`transition-all duration-600 delay-100 ${
-                formStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
-                Cargo Type
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {CARGO_TYPES.map((ct) => (
-                  <button
-                    key={ct.value}
-                    type="button"
-                    onClick={() => setCargoType(ct.value)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200 ${
-                      cargoType === ct.value
-                        ? 'bg-teal-500/10 border-teal-400/30 shadow-sm'
-                        : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 hover:bg-surface-container/30'
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined leading-none transition-colors ${
-                        cargoType === ct.value ? 'text-teal-400' : 'text-outline'
-                      }`}
-                      style={{
-                        fontSize: '18px',
-                        fontVariationSettings: `'FILL' ${cargoType === ct.value ? 1 : 0}, 'wght' 400`,
-                      }}
-                    >
-                      {ct.icon}
-                    </span>
-                    <span
-                      className={`text-[11px] font-medium ${
-                        cargoType === ct.value ? 'text-on-surface' : 'text-on-surface-variant'
-                      }`}
-                    >
-                      {ct.value}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <FormField label="Cargo type">
+              <ChoicePills
+                options={CARGO_TYPES.map((ct) => ({
+                  value: ct.value,
+                  label: ct.value,
+                  icon: ct.icon,
+                }))}
+                value={cargoType}
+                onChange={setCargoType}
+                accentVar="--water"
+              />
+            </FormField>
 
-            {/* Priority */}
-            <div
-              className={`transition-all duration-600 delay-150 ${
-                formStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
-                Optimization Priority
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {PRIORITY_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPriority(opt.value)}
-                    className={`flex flex-col items-center gap-2 py-3.5 px-3 rounded-xl border transition-all duration-200 ${
-                      priority === opt.value
-                        ? `${opt.activeClass} shadow-sm scale-[1.02]`
-                        : 'bg-surface-container-lowest/20 border-outline-variant/8 hover:border-outline-variant/20 text-on-surface-variant'
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined leading-none ${
-                        priority === opt.value ? opt.iconColor : 'text-outline'
-                      }`}
-                      style={{
-                        fontSize: '22px',
-                        fontVariationSettings: `'FILL' ${priority === opt.value ? 1 : 0}, 'wght' 400`,
-                      }}
-                    >
-                      {opt.icon}
-                    </span>
-                    <span className="text-[12px] font-semibold">{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <FormField label="Priority">
+              <ChoicePills
+                options={PRIORITY_OPTIONS.map((opt) => ({
+                  value: opt.value,
+                  label: opt.label,
+                  icon: opt.icon,
+                }))}
+                value={priority}
+                onChange={setPriority}
+                accentVar="--water"
+              />
+            </FormField>
 
             {/* Advanced */}
             <div
@@ -556,64 +456,8 @@ export default function WaterInputForm() {
               </div>
             </div>
 
-            {/* Submit */}
-            <div
-              className={`transition-all duration-600 delay-200 ${
-                formStep >= 5 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-              }`}
-            >
-              <button
-                type="submit"
-                disabled={loading || !source.trim() || !destination.trim() || cargoWeight <= 0}
-                className="relative w-full py-3.5 font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-2.5 disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden group"
-              >
-                <div
-                  className={`absolute inset-0 transition-all duration-300 ${
-                    loading
-                      ? 'bg-surface-container'
-                      : 'bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-500 group-hover:opacity-90'
-                  }`}
-                />
-                {!loading && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/8 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span
-                    className={`material-symbols-outlined leading-none ${
-                      loading ? 'animate-spin text-outline' : 'text-white'
-                    }`}
-                    style={{ fontSize: '18px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {loading ? 'progress_activity' : 'directions_boat'}
-                  </span>
-                  <span
-                    className={`text-sm tracking-wide font-semibold ${
-                      loading ? 'text-outline' : 'text-white'
-                    }`}
-                  >
-                    {loading ? 'Charting Routes…' : 'Find Maritime Routes'}
-                  </span>
-                </div>
-              </button>
-              {source.trim() && destination.trim() && !loading && (
-                <p className="text-center text-[10px] text-outline/50 mt-2.5 flex items-center justify-center gap-1.5 animate-fade-in">
-                  <span
-                    className="material-symbols-outlined text-teal-400"
-                    style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    check_circle
-                  </span>
-                  <span className="mono text-teal-400">{source}</span>
-                  {' → '}
-                  <span className="mono text-cyan-400">{destination}</span>
-                  {' · '}
-                  {cargoWeight}kg {cargoType}
-                </p>
-              )}
-            </div>
           </form>
-        </div>
-      </div>
+      </FormShell>
     </div>
   );
 }
