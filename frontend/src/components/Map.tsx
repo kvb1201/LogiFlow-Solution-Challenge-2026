@@ -491,14 +491,18 @@ export default function MapView({
         }
 
         const mid = L.circleMarker(latLng, {
-          radius: 4,
+          radius: 5,
           color: dotColor,
           fillColor: dotColor,
-          fillOpacity: 0.75,
+          fillOpacity: 0.85,
           weight: 1,
-          opacity: 0.85,
+          opacity: 0.9,
         });
-        mid.bindTooltip(`<strong>${label}</strong>${sub}`, { direction: 'top' });
+        mid.bindTooltip(`<strong>${label}</strong>${sub}`, {
+          direction: 'top',
+          permanent: true,
+          className: 'logiflow-city-label',
+        });
         stationLayerRef.current!.addLayer(mid);
       });
 

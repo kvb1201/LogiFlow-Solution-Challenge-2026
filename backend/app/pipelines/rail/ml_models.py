@@ -438,51 +438,30 @@ def predict_duration_factor(route):
 
 
 def get_model_info():
-    """Return model metadata."""
-    _load_or_train()
-    try:
-        from app.pipelines.rail.scraped_delay_ml import load_metrics, load_scraped_model_bundle
-
-        bundle = load_scraped_model_bundle()
-        metrics = load_metrics()
-        if bundle:
-            from app.pipelines.rail.ml_quantifiers import (
-                DOC_PDF_URL,
-                build_rail_ml_quantifiers,
-            )
-
-            merged = dict(metrics or {})
-            merged.setdefault("training_rows", bundle.get("training_rows"))
-            return {
-                "delay_model": f"{bundle.get('model_kind', 'hist')} (scraped corpus)",
-                "duration_model": "GradientBoostingRegressor" if _duration_model else "heuristic",
-                "models_loaded": True,
-                "training_data": bundle.get("data_source", "ir_train_delays.csv"),
-                "features": bundle.get("feature_cols", []),
-                "cv_metrics": merged.get("cv_metrics"),
-                "date_backtests": merged.get("date_backtests"),
-                "meets_accuracy_goal": merged.get("meets_goal"),
-                "trained_at": bundle.get("trained_at"),
-                "training_rows": bundle.get("training_rows"),
-                "model_kind": bundle.get("model_kind"),
-                "quantifiers": build_rail_ml_quantifiers(merged),
-                "documentation_url": DOC_PDF_URL,
-            }
-    except Exception:
-        pass
-
+    """
+    Fast metadata for the UI — reads JSON metrics only.
+    Never loads pickles or trains models (Render /health must stay sub-second).
+    """
     from app.pipelines.rail.ml_quantifiers import DOC_PDF_URL, build_rail_ml_quantifiers
+    from app.pipelines.rail.scraped_delay_ml import load_metrics
+
+    metrics = load_metrics() or {}
+    merged = dict(metrics)
+    model_kind = str(merged.get("model_kind") or "gbm")
+    training_rows = merged.get("training_rows")
 
     return {
-        "delay_model": "GradientBoostingRegressor" if _delay_model else "None",
-        "duration_model": "GradientBoostingRegressor" if _duration_model else "None",
-        "models_loaded": _models_loaded,
-        "training_data": "ir_train_delays.csv scraped corpus + schedule features",
-        "features": [
-            "num_stops", "total_distance", "avg_stop_spacing",
-            "junction_count", "departure_hour", "distance_per_stop",
-            "is_long_distance", "train_type", "scheduled_duration"
-        ],
-        "quantifiers": build_rail_ml_quantifiers(None),
+        "delay_model": f"{model_kind} (scraped corpus)",
+        "duration_model": "scraped_delay_ml",
+        "models_loaded": bool(merged.get("cv_metrics")),
+        "training_data": "ir_train_delays.csv",
+        "features": merged.get("feature_cols") or [],
+        "cv_metrics": merged.get("cv_metrics"),
+        "date_backtests": merged.get("date_backtests"),
+        "meets_accuracy_goal": merged.get("meets_goal"),
+        "trained_at": merged.get("trained_at"),
+        "training_rows": training_rows,
+        "model_kind": model_kind,
+        "quantifiers": build_rail_ml_quantifiers(merged if merged.get("cv_metrics") else None),
         "documentation_url": DOC_PDF_URL,
     }
