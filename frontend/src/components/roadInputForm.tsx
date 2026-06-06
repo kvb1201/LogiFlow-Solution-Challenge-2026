@@ -391,8 +391,17 @@ export default function RoadInputForm() {
   const [simWeather, setSimWeather] = useState(0.5);
   const [simIncidents, setSimIncidents] = useState(0);
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  const sameCityRouteError = 'Source and destination cannot be the same city.';
+  const isSameCityRoute =
+    source.trim() && destination.trim() && source.trim().toLowerCase() === destination.trim().toLowerCase();
+
   const runRoadOptimize = useCallback(() => {
     if (!source.trim() || !destination.trim()) return;
+    if (isSameCityRoute) {
+      setError(sameCityRouteError);
+      return;
+    }
+    setError(null);
     handleOptimize({
       mode: 'road',
       simulation_mode: simulationMode,
@@ -412,6 +421,7 @@ export default function RoadInputForm() {
     simTraffic,
     simWeather,
     simIncidents,
+    isSameCityRoute,
   ]);
 
   useEffect(() => {
@@ -433,8 +443,8 @@ export default function RoadInputForm() {
       setError('Source and destination are required');
       return;
     }
-    if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
-      setError('Source and destination cannot be the same');
+    if (isSameCityRoute) {
+      setError(sameCityRouteError);
       return;
     }
     if (cargoWeight <= 0) {
@@ -506,7 +516,7 @@ export default function RoadInputForm() {
                   icon="my_location"
                   iconColor="text-primary"
                   placeholder="Search city..."
-                  hasError={!!error && !source.trim()}
+                  hasError={!!error && (isSameCityRoute || !source.trim())}
                 />
                 <LocationInput
                   label="Delivery Location"
@@ -515,7 +525,7 @@ export default function RoadInputForm() {
                   icon="flag"
                   iconColor="text-tertiary"
                   placeholder="Search city..."
-                  hasError={!!error && !destination.trim()}
+                  hasError={!!error && (isSameCityRoute || !destination.trim())}
                 />
               </CorridorRow>
               {error && (
