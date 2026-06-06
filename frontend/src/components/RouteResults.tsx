@@ -1,9 +1,14 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
+import {
+  buildGoogleMapsUrl,
+  getRouteNavigationInfo,
+  devAssertNavigationConsistency,
+} from '@/lib/routeNavigation';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -451,6 +456,184 @@ function devValidate(
       }
     });
   });
+}
+
+// ── Toast notification ────────────────────────────────────────────────
+
+type ToastKind = 'success' | 'error';
+
+function Toast({ message, kind, onDone }: { message: string; kind: ToastKind; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2800);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={[
+        'fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999]',
+        'flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-xl',
+        'text-[12px] font-medium mono whitespace-nowrap',
+        'animate-slide-up',
+        kind === 'success'
+          ? 'bg-emerald-950/95 border border-emerald-500/30 text-emerald-200'
+          : 'bg-red-950/95 border border-red-500/30 text-red-200',
+      ].join(' ')}
+    >
+      <span className="material-symbols-outlined text-[14px]">
+        {kind === 'success' ? 'check_circle' : 'error'}
+      </span>
+      {message}
+    </div>
+  );
+}
+
+// ── Navigation disclaimer ─────────────────────────────────────────────
+
+function NavigationDisclaimer({ waypoints, wasOptimised }: { waypoints: string[]; wasOptimised: boolean }) {
+  const hasStops = waypoints.length > 2;
+  return (
+    <div className="rounded-xl bg-surface-container-low/30 border border-outline-variant/10 px-3 py-2.5 mt-3">
+      <div className="text-[9px] uppercase tracking-widest text-outline font-label font-bold mb-1.5">
+        Optimised route
+      </div>
+      <p className="text-[10px] text-on-surface-variant leading-relaxed mono">
+        {waypoints.join(' → ')}
+      </p>
+      {hasStops && (
+        <p className="text-[9px] text-outline/70 mt-1.5 leading-relaxed">
+          Includes {waypoints.length - 2} intermediate stop{waypoints.length - 2 !== 1 ? 's' : ''}.
+          {wasOptimised && ' Stop order was optimised by LogiFlow.'}
+        </p>
+      )}
+      <p className="text-[9px] text-outline/60 mt-1 leading-relaxed italic">
+        LogiFlow sets the stop sequence · Google Maps chooses roads between stops
+      </p>
+    </div>
+  );
+}
+
+// ── Navigation action buttons ─────────────────────────────────────────
+
+function NavigationActions({
+  route,
+  isSelected,
+}: {
+  route: RoadRoute;
+  isSelected: boolean;
+}) {
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const navInfo = useMemo(() => getRouteNavigationInfo(route), [route]);
+
+  // Dev consistency check
+  useEffect(() => {
+    devAssertNavigationConsistency(route, navInfo);
+  }, [route, navInfo]);
+
+  const handleStartDriving = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!navInfo.isNavigable) return;
+    window.open(navInfo.mapsUrl, '_blank', 'noopener,noreferrer');
+  }, [navInfo]);
+
+  const handleShare = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!navInfo.isNavigable) return;
+    try {
+      await navigator.clipboard.writeText(navInfo.mapsUrl);
+      setToast({ message: 'Route link copied to clipboard.', kind: 'success' });
+    } catch {
+      setToast({ message: 'Unable to copy route link.', kind: 'error' });
+    }
+  }, [navInfo]);
+
+  const disabled = !navInfo.isNavigable;
+  const disabledTitle = 'Navigation unavailable — route waypoints missing.';
+
+  const drivingClass = [
+    'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200',
+    disabled
+      ? 'opacity-40 cursor-not-allowed bg-surface-container/40 text-outline border border-outline-variant/10'
+      : isSelected
+      ? 'bg-primary text-on-primary hover:bg-primary/90 shadow-[0_0_12px_rgba(172,199,255,0.25)] border border-primary/50'
+      : 'bg-surface-container/60 text-on-surface-variant hover:bg-primary/10 hover:text-primary border border-outline-variant/15',
+  ].join(' ');
+
+  const shareClass = [
+    'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200 border',
+    disabled
+      ? 'opacity-40 cursor-not-allowed bg-surface-container/40 text-outline border-outline-variant/10'
+      : isSelected
+      ? 'bg-surface-container/60 text-primary border-primary/30 hover:bg-primary/10'
+      : 'bg-surface-container/30 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container/60 hover:text-on-surface',
+  ].join(' ');
+
+  return (
+    <>
+      {toast && (
+        <Toast
+          message={toast.message}
+          kind={toast.kind}
+          onDone={() => setToast(null)}
+        />
+      )}
+
+      <div className="mt-3 pt-3 border-t border-outline-variant/8">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleStartDriving}
+            disabled={disabled}
+            title={disabled ? disabledTitle : `Start navigation in Google Maps`}
+            className={drivingClass}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+              navigation
+            </span>
+            Start Driving
+          </button>
+
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={disabled}
+            title={disabled ? disabledTitle : 'Copy route link to clipboard'}
+            className={shareClass}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+              share
+            </span>
+            Share Route
+          </button>
+
+          {navInfo.waypoints.length > 2 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setShowPreview(v => !v); }}
+              className="ml-auto text-[10px] text-outline hover:text-on-surface-variant transition-colors flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
+                {showPreview ? 'expand_less' : 'expand_more'}
+              </span>
+              {showPreview ? 'Hide' : 'Preview route'}
+            </button>
+          )}
+        </div>
+
+        {/* Route preview — shown on demand, always for multi-stop */}
+        {(showPreview || navInfo.waypoints.length > 2) && navInfo.isNavigable && (
+          <NavigationDisclaimer
+            waypoints={navInfo.waypoints}
+            wasOptimised={navInfo.wasStopOrderOptimised}
+          />
+        )}
+      </div>
+    </>
+  );
 }
 
 // ── Metric tile ───────────────────────────────────────────────────────
@@ -929,6 +1112,9 @@ function RouteCard({
             </>
           )}
         </div>
+
+        {/* Navigation actions — Start Driving + Share Route */}
+        <NavigationActions route={route} isSelected={isSelected} />
       </div>
     </div>
   );
@@ -1059,6 +1245,29 @@ export default function RouteResults() {
           })()}
         </div>
       </div>
+
+      {/* Final sequence banner — shown when multi-stop results have waypoints */}
+      {(() => {
+        const selectedWp = routes[safeIndex]?.waypoints;
+        const wasOptimised = routes[safeIndex]?.stop_order_optimised ?? false;
+        if (!selectedWp || selectedWp.length <= 2) return null;
+        return (
+          <div className="mb-4 rounded-xl border border-violet-500/20 bg-violet-500/5 px-3.5 py-3">
+            <div className="text-[9px] uppercase tracking-widest text-violet-400/70 font-label font-bold mb-1.5">
+              Final optimised stop sequence
+            </div>
+            <p className="text-[11px] text-on-surface-variant mono leading-relaxed">
+              {selectedWp.join(' → ')}
+            </p>
+            <p className="text-[9px] text-outline/60 mt-1.5 leading-relaxed">
+              {wasOptimised
+                ? 'Stop order was optimised by LogiFlow for better efficiency.'
+                : 'Stop order follows your input.'}{' '}
+              Google Maps handles road selection between stops.
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Cards column */}
