@@ -33,7 +33,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _warm_rail_data():
-    """Pre-load rail CSV so first compose on a new corridor is not blocked ~15s."""
+    """
+    Optional rail CSV preload. Disabled by default on Render free tier (512MB RAM).
+    Set RAIL_PRELOAD_ON_STARTUP=true when the instance has >=1GB memory.
+    """
+    import os
+
+    if os.getenv("RAIL_PRELOAD_ON_STARTUP", "").lower() not in ("1", "true", "yes"):
+        print("[startup] Rail preload skipped (set RAIL_PRELOAD_ON_STARTUP=true to enable)")
+        return
     try:
         from app.pipelines.rail.data_loader import load_data
 
