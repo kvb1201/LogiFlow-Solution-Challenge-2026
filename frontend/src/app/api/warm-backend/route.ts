@@ -24,12 +24,18 @@ export async function GET() {
   try {
     const res = await fetch(`${base}/health`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(120_000),
     });
     const elapsed_ms = Date.now() - started;
     const body = res.ok ? await res.json().catch(() => ({})) : null;
 
     if (res.ok) {
+      // Preload lightweight rail routes after wake (helps first map geometry request).
+      void fetch(`${base}/railway/stations`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(30_000),
+      }).catch(() => {});
+
       return NextResponse.json({ warmed: true, elapsed_ms, backend: base, health: body });
     }
 
