@@ -31,7 +31,7 @@ function citiesToStationRows(
 function useCitySearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
   const [results, setResults] = useState<{ name: string; lat?: number; lng?: number }[]>([]);
   const [loading, setLoading] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = useCallback(
     (query: string) => {

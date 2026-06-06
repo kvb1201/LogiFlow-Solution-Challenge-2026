@@ -67,13 +67,17 @@ class RoadPipeline(BasePipeline):
             traffic_variation = (distance % 50) / 300   # reduce artificial noise
             traffic_level = min(1.0, max(0.05, base_traffic + traffic_variation))
 
-            # Convert traffic_level → categorical (0/1/2)
-            if traffic_level < 0.4:
-                traffic_cat = 0
-            elif traffic_level < 0.7:
-                traffic_cat = 1
+            # Convert real-world traffic levels into categories expected by the ML model
+            # TomTom traffic values observed in production are typically ~0.05–0.30,
+            # so use tighter thresholds to preserve differentiation.
+            if traffic_level < 0.10:
+                traffic_cat = 0      # Clear
+            elif traffic_level < 0.20:
+                traffic_cat = 1      # Moderate
+            elif traffic_level < 0.35:
+                traffic_cat = 2      # Heavy
             else:
-                traffic_cat = 2
+                traffic_cat = 3      # Severe / Detour
 
             # Use pre-fetched weather (cached above), inject synthetic variation per-route
             temp = weather_base.get("temp", 30)
@@ -111,7 +115,7 @@ class RoadPipeline(BasePipeline):
                 weather,
                 utilization=utilization,
                 demand=demand,
-                traffic=traffic_level,
+                traffic=traffic_cat,
                 traffic_level=traffic_level,
             )
             print("ML OUTPUT:", traffic_f, weather_f)
@@ -463,7 +467,7 @@ class RoadPipeline(BasePipeline):
                 factors.append("Within budget constraint")
             if deadline is not None and route["time"] <= deadline:
                 factors.append("Meets delivery deadline")
-            factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            factors.append(f"Estimated risk level: {round(route['risk'] * 100)}%")
 
             delay = float(route.get("predicted_delay", 0.0))
             if delay > 2.0:
