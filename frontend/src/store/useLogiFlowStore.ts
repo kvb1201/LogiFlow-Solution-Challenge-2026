@@ -514,15 +514,20 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
-      const isNoRouteCase =
+      const isRailNoRouteCase =
         /no train routes found/i.test(msg) ||
         /no feasible routes found/i.test(msg) ||
         /route is not available right now/i.test(msg);
+      const isWaterNoRouteCase =
+        /no maritime routes found/i.test(msg) ||
+        /no water routes.*satisfy/i.test(msg);
       const friendlyNoRouteMessage =
         'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
+      const mode = opts?.mode || get().searchMode || 'rail';
       set({
-        // Preserve backend guidance (e.g., suggested station codes) when available.
-        error: isNoRouteCase ? (msg || friendlyNoRouteMessage) : msg,
+        searchMode: mode,
+        // Expected empty results: keep message for dedicated empty-state UI, not crash styling.
+        error: isRailNoRouteCase ? msg || friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         waterRoutes: [],
@@ -535,7 +540,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         constraintsApplied: null,
         routeMetadata: null,
       });
-      if (!isNoRouteCase) {
+      if (!isRailNoRouteCase && !isWaterNoRouteCase) {
         console.error('Optimize error:', err);
       }
     } finally {
