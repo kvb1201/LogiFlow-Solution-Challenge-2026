@@ -74,6 +74,12 @@ export type RoadRoute = {
     distance_km?: number;
     duration_minutes?: number;
   }>;
+  /**
+   * Stable route identifier emitted by the backend pipeline.
+   * Used to associate Start Driving / Share Route actions with a specific route
+   * for future Shipment Health, Route Lock, and Live Monitoring integration.
+   */
+  route_id?: string;
 };
 
 type RoadOptimizeResponse = {

@@ -560,6 +560,13 @@ export default function RoadInputForm() {
                 </button>
               </div>
 
+              {/* Helper text — always visible */}
+              <p className="text-[10px] text-outline leading-relaxed">
+                Add intermediate stops to create a multi-stop shipment route. You may add, remove,
+                or rearrange stops manually. Enable Auto-Optimise to let LogiFlow reorder stops for
+                better cost, time, and risk performance.
+              </p>
+
               {roadStops.length > 0 && (
                 <div className="space-y-1.5">
                   {roadStops.map((stop, idx) => (
@@ -586,7 +593,7 @@ export default function RoadInputForm() {
               )}
 
               {roadStops.length > 1 && (
-                <div className="flex items-center gap-2 pt-1">
+                <div className="space-y-1.5 pt-1">
                   <button
                     type="button"
                     onClick={() => setOptimizeStopOrder(!optimizeStopOrder)}
@@ -599,12 +606,17 @@ export default function RoadInputForm() {
                     <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
                       route
                     </span>
-                    Auto-optimise stop order
+                    Auto-Optimise stop order
                   </button>
-                  {optimizeStopOrder && (
-                    <span className="text-[9px] text-outline italic">
-                      Reorders stops by shortest path
-                    </span>
+                  {optimizeStopOrder ? (
+                    <p className="text-[9px] text-primary/70 leading-relaxed pl-0.5">
+                      LogiFlow may rearrange stop order to produce a more efficient route.
+                      The final sequence will be shown in results.
+                    </p>
+                  ) : (
+                    <p className="text-[9px] text-outline/60 leading-relaxed pl-0.5">
+                      Stops will be visited in the order you entered.
+                    </p>
                   )}
                 </div>
               )}
