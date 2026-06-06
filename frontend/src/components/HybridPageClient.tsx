@@ -10,6 +10,7 @@ import {
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import { CorridorRow } from '@/components/forms/pipeline-form-ui';
 import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
@@ -192,7 +193,15 @@ export default function HybridPageClient() {
         <form onSubmit={onSubmit}>
           {showForm && step === 0 && (
             <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
-              <div className="grid sm:grid-cols-2 gap-3">
+              <CorridorRow
+                accentVar="--hybrid"
+                swapDisabled={!source.trim() && !destination.trim()}
+                onSwap={() => {
+                  const t = source;
+                  setSource(destination);
+                  setDestination(t);
+                }}
+              >
                 <label className="block">
                   <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
                   <input
@@ -211,7 +220,7 @@ export default function HybridPageClient() {
                     className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-violet-400/40"
                   />
                 </label>
-              </div>
+              </CorridorRow>
               <div className="grid grid-cols-3 gap-3">
                 <label className="block">
                   <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>

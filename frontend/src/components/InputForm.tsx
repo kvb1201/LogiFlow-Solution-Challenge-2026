@@ -166,7 +166,7 @@ export default function InputForm() {
         }
       >
         <form id={LOGIFLOW_FORM_IDS.rail} onSubmit={handleSubmit} className="space-y-5">
-          <CorridorRow onSwap={swapCorridor}>
+          <CorridorRow onSwap={swapCorridor} accentVar="--rail">
             <FormAutocomplete
               label="Origin"
               value={source}
