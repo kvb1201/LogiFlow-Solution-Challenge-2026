@@ -1,0 +1,44 @@
+{
+  "delay_model": "gbm (scraped corpus)",
+  "model_kind": "gbm",
+  "training_rows": 15650,
+  "trained_at": "2026-06-06T02:00:20.008939Z",
+  "training_data": "ir_train_delays.csv",
+  "cv_metrics": {
+    "mae": 22.73,
+    "within_15_min_pct": 59.3,
+    "within_30_min_pct": 80.9
+  },
+  "date_backtests": [
+    { "holdout_date": "2026-06-03", "metrics": { "within_30_min_pct": 78.4 } },
+    { "holdout_date": "2026-06-04", "metrics": { "within_30_min_pct": 82.4 } },
+    { "holdout_date": "2026-06-05", "metrics": { "within_30_min_pct": 79.6 } }
+  ],
+  "quantifiers": [
+    {
+      "id": "cv_within_15",
+      "label": "±15 min CV hit rate",
+      "short_label": "CV ±15 min",
+      "value": 59.3,
+      "unit": "%",
+      "summary": "Share of CV folds where |predicted − actual| ≤ 15 min"
+    },
+    {
+      "id": "cv_within_30",
+      "label": "±30 min CV hit rate",
+      "short_label": "CV ±30 min",
+      "value": 80.9,
+      "unit": "%",
+      "summary": "Share of CV folds where |predicted − actual| ≤ 30 min"
+    },
+    {
+      "id": "backtest_within_30",
+      "label": "Past-date backtest",
+      "short_label": "Backtest ±30 min",
+      "value": 80.1,
+      "unit": "%",
+      "summary": "Mean ±30 min hit rate on held-out scraped run dates"
+    }
+  ],
+  "documentation_url": "/docs/rail-ml-pipeline.pdf"
+}

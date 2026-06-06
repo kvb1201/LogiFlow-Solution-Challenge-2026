@@ -525,3 +525,15 @@
     transform: translateX(120%);
   }
 }
+
+/* Railway corridor — always-visible city labels on intermediate stops */
+.leaflet-tooltip.logiflow-city-label {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--surface-container-high) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--outline-variant) 40%, transparent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+  pointer-events: none;
+}
