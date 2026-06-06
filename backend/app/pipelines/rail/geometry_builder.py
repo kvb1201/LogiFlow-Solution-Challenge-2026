@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from typing import Any
 
 from app.pipelines.rail.data_loader import get_station_name, get_train_route, get_trains_for_route
@@ -433,6 +434,7 @@ def _expected_leg_stop_count(train_no: str, from_u: str, to_u: str) -> int:
     return best
 
 
+@lru_cache(maxsize=256)
 def get_train_geometry_detail(train_no: str, from_station: str, to_station: str) -> dict[str, Any]:
     """Load from Supabase cache or compute, persist, and return enriched geometry."""
     from_u = (from_station or "").strip().upper()
@@ -441,9 +443,18 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
 
     cached = get_cached_geometry(tn, from_u, to_u)
     if cached and cached.get("geometry") and len(cached["geometry"]) >= 2:
-        expected = _expected_leg_stop_count(tn, from_u, to_u)
         cached_n = int(cached.get("point_count") or len(cached["geometry"]))
         cached_src = str(cached.get("source") or "").lower()
+        cached_stops = cached.get("stops") or []
+        # Trust rich corridor caches without re-scanning the 355k-row delay CSV.
+        if cached_n >= 2 and cached_stops and cached_src not in ("corridor_reference",):
+            return {
+                "geometry": cached["geometry"],
+                "stops": cached_stops,
+                "point_count": cached_n,
+                "source": cached.get("source") or "cache",
+            }
+        expected = _expected_leg_stop_count(tn, from_u, to_u)
         stale_sparse = expected >= 4 and cached_n < max(4, int(expected * 0.6))
         stale_dense = expected >= 2 and (
             cached_n > expected + 3 or cached_n > max(expected + 2, int(expected * 1.4))
@@ -453,7 +464,7 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
         if not stale:
             return {
                 "geometry": cached["geometry"],
-                "stops": cached.get("stops") or [],
+                "stops": cached_stops,
                 "point_count": cached_n,
                 "source": cached.get("source") or "cache",
             }

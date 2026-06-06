@@ -716,12 +716,34 @@ export interface RailModelInfo {
   error?: string;
 }
 
+const RAIL_ML_FALLBACK_URL = '/data/rail-ml-metrics.json';
+
+function hasQuantifierValues(info: RailModelInfo | null): boolean {
+  return Boolean(
+    info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
+  );
+}
+
+async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
+  const res = await fetch(RAIL_ML_FALLBACK_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Static ML metrics unavailable');
+  return res.json() as Promise<RailModelInfo>;
+}
+
 export async function fetchRailModelInfo(): Promise<RailModelInfo> {
-  const res = await fetch(`${BACKEND_BASE}/railway/model-info`, { cache: 'no-store' });
-  if (!res.ok) {
-    throw new Error(`Model info failed (${res.status})`);
+  try {
+    const res = await fetch(`${BACKEND_BASE}/railway/model-info`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) throw new Error(`Model info failed (${res.status})`);
+    const data = (await res.json()) as RailModelInfo;
+    if (hasQuantifierValues(data)) return data;
+    const fallback = await fetchRailModelInfoFallback();
+    return { ...fallback, ...data, quantifiers: fallback.quantifiers ?? data.quantifiers };
+  } catch {
+    return fetchRailModelInfoFallback();
   }
-  return res.json();
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
@@ -797,23 +819,38 @@ export interface TrainRouteGeometryResult {
   source?: string;
 }
 
+const GEOMETRY_FETCH_TIMEOUT_MS = 120_000;
+
 /** Fetch map polyline + labelled stops for one train leg. */
 export async function getTrainRouteGeometry(
   trainNumber: string,
   fromCode: string,
   toCode: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  attempt = 0
 ): Promise<TrainRouteGeometryResult> {
   try {
     const params = new URLSearchParams({
       from_code: fromCode.trim(),
       to_code: toCode.trim(),
     });
+    const timeoutSignal = AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS);
+    const combined =
+      signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
+
     const res = await fetch(
       `${BACKEND_BASE}/railway/trains/${encodeURIComponent(trainNumber)}/geometry?${params}`,
-      { signal }
+      { signal: combined }
     );
-    if (!res.ok) return { geometry: [], stops: [] };
+    if (!res.ok) {
+      if (attempt < 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return getTrainRouteGeometry(trainNumber, fromCode, toCode, signal, attempt + 1);
+      }
+      return { geometry: [], stops: [] };
+    }
     const data = (await res.json()) as {
       geometry?: [number, number][];
       stops?: RouteGeometryStop[];
@@ -824,9 +861,41 @@ export async function getTrainRouteGeometry(
       stops: Array.isArray(data.stops) ? data.stops : [],
       source: data.source,
     };
-  } catch {
+  } catch (err) {
+    if (attempt < 1 && !(err instanceof DOMException && err.name === 'AbortError')) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return getTrainRouteGeometry(trainNumber, fromCode, toCode, signal, attempt + 1);
+    }
     return { geometry: [], stops: [] };
   }
+}
+
+/** Resolve station coords for segment endpoints when geometry API is unavailable. */
+async function fallbackLegGeometry(
+  fromCode: string,
+  toCode: string,
+  fromName?: string,
+  toName?: string
+): Promise<TrainRouteGeometryResult> {
+  const [fromInfo, toInfo] = await Promise.all([
+    getStationInfo(fromCode),
+    getStationInfo(toCode),
+  ]);
+  if (!fromInfo?.lat || !toInfo?.lat) return { geometry: [], stops: [] };
+
+  const fromCity = fromName || fromInfo.name || fromCode;
+  const toCity = toName || toInfo.name || toCode;
+  return {
+    geometry: [
+      [fromInfo.lng, fromInfo.lat],
+      [toInfo.lng, toInfo.lat],
+    ],
+    stops: [
+      { code: fromCode, name: fromCity, city: fromCity, lng: fromInfo.lng, lat: fromInfo.lat },
+      { code: toCode, name: toCity, city: toCity, lng: toInfo.lng, lat: toInfo.lat },
+    ],
+    source: 'segment_fallback',
+  };
 }
 
 function mergeGeometryLegs(legs: TrainRouteGeometryResult[]): TrainRouteGeometryResult {
@@ -860,20 +929,33 @@ export async function buildTrainCorridorGeometry(
 ): Promise<TrainRouteGeometryResult> {
   if (!segments.length) return { geometry: [], stops: [] };
 
-  const legRequests = segments
-    .map((seg) => {
+  const legs = await Promise.all(
+    segments.map(async (seg) => {
       const from = (seg.from || '').trim();
       const to = (seg.to || '').trim();
       const tno = (seg.train_no || trainNumber || '').trim();
-      if (!from || !to || !tno) return null;
-      return getTrainRouteGeometry(tno, from, to, signal);
+      if (!from || !to || !tno) return { geometry: [], stops: [] } as TrainRouteGeometryResult;
+
+      const primary = await getTrainRouteGeometry(tno, from, to, signal);
+      if (primary.geometry.length >= 2) return primary;
+      return fallbackLegGeometry(from, to, seg.from_name, seg.to_name);
     })
-    .filter((req): req is Promise<TrainRouteGeometryResult> => req !== null);
+  );
 
-  if (!legRequests.length) return { geometry: [], stops: [] };
-
-  const legs = await Promise.all(legRequests);
-  return mergeGeometryLegs(legs);
+  const merged = mergeGeometryLegs(legs);
+  if (merged.geometry.length >= 2) return merged;
+  return mergeGeometryLegs(
+    await Promise.all(
+      segments.map((seg) =>
+        fallbackLegGeometry(
+          (seg.from || '').trim(),
+          (seg.to || '').trim(),
+          seg.from_name,
+          seg.to_name
+        )
+      )
+    )
+  );
 }
 
 export async function getStationInfo(stationCode: string): Promise<StationInfo | null> {

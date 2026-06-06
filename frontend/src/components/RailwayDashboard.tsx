@@ -15,6 +15,7 @@ import {
   type RankedOption,
   type RouteGeometryStop,
 } from '@/services/api';
+import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   formatRailDataSource,
   formatRailDelaySource,
@@ -630,7 +631,8 @@ export default function RailwayDashboard() {
 
     setGeometryLoading(true);
 
-    void buildTrainCorridorGeometry(trainNo, segments, controller.signal)
+    void ensureBackendWarm(120_000)
+      .then(() => buildTrainCorridorGeometry(trainNo, segments, controller.signal))
       .then((result) => {
         if (controller.signal.aborted) return;
         setRouteGeometry(result.geometry.length >= 2 ? result.geometry : null);
