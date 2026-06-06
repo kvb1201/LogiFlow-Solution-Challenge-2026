@@ -7,6 +7,7 @@ import AiBriefPanel from '@/components/AiBriefPanel';
 import {
   AdvancedToggle,
   ChoicePills,
+  CorridorRow,
   FormField,
   FormShell,
   FormSubmit,
@@ -92,7 +93,15 @@ export default function AirInputForm() {
             runAirOptimize();
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <CorridorRow
+            accentVar="--air"
+            swapDisabled={!source.trim() && !destination.trim()}
+            onSwap={() => {
+              const t = source;
+              setSource(destination);
+              setDestination(t);
+            }}
+          >
             <FormField label="Origin city">
               <input
                 type="text"
@@ -111,7 +120,7 @@ export default function AirInputForm() {
                 className={formInputClass}
               />
             </FormField>
-          </div>
+          </CorridorRow>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <FormField label="Weight">

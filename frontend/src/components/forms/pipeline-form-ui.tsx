@@ -224,19 +224,51 @@ export function FormSubmit({
   );
 }
 
-export function CorridorRow({ children, onSwap }: { children: ReactNode; onSwap?: () => void }) {
+export function CorridorSwapButton({
+  onClick,
+  disabled,
+  accentVar,
+  className = '',
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  accentVar?: string;
+  className?: string;
+}) {
   return (
-    <div className="relative grid gap-4 md:grid-cols-2">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Swap origin and destination"
+      className={`absolute left-1/2 top-1/2 z-10 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground shadow-md transition-all duration-200 hover:scale-105 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+    >
+      <span
+        className="material-symbols-outlined text-base leading-none"
+        style={accentVar ? { color: `var(${accentVar})` } : undefined}
+      >
+        swap_horiz
+      </span>
+    </button>
+  );
+}
+
+export function CorridorRow({
+  children,
+  onSwap,
+  swapDisabled,
+  accentVar,
+}: {
+  children: ReactNode;
+  onSwap?: () => void;
+  swapDisabled?: boolean;
+  accentVar?: string;
+}) {
+  return (
+    <div className="relative grid grid-cols-1 gap-4 md:grid-cols-2">
       {children}
       {onSwap ? (
-        <button
-          type="button"
-          onClick={onSwap}
-          className="absolute bottom-3 left-1/2 z-10 hidden h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground transition-all duration-200 hover:scale-105 hover:text-foreground md:bottom-[18px] md:flex"
-          aria-label="Swap origin and destination"
-        >
-          <span className="material-symbols-outlined text-base">swap_horiz</span>
-        </button>
+        <CorridorSwapButton onClick={onSwap} disabled={swapDisabled} accentVar={accentVar} />
       ) : null}
     </div>
   );
