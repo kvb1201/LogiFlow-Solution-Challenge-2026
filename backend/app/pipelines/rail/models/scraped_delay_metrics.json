@@ -1,0 +1,208 @@
+{
+  "model_path": "/Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/backend/app/pipelines/rail/models/scraped_delay_model.pkl",
+  "level": "train_day",
+  "model_kind": "gbm",
+  "cv_metrics": {
+    "mae": 22.727655310992297,
+    "rmse": 53.552833756853396,
+    "r2": 0.1709290904002323,
+    "n_samples": 15650,
+    "within_15_min_pct": 59.284345047923324,
+    "within_30_min_pct": 80.90734824281151
+  },
+  "date_backtests": [
+    {
+      "holdout_date": "2026-06-03",
+      "metrics": {
+        "mae": 23.80438311646481,
+        "rmse": 50.43041735031007,
+        "r2": 0.256209604012379,
+        "n_samples": 5197,
+        "within_15_min_pct": 56.2055031749086,
+        "within_30_min_pct": 78.39137964210121
+      },
+      "sample_predictions": [
+        {
+          "train_number": "00290",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 5.3,
+          "error_min": 5.3
+        },
+        {
+          "train_number": "01011",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 9.0,
+          "error_min": 9.0
+        },
+        {
+          "train_number": "01119",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 41.3,
+          "error_min": 41.3
+        },
+        {
+          "train_number": "01120",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 41.3,
+          "error_min": 41.3
+        },
+        {
+          "train_number": "01122",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 4.1,
+          "error_min": 4.1
+        },
+        {
+          "train_number": "01442",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 1.4,
+          "error_min": 1.4
+        },
+        {
+          "train_number": "01705",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 0.0,
+          "error_min": 0.0
+        },
+        {
+          "train_number": "01706",
+          "actual_delay_min": 325.0,
+          "predicted_delay_min": 45.8,
+          "error_min": 279.2
+        }
+      ]
+    },
+    {
+      "holdout_date": "2026-06-04",
+      "metrics": {
+        "mae": 22.95510198644501,
+        "rmse": 63.199017681543395,
+        "r2": 0.13409359130715226,
+        "n_samples": 5513,
+        "within_15_min_pct": 62.8877199346998,
+        "within_30_min_pct": 82.40522401596228
+      },
+      "sample_predictions": [
+        {
+          "train_number": "00290",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 0.0,
+          "error_min": 0.0
+        },
+        {
+          "train_number": "01011",
+          "actual_delay_min": 467.0,
+          "predicted_delay_min": 50.3,
+          "error_min": 416.7
+        },
+        {
+          "train_number": "01119",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 27.9,
+          "error_min": 27.9
+        },
+        {
+          "train_number": "01120",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 27.9,
+          "error_min": 27.9
+        },
+        {
+          "train_number": "01122",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 15.9,
+          "error_min": 15.9
+        },
+        {
+          "train_number": "01442",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 5.6,
+          "error_min": 5.6
+        },
+        {
+          "train_number": "01705",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 6.9,
+          "error_min": 6.9
+        },
+        {
+          "train_number": "01706",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 6.9,
+          "error_min": 6.9
+        }
+      ]
+    },
+    {
+      "holdout_date": "2026-06-05",
+      "metrics": {
+        "mae": 23.396231405309862,
+        "rmse": 45.461245867850444,
+        "r2": 0.05429453665003725,
+        "n_samples": 4940,
+        "within_15_min_pct": 56.94331983805668,
+        "within_30_min_pct": 79.61538461538461
+      },
+      "sample_predictions": [
+        {
+          "train_number": "00290",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 8.7,
+          "error_min": 8.7
+        },
+        {
+          "train_number": "01011",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 4.0,
+          "error_min": 4.0
+        },
+        {
+          "train_number": "01119",
+          "actual_delay_min": 476.0,
+          "predicted_delay_min": 14.8,
+          "error_min": 461.2
+        },
+        {
+          "train_number": "01120",
+          "actual_delay_min": 240.0,
+          "predicted_delay_min": 14.8,
+          "error_min": 225.2
+        },
+        {
+          "train_number": "01122",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 4.7,
+          "error_min": 4.7
+        },
+        {
+          "train_number": "01442",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 11.2,
+          "error_min": 11.2
+        },
+        {
+          "train_number": "01705",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 5.2,
+          "error_min": 5.2
+        },
+        {
+          "train_number": "01706",
+          "actual_delay_min": 0.0,
+          "predicted_delay_min": 5.2,
+          "error_min": 5.2
+        }
+      ]
+    }
+  ],
+  "meets_goal": false,
+  "feature_cols": [
+    "stations_on_run",
+    "route_distance_km",
+    "train_type",
+    "scheduled_hour",
+    "day_of_week"
+  ],
+  "trained_at": "2026-06-06T02:00:20.008939Z",
+  "training_rows": 15650
+}

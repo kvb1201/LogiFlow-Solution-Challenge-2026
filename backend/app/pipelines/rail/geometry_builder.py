@@ -152,15 +152,22 @@ def _normalize_route_leg(route_leg: list[dict]) -> list[dict]:
     return out
 
 
-def _build_geometry_detail(route_leg: list[dict], max_points: int = 50) -> dict[str, Any]:
+def _build_geometry_detail(route_leg: list[dict], max_points: int | None = None) -> dict[str, Any]:
+    """
+    Build polyline + labelled stops for a schedule leg.
+
+    max_points=None keeps every intermediate station on the map (A→B corridor).
+    Downsampling only applies when max_points is set and the leg exceeds it.
+    """
     leg = _normalize_route_leg(route_leg)
     if len(leg) < 2:
         return {"geometry": [], "stops": [], "point_count": 0, "source": "empty"}
 
-    if len(leg) > max_points:
+    cap = 200 if max_points is None else max_points
+    if cap and len(leg) > cap:
         idx = [0]
-        step = (len(leg) - 1) / float(max_points - 1)
-        for i in range(1, max_points - 1):
+        step = (len(leg) - 1) / float(cap - 1)
+        for i in range(1, cap - 1):
             idx.append(int(round(i * step)))
         idx.append(len(leg) - 1)
         leg = [leg[i] for i in sorted(set(idx))]
@@ -320,6 +327,34 @@ def _compute_geometry(train_no: str, from_u: str, to_u: str) -> dict[str, Any]:
     return {"geometry": [], "stops": [], "point_count": 0, "source": "empty"}
 
 
+def _expected_leg_stop_count(train_no: str, from_u: str, to_u: str) -> int:
+    """Stops on the schedule slice between from_u and to_u (for cache freshness)."""
+    from app.pipelines.rail.railradar_client import get_train_data
+
+    data = get_train_data(train_no, data_type="static")
+    if not data or "train" not in data or not data["train"].get("route"):
+        raw = get_train_route(train_no)
+        route = [
+            {
+                "station_code": s["station_code"],
+                "station_name": s.get("station_name", ""),
+                "distance": s.get("distance", 0),
+            }
+            for s in raw
+        ]
+    else:
+        route = data["train"]["route"]
+
+    if len(route) < 2:
+        return 0
+    start, end = _find_route_indices(route, from_u, to_u)
+    if start < 0 or end < 0 or start > end:
+        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
+    if start < 0 or end < start:
+        return 0
+    return end - start + 1
+
+
 def get_train_geometry_detail(train_no: str, from_station: str, to_station: str) -> dict[str, Any]:
     """Load from Supabase cache or compute, persist, and return enriched geometry."""
     from_u = (from_station or "").strip().upper()
@@ -328,12 +363,16 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
 
     cached = get_cached_geometry(tn, from_u, to_u)
     if cached and cached.get("geometry") and len(cached["geometry"]) >= 2:
-        return {
-            "geometry": cached["geometry"],
-            "stops": cached.get("stops") or [],
-            "point_count": cached.get("point_count") or len(cached["geometry"]),
-            "source": cached.get("source") or "cache",
-        }
+        expected = _expected_leg_stop_count(tn, from_u, to_u)
+        cached_n = int(cached.get("point_count") or len(cached["geometry"]))
+        stale = expected >= 4 and cached_n < max(4, int(expected * 0.6))
+        if not stale:
+            return {
+                "geometry": cached["geometry"],
+                "stops": cached.get("stops") or [],
+                "point_count": cached_n,
+                "source": cached.get("source") or "cache",
+            }
 
     detail = _compute_geometry(tn, from_u, to_u)
     if detail.get("point_count", 0) >= 2:

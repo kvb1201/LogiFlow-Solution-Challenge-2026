@@ -68,6 +68,10 @@ build-station-coords:
 build-station-coords-geocode:
 	cd backend && PYTHONUNBUFFERED=1 ./venv/bin/python -u scripts/build_station_coords_cache.py --geocode-missing --workers 6 --log-every 25
 
+# Train delay predictor on scraped ir_train_delays.csv (k-fold CV + date backtest)
+train-delay-ml:
+	cd backend && ./venv/bin/python scripts/train_delay_ml.py
+
 # Run backend only
 dev-backend:
 	@echo "⚙️ Starting Backend (FastAPI)..."
