@@ -1,4 +1,5 @@
 
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -31,7 +32,7 @@ def optimize_water(payload: WaterPayload):
 
         pipeline = WaterPipeline()
         context = RequestContext()
-        return pipeline.generate(
+        results = pipeline.generate(
             payload.source,
             payload.destination,
             {
@@ -42,8 +43,14 @@ def optimize_water(payload: WaterPayload):
             },
             context=context,
         )
+        if isinstance(results, dict) and results.get("status") == "no_routes":
+            raise HTTPException(status_code=400, detail=results.get("message", "No water routes found"))
+        return results
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @water_router.get("/health")

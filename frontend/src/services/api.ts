@@ -632,6 +632,17 @@ export type WaterRoute = {
   delay_prob?: number;
   reliability_score?: number;
   notes?: string;
+  // Cost breakdown (populated by engineer.py Item #2)
+  cost_breakdown?: {
+    sea_freight?: number;
+    road_drayage?: number;
+    port_fees?: number;
+    transshipment_fees?: number;
+    regional_surcharge?: number;
+  };
+  // Route insight (populated by engineer.py Item #3)
+  reason?: string;
+  key_factors?: string[];
 };
 
 export type WaterPayload = {
@@ -655,8 +666,17 @@ export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRout
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Water optimize failed (${res.status}): ${text}`);
+    let detail = '';
+    const rawBody = await res.text();
+    try {
+      const data = rawBody ? JSON.parse(rawBody) : null;
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      detail = rawBody.trim();
+    }
+    throw new Error(detail || `Water optimize failed (${res.status})`);
   }
   return res.json();
 }

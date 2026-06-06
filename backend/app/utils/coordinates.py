@@ -27,6 +27,11 @@ def get_coords(name, context=None):
     return geocode_latlng(str(name), context=context)
 
 
+def get_coords_or_none(name, context=None):
+    """Backward-compatible alias used by the water pipeline."""
+    return get_coords(name, context=context)
+
+
 def get_dynamic_midpoint(source: str, destination: str):
     """Geographical midpoint between two cities (for water/road fallbacks)."""
     key = f"{source}-{destination}"
