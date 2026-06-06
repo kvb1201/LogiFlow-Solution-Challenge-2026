@@ -72,6 +72,9 @@ build-station-coords-geocode:
 train-delay-ml:
 	cd backend && ./venv/bin/python scripts/train_delay_ml.py
 
+rail-ml-doc:
+	cd backend && ./venv/bin/python scripts/generate_rail_ml_pdf.py
+
 # Run backend only
 dev-backend:
 	@echo "⚙️ Starting Backend (FastAPI)..."

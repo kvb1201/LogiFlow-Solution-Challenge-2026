@@ -8,12 +8,12 @@ export default function RailwayLoading() {
   const [phase, setPhase] = useState(0);
 
   const phases = [
-    'Connecting to RailRadar...',
-    'Fetching live schedule data...',
-    'Running topological analysis...',
-    'Scoring routes by priority...',
-    'Building delay predictions...',
-    'Finalizing results...',
+    'Loading Indian Railways schedules...',
+    'Building corridor candidates...',
+    'Running LogiFlow feature engineering...',
+    'Scoring routes by your priority...',
+    'Applying ML delay predictions...',
+    'Finalizing recommendations...',
   ];
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function RailwayLoading() {
             {phases[phase]}
           </p>
           <p className="text-[10px] text-primary/60 tracking-[0.2em] uppercase font-semibold">
-            RailRadar Pipeline Active
+            LogiFlow Rail Pipeline
           </p>
         </div>
 
@@ -98,21 +98,6 @@ export default function RailwayLoading() {
             />
           </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-white/5">
-            <div className="text-center">
-              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">API Latency</div>
-              <div className="text-[10px] mono text-on-surface font-semibold">4.2ms</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">ML Model</div>
-              <div className="text-[10px] mono text-tertiary font-semibold">ACTIVE</div>
-            </div>
-            <div className="text-center">
-              <div className="text-[9px] text-outline uppercase tracking-widest mb-0.5 font-label">Source</div>
-              <div className="text-[10px] mono text-on-surface font-semibold">IRCA</div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

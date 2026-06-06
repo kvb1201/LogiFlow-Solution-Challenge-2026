@@ -1,6 +1,6 @@
 /**
  * API service for the LogiFlow Railway Cargo Decision Engine.
- * Connects to the FastAPI backend and RailRadar API.
+ * Connects to the LogiFlow FastAPI backend.
  */
 
 const BACKEND_BASE = '/api';
@@ -62,6 +62,8 @@ export interface DelayInfo {
   max_delay_minutes?: number;
   stations_measured?: number;
   delay_data_source: string;
+  /** Raw ML prediction before scenario scaling (simulation mode only). */
+  ml_baseline_minutes?: number;
 }
 
 export interface Recommendation {
@@ -130,6 +132,22 @@ export interface RouteSegment {
   running_days?: string[];
 }
 
+export interface RailSimulationPayload {
+  origin_city: string;
+  destination_city: string;
+  cargo_weight_kg: number;
+  cargo_type: string;
+  priority: string;
+  weather: {
+    temp: number;
+    rain: number;
+    condition: string;
+  };
+  congestion_level: number;
+  season: string;
+  departure_hour: number;
+}
+
 export interface OptimizeResult {
   cheapest: Recommendation;
   fastest: Recommendation;
@@ -146,6 +164,8 @@ export interface OptimizeResult {
     total_routes_found: number;
     feasible_routes: number;
     data_source: string;
+    simulation?: boolean;
+    simulation_params?: Record<string, unknown>;
   };
 }
 
@@ -374,6 +394,28 @@ export async function optimizeCargoRoute(payload: CargoPayload): Promise<Optimiz
       detail = rawBody.trim();
     }
     throw new Error(detail || `Optimize failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function simulateCargoRoute(payload: RailSimulationPayload) {
+  const res = await fetch(`${BACKEND_BASE}/railway/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = '';
+    const rawBody = await res.text();
+    try {
+      const data = rawBody ? JSON.parse(rawBody) : null;
+      if (data && typeof data === 'object' && 'detail' in data) {
+        detail = String((data as { detail?: unknown }).detail ?? '').trim();
+      }
+    } catch {
+      detail = rawBody.trim();
+    }
+    throw new Error(detail || `Simulation failed (${res.status})`);
   }
   return res.json();
 }
@@ -615,6 +657,45 @@ export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRout
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Water optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export interface RailMlQuantifier {
+  id: string;
+  label: string;
+  short_label: string;
+  value: number | null;
+  unit: string;
+  summary: string;
+  derivation: string;
+}
+
+export interface RailModelInfo {
+  delay_model?: string;
+  models_loaded?: boolean;
+  training_data?: string;
+  training_rows?: number;
+  model_kind?: string;
+  cv_metrics?: {
+    mae?: number;
+    rmse?: number;
+    r2?: number;
+    within_15_min_pct?: number;
+    within_30_min_pct?: number;
+    n_samples?: number;
+  };
+  quantifiers?: RailMlQuantifier[];
+  documentation_url?: string;
+  trained_at?: string;
+  meets_accuracy_goal?: boolean;
+  error?: string;
+}
+
+export async function fetchRailModelInfo(): Promise<RailModelInfo> {
+  const res = await fetch(`${BACKEND_BASE}/railway/model-info`, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Model info failed (${res.status})`);
   }
   return res.json();
 }
