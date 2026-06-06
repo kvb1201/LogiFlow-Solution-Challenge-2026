@@ -16,6 +16,14 @@ import {
   LOGIFLOW_FORM_IDS,
   formInputClass,
 } from '@/components/forms/pipeline-form-ui';
+import {
+  DEFAULT_RAIL_SIMULATION,
+  RAIL_SEASON_OPTIONS,
+  RAIL_SIMULATION_PRESETS,
+  type RailSeason,
+  type RailSimulationParams,
+  type RailWeatherCondition,
+} from '@/lib/railSimulation';
 
 function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
   const [results, setResults] = useState<StationSearchResult[]>([]);
@@ -88,10 +96,34 @@ export default function InputForm() {
   const destSearch = useStationSearch(setStationSuggestions);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [simulationMode, setSimulationMode] = useState(false);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [simParams, setSimParams] = useState<RailSimulationParams>(DEFAULT_RAIL_SIMULATION);
+
+  const updateSim = useCallback(
+    (
+      patch: Omit<Partial<RailSimulationParams>, 'weather'> & {
+        weather?: Partial<RailSimulationParams['weather']>;
+      }
+    ) => {
+      setSimParams((prev) => ({
+        ...prev,
+        ...patch,
+        weather: patch.weather ? { ...prev.weather, ...patch.weather } : prev.weather,
+      }));
+      setActivePreset(null);
+    },
+    []
+  );
+
   const runRailOptimize = useCallback(() => {
     if (!source.trim() || !destination.trim()) return;
-    handleOptimize();
-  }, [source, destination, handleOptimize]);
+    handleOptimize({
+      mode: 'rail',
+      simulation_mode: simulationMode,
+      rail_simulation: simulationMode ? simParams : undefined,
+    });
+  }, [source, destination, handleOptimize, simulationMode, simParams]);
 
   useShipmentAutorun('rail', runRailOptimize, Boolean(source.trim() && destination.trim()));
 
@@ -113,7 +145,7 @@ export default function InputForm() {
       <FormShell
         mode="rail"
         title="Route search"
-        subtitle="RailRadar · live Indian Railways data"
+        subtitle="LogiFlow · real Indian Railways data"
         advancedToggle={
           <AdvancedToggle
             open={showAdvanced}
@@ -126,8 +158,8 @@ export default function InputForm() {
             formId={LOGIFLOW_FORM_IDS.rail}
             loading={loading}
             disabled={!source.trim() || !destination.trim()}
-            label="Optimize route"
-            loadingLabel="Finding routes…"
+            label={simulationMode ? 'Run simulation' : 'Optimize route'}
+            loadingLabel={simulationMode ? 'Simulating…' : 'Finding routes…'}
             accentVar="--rail"
             icon="train"
           />
@@ -242,6 +274,145 @@ export default function InputForm() {
                 className="w-full"
               />
             </FormField>
+          </div>
+
+          <div className="mt-2 border border-outline-variant/20 rounded-xl p-4 bg-surface-container-lowest/30">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold text-on-surface-variant uppercase">
+                Simulation Mode
+              </span>
+              <input
+                type="checkbox"
+                checked={simulationMode}
+                onChange={(e) => setSimulationMode(e.target.checked)}
+              />
+            </div>
+
+            {simulationMode && (
+              <>
+                <div className="mb-4">
+                  <label className="text-[11px] text-on-surface-variant mb-2 block">
+                    Scenario Presets
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {RAIL_SIMULATION_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setSimulationMode(true);
+                          setActivePreset(preset.name);
+                          setSimParams(preset.params);
+                        }}
+                        className={`px-3 py-1.5 text-xs rounded-lg border transition ${
+                          activePreset === preset.name
+                            ? 'bg-rail/20 border-rail text-rail'
+                            : 'border-outline-variant/20 bg-surface-container hover:bg-rail/10'
+                        }`}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <FormField label="Season">
+                  <ChoicePills
+                    options={RAIL_SEASON_OPTIONS.map((s) => ({
+                      value: s.value,
+                      label: s.label,
+                      icon: 'calendar_month',
+                    }))}
+                    value={simParams.season}
+                    onChange={(v) => updateSim({ season: v as RailSeason })}
+                    accentVar="--rail"
+                  />
+                </FormField>
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    label={`Yard congestion · ${Math.round(simParams.congestion_level * 100)}%`}
+                  >
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={simParams.congestion_level}
+                      onChange={(e) =>
+                        updateSim({ congestion_level: Number(e.target.value) })
+                      }
+                      className="w-full"
+                    />
+                  </FormField>
+                  <FormField label={`Departure hour · ${simParams.departure_hour}:00`}>
+                    <input
+                      type="range"
+                      min={0}
+                      max={23}
+                      step={1}
+                      value={simParams.departure_hour}
+                      onChange={(e) =>
+                        updateSim({ departure_hour: Number(e.target.value) })
+                      }
+                      className="w-full"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <FormField label={`Rain · ${simParams.weather.rain} mm`}>
+                    <input
+                      type="range"
+                      min={0}
+                      max={60}
+                      step={1}
+                      value={simParams.weather.rain}
+                      onChange={(e) =>
+                        updateSim({
+                          weather: { rain: Number(e.target.value) },
+                        })
+                      }
+                      className="w-full"
+                    />
+                  </FormField>
+                  <FormField label={`Temperature · ${simParams.weather.temp}°C`}>
+                    <input
+                      type="range"
+                      min={5}
+                      max={45}
+                      step={1}
+                      value={simParams.weather.temp}
+                      onChange={(e) =>
+                        updateSim({
+                          weather: { temp: Number(e.target.value) },
+                        })
+                      }
+                      className="w-full"
+                    />
+                  </FormField>
+                  <FormField label="Weather condition">
+                    <select
+                      value={simParams.weather.condition}
+                      onChange={(e) =>
+                        updateSim({
+                          weather: {
+                            condition: e.target.value as RailWeatherCondition,
+                          },
+                        })
+                      }
+                      className={formInputClass}
+                    >
+                      <option value="Clear">Clear</option>
+                      <option value="Clouds">Clouds</option>
+                      <option value="Fog">Fog</option>
+                      <option value="Rain">Rain</option>
+                      <option value="Thunderstorm">Thunderstorm</option>
+                    </select>
+                  </FormField>
+                </div>
+              </>
+            )}
           </div>
         </form>
       </FormShell>

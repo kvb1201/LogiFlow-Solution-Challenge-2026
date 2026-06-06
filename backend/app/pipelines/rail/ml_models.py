@@ -446,29 +446,43 @@ def get_model_info():
         bundle = load_scraped_model_bundle()
         metrics = load_metrics()
         if bundle:
+            from app.pipelines.rail.ml_quantifiers import (
+                DOC_PDF_URL,
+                build_rail_ml_quantifiers,
+            )
+
+            merged = dict(metrics or {})
+            merged.setdefault("training_rows", bundle.get("training_rows"))
             return {
                 "delay_model": f"{bundle.get('model_kind', 'hist')} (scraped corpus)",
                 "duration_model": "GradientBoostingRegressor" if _duration_model else "heuristic",
                 "models_loaded": True,
                 "training_data": bundle.get("data_source", "ir_train_delays.csv"),
                 "features": bundle.get("feature_cols", []),
-                "cv_metrics": (metrics or {}).get("cv_metrics"),
-                "date_backtests": (metrics or {}).get("date_backtests"),
-                "meets_accuracy_goal": (metrics or {}).get("meets_goal"),
+                "cv_metrics": merged.get("cv_metrics"),
+                "date_backtests": merged.get("date_backtests"),
+                "meets_accuracy_goal": merged.get("meets_goal"),
                 "trained_at": bundle.get("trained_at"),
                 "training_rows": bundle.get("training_rows"),
+                "model_kind": bundle.get("model_kind"),
+                "quantifiers": build_rail_ml_quantifiers(merged),
+                "documentation_url": DOC_PDF_URL,
             }
     except Exception:
         pass
+
+    from app.pipelines.rail.ml_quantifiers import DOC_PDF_URL, build_rail_ml_quantifiers
 
     return {
         "delay_model": "GradientBoostingRegressor" if _delay_model else "None",
         "duration_model": "GradientBoostingRegressor" if _duration_model else "None",
         "models_loaded": _models_loaded,
-        "training_data": "RailRadar API real delays + CSV features",
+        "training_data": "ir_train_delays.csv scraped corpus + schedule features",
         "features": [
             "num_stops", "total_distance", "avg_stop_spacing",
             "junction_count", "departure_hour", "distance_per_stop",
             "is_long_distance", "train_type", "scheduled_duration"
         ],
+        "quantifiers": build_rail_ml_quantifiers(None),
+        "documentation_url": DOC_PDF_URL,
     }

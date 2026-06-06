@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   optimizeCargoRoute,
+  simulateCargoRoute,
   optimizeAirRoute,
   getLiveTrainMap,
   getStationInfo,
@@ -21,6 +22,11 @@ import {
   type ParsedIntent,
 } from '@/services/api';
 import { buildIntentPatch } from '@/lib/applyParsedIntent';
+import {
+  railSimulateToOptimizeResult,
+  type RailSimulationParams,
+  type RailSimulateResult,
+} from '@/lib/railSimulation';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -121,7 +127,7 @@ export interface LogiFlowState {
   /** Train focused from map live dots (for live panel) */
   mapFocusedTrainNumber: string | null;
 
-  /** Latest autocomplete results (RailRadar search) */
+  /** Latest autocomplete results (station search) */
   stationSuggestions: StationSearchResult[];
   setStationSuggestions: (rows: StationSearchResult[]) => void;
 
@@ -162,15 +168,18 @@ export interface LogiFlowState {
     avoidHighways?: boolean;
     trafficAware?: boolean;
     simulation_mode?: boolean;
+    /** Road-only simulation knobs */
     simulation?: {
       traffic_level: number;
       weather_level: number;
       incident_count: number;
     };
+    /** Rail-only simulation knobs */
+    rail_simulation?: RailSimulationParams;
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
-  /** Load RailRadar delay + live for a train (route card or map) */
+  /** Load live delay + status for a train (route card or map) */
   fetchTrainDelayAndLive: (trainNumber: string) => Promise<void>;
   setMapFocusedTrain: (trainNumber: string | null) => void;
   resetSearch: () => void;
@@ -437,16 +446,33 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         return;
       }
 
-      const result = await optimizeCargoRoute({
-        origin_city: source.trim(),
-        destination_city: destination.trim(),
-        cargo_weight_kg: cargoWeight,
-        cargo_type: cargoType,
-        budget_max_inr: budgetMax,
-        deadline_hours: deadlineHours,
-        priority,
-        departure_date: departureDate,
-      });
+      let result: OptimizeResult;
+
+      if (opts?.simulation_mode && opts.rail_simulation) {
+        const sim = (await simulateCargoRoute({
+          origin_city: source.trim(),
+          destination_city: destination.trim(),
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          priority,
+          weather: opts.rail_simulation.weather,
+          congestion_level: opts.rail_simulation.congestion_level,
+          season: opts.rail_simulation.season,
+          departure_hour: opts.rail_simulation.departure_hour,
+        })) as RailSimulateResult;
+        result = railSimulateToOptimizeResult(sim, priority);
+      } else {
+        result = await optimizeCargoRoute({
+          origin_city: source.trim(),
+          destination_city: destination.trim(),
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          budget_max_inr: budgetMax,
+          deadline_hours: deadlineHours,
+          priority,
+          departure_date: departureDate,
+        });
+      }
 
       set({
         searchMode: 'rail',

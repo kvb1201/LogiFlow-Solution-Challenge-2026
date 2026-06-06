@@ -6,6 +6,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
+import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import {
   buildTrainCorridorGeometry,
@@ -14,6 +15,12 @@ import {
   type RankedOption,
   type RouteGeometryStop,
 } from '@/services/api';
+import {
+  formatRailDataSource,
+  formatRailDelaySource,
+  isLogiFlowMlDelaySource,
+  isLogiFlowVerifiedDelaySource,
+} from '@/lib/rail-branding';
 
 const RailwayMap = dynamic(() => import('@/components/Map'), { ssr: false });
 
@@ -166,14 +173,21 @@ function RecCard({
         {/* Metrics */}
         <div className="grid grid-cols-3 gap-1.5">
           <MetricChip label="TIME" value={`${rec.duration_hours}h`} />
-          <MetricChip label="RISK" value={rec.risk_pct} />
-          <MetricChip label="DELAY" value={`${delay?.avg_delay_minutes?.toFixed(0) ?? '?'}m`} />
+          <MetricChip label="RISK IDX" value={rec.risk_pct} />
+          <MetricChip
+            label="DELAY"
+            value={
+              delay?.avg_delay_minutes != null
+                ? `${Number(delay.avg_delay_minutes).toFixed(1)}m`
+                : '?'
+            }
+          />
         </div>
 
         {/* Footer */}
         <div className="flex items-center gap-1.5 mt-2.5 text-[9px] text-outline mono">
           <span>{rec.running_days?.length === 7 ? 'Daily' : `${rec.running_days?.length ?? 0}d/wk`}</span>
-          {delay?.delay_data_source === 'railradar_api_real' && (
+          {isLogiFlowVerifiedDelaySource(delay?.delay_data_source) && (
             <>
               <span className="text-outline/30">·</span>
               <span className="text-tertiary flex items-center gap-0.5">
@@ -183,15 +197,21 @@ function RecCard({
                 >
                   verified
                 </span>
-                Real data
+                LogiFlow verified
               </span>
+            </>
+          )}
+          {isLogiFlowMlDelaySource(delay?.delay_data_source) && (
+            <>
+              <span className="text-outline/30">·</span>
+              <span className="text-primary/80">LogiFlow ML</span>
             </>
           )}
           {rec.data_source && (
             <>
               <span className="text-outline/30">·</span>
-              <span className="truncate max-w-[80px]" title={rec.data_source}>
-                {rec.data_source}
+              <span className="truncate max-w-[100px]" title={rec.data_source}>
+                {formatRailDataSource(rec.data_source)}
               </span>
             </>
           )}
@@ -255,7 +275,8 @@ function OptionRow({
       {/* Delay badge */}
       <div
         className={`hidden text-[9px] mono px-1.5 py-0.5 rounded shrink-0 min-[400px]:block ${
-          opt.delay_source === 'railradar_api'
+          isLogiFlowVerifiedDelaySource(opt.delay_source) ||
+          isLogiFlowMlDelaySource(opt.delay_source)
             ? 'bg-tertiary/10 text-tertiary border border-tertiary/15'
             : 'bg-surface-container text-outline'
         }`}
@@ -359,8 +380,11 @@ function DetailPanel({
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           <MetricChip label="HOURS" value={`${durationH}h`} />
-          <MetricChip label="RISK" value={riskPct} />
-          <MetricChip label="DELAY" value={avgDelay != null ? `${Number(avgDelay).toFixed(0)}m` : '?'} />
+          <MetricChip label="RISK IDX" value={riskPct} />
+          <MetricChip
+            label="DELAY"
+            value={avgDelay != null ? `${Number(avgDelay).toFixed(1)}m` : '?'}
+          />
         </div>
       </div>
 
@@ -389,10 +413,13 @@ function DetailPanel({
 
       {/* Risk */}
       <section>
-        <SectionHeader icon="shield" title="Risk Assessment" />
+        <SectionHeader icon="shield" title="Risk Index" />
         <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3">
+          <p className="text-[10px] text-on-surface-variant mb-2 leading-snug">
+            Composite routing index (delay, season, weather, transfers) — not ML hit-rate accuracy.
+          </p>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-outline">Risk Score</span>
+            <span className="text-[10px] text-outline">Index</span>
             <span className="mono text-sm font-bold" style={{ color: riskColor }}>{riskPct}</span>
           </div>
           <div className="w-full h-1.5 bg-surface-container-highest/60 rounded-full overflow-hidden">
@@ -412,6 +439,13 @@ function DetailPanel({
         <SectionHeader icon="schedule" title="Delay Analysis" />
         <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 px-3 py-0.5">
           <InfoRow label="Avg Delay" value={avgDelay != null ? `${Number(avgDelay).toFixed(1)} min` : '?'} accent />
+          {isRec && delay?.ml_baseline_minutes != null && (
+            <InfoRow
+              label="ML baseline"
+              value={`${Number(delay.ml_baseline_minutes).toFixed(1)} min (before scenario scaling)`}
+              mono={false}
+            />
+          )}
           {isRec && delay?.max_delay_minutes !== undefined && (
             <InfoRow label="Max Delay" value={`${delay.max_delay_minutes} min`} />
           )}
@@ -423,13 +457,18 @@ function DetailPanel({
             value={
               <span
                 className={`text-[9px] mono px-1.5 py-0.5 rounded inline-block ${
-                  (isRec && delay?.delay_data_source === 'railradar_api_real') ||
-                  (!isRec && delaySrc === 'railradar_api')
+                  (isRec && isLogiFlowVerifiedDelaySource(delay?.delay_data_source)) ||
+                  (isRec && isLogiFlowMlDelaySource(delay?.delay_data_source)) ||
+                  (!isRec &&
+                    (isLogiFlowVerifiedDelaySource(delaySrc) ||
+                      isLogiFlowMlDelaySource(delaySrc)))
                     ? 'bg-tertiary/10 text-tertiary'
                     : 'bg-surface-container text-outline'
                 }`}
               >
-                {isRec ? delay?.delay_data_source || 'N/A' : delaySrc || 'N/A'}
+                {isRec
+                  ? formatRailDelaySource(delay?.delay_data_source)
+                  : formatRailDelaySource(delaySrc)}
               </span>
             }
             mono={false}
@@ -557,6 +596,7 @@ export default function RailwayDashboard() {
     error,
     resetSearch,
     setLiveMapMode,
+    routeMetadata,
   } = useLogiFlowStore();
 
   const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
@@ -620,7 +660,10 @@ export default function RailwayDashboard() {
       <div className="flex-1 flex flex-col overflow-x-hidden">
         {showRailLoading && <RailwayLoading />}
         <PipelineModeLanding mode="rail">
-          <InputForm />
+          <div className="space-y-6">
+            <InputForm />
+            <RailMlQuantifiers variant="panel" />
+          </div>
         </PipelineModeLanding>
       </div>
     );
@@ -657,6 +700,16 @@ export default function RailwayDashboard() {
       {showRailLoading && <RailwayLoading />}
 
       <PipelineResultsChrome mode="rail" />
+
+      {routeMetadata?.simulation && (
+        <div className="bg-rail/10 border-b border-rail/20 px-4 py-2 text-xs text-on-surface-variant flex items-center gap-2 shrink-0">
+          <span className="material-symbols-outlined shrink-0 text-sm text-rail">science</span>
+          <span>
+            LogiFlow simulation — ML delay baseline scaled by your season, weather, congestion,
+            and departure-hour scenario (not live feeds).
+          </span>
+        </div>
+      )}
 
       {/* Error */}
       {error && (

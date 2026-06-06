@@ -4,6 +4,7 @@ import { ArrowUpRight, Play, Sparkles } from 'lucide-react';
 import { modeMeta, modeOrder, type LogisticsMode } from '@/lib/mode-meta';
 import { ModeIcon } from './ModeIcon';
 import { AmbientBackdrop } from './AmbientBackdrop';
+import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 
 export function HomePage({ intentSection }: { intentSection: ReactNode }) {
   return (
@@ -60,8 +61,8 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
         </section>
 
         <section
-          className="animate-fade-in"
-          style={{ animationDelay: '0.28s', animationFillMode: 'backwards' }}
+          className="mb-10 animate-fade-in"
+          style={{ animationDelay: '0.22s', animationFillMode: 'backwards' }}
         >
           <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
             Choose a mode
@@ -71,6 +72,13 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
               <ModeCard key={mode} mode={mode} featured={mode === 'hybrid'} index={i} />
             ))}
           </ul>
+        </section>
+
+        <section
+          className="animate-fade-in"
+          style={{ animationDelay: '0.28s', animationFillMode: 'backwards' }}
+        >
+          <RailMlQuantifiers variant="compact" />
         </section>
       </div>
     </div>

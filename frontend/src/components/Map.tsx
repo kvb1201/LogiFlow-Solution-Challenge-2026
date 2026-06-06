@@ -253,7 +253,7 @@ export default function MapView({
     });
   }, [liveTrains, liveMapMode, mapTick, animPhase, mapFocusedTrainNumber, setMapFocusedTrain, selectedRec, selectedOption]);
 
-  // ── Delay lookup for station popups (RailRadar per-station breakdown) ──
+  // ── Delay lookup for station popups (per-station breakdown) ──
   const delayForCode = useCallback(
     (code: string) => {
       if (!trainDelayDetail?.route?.length || !code) return null;

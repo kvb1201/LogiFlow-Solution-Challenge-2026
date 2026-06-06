@@ -90,7 +90,7 @@ def _compute_weather_factor(weather_data):
 
 def get_real_delay_data(train_number):
     """
-    Fetch REAL average delay data from RailRadar API.
+    Fetch live per-station delay measurements from Indian Railways providers.
     Returns per-station delay measurements (not heuristics).
 
     Args:
@@ -129,7 +129,7 @@ def get_real_delay_data(train_number):
         "max_delay_min": max_delay,
         "num_stations_measured": len(station_delays),
         "station_delays": station_delays,
-        "data_source": "railradar_api_real",
+        "data_source": "logiflow_ir_live",
     }
 
 
@@ -154,6 +154,25 @@ def get_railyatri_past_track_record(train_number: str, days_back: int = 5) -> di
         return fetch_past_track_record(str(train_number), days_back=days_back)
     except Exception:
         return None
+
+
+def _delay_minutes_to_risk(avg_delay_min, max_delay_min=0):
+    """Map measured or ML-predicted delay minutes to a 0–1 risk contribution."""
+    avg_delay = float(avg_delay_min or 0)
+    max_delay = float(max_delay_min or avg_delay)
+    if avg_delay <= 5:
+        delay_risk = 0.10
+    elif avg_delay <= 15:
+        delay_risk = 0.25
+    elif avg_delay <= 30:
+        delay_risk = 0.45
+    elif avg_delay <= 60:
+        delay_risk = 0.65
+    else:
+        delay_risk = 0.85
+    if max_delay > 60:
+        delay_risk = min(1.0, delay_risk + 0.10)
+    return delay_risk
 
 
 def calc_risk_score(route, departure_date_str="2025-06-01", weather_data=None):
@@ -181,22 +200,13 @@ def calc_risk_score(route, departure_date_str="2025-06-01", weather_data=None):
     real_delays = route.get("real_delay_data")
 
     if real_delays:
-        avg_delay = real_delays.get("avg_arrival_delay_min", 0)
-        max_delay = real_delays.get("max_delay_min", 0)
-        # Normalize: 0-5min = low, 5-15min = medium, 15-30min = high, 30+ = very high
-        if avg_delay <= 5:
-            delay_risk = 0.10
-        elif avg_delay <= 15:
-            delay_risk = 0.25
-        elif avg_delay <= 30:
-            delay_risk = 0.45
-        elif avg_delay <= 60:
-            delay_risk = 0.65
-        else:
-            delay_risk = 0.85
-        # Factor in max delay spikes
-        if max_delay > 60:
-            delay_risk = min(1.0, delay_risk + 0.10)
+        delay_risk = _delay_minutes_to_risk(
+            real_delays.get("avg_arrival_delay_min", 0),
+            real_delays.get("max_delay_min", 0),
+        )
+    elif route.get("predicted_delay_min") is not None:
+        ml_min = float(route["predicted_delay_min"])
+        delay_risk = _delay_minutes_to_risk(ml_min, ml_min)
     else:
         # No real data — estimate from train type
         train_type = ""
@@ -252,6 +262,18 @@ def calc_risk_score(route, departure_date_str="2025-06-01", weather_data=None):
         reliability_bonus
     )
     return round(max(0.02, min(0.98, total)), 3)
+
+
+def refresh_risk_after_ml(route, departure_date_str, weather_data=None):
+    """
+    Recompute composite risk after ML delay prediction when live delay is absent.
+    Keeps the risk index tied to the trained model instead of train-type guesses.
+    """
+    if route.get("real_delay_data"):
+        return route.get("risk_score", 0.3)
+    if route.get("predicted_delay_min") is None:
+        return route.get("risk_score", 0.3)
+    return calc_risk_score(route, departure_date_str, weather_data)
 
 
 def calc_booking_ease(route):
