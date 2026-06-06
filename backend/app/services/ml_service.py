@@ -56,7 +56,7 @@ def weather_factor(weather: Dict) -> float:
     return factor
 
 
-def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_score: float, demand: float) -> float:
+def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_score: float, utilization: float, demand: float) -> float:
     """
     Build feature vector and predict delay probability using trained ML model.
     """
@@ -75,8 +75,8 @@ def _ml_delay_probability(hour: int, weather: Dict, is_weekend: bool, traffic_sc
         "traffic_score": traffic_score,
         "Temperature": temp,
         "Humidity": humidity,
-        "Asset_Utilization": traffic_score * 100,  # approximate utilization from traffic
-        "Demand_Forecast": demand
+        "Asset_Utilization": utilization,
+        "Demand_Forecast": demand,
     }
 
     # Heuristic fallback if no model is present.
@@ -129,15 +129,19 @@ def predict_delay(
 
     # Pass traffic into ML.
     if traffic is not None:
+        # model was trained on categorical traffic scores (0/1/2/3)
         traffic_input = float(traffic)
     elif traffic_level is not None:
-        # pass amplified and normalized signal to ML (keep within [0,1])
-        traffic_input = min(float(traffic_level) * 5.0, 1.0)
+        # fallback mapping from normalized traffic level to category
+        if traffic_level < 0.25:
+            traffic_input = 0.0
+        elif traffic_level < 0.5:
+            traffic_input = 1.0
+        elif traffic_level < 0.75:
+            traffic_input = 2.0
+        else:
+            traffic_input = 3.0
     else:
-        traffic_input = 0.5
-
-    # Simulation override (if synthetic inputs are passed via extreme values)
-    if traffic_level is not None and traffic_level > 0.8:
         traffic_input = 1.0
 
     delay_prob = _ml_delay_probability(
@@ -145,7 +149,8 @@ def predict_delay(
         weather,
         is_weekend,
         traffic_input,
-        demand
+        utilization,
+        demand,
     )
     # prevent completely flat or extreme ML output
     delay_prob = max(min(delay_prob, 0.95), 0.05)
@@ -154,7 +159,7 @@ def predict_delay(
     ml_factor = 1 + (delay_prob * 0.4)
 
     # Avoid double counting traffic (handled inside ML)
-    adjusted_time = base_time_hours * t_factor * w_factor * ml_factor
+    adjusted_time = base_time_hours * w_factor * ml_factor
 
     # Ensure traffic_factor is never the neutral default when traffic is known
     if traffic is not None and t_factor == 1.0 and traffic > 0:
