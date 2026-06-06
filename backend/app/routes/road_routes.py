@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
 
 # Create router
 road_router = APIRouter(prefix="/road", tags=["road-cargo"])
+
+# Maximum intermediate stops allowed per request
+MAX_STOPS = 10
 
 
 # Request schema
@@ -19,8 +22,24 @@ class RoadPayload(BaseModel):
     avoid_highways: Optional[bool] = False
     traffic_aware: Optional[bool] = True
 
+    # Multi-stop support — optional list of intermediate waypoints
+    stops: Optional[List[str]] = None
+    # When True the pipeline will reorder stops to minimise cost/time/risk
+    optimize_stop_order: Optional[bool] = False
+
     mode: Optional[str] = None
     simulation: Optional[dict] = None
+
+    @field_validator("stops")
+    @classmethod
+    def validate_stops(cls, v):
+        if v is None:
+            return v
+        if len(v) > MAX_STOPS:
+            raise ValueError(f"Maximum {MAX_STOPS} intermediate stops are supported.")
+        # Strip whitespace and filter blank entries
+        cleaned = [s.strip() for s in v if s and s.strip()]
+        return cleaned if cleaned else None
 
 
 # Main optimization endpoint
@@ -50,6 +69,9 @@ def optimize_road(payload: RoadPayload):
                 "avoid_highways": payload.avoid_highways,
                 "traffic_aware": payload.traffic_aware,
                 "simulation": payload.simulation,
+                # Pass multi-stop fields through to the pipeline
+                "stops": payload.stops or [],
+                "optimize_stop_order": payload.optimize_stop_order or False,
             },
             context=context,
         )

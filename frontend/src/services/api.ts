@@ -36,6 +36,10 @@ export interface RoadPayload {
   traffic_aware: boolean;
   vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
   fuel_price?: number;
+  /** Intermediate waypoints for multi-stop routing */
+  stops?: string[];
+  /** When true the backend reorders stops using nearest-neighbour heuristic */
+  optimize_stop_order?: boolean;
   // simulation controls
   mode?: 'realtime' | 'simulation';
   simulation?: {

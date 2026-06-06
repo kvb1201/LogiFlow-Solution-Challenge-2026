@@ -597,8 +597,10 @@ function RouteCard({
       <div className="px-4 py-2.5 bg-surface-container/25 border-b border-outline-variant/8">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] leading-relaxed text-on-surface-variant mono truncate">
-            {source || 'Origin'} → {destination || 'Destination'} ·{' '}
-            {Number(route.distance_km ?? 0).toFixed(0)} km · {Number(route.time).toFixed(1)}h ·{' '}
+            {route.waypoints && route.waypoints.length > 2
+              ? route.waypoints.join(' → ')
+              : `${source || 'Origin'} → ${destination || 'Destination'}`}{' '}
+            · {Number(route.distance_km ?? 0).toFixed(0)} km · {Number(route.time).toFixed(1)}h ·{' '}
             {highwayHint(route)}
           </p>
           <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-surface-container/60 text-on-surface-variant mono border border-outline-variant/12 whitespace-nowrap">
@@ -645,6 +647,12 @@ function RouteCard({
                     Safest
                   </span>
                 )}
+                {/* Multi-stop badge */}
+                {(route.stop_count ?? 0) > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-violet-500/12 text-violet-300 mono border border-violet-500/20">
+                    {route.stop_count} stop{route.stop_count !== 1 ? 's' : ''}
+                  </span>
+                )}
                 {isSelected && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/12 text-primary mono">
                     On map
@@ -673,6 +681,49 @@ function RouteCard({
           <MetricTile emoji="⚠️" label="Risk"     value={riskPct(route)}                                  unit="%" />
           <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)}       unit="km" />
         </div>
+
+        {/* Multi-stop leg breakdown */}
+        {route.waypoints && route.waypoints.length > 2 && (
+          <div className="mb-4 rounded-xl bg-surface-container-low/30 border border-outline-variant/10 px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-label font-bold mb-2">
+              Stop summary · {route.waypoints.length - 1} leg{route.waypoints.length - 2 > 1 ? 's' : ''}
+            </div>
+            <ol className="space-y-1">
+              {route.waypoints.map((wp, wi) => {
+                const seg = route.segments?.[wi];
+                const isLast = wi === route.waypoints!.length - 1;
+                return (
+                  <li key={`${wp}-${wi}`} className="flex items-center gap-2 text-[11px]">
+                    <span className={[
+                      'w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0',
+                      wi === 0
+                        ? 'bg-primary/20 text-primary border border-primary/30'
+                        : isLast
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-violet-500/15 text-violet-300 border border-violet-500/20',
+                    ].join(' ')}>
+                      {wi === 0 ? 'O' : isLast ? 'D' : wi}
+                    </span>
+                    <span className="text-on-surface-variant truncate flex-1">{wp}</span>
+                    {seg && !isLast && (
+                      <span className="text-outline mono text-[9px] shrink-0">
+                        {seg.distance_km?.toFixed(0)} km · {seg.duration_minutes ? Math.round(seg.duration_minutes / 60 * 10) / 10 : '—'}h
+                      </span>
+                    )}
+                    {!isLast && (
+                      <span className="text-outline/40 shrink-0 text-[9px]">↓</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            {route.stop_order_optimised && (
+              <p className="mt-2 text-[9px] text-violet-300/70 italic">
+                Stop order was automatically optimised for shortest path.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ML summary */}
         {ml && (
@@ -1001,7 +1052,11 @@ export default function RouteResults() {
           </div>
         </div>
         <div className="text-[10px] mono text-on-surface-variant break-words sm:text-right">
-          {source} → {destination}
+          {(() => {
+            const wp = routes[0]?.waypoints;
+            if (wp && wp.length > 2) return wp.join(' → ');
+            return `${source} → ${destination}`;
+          })()}
         </div>
       </div>
 
@@ -1050,6 +1105,7 @@ export default function RouteResults() {
                 key={`map-${selectedRoute}-${routes.length}-${Math.round(routes[0]?.cost ?? 0)}`}
                 routes={routes}
                 selectedRoute={selectedRoute}
+                waypoints={routes[safeIndex]?.waypoints}
               />
             </div>
           </div>
