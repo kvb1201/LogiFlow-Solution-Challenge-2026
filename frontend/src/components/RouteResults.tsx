@@ -39,40 +39,281 @@ function delayHrs(route: RoadRoute): number {
   return 0;
 }
 
-// Priority weights: [cost, time, risk]
-function priorityWeights(priority: string): [number, number, number] {
-  if (priority === 'cost') return [0.6, 0.25, 0.15];
-  if (priority === 'time') return [0.2, 0.6, 0.2];
-  if (priority === 'safe') return [0.15, 0.2, 0.65];
-  return [1 / 3, 1 / 3, 1 / 3]; // balanced
+// ── A. SINGLE SOURCE OF TRUTH ─────────────────────────────────────────
+// All derived indices computed once and propagated to every component.
+
+interface RouteIndices {
+  fastestIndex: number;
+  cheapestIndex: number;
+  safestIndex: number;
+  recommendedIndex: number;
 }
+
+function deriveRouteIndices(routes: RoadRoute[], priority: string): RouteIndices {
+  if (!routes.length) return { fastestIndex: 0, cheapestIndex: 0, safestIndex: 0, recommendedIndex: 0 };
+
+  const fastestIndex = routes.reduce(
+    (best, r, i) => (Number(r.time) < Number(routes[best].time) ? i : best),
+    0,
+  );
+  const cheapestIndex = routes.reduce(
+    (best, r, i) => (Number(r.cost) < Number(routes[best].cost) ? i : best),
+    0,
+  );
+  const safestIndex = routes.reduce(
+    (best, r, i) => (Number(r.risk) < Number(routes[best].risk) ? i : best),
+    0,
+  );
+
+  let recommendedIndex: number;
+  if (priority === 'cost') recommendedIndex = cheapestIndex;
+  else if (priority === 'time') recommendedIndex = fastestIndex;
+  else if (priority === 'safe') recommendedIndex = safestIndex;
+  else recommendedIndex = 0; // balanced: first route is overall best
+
+  return { fastestIndex, cheapestIndex, safestIndex, recommendedIndex };
+}
+
+// ── B. ROUTE INSIGHT ─────────────────────────────────────────────────
+
+function routeInsightLabel(
+  index: number,
+  indices: RouteIndices,
+): string {
+  if (index === indices.recommendedIndex) {
+    if (index === indices.cheapestIndex) return 'Selected as most cost-efficient route.';
+    if (index === indices.fastestIndex) return 'Selected as fastest route.';
+    if (index === indices.safestIndex) return 'Selected as safest route.';
+    return 'Recommended based on selected optimization priority.';
+  }
+  if (index === indices.cheapestIndex) return 'This is the cheapest available route.';
+  if (index === indices.fastestIndex) return 'This is the fastest available route.';
+  if (index === indices.safestIndex) return 'This is the safest available route.';
+  return '';
+}
+
+// ── C. CONFIDENCE SCORE ───────────────────────────────────────────────
+// 40% cost competitiveness + 30% time competitiveness +
+// 20% risk competitiveness + 10% route uniqueness.
 
 function computeConfidence(
   route: RoadRoute,
   allRoutes: RoadRoute[],
-  routeIndex: number,
-  priority: string
+  index: number,
+  indices: RouteIndices,
 ): number {
-  if (!allRoutes.length) return 68;
-  const best = allRoutes[0];
+  if (allRoutes.length === 0) return 68;
+  if (allRoutes.length === 1) return 82;
+
   const costs = allRoutes.map(r => Number(r.cost));
   const times = allRoutes.map(r => Number(r.time));
   const risks = allRoutes.map(r => Number(r.risk));
-  const spanC = Math.max(Math.max(...costs) - Math.min(...costs), 1);
-  const spanT = Math.max(Math.max(...times) - Math.min(...times), 1e-6);
-  const spanR = Math.max(Math.max(...risks) - Math.min(...risks), 1e-6);
-  const costDiff = Math.max(0, Number(route.cost) - Number(best.cost)) / spanC;
-  const timeDiff = Math.max(0, Number(route.time) - Number(best.time)) / spanT;
-  const riskDiff = Math.max(0, Number(route.risk) - Number(best.risk)) / spanR;
-  const [wC, wT, wR] = priorityWeights(priority);
-  // Weighted deviation from best — lower is better
-  const weightedDev = wC * costDiff + wT * timeDiff + wR * riskDiff;
-  let confidence = 1 - weightedDev * 1.5; // scale so spread is meaningful
+
+  const minC = Math.min(...costs);
+  const maxC = Math.max(...costs);
+  const minT = Math.min(...times);
+  const maxT = Math.max(...times);
+  const minR = Math.min(...risks);
+  const maxR = Math.max(...risks);
+
+  const spanC = Math.max(maxC - minC, 1);
+  const spanT = Math.max(maxT - minT, 1e-6);
+  const spanR = Math.max(maxR - minR, 1e-6);
+
+  // Score each dimension: 1 = best in class, 0 = worst
+  const costScore  = 1 - (Number(route.cost) - minC) / spanC;
+  const timeScore  = 1 - (Number(route.time) - minT) / spanT;
+  const riskScore  = 1 - (Number(route.risk) - minR) / spanR;
+
+  // Route uniqueness: higher highway ratio = more distinct corridor
+  const hw = typeof route.highway_ratio === 'number' ? route.highway_ratio : 0.5;
+  const uniquenessScore = 0.5 + hw * 0.5; // range [0.5, 1.0]
+
+  const raw = 0.40 * costScore + 0.30 * timeScore + 0.20 * riskScore + 0.10 * uniquenessScore;
+
+  // Delay penalty
   const delay = delayHrs(route);
-  if (delay > 4) confidence -= 0.18;
-  else if (delay > 2) confidence -= 0.08;
-  confidence -= routeIndex * 0.015; // rank penalty
-  return Math.round(Math.max(0.3, Math.min(0.95, confidence)) * 100);
+  let penalty = 0;
+  if (delay > 4) penalty = 0.18;
+  else if (delay > 2) penalty = 0.08;
+
+  // Small positional penalty so ties are broken by array order
+  const positionPenalty = index * 0.008;
+
+  const final = raw - penalty - positionPenalty;
+  return Math.round(Math.max(0.30, Math.min(0.95, final)) * 100);
+}
+
+function explainConfidence(
+  confidence: number,
+  route: RoadRoute,
+  allRoutes: RoadRoute[],
+  index: number,
+  indices: RouteIndices,
+): string {
+  if (allRoutes.length === 0) return `Confidence ${confidence}%.`;
+
+  const cheapestRoute = allRoutes[indices.cheapestIndex];
+  const fastestRoute  = allRoutes[indices.fastestIndex];
+  const safestRoute   = allRoutes[indices.safestIndex];
+
+  const dc = Number(route.cost) - Number(cheapestRoute.cost);
+  const dt = Number(route.time) - Number(fastestRoute.time);
+  const dr = Number(route.risk) - Number(safestRoute.risk);
+
+  const parts: string[] = [];
+
+  if (index === indices.cheapestIndex) {
+    parts.push('strongest cost advantage');
+  } else if (dc > 0) {
+    parts.push(`₹${formatCurrency(dc)} above cheapest`);
+  }
+
+  if (index === indices.fastestIndex) {
+    parts.push('strongest delivery advantage');
+  } else if (dt > 0.1) {
+    parts.push(`${dt.toFixed(1)} hrs slower than fastest`);
+  }
+
+  if (index === indices.safestIndex) {
+    parts.push('lowest operational risk');
+  } else if (dr > 0.01) {
+    parts.push(`risk higher by ${Math.round(dr * 100)}%`);
+  }
+
+  const delay = delayHrs(route);
+  if (delay > 4) parts.push('high delay expected');
+  else if (delay > 2) parts.push('moderate expected delay');
+
+  if (parts.length === 0) parts.push('competitive across all dimensions');
+
+  return `Confidence ${confidence}% — ${parts.join(', ')}.`;
+}
+
+// ── Cost breakdown helpers ────────────────────────────────────────────
+
+/**
+ * Build a fully itemised cost breakdown from backend data plus synthetic
+ * estimates for components the backend does not always return.
+ */
+function buildCostBreakdown(route: RoadRoute): {
+  fuel: number;
+  driver: number;
+  toll: number;
+  handling: number;
+  stops: number;
+  gst: number;
+  documentation: number;
+  total: number;
+} {
+  const bd = route.cost_breakdown ?? {};
+  const totalCost = Number(route.cost) || 0;
+  const distKm = Number(route.distance_km ?? 0) || 0;
+
+  // Use backend values when available, otherwise estimate proportionally.
+  const toll        = typeof bd.toll         === 'number' ? bd.toll         : Math.round(distKm * 0.12);
+  const handling    = typeof bd.handling     === 'number' ? bd.handling     : Math.round(totalCost * 0.10);
+  const gst         = typeof bd.gst          === 'number' ? bd.gst          : Math.round(totalCost * 0.05);
+  const docFee      = typeof bd.documentation=== 'number' ? bd.documentation: 0;
+
+  // If backend provides "freight" treat it as the combined fuel+driver base cost.
+  // Otherwise split the remaining budget between fuel (55%) and driver (30%).
+  let fuel: number;
+  let driver: number;
+  if (typeof bd.freight === 'number') {
+    fuel   = Math.round(bd.freight * 0.65);
+    driver = Math.round(bd.freight * 0.35);
+  } else {
+    const base = Math.max(0, totalCost - toll - handling - gst - docFee);
+    fuel   = Math.round(base * 0.55);
+    driver = Math.round(base * 0.30);
+  }
+
+  // Stop charges: ₹25 per planned stop (infer from distance bands)
+  const estimatedStops = distKm > 600 ? 3 : distKm > 300 ? 2 : 1;
+  const stops = Math.round(estimatedStops * 25);
+
+  const total = fuel + driver + toll + handling + stops + gst + docFee;
+
+  return { fuel, driver, toll, handling, stops, gst, documentation: docFee, total };
+}
+
+// ── F. WHY THIS ROUTE ─────────────────────────────────────────────────
+
+function whyThisRoute(
+  index: number,
+  route: RoadRoute,
+  allRoutes: RoadRoute[],
+  indices: RouteIndices,
+): string[] {
+  const lines: string[] = [];
+  if (allRoutes.length < 2) {
+    lines.push('Only route available for this corridor.');
+    return lines;
+  }
+
+  // Compare against the next-best route for the same dimension
+  const othersExcludingSelf = allRoutes.filter((_, i) => i !== index);
+  if (othersExcludingSelf.length === 0) return lines;
+
+  const nextCheapest = othersExcludingSelf.reduce((a, b) =>
+    Number(a.cost) < Number(b.cost) ? a : b,
+  );
+  const nextFastest = othersExcludingSelf.reduce((a, b) =>
+    Number(a.time) < Number(b.time) ? a : b,
+  );
+  const nextSafest = othersExcludingSelf.reduce((a, b) =>
+    Number(a.risk) < Number(b.risk) ? a : b,
+  );
+
+  const costAdv  = Number(nextCheapest.cost) - Number(route.cost);
+  const timeAdv  = Number(nextFastest.time)  - Number(route.time);
+  const riskAdv  = (Number(nextSafest.risk)  - Number(route.risk)) * 100;
+
+  if (index === indices.cheapestIndex && costAdv > 0) {
+    lines.push(`${Math.round((costAdv / Number(nextCheapest.cost)) * 100)}% cheaper than next best option`);
+  }
+  if (index === indices.fastestIndex && timeAdv > 0.05) {
+    lines.push(`${timeAdv.toFixed(1)} hrs faster than next best option`);
+  }
+  if (index === indices.safestIndex && riskAdv < -1) {
+    lines.push(`Lowest risk among all feasible routes`);
+  }
+  if (lines.length === 0) {
+    // Generic: state what this route does best vs. overall bests
+    const dc = Number(route.cost) - Number(allRoutes[indices.cheapestIndex].cost);
+    const dt = Number(route.time) - Number(allRoutes[indices.fastestIndex].time);
+    const dr = (Number(route.risk) - Number(allRoutes[indices.safestIndex].risk)) * 100;
+    if (dc < 50) lines.push('Cost within range of cheapest option');
+    if (dt < 0.5) lines.push('Time close to fastest route');
+    if (dr < 5) lines.push('Low-risk corridor');
+  }
+  return lines;
+}
+
+// ── G. WHY NOT THIS ROUTE ─────────────────────────────────────────────
+// Compare against the recommended route (priority-derived), not routes[0].
+
+function whyNotThisRoute(
+  index: number,
+  route: RoadRoute,
+  allRoutes: RoadRoute[],
+  indices: RouteIndices,
+): string[] {
+  if (index === indices.recommendedIndex) return [];
+  const rec = allRoutes[indices.recommendedIndex];
+  if (!rec) return [];
+
+  const lines: string[] = [];
+  const dt = Number(route.time) - Number(rec.time);
+  const dc = Number(route.cost) - Number(rec.cost);
+  const dr = (Number(route.risk) - Number(rec.risk)) * 100;
+
+  if (dt > 0.05)  lines.push(`Takes ${dt.toFixed(1)} hrs longer than recommended route`);
+  if (dc > 0)     lines.push(`Costs ₹${formatCurrency(dc)} more than recommended route`);
+  if (dr > 1)     lines.push(`Risk higher by ${Math.round(dr)}% vs. recommended route`);
+
+  return lines;
 }
 
 function sanitizeInsights(reason: string | undefined, factors: string[]): string[] {
@@ -96,65 +337,76 @@ function sanitizeInsights(reason: string | undefined, factors: string[]): string
   return out;
 }
 
-function whyNotThisRoute(best: RoadRoute, alt: RoadRoute): string[] {
-  const lines: string[] = [];
-  const dt = Number(alt.time) - Number(best.time);
-  const dc = Number(alt.cost) - Number(best.cost);
-  const dr = (Number(alt.risk) - Number(best.risk)) * 100;
-  if (dt > 0.05) lines.push(`Takes ${dt.toFixed(1)} hrs longer than best route`);
-  if (dc > 0) lines.push(`Costs ₹${formatCurrency(dc)} more than best route`);
-  if (dr > 1) lines.push(`Higher risk by ${Math.round(dr)}% compared to best route`);
-  return lines;
-}
-
-function explainConfidence(
-  confidence: number,
-  route: RoadRoute,
-  allRoutes: RoadRoute[],
-  priority: string
-): string {
-  const delay = delayHrs(route);
-  const reasons: string[] = [];
-
-  if (allRoutes.length > 0) {
-    const best = allRoutes[0];
-    const dt = Number(route.time) - Number(best.time);
-    const dc = Number(route.cost) - Number(best.cost);
-    const dr = Number(route.risk) - Number(best.risk);
-
-    // Priority-first reason
-    if (priority === 'cost') {
-      if (dc <= 0) reasons.push('cheapest option');
-      else reasons.push(`₹${formatCurrency(dc)} more than cheapest`);
-    } else if (priority === 'time') {
-      if (dt <= 0.1) reasons.push('fastest option');
-      else reasons.push(`${dt.toFixed(1)} hrs slower than fastest`);
-    } else if (priority === 'safe') {
-      if (dr <= 0.01) reasons.push('lowest risk profile');
-      else reasons.push(`higher risk (+${Math.round(dr * 100)}%)`);
-    } else {
-      // Balanced — report all three
-      if (dt <= 0.1) reasons.push('competitive travel time');
-      else reasons.push(`${dt.toFixed(1)} hrs slower`);
-      if (dc <= 0) reasons.push('cost efficient');
-      else reasons.push(`₹${formatCurrency(dc)} higher cost`);
-      if (dr <= 0.01) reasons.push('low risk');
-      else reasons.push(`moderate risk (+${Math.round(dr * 100)}%)`);
-    }
-  }
-
-  // Delay note — only flag if it actually hurts
-  if (delay > 4) reasons.push('high delay expected');
-  else if (delay > 2) reasons.push('moderate expected delay');
-
-  return `Recommendation strength ${confidence}% — based on ${reasons.join(', ')}.`;
-}
-
 function explainDataSource(route: RoadRoute): string {
   const raw = route as Record<string, unknown>;
   const ds = raw.data_source;
   if (typeof ds === 'string' && ds.trim()) return `Source: ${ds}.`;
   return 'Derived from the road optimization pipeline (geometry, traffic factors, and cost model).';
+}
+
+// ── H. DEV VALIDATION ────────────────────────────────────────────────
+
+function devValidate(
+  routes: RoadRoute[],
+  indices: RouteIndices,
+  priority: string,
+): void {
+  if (process.env.NODE_ENV !== 'development') return;
+  if (!routes.length) return;
+
+  const { fastestIndex, cheapestIndex, safestIndex, recommendedIndex } = indices;
+
+  // Cheapest label must match cheapestIndex
+  const cheapestCost = Number(routes[cheapestIndex].cost);
+  routes.forEach((r, i) => {
+    if (Number(r.cost) < cheapestCost) {
+      console.warn(
+        `[RouteResults] Validation: Route ${i + 1} has lower cost (${r.cost}) than cheapestIndex (${cheapestIndex + 1}, ${routes[cheapestIndex].cost}). cheapestIndex is wrong.`,
+      );
+    }
+  });
+
+  // Fastest label must match fastestIndex
+  const fastestTime = Number(routes[fastestIndex].time);
+  routes.forEach((r, i) => {
+    if (Number(r.time) < fastestTime) {
+      console.warn(
+        `[RouteResults] Validation: Route ${i + 1} has lower time (${r.time}) than fastestIndex (${fastestIndex + 1}, ${routes[fastestIndex].time}). fastestIndex is wrong.`,
+      );
+    }
+  });
+
+  // Safest label must match safestIndex
+  const safestRisk = Number(routes[safestIndex].risk);
+  routes.forEach((r, i) => {
+    if (Number(r.risk) < safestRisk) {
+      console.warn(
+        `[RouteResults] Validation: Route ${i + 1} has lower risk (${r.risk}) than safestIndex (${safestIndex + 1}, ${routes[safestIndex].risk}). safestIndex is wrong.`,
+      );
+    }
+  });
+
+  // Recommendation must match priority
+  if (priority === 'cost' && recommendedIndex !== cheapestIndex) {
+    console.warn(
+      `[RouteResults] Validation: priority=cost but recommendedIndex (${recommendedIndex + 1}) ≠ cheapestIndex (${cheapestIndex + 1}).`,
+    );
+  }
+  if (priority === 'time' && recommendedIndex !== fastestIndex) {
+    console.warn(
+      `[RouteResults] Validation: priority=time but recommendedIndex (${recommendedIndex + 1}) ≠ fastestIndex (${fastestIndex + 1}).`,
+    );
+  }
+  if (priority === 'safe' && recommendedIndex !== safestIndex) {
+    console.warn(
+      `[RouteResults] Validation: priority=safe but recommendedIndex (${recommendedIndex + 1}) ≠ safestIndex (${safestIndex + 1}).`,
+    );
+  }
+
+  // Log summary in dev for quick visual check
+  console.info(
+    `[RouteResults] Indices — fastest: R${fastestIndex + 1}, cheapest: R${cheapestIndex + 1}, safest: R${safestIndex + 1}, recommended: R${recommendedIndex + 1} (priority=${priority})`,
+  );
 }
 
 // ── Metric tile ───────────────────────────────────────────────────────
@@ -190,44 +442,59 @@ function RouteCard({
   index,
   isSelected,
   onSelect,
-  isCheapest,
-  isFastest,
-  isSafest,
   source,
   destination,
-  cargoKg,
   routes,
   confidence,
+  indices,
 }: {
   route: RoadRoute;
   index: number;
   isSelected: boolean;
   onSelect: () => void;
-  isCheapest: boolean;
-  isFastest: boolean;
-  isSafest: boolean;
   source: string;
   destination: string;
-  cargoKg: number;
   routes: RoadRoute[];
   confidence: number;
+  indices: RouteIndices;
 }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-  
+
   const priority = useLogiFlowStore(s => s.priority);
+
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
-  const isBest = index === 0;
-  const breakdown = route.cost_breakdown;
-  const best = routes[0];
-  const insights = sanitizeInsights(route.reason, factors);
-  const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
-  const confidenceNote = explainConfidence(confidence, route, routes, priority);
+
+  const isCheapest    = index === indices.cheapestIndex;
+  const isFastest     = index === indices.fastestIndex;
+  const isSafest      = index === indices.safestIndex;
+  const isRecommended = index === indices.recommendedIndex;
+
+  const costBreakdown = useMemo(() => buildCostBreakdown(route), [route]);
+  const insights      = sanitizeInsights(route.reason, factors);
+
+  // B — insight label derived from single source of truth
+  const insightLabel  = routeInsightLabel(index, indices);
+
+  // F — why this route was selected
+  const whyThisLines  = useMemo(
+    () => whyThisRoute(index, route, routes, indices),
+    [index, route, routes, indices],
+  );
+
+  // G — why not this route (vs. recommended)
+  const notReasons = useMemo(
+    () => whyNotThisRoute(index, route, routes, indices),
+    [index, route, routes, indices],
+  );
+
+  // C — confidence explanation always matches badge value
+  const confidenceNote = explainConfidence(confidence, route, routes, index, indices);
   const dataSourceNote = explainDataSource(route);
 
-  // Reset explanation when route changes
+  // Reset AI explanation when route changes
   useEffect(() => {
     setDynamicExplanation(null);
     setIsLoadingExplanation(false);
@@ -240,7 +507,7 @@ function RouteCard({
       pipeline: 'road',
       priority,
       route_data: route,
-      context: { best_route: best }
+      context: { best_route: routes[indices.recommendedIndex] },
     });
     if (expl) setDynamicExplanation(expl);
     setIsLoadingExplanation(false);
@@ -294,7 +561,8 @@ function RouteCard({
                 Route {index + 1}
               </div>
               <div className="flex flex-wrap gap-1">
-                {isBest && (
+                {/* "Top pick" only on the recommended route */}
+                {isRecommended && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-300 mono border border-emerald-500/20">
                     Top pick
                   </span>
@@ -337,10 +605,10 @@ function RouteCard({
 
         {/* Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-          <MetricTile emoji="⏱" label="Time" value={Number(route.time).toFixed(1)} unit="hrs" />
-          <MetricTile emoji="💰" label="Cost" value={`₹${formatCurrency(route.cost)}`} />
-          <MetricTile emoji="⚠️" label="Risk" value={`${Math.round(Number(route.risk) * 100)}`} unit="%" />
-          <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)} unit="km" />
+          <MetricTile emoji="⏱" label="Time"     value={Number(route.time).toFixed(1)}                   unit="hrs" />
+          <MetricTile emoji="💰" label="Cost"     value={`₹${formatCurrency(route.cost)}`} />
+          <MetricTile emoji="⚠️" label="Risk"     value={`${Math.round(Number(route.risk) * 100)}`}       unit="%" />
+          <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)}       unit="km" />
         </div>
 
         {/* ML summary */}
@@ -370,10 +638,16 @@ function RouteCard({
               {
                 label: 'DELAY',
                 val: ml.delay_hours > 0.05 ? `+${ml.delay_hours.toFixed(1)}h` : 'On time',
-                colorClass: ml.delay_hours > 0.05 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300',
+                colorClass:
+                  ml.delay_hours > 0.05
+                    ? 'bg-amber-500/15 text-amber-300'
+                    : 'bg-emerald-500/15 text-emerald-300',
               },
             ].map(item => (
-              <div key={item.label} className="px-2 py-1.5 rounded-lg bg-surface-container-low/40 border border-outline-variant/10">
+              <div
+                key={item.label}
+                className="px-2 py-1.5 rounded-lg bg-surface-container-low/40 border border-outline-variant/10"
+              >
                 <div className="text-outline/60 mb-1 text-[9px] uppercase tracking-widest">{item.label}</div>
                 <span className={`inline-block px-1.5 py-0.5 rounded font-semibold ${item.colorClass}`}>
                   {typeof item.val === 'string' ? item.val.toUpperCase() : item.val}
@@ -383,6 +657,7 @@ function RouteCard({
           </div>
         )}
 
+        {/* Confidence + Data source */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
             <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Confidence</div>
@@ -394,8 +669,8 @@ function RouteCard({
           </div>
         </div>
 
-        {/* Cost breakdown */}
-        <div className="pt-3 border-t border-outline-variant/8">
+        {/* E. Cost breakdown — transparent itemised view */}
+        <div className="pt-3 mt-3 border-t border-outline-variant/8">
           <button
             type="button"
             onClick={e => { e.stopPropagation(); setShowBreakdown(v => !v); }}
@@ -410,11 +685,15 @@ function RouteCard({
               <table className="w-full text-[11px]">
                 <tbody className="divide-y divide-outline-variant/8">
                   {[
-                    ['Freight', breakdown?.freight],
-                    ['Toll', breakdown?.toll],
-                    ['Handling', breakdown?.handling],
-                    ['GST (5%)', breakdown?.gst],
-                    ['Documentation', breakdown?.documentation],
+                    ['🚛  Fuel cost',            costBreakdown.fuel],
+                    ['👤  Driver cost',           costBreakdown.driver],
+                    ['🛣️  Toll charges',          costBreakdown.toll],
+                    ['📦  Weight handling',       costBreakdown.handling],
+                    ['🛑  Stop charges',          costBreakdown.stops],
+                    ['🧾  GST (5%)',              costBreakdown.gst],
+                    ...(costBreakdown.documentation > 0
+                      ? [['📄  Documentation', costBreakdown.documentation] as [string, number]]
+                      : []),
                   ].map(([label, val]) => (
                     <tr key={String(label)} className="bg-surface-container-lowest/15">
                       <td className="py-2 pl-3 text-on-surface-variant">{label}</td>
@@ -423,13 +702,40 @@ function RouteCard({
                       </td>
                     </tr>
                   ))}
+                  {/* Total row */}
+                  <tr className="bg-surface-container/30 border-t-2 border-outline-variant/20">
+                    <td className="py-2.5 pl-3 font-bold text-on-surface text-[11px]">Total</td>
+                    <td className="py-2.5 pr-3 text-right mono font-black text-primary tabular-nums text-[12px]">
+                      ₹{formatCurrency(costBreakdown.total)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
+              <p className="px-3 py-2 text-[9px] text-outline/60 italic">
+                Estimates for components not provided by backend are based on standard road freight rates.
+              </p>
             </div>
           )}
         </div>
 
-        {/* Why not */}
+        {/* F. Why this route */}
+        {whyThisLines.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-outline-variant/8">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5">
+              Why this route?
+            </div>
+            <ul className="text-[11px] text-on-surface-variant space-y-1 mono">
+              {whyThisLines.map(line => (
+                <li key={line} className="flex gap-2">
+                  <span className="text-emerald-400/80 shrink-0">✓</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* G. Why not this route */}
         {notReasons.length > 0 && (
           <div className="mt-3 pt-3 border-t border-outline-variant/8">
             <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5">
@@ -446,111 +752,124 @@ function RouteCard({
           </div>
         )}
 
-        {/* Insights */}
-        {(dynamicExplanation || route.reason || insights.length > 0) ? (
-          <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5 flex justify-between items-center">
-              <span>Route insight</span>
-              {!dynamicExplanation && (
-                <button 
-                  onClick={handleExplain} 
-                  disabled={isLoadingExplanation} 
-                  className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
-                >
-                  {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
-                </button>
-              )}
-            </div>
-            
-            {dynamicExplanation && (
-              <ul className="mb-2 space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed bg-surface-container-low/40 p-2 rounded border border-outline-variant/10">
-                {dynamicExplanation
-                  .split('\n')
-                  .map(line => line.trim())
-                  .filter(Boolean)
-                  .map((line, i) => (
-                    <li key={`${line}-${i}`} className="flex gap-2">
-                      <span className="text-primary/70 shrink-0">•</span>
-                      <span>{line.replace(/^[-*]\s*/, '')}</span>
-                    </li>
-                  ))}
-              </ul>
-            )}
-
-            {!dynamicExplanation && route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
-              <p className="text-[11px] text-on-surface font-medium mb-1.5 leading-relaxed">
-                {route.reason}
-              </p>
-            )}
-            {!dynamicExplanation && insights.length > 0 && (
-              <ul className="text-[11px] text-on-surface-variant space-y-1">
-                {insights.map((factor, idx) => (
-                  <li key={`${factor}-${idx}`} className="flex items-start gap-2">
-                    <span className="text-primary/60 leading-4 shrink-0">•</span>
-                    <span>{factor}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="flex justify-between items-center">
-              <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold">Route insight</div>
-              <button 
-                onClick={handleExplain} 
-                disabled={isLoadingExplanation} 
+        {/* B. Route insight (always from single source of truth) */}
+        <div className="mt-3 pt-3 border-t border-outline-variant/8">
+          <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5 flex justify-between items-center">
+            <span>Route insight</span>
+            {!dynamicExplanation && (
+              <button
+                onClick={handleExplain}
+                disabled={isLoadingExplanation}
                 className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
               >
                 {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
               </button>
-            </div>
+            )}
           </div>
-        )}
+
+          {dynamicExplanation ? (
+            <ul className="mb-2 space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed bg-surface-container-low/40 p-2 rounded border border-outline-variant/10">
+              {dynamicExplanation
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map((line, i) => (
+                  <li key={`${line}-${i}`} className="flex gap-2">
+                    <span className="text-primary/70 shrink-0">•</span>
+                    <span>{line.replace(/^[-*]\s*/, '')}</span>
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <>
+              {/* Priority-derived insight first */}
+              {insightLabel && (
+                <p className="text-[11px] text-on-surface font-medium mb-1.5 leading-relaxed">
+                  {insightLabel}
+                </p>
+              )}
+              {/* Backend reason (filtered) */}
+              {route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
+                <p className="text-[11px] text-on-surface-variant mb-1.5 leading-relaxed">
+                  {route.reason}
+                </p>
+              )}
+              {/* Key factors */}
+              {insights.length > 0 && (
+                <ul className="text-[11px] text-on-surface-variant space-y-1">
+                  {insights.map((factor, idx) => (
+                    <li key={`${factor}-${idx}`} className="flex items-start gap-2">
+                      <span className="text-primary/60 leading-4 shrink-0">•</span>
+                      <span>{factor}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!insightLabel && !route.reason && insights.length === 0 && (
+                <p className="text-[11px] text-outline italic">No additional route insights available.</p>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Recommendation Panel ──────────────────────────────────────────────
+// ── D. Recommendation Panel ───────────────────────────────────────────
 
 function RecommendationPanel({
   routes,
-  minCost,
-  minTime,
-  minRisk,
+  indices,
 }: {
   routes: RoadRoute[];
-  minCost: number;
-  minTime: number;
-  minRisk: number;
+  indices: RouteIndices;
 }) {
   const priority = useLogiFlowStore(s => s.priority);
 
   const lines = useMemo(() => {
     if (!routes.length) return [];
     const out: string[] = [];
-    const fastestIdx = routes.findIndex(r => Number(r.time) === minTime);
-    const cheapestIdx = routes.findIndex(r => Number(r.cost) === minCost);
-    const safestIdx = routes.findIndex(r => Number(r.risk) === minRisk);
-    const fr = fastestIdx >= 0 ? fastestIdx + 1 : 1;
-    const ch = cheapestIdx >= 0 ? cheapestIdx + 1 : 1;
-    const sf = safestIdx >= 0 ? safestIdx + 1 : 1;
 
-    if (priority === 'time') out.push(`Fastest option → Route ${fr} (${Number(routes[fastestIdx]?.time).toFixed(1)} hrs).`);
-    else if (priority === 'cost') out.push(`Most cost-efficient → Route ${ch} (₹${formatCurrency(routes[cheapestIdx]?.cost)}).`);
-    else if (priority === 'safe') out.push(`Safest route → Route ${sf} (lowest risk exposure).`);
-    else out.push(`Route 1 offers the best overall balance across cost, time, and risk.`);
+    const { fastestIndex, cheapestIndex, safestIndex, recommendedIndex } = indices;
+    const fr = fastestIndex  + 1;
+    const ch = cheapestIndex + 1;
+    const sf = safestIndex   + 1;
+    const rc = recommendedIndex + 1;
 
-    if (routes.length > 1) {
-      if (fr === ch) out.push(`Route ${fr} leads on both time and cost.`);
-      else out.push(`Speed → Route ${fr}; lowest spend → Route ${ch}.`);
+    // Primary recommendation always matches selected priority
+    if (priority === 'cost') {
+      out.push(
+        `Most cost-efficient → Route ${ch} (₹${formatCurrency(routes[cheapestIndex]?.cost)}).`,
+      );
+    } else if (priority === 'time') {
+      out.push(
+        `Fastest option → Route ${fr} (${Number(routes[fastestIndex]?.time).toFixed(1)} hrs).`,
+      );
+    } else if (priority === 'safe') {
+      out.push(`Safest route → Route ${sf} (lowest risk exposure).`);
+    } else {
+      out.push(`Route ${rc} offers the best overall balance across cost, time, and risk.`);
     }
+
+    // Always surface speed + cost champions when they differ
+    if (routes.length > 1) {
+      if (fr === ch) {
+        if (priority !== 'time' && priority !== 'cost')
+          out.push(`Route ${fr} leads on both speed and cost.`);
+      } else {
+        if (priority !== 'time') out.push(`Fastest → Route ${fr}.`);
+        if (priority !== 'cost') out.push(`Lowest cost → Route ${ch}.`);
+      }
+    }
+
+    // Surface safest when not already the primary recommendation
     if (routes.length > 1 && priority !== 'safe' && sf !== fr && sf !== ch) {
       out.push(`Lowest risk → Route ${sf}.`);
     }
+
     return [...new Set(out)].slice(0, 4);
-  }, [routes, minTime, minCost, minRisk, priority]);
+  }, [routes, indices, priority]);
 
   if (!routes.length) return null;
 
@@ -574,37 +893,33 @@ function RecommendationPanel({
 // ── Route Results ─────────────────────────────────────────────────────
 
 export default function RouteResults() {
-  const routes = useLogiFlowStore(s => s.routes);
-  const selectedRoute = useLogiFlowStore(s => s.selectedRoute);
+  const routes         = useLogiFlowStore(s => s.routes);
+  const selectedRoute  = useLogiFlowStore(s => s.selectedRoute);
   const setSelectedRoute = useLogiFlowStore(s => s.setSelectedRoute);
-  const priority = useLogiFlowStore(s => s.priority);
-  const source = useLogiFlowStore(s => s.source);
-  const destination = useLogiFlowStore(s => s.destination);
-  const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
+  const priority       = useLogiFlowStore(s => s.priority);
+  const source         = useLogiFlowStore(s => s.source);
+  const destination    = useLogiFlowStore(s => s.destination);
 
-  // Auto-select best route whenever routes or priority changes
+  // A. Single source of truth — computed once, used everywhere
+  const indices = useMemo(
+    () => deriveRouteIndices(routes, priority),
+    [routes, priority],
+  );
+
+  // Auto-select recommended route whenever routes or priority changes
   useEffect(() => {
     if (!routes.length) return;
-    let bestIndex = 0;
-    if (priority === 'cost') {
-      const minCostVal = Math.min(...routes.map(r => Number(r.cost)));
-      bestIndex = routes.findIndex(r => Number(r.cost) === minCostVal);
-    } else if (priority === 'time') {
-      const minTimeVal = Math.min(...routes.map(r => Number(r.time)));
-      bestIndex = routes.findIndex(r => Number(r.time) === minTimeVal);
-    } else if (priority === 'safe') {
-      const minRiskVal = Math.min(...routes.map(r => Number(r.risk)));
-      bestIndex = routes.findIndex(r => Number(r.risk) === minRiskVal);
-    }
-    setSelectedRoute(Math.max(0, bestIndex));
-  }, [routes, priority, setSelectedRoute]);
+    setSelectedRoute(indices.recommendedIndex);
+  }, [routes, priority, indices.recommendedIndex, setSelectedRoute]);
+
+  // H. Dev-mode consistency assertions
+  useEffect(() => {
+    devValidate(routes, indices, priority);
+  }, [routes, indices, priority]);
 
   if (!routes || routes.length === 0) return null;
 
   const safeIndex = Math.min(selectedRoute, routes.length - 1);
-  const minCost = Math.min(...routes.map((r) => Number(r.cost)));
-  const minTime = Math.min(...routes.map((r) => Number(r.time)));
-  const minRisk = Math.min(...routes.map((r) => Number(r.risk)));
 
   return (
     <section>
@@ -626,7 +941,9 @@ export default function RouteResults() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Cards column */}
         <div className="lg:col-span-1 max-h-none space-y-4 pr-0 sm:pr-1 lg:max-h-[80vh] lg:overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
-          <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
+          {/* D. Recommendation panel receives indices directly */}
+          <RecommendationPanel routes={routes} indices={indices} />
+
           {routes.map((r, i) => (
             <RouteCard
               key={`${i}-${r.cost}-${r.time}-${r.risk}`}
@@ -634,14 +951,11 @@ export default function RouteResults() {
               index={i}
               isSelected={i === selectedRoute}
               onSelect={() => setSelectedRoute(i)}
-              isCheapest={Number(r.cost) === minCost}
-              isFastest={Number(r.time) === minTime}
-              isSafest={Number(r.risk) === minRisk}
               source={source}
               destination={destination}
-              cargoKg={cargoWeight}
               routes={routes}
-              confidence={computeConfidence(r, routes, i, priority)}
+              confidence={computeConfidence(r, routes, i, indices)}
+              indices={indices}
             />
           ))}
         </div>
