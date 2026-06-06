@@ -19,6 +19,15 @@ def engineer_routes(routes, payload):
     enriched = []
 
     for r in routes:
+        # Centralized traffic categorization (must match pipeline + ML training)
+        def traffic_to_category(level: float) -> int:
+            if level < 0.10:
+                return 0      # Clear
+            elif level < 0.20:
+                return 1      # Moderate
+            elif level < 0.35:
+                return 2      # Heavy
+            return 3          # Severe / Detour
         raw_traffic = r.get("traffic_level")
 
         if raw_traffic is None:
@@ -46,11 +55,13 @@ def engineer_routes(routes, payload):
         base_time = r["base_duration_hr"]
 
         # ML-based delay prediction
+        traffic_cat = traffic_to_category(traffic)
+
         adjusted_time, traffic_factor, weather_factor = predict_delay(
             max(base_time, 0),
             weather_data,
-            traffic=0 if traffic < 0.35 else 1 if traffic < 0.6 else 2,
-            traffic_level=traffic
+            traffic=traffic_cat,
+            traffic_level=traffic,
         )
 
         # Safety: ensure traffic_factor reflects traffic_level
@@ -75,8 +86,9 @@ def engineer_routes(routes, payload):
 
             effective_time = effective_time * weather_factor_sim + incident_delay
 
-        # Add slight traffic influence to differentiate routes
-        effective_time += traffic * 0.5
+        # Avoid double-counting traffic. ML already incorporates traffic.
+        # Apply only a tiny residual adjustment for route differentiation.
+        effective_time += traffic * 0.1
 
         # --- COST ---
         fuel_cost = r.get("distance_km", 0) * FUEL_COST_PER_KM
@@ -139,6 +151,7 @@ def engineer_routes(routes, payload):
             # Debug/analysis fields
             "distance_km": round(r["distance_km"], 2),
             "traffic_level": traffic,
+            "traffic_category": traffic_cat,
             "weather_impact": weather,
             "num_stops": num_stops,
             "road_quality": road_quality,
