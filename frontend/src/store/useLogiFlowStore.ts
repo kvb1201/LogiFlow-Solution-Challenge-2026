@@ -61,6 +61,19 @@ export type RoadRoute = {
     weather: 'good' | 'moderate' | 'bad';
     delay_hours: number;
   };
+  /** Present when the route was computed as a multi-stop journey */
+  stops?: string[];
+  waypoints?: string[];
+  stop_count?: number;
+  stop_order_optimised?: boolean;
+  /** Per-leg segment details for multi-stop routes */
+  segments?: Array<{
+    mode: string;
+    from: string;
+    to: string;
+    distance_km?: number;
+    duration_minutes?: number;
+  }>;
 };
 
 type RoadOptimizeResponse = {
@@ -113,6 +126,9 @@ export interface LogiFlowState {
   trafficAware: boolean;
   vehicleType: 'mini_truck' | 'truck' | 'heavy_truck';
   fuelPrice: number;
+  /** Intermediate stops for multi-stop road routing */
+  roadStops: string[];
+  optimizeStopOrder: boolean;
 
   // Map data
   liveTrains: LiveTrainPosition[];
@@ -161,6 +177,12 @@ export interface LogiFlowState {
   setTrafficAware: (val: boolean) => void;
   setVehicleType: (val: 'mini_truck' | 'truck' | 'heavy_truck') => void;
   setFuelPrice: (val: number) => void;
+  setRoadStops: (stops: string[]) => void;
+  addRoadStop: (stop: string) => void;
+  removeRoadStop: (index: number) => void;
+  updateRoadStop: (index: number, value: string) => void;
+  reorderRoadStops: (stops: string[]) => void;
+  setOptimizeStopOrder: (val: boolean) => void;
 
   handleOptimize: (opts?: {
     mode?: 'rail' | 'road' | 'water' | 'air';
@@ -222,6 +244,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   trafficAware: true,
   vehicleType: 'truck',
   fuelPrice: 100,
+  roadStops: [],
+  optimizeStopOrder: false,
 
   liveTrains: [],
   stationCoords: {},
@@ -267,6 +291,16 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setTrafficAware: (val) => set({ trafficAware: val }),
   setVehicleType: (val) => set({ vehicleType: val }),
   setFuelPrice: (val) => set({ fuelPrice: val }),
+  setRoadStops: (stops) => set({ roadStops: stops }),
+  addRoadStop: (stop) => set(state => ({ roadStops: [...state.roadStops, stop] })),
+  removeRoadStop: (index) => set(state => ({
+    roadStops: state.roadStops.filter((_, i) => i !== index),
+  })),
+  updateRoadStop: (index, value) => set(state => ({
+    roadStops: state.roadStops.map((s, i) => (i === index ? value : s)),
+  })),
+  reorderRoadStops: (stops) => set({ roadStops: stops }),
+  setOptimizeStopOrder: (val) => set({ optimizeStopOrder: val }),
 
   resetSearch: () => set({
     hasSearched: false,
@@ -291,6 +325,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     selectedWaterRoute: 0,
     scenarioBrief: '',
     lastParsedIntent: null,
+    roadStops: [],
+    optimizeStopOrder: false,
   }),
 
   // ── Main optimize call ─────────────────────────────────────────────
@@ -374,6 +410,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
         const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
+        const roadStops = get().roadStops.filter(s => s.trim());
+        const optimizeStopOrder = get().optimizeStopOrder;
 
         const payload = {
           source: source.trim(),
@@ -388,6 +426,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
+          stops: roadStops.length > 0 ? roadStops : undefined,
+          optimize_stop_order: roadStops.length > 1 ? optimizeStopOrder : undefined,
           mode: (opts?.simulation_mode ? 'simulation' : 'realtime') as 'simulation' | 'realtime',
           simulation: opts?.simulation,
         };

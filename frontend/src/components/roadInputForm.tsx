@@ -230,6 +230,134 @@ function LocationInput({
   );
 }
 
+// ── Stop Input ────────────────────────────────────────────────────────
+
+function StopInput({
+  index,
+  value,
+  totalStops,
+  onChange,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+}: {
+  index: number;
+  value: string;
+  totalStops: number;
+  onChange: (val: string) => void;
+  onRemove: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+}) {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const setStationSuggestions = useLogiFlowStore(s => s.setStationSuggestions);
+  const { results, loading, search, clear } = useCitySearch(setStationSuggestions);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative flex items-center gap-1.5">
+      {/* Reorder buttons */}
+      <div className="flex flex-col gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={!onMoveUp}
+          className="w-5 h-5 rounded flex items-center justify-center text-outline hover:text-on-surface disabled:opacity-20 transition-colors"
+          aria-label="Move stop up"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>keyboard_arrow_up</span>
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={!onMoveDown}
+          className="w-5 h-5 rounded flex items-center justify-center text-outline hover:text-on-surface disabled:opacity-20 transition-colors"
+          aria-label="Move stop down"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>keyboard_arrow_down</span>
+        </button>
+      </div>
+
+      {/* Stop badge */}
+      <span className="shrink-0 w-5 h-5 rounded-full bg-surface-container text-outline text-[9px] font-bold mono flex items-center justify-center border border-outline-variant/20">
+        {index + 1}
+      </span>
+
+      {/* Input */}
+      <div className="flex-1 relative">
+        <span
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline"
+          style={{ fontSize: '14px' }}
+        >
+          place
+        </span>
+        <input
+          type="text"
+          value={value}
+          onChange={e => {
+            onChange(e.target.value);
+            search(e.target.value);
+            setShowDropdown(true);
+          }}
+          onFocus={() => { if (results.length) setShowDropdown(true); }}
+          onBlur={() => setShowDropdown(false)}
+          placeholder={`Stop ${index + 1}`}
+          className={`${formInputClass} pl-8 pr-7 py-2.5 text-[12px]`}
+        />
+        {loading && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-live" />
+        )}
+      </div>
+
+      {/* Remove */}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-outline hover:text-error hover:bg-error/10 transition-all"
+        aria-label={`Remove stop ${index + 1}`}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>close</span>
+      </button>
+
+      {/* Autocomplete dropdown */}
+      {showDropdown && results.length > 0 && (
+        <div className="absolute z-[99999] top-full left-7 right-7 mt-1 overflow-hidden rounded-xl border border-border bg-surface/95 shadow-xl backdrop-blur-xl">
+          <div className="max-h-[160px] overflow-y-auto p-1">
+            {results.map((s, i) => (
+              <button
+                key={`${s.name}-${i}`}
+                type="button"
+                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-surface-container/80 text-left text-[12px]"
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onChange(s.name);
+                  clear();
+                  setShowDropdown(false);
+                }}
+              >
+                <span className="material-symbols-outlined text-outline" style={{ fontSize: '13px' }}>
+                  place
+                </span>
+                <span className="truncate text-on-surface">{s.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Form ─────────────────────────────────────────────────────────
 
 export default function RoadInputForm() {
@@ -247,6 +375,8 @@ export default function RoadInputForm() {
     trafficAware, setTrafficAware,
     vehicleType, setVehicleType,
     fuelPrice, setFuelPrice,
+    roadStops, addRoadStop, removeRoadStop, updateRoadStop, reorderRoadStops,
+    optimizeStopOrder, setOptimizeStopOrder,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
@@ -395,6 +525,78 @@ export default function RoadInputForm() {
                   </span>
                   {error}
                 </p>
+              )}
+            </div>
+
+            {/* ── Intermediate Stops ─────────────────────────────────── */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] ml-0.5">
+                  Intermediate Stops
+                  {roadStops.length > 0 && (
+                    <span className="ml-1.5 text-primary normal-case font-normal">
+                      ({roadStops.length})
+                    </span>
+                  )}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => addRoadStop('')}
+                  disabled={roadStops.length >= 10}
+                  className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>add_circle</span>
+                  Add stop
+                </button>
+              </div>
+
+              {roadStops.length > 0 && (
+                <div className="space-y-1.5">
+                  {roadStops.map((stop, idx) => (
+                    <StopInput
+                      key={idx}
+                      index={idx}
+                      value={stop}
+                      totalStops={roadStops.length}
+                      onChange={(val) => updateRoadStop(idx, val)}
+                      onRemove={() => removeRoadStop(idx)}
+                      onMoveUp={idx > 0 ? () => {
+                        const next = [...roadStops];
+                        [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                        reorderRoadStops(next);
+                      } : undefined}
+                      onMoveDown={idx < roadStops.length - 1 ? () => {
+                        const next = [...roadStops];
+                        [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                        reorderRoadStops(next);
+                      } : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {roadStops.length > 1 && (
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setOptimizeStopOrder(!optimizeStopOrder)}
+                    className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-lg border transition-all duration-200 ${
+                      optimizeStopOrder
+                        ? 'bg-primary/10 border-primary/30 text-primary'
+                        : 'bg-surface-container-lowest/20 border-outline-variant/15 text-on-surface-variant hover:border-outline-variant/30'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
+                      route
+                    </span>
+                    Auto-optimise stop order
+                  </button>
+                  {optimizeStopOrder && (
+                    <span className="text-[9px] text-outline italic">
+                      Reorders stops by shortest path
+                    </span>
+                  )}
+                </div>
               )}
             </div>
 

@@ -26,6 +26,15 @@ export type MapRoute = {
     traffic: 'high' | 'moderate' | 'low';
     delay_hours: number;
   };
+  /** Waypoints list — present for multi-stop routes */
+  waypoints?: string[];
+  /** Per-leg segments for multi-stop routes */
+  segments?: Array<{
+    from: string;
+    to: string;
+    distance_km?: number;
+    duration_minutes?: number;
+  }>;
 };
 
 function formatCostK(n: number): string {
@@ -51,7 +60,61 @@ function midpointLatLng(geometry: [number, number][]): LatLngTuple | null {
   return [lat, lng];
 }
 
-export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRoute[]; selectedRoute?: number }) {
+/** Build a numbered stop marker icon for intermediate waypoints */
+function makeStopIcon(label: string, stopNumber: number): L.DivIcon {
+  const colors = [
+    '#8b5cf6', // violet
+    '#06b6d4', // cyan
+    '#f59e0b', // amber
+    '#10b981', // emerald
+    '#f43f5e', // rose
+    '#6366f1', // indigo
+    '#ec4899', // pink
+    '#14b8a6', // teal
+    '#84cc16', // lime
+    '#f97316', // orange
+  ];
+  const bg = colors[(stopNumber - 1) % colors.length];
+  const short = label.length > 12 ? `${label.slice(0, 11)}…` : label;
+  const html = `
+    <div style="
+      display:flex;align-items:center;gap:4px;
+      background:rgba(15,15,20,0.92);
+      color:#f1f5f9;
+      padding:4px 8px 4px 4px;
+      border-radius:20px;
+      font-size:10px;
+      font-family:ui-monospace,Menlo,monospace;
+      white-space:nowrap;
+      border:1.5px solid ${bg};
+      box-shadow:0 2px 8px rgba(0,0,0,0.5);
+    ">
+      <span style="
+        width:16px;height:16px;border-radius:50%;
+        background:${bg};color:#fff;
+        display:inline-flex;align-items:center;justify-content:center;
+        font-size:9px;font-weight:700;flex-shrink:0;
+      ">${stopNumber}</span>
+      <span>${short}</span>
+    </div>`;
+  return L.divIcon({
+    className: 'logiflow-stop-marker',
+    html,
+    iconSize: [160, 26],
+    iconAnchor: [80, 13],
+  });
+}
+
+export default function MapView({
+  routes,
+  selectedRoute = 0,
+  waypoints,
+}: {
+  routes: MapRoute[];
+  selectedRoute?: number;
+  /** Optional waypoints to render stop markers — passed from RouteResults */
+  waypoints?: string[];
+}) {
   const mapRef = useRef<LeafletMap | null>(null);
   const hasRoutes = Array.isArray(routes) && routes.length > 0;
   const safeRoutes = hasRoutes ? routes : [];
@@ -118,6 +181,50 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
       return { position, icon, index };
     });
   }, [safeRoutes, selectedRoute]);
+
+  /**
+   * Resolve intermediate stop positions from geometry.
+   * For multi-stop routes the geometry is a stitched polyline; we estimate each
+   * stop's position by splitting the geometry proportionally by leg distances.
+   * When per-leg segment data is available we use cumulative distance fractions;
+   * otherwise we distribute evenly.
+   */
+  const stopMarkers = useMemo(() => {
+    if (!waypoints || waypoints.length <= 2 || !bestRoute?.geometry?.length) return [];
+
+    const intermediateStops = waypoints.slice(1, waypoints.length - 1);
+    const geo = bestRoute.geometry;
+    const totalPoints = geo.length;
+    const n = intermediateStops.length;
+
+    // Try distance-weighted split if segments exist
+    const segs = bestRoute.segments;
+    let fractions: number[] = [];
+
+    if (segs && segs.length >= n + 1) {
+      const legDistances = segs.map(s => Number(s.distance_km ?? 0) || 1);
+      const totalDist = legDistances.reduce((a, b) => a + b, 0) || 1;
+      let cumulative = 0;
+      for (let i = 0; i < n; i++) {
+        cumulative += legDistances[i];
+        fractions.push(cumulative / totalDist);
+      }
+    } else {
+      // Even distribution fallback
+      for (let i = 1; i <= n; i++) {
+        fractions.push(i / (n + 1));
+      }
+    }
+
+    return intermediateStops.map((stopName, si) => {
+      const pointIdx = Math.round(fractions[si] * (totalPoints - 1));
+      const safeIdx = Math.max(0, Math.min(totalPoints - 1, pointIdx));
+      const [lng, lat] = geo[safeIdx];
+      const position: LatLngTuple = [lat, lng];
+      const icon = makeStopIcon(stopName.split(',')[0].trim(), si + 1);
+      return { position, icon, stopName, stopNumber: si + 1 };
+    });
+  }, [waypoints, bestRoute]);
 
   useEffect(() => {
     if (!hasRoutes || !mapRef.current || !allCoords.length) return;
@@ -202,17 +309,35 @@ export default function MapView({ routes, selectedRoute = 0 }: { routes: MapRout
           );
         })}
 
+        {/* Origin marker */}
         <Marker position={bestCoords[0]}>
           <Popup>
-            <b>Start</b>
+            <b>Origin{waypoints?.[0] ? `: ${waypoints[0]}` : ''}</b>
           </Popup>
         </Marker>
 
+        {/* Destination marker */}
         <Marker position={bestCoords[bestCoords.length - 1]}>
           <Popup>
-            <b>Destination</b>
+            <b>Destination{waypoints?.[waypoints.length - 1] ? `: ${waypoints[waypoints.length - 1]}` : ''}</b>
           </Popup>
         </Marker>
+
+        {/* Intermediate stop markers (multi-stop only) */}
+        {stopMarkers.map(sm => (
+          <Marker
+            key={`stop-${sm.stopNumber}`}
+            position={sm.position}
+            icon={sm.icon}
+            zIndexOffset={300 + sm.stopNumber}
+          >
+            <Popup>
+              <div className="text-xs">
+                <b>Stop {sm.stopNumber}: {sm.stopName}</b>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );
