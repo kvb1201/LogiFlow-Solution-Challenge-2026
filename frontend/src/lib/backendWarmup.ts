@@ -57,7 +57,7 @@ export async function ensureBackendWarm(maxWaitMs = 120_000): Promise<boolean> {
 
 function startKeepAliveLoop(): void {
   if (keepAliveTimer || typeof window === 'undefined') return;
-  keepAliveTimer = window.setInterval(() => {
+  keepAliveTimer = setInterval(() => {
     void pingOnce(30_000).catch(() => {
       // best-effort — next interval or user action will retry
     });
