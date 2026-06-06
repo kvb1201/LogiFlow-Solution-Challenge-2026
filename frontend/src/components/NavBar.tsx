@@ -24,7 +24,9 @@ export default function NavBar() {
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+    pathname === null
+      ? false
+      : href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-border/70 bg-background/80 shadow-[0_12px_40px_-28px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
@@ -72,7 +74,7 @@ export default function NavBar() {
         </nav>
 
         <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
-          {liveTrains.length > 0 && pathname.startsWith('/railway') && (
+          {liveTrains.length > 0 && pathname?.startsWith('/railway') && (
             <div className="hidden items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 lg:flex">
               <span className="live-dot" />
               <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
