@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+import logging
 
 
 air_router = APIRouter(prefix="/air", tags=["air-cargo"])
+logger = logging.getLogger(__name__)
 
 
 class AirCargoPayload(BaseModel):
@@ -45,39 +47,68 @@ def optimize_air(payload: AirCargoPayload):
             context=context,
         )
 
-        # Ensure result is a dict (new pipeline contract)
-        if not isinstance(result, dict):
-            raise Exception(f"Invalid pipeline response: {type(result)}")
+        constraints_applied = {
+            "budget_limit": payload.budget_limit,
+            "deadline_hours": payload.deadline_hours,
+            "max_stops": payload.max_stops,
+            "cargo_type": payload.cargo_type,
+            "cargo_weight_kg": payload.cargo_weight_kg,
+        }
 
-        # Handle explicit "no routes" status cleanly (HTTP 200, not an error)
-        if result.get("status") == "no_routes":
+        # AirPipeline currently returns a dict with best/alternatives/all.
+        # Keep backward compatibility with older list-style outputs.
+        if isinstance(result, dict):
+            ranked_routes = result.get("all") or []
+            best_route = result.get("best")
+            alternatives = result.get("alternatives") or []
+            no_routes = (
+                result.get("status") == "no_routes"
+                or not ranked_routes
+                or best_route is None
+            )
+            no_routes_message = result.get(
+                "message",
+                "No valid air routes found for the selected corridor",
+            )
+        else:
+            ranked_routes = result or []
+            best_route = ranked_routes[0] if ranked_routes else None
+            alternatives = ranked_routes[1:] if len(ranked_routes) > 1 else []
+            no_routes = not ranked_routes or best_route is None
+            no_routes_message = "No valid air routes found for the selected corridor"
+
+        if no_routes:
             return {
                 "mode": "air",
                 "status": "no_routes",
-                "message": result.get("message", "No valid air routes found"),
+                "message": no_routes_message,
                 "best_route": None,
                 "alternatives": [],
                 "ranked_routes": [],
                 "total_routes": 0,
+                "constraints_applied": constraints_applied,
             }
 
         return {
             "mode": "air",
-            "best_route": result.get("best"),
-            "alternatives": result.get("alternatives", []),
-            "ranked_routes": result.get("all", []),
-            "total_routes": len(result.get("all", [])),
-            "constraints_applied": {
-                "budget_limit": payload.budget_limit,
-                "deadline_hours": payload.deadline_hours,
-                "max_stops": payload.max_stops,
-                "cargo_type": payload.cargo_type,
-                "cargo_weight_kg": payload.cargo_weight_kg,
-            },
+            "best_route": best_route,
+            "alternatives": alternatives,
+            "ranked_routes": ranked_routes,
+            "total_routes": len(ranked_routes),
+            "constraints_applied": constraints_applied,
+            "error": result.get("error") if isinstance(result, dict) else None,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return a clearer API error while preserving traceback in server logs.
+        logger.exception("Air optimize failed")
+        message = str(e).strip() or "Unknown error"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Air optimize internal error ({type(e).__name__}): {message}",
+        )
 
 
 @air_router.get("/health")
