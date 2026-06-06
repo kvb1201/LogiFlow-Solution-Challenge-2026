@@ -31,10 +31,16 @@ export async function GET() {
 
     if (res.ok) {
       // Preload lightweight rail routes after wake (helps first map geometry request).
-      void fetch(`${base}/railway/stations`, {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(30_000),
-      }).catch(() => {});
+      void Promise.all([
+        fetch(`${base}/railway/stations`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30_000),
+        }),
+        fetch(`${base}/railway/model-info`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(30_000),
+        }),
+      ]).catch(() => {});
 
       return NextResponse.json({ warmed: true, elapsed_ms, backend: base, health: body });
     }
