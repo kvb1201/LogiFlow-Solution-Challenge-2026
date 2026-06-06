@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
+import { isWaterNoRouteMessage } from '@/lib/water-no-route';
 import { PipelineModeLanding } from './PipelineModeLanding';
 import { PipelineResultsChrome } from './PipelineResultsChrome';
 
-type PipelineMode = Exclude<LogisticsMode, 'comparator'>;
+type PipelineMode = Exclude<LogisticsMode, 'comparator' | 'hybrid'>;
 
 export function PipelineModePage({
   mode,
@@ -24,6 +25,7 @@ export function PipelineModePage({
   const error = useLogiFlowStore((s) => s.error);
   const config = pipelinePageMeta[mode];
   const showLoading = loading && loadingMode === config.storeMode;
+  const hideErrorBanner = mode === 'water' && isWaterNoRouteMessage(error);
 
   if (!hasSearched) {
     return <PipelineModeLanding mode={mode}>{form}</PipelineModeLanding>;
@@ -33,7 +35,7 @@ export function PipelineModePage({
     <div className="flex w-full flex-col bg-background text-foreground lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
       <PipelineResultsChrome mode={mode} />
 
-      {error ? (
+      {error && !hideErrorBanner ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-risk/30 bg-risk/10 px-4 py-2 text-xs text-risk">
           <span className="material-symbols-outlined text-sm">error</span>
           <span className="min-w-0 break-words">{error}</span>
@@ -49,7 +51,7 @@ export function PipelineModePage({
           <p className="text-sm text-muted-foreground">{config.loadingMessage}</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 lg:overflow-y-auto">{results}</div>
+        <div className="results-shell min-h-0 flex-1 lg:overflow-y-auto">{results}</div>
       )}
     </div>
   );

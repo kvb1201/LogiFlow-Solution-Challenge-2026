@@ -27,7 +27,7 @@ export default function IntentConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200000] flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[200000] flex items-end justify-center p-3 sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="intent-confirm-title"
@@ -38,7 +38,7 @@ export default function IntentConfirmModal({
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-violet-400/30 bg-[#0c1018] shadow-[0_32px_120px_-24px_rgba(0,0,0,0.9)] animate-fade-in overflow-hidden pointer-events-auto">
+      <div className="relative z-10 w-full max-w-lg max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl border border-violet-400/30 bg-[#0c1018] shadow-[0_32px_120px_-24px_rgba(0,0,0,0.9)] animate-fade-in overflow-hidden pointer-events-auto flex flex-col">
         <div className="px-5 sm:px-6 py-5 border-b border-outline-variant/15 bg-gradient-to-r from-violet-500/10 to-primary/5">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
             Confirm your shipment
@@ -51,7 +51,7 @@ export default function IntentConfirmModal({
           </p>
         </div>
 
-        <div className="px-5 sm:px-6 py-5 space-y-3 max-h-[50vh] overflow-y-auto">
+        <div className="px-5 sm:px-6 py-5 space-y-3 flex-1 min-h-0 overflow-y-auto max-h-[45dvh] sm:max-h-[50vh]">
           {lines.map(({ label, value }) => (
             <div
               key={label}
@@ -77,13 +77,14 @@ export default function IntentConfirmModal({
             onClick={onEdit}
             className="flex-1 px-4 py-3 rounded-xl border border-outline-variant/25 text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:border-outline-variant/40 disabled:opacity-50"
           >
-            Not correct — open suggested tool
+            <span className="sm:hidden">Edit in suggested tool</span>
+            <span className="hidden sm:inline">Not correct — open suggested tool</span>
           </button>
           <button
             type="button"
             disabled={loading || !readyToRun}
             onClick={onConfirmRun}
-            className="flex-1 px-4 py-3 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-3 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2 touch-target"
           >
             {loading ? (
               <>
@@ -95,7 +96,8 @@ export default function IntentConfirmModal({
                 <span className="material-symbols-outlined text-[18px]" aria-hidden>
                   check_circle
                 </span>
-                Yes, this is right — show final results
+                <span className="sm:hidden">Show final results</span>
+                <span className="hidden sm:inline">Yes, this is right — show final results</span>
               </>
             )}
           </button>

@@ -207,21 +207,28 @@ class RailCargoOptimizer:
                 }
 
             try:
+                from app.pipelines.rail.engineer import refresh_risk_after_ml
                 from app.pipelines.rail.ml_models import predict_delay, predict_duration_factor
                 print("🤖 Running ML predictions...")
+                dep_date = payload.get("departure_date", "2025-06-01")
                 for r in enriched:
                     delay = predict_delay(r)
                     duration_factor = predict_duration_factor(r)
-                    r["predicted_delay_min"] = delay
+                    r["predicted_delay_min"] = round(float(delay), 1)
+                    r["ml_prediction_available"] = True
                     r["duration_factor"] = duration_factor
                     r["adjusted_duration_hours"] = round(
                         r.get("effective_hours", 0) * duration_factor + (delay / 60), 2
                     )
+                    r["risk_score"] = refresh_risk_after_ml(
+                        r, dep_date, r.get("weather_data")
+                    )
             except Exception as e:
                 print(f"  [ML] Prediction failed: {e}")
                 for r in enriched:
-                    r["predicted_delay_min"] = r.get("effective_hours", 0) * 3
-                    r["adjusted_duration_hours"] = r.get("effective_hours", 0) * 1.1
+                    r["predicted_delay_min"] = None
+                    r["ml_prediction_available"] = False
+                    r["adjusted_duration_hours"] = r.get("effective_hours", 0)
 
             print("🎯 Running decision engine...")
             results = decide(enriched, payload)

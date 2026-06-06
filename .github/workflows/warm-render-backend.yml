@@ -1,0 +1,30 @@
+# Keeps the Render backend warm. Pings every 5 minutes (GitHub cron minimum granularity).
+# REQUIRED: repo secret BACKEND_URL = https://logiflow-solution-challenge-2026.onrender.com
+# Without that secret this workflow exits immediately and does nothing.
+name: Warm Render backend
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Health check + light rail preload
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::warning::BACKEND_URL secret not set — keep-alive disabled."
+            echo "Add it under GitHub → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          BASE="${BACKEND_URL%/}"
+          echo "Pinging ${BASE}/health ..."
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 15 --max-time 120 "${BASE}/health"
+          echo "Health OK — preloading rail module ..."
+          curl -fsS --max-time 60 "${BASE}/railway/stations" >/dev/null || true
+          echo "Backend keep-alive complete."

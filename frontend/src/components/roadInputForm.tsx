@@ -8,6 +8,7 @@ import AiBriefPanel from '@/components/AiBriefPanel';
 import {
   AdvancedToggle,
   ChoicePills,
+  CorridorRow,
   FormField,
   FormShell,
   FormSubmit,
@@ -359,26 +360,15 @@ export default function RoadInputForm() {
                   : 'pointer-events-none opacity-0 translate-y-3'
               }`}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-                <div className="hidden md:flex absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10 items-center justify-center">
-                  <button
-                    type="button"
-                    disabled={!source.trim() && !destination.trim()}
-                    onClick={() => {
-                      const t = source;
-                      setSource(destination);
-                      setDestination(t);
-                    }}
-                    className="w-9 h-9 rounded-full bg-surface-container border border-outline-variant/15 flex items-center justify-center shadow-md hover:scale-105 transition-transform disabled:opacity-40"
-                  >
-                    <span
-                      className="material-symbols-outlined text-primary"
-                      style={{ fontSize: '15px' }}
-                    >
-                      swap_horiz
-                    </span>
-                  </button>
-                </div>
+              <CorridorRow
+                accentVar="--road"
+                swapDisabled={!source.trim() && !destination.trim()}
+                onSwap={() => {
+                  const t = source;
+                  setSource(destination);
+                  setDestination(t);
+                }}
+              >
                 <LocationInput
                   label="Pickup Location"
                   value={source}
@@ -397,7 +387,7 @@ export default function RoadInputForm() {
                   placeholder="Search city..."
                   hasError={!!error && !destination.trim()}
                 />
-              </div>
+              </CorridorRow>
               {error && (
                 <p className="text-[11px] text-error mt-1.5 flex items-center gap-1">
                   <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
@@ -501,7 +491,7 @@ export default function RoadInputForm() {
               <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2.5 ml-0.5">
                 Route Preferences
               </label>
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-3">
                 {[
                   { key: 'tolls', label: 'Avoid Tolls', icon: 'toll', value: avoidTolls, set: setAvoidTolls },
                   { key: 'highways', label: 'Avoid Highways', icon: 'alt_route', value: avoidHighways, set: setAvoidHighways },
@@ -547,7 +537,7 @@ export default function RoadInputForm() {
               }`}
             >
               <div className="pt-1 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
                       Budget Cap
@@ -583,7 +573,7 @@ export default function RoadInputForm() {
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
                       Vehicle Type
