@@ -1,6 +1,10 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
+
+logger = logging.getLogger(__name__)
 
 # Create router
 road_router = APIRouter(prefix="/road", tags=["road-cargo"])
@@ -45,6 +49,16 @@ class RoadPayload(BaseModel):
 # Main optimization endpoint
 @road_router.post("/optimize")
 def optimize_road(payload: RoadPayload):
+    if payload.source.strip().lower() == payload.destination.strip().lower():
+        logger.warning(
+            "Invalid route request: source and destination are identical (%s)",
+            payload.source,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Source and destination cannot be the same city.",
+        )
+
     try:
         from app.pipelines.road.pipeline import RoadPipeline
         from app.utils.request_context import RequestContext
