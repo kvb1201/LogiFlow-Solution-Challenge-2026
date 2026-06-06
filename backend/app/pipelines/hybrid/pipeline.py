@@ -1,8 +1,8 @@
-# This pipeline combines road, rail, and air results, then attaches Gemini-backed natural-language explainability.
+# This pipeline combines road, rail, air, and water results, then attaches Gemini-backed natural-language explainability.
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from app.services.pipeline_registry import get_pipeline
 from app.utils.request_context import RequestContext
-from .normalizer import normalize_road, normalize_rail, normalize_air
+from .normalizer import normalize_road, normalize_rail, normalize_air, normalize_water
 from .explain import build_hybrid_explanations
 
 # Step 3: Canonical priority labels
@@ -38,6 +38,7 @@ class HybridPipeline:
         road_pipeline = get_pipeline("road")
         rail_pipeline = get_pipeline("rail")
         air_pipeline = get_pipeline("air")
+        water_pipeline = get_pipeline("water")
 
         # --- Step 1: PARALLEL PIPELINE EXECUTION WITH TIMEOUT ---
 
@@ -48,11 +49,12 @@ class HybridPipeline:
                 print(f"[HYBRID ERROR] {name} pipeline failed: {e}")
                 return {}
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
                 "road": executor.submit(safe_call, road_pipeline, "road"),
                 "rail": executor.submit(safe_call, rail_pipeline, "rail"),
-                "air": executor.submit(safe_call, air_pipeline, "air")
+                "air": executor.submit(safe_call, air_pipeline, "air"),
+                "water": executor.submit(safe_call, water_pipeline, "water"),
             }
 
             results = {}
@@ -77,6 +79,7 @@ class HybridPipeline:
         road_res = results.get("road", {})
         rail_res = results.get("rail", {})
         air_res = results.get("air", {})
+        water_res = results.get("water", {})
 
         # --- Step 2: extract best routes with no_routes detection ---
 
@@ -142,6 +145,18 @@ class HybridPipeline:
         else:
             air_best = extract_best(air_res, "air")
 
+        # --- Detect water "no_routes" status before extracting best ---
+        water_no_routes = False
+        if isinstance(water_res, dict) and water_res.get("status") == "no_routes":
+            water_no_routes = True
+            water_best = None
+            print(f"[HYBRID] Mode skipped: water ({water_res.get('message', 'no routes')})")
+        elif "water" in timed_out_modes:
+            water_no_routes = True
+            water_best = None
+        else:
+            water_best = extract_best(water_res, "water")
+
         normalized = []
 
         if road_best:
@@ -175,6 +190,13 @@ class HybridPipeline:
                 else:
                     print("[HYBRID] Air normalization failed")
 
+        if water_best:
+            nr = normalize_water(water_best)
+            if nr:
+                normalized.append(nr)
+            else:
+                print("[HYBRID] Water normalization failed")
+
         if not normalized:
             # Step 7: available_modes will be empty
             unavailable = {}
@@ -184,6 +206,8 @@ class HybridPipeline:
                 unavailable["rail"] = "Rail transport not available for this route"
             if air_no_routes or not air_best:
                 unavailable["air"] = "Air transport not available for this route"
+            if water_no_routes or not water_best:
+                unavailable["water"] = "Water transport not available for this route"
             return {
                 "error": "No routes available for any transport mode",
                 "available_modes": [],
@@ -288,6 +312,8 @@ class HybridPipeline:
             unavailable_modes["air"] = "Air transport not available for this route"
         if rail_no_routes or rail_best is None:
             unavailable_modes["rail"] = "Rail transport not available for this route"
+        if water_no_routes or water_best is None:
+            unavailable_modes["water"] = "Water transport not available for this route"
         if not road_best:
             unavailable_modes["road"] = "Road transport not available for this route"
 
@@ -312,7 +338,8 @@ class HybridPipeline:
             "best_per_mode": {
                 "road": road_best,
                 "rail": rail_best,
-                "air": air_best
+                "air": air_best,
+                "water": water_best
             }
         }
 
