@@ -19,6 +19,9 @@ class AirCargoPayload(BaseModel):
     budget_limit: Optional[float] = None
     deadline_hours: Optional[float] = None
 
+    mode: Optional[str] = None
+    simulation: Optional[dict] = None
+
 
 @air_router.post("/optimize")
 def optimize_air(payload: AirCargoPayload):
@@ -28,10 +31,15 @@ def optimize_air(payload: AirCargoPayload):
 
         pipeline = AirPipeline()
         context = RequestContext()
+
+        # Resolve mode (single source of truth)
+        mode = payload.mode or "realtime"
+
         result = pipeline.generate(
             payload.source,
             payload.destination,
             {
+                "mode": mode,
                 "priority": payload.priority,
                 "departure_date": payload.departure_date,
                 "cargo": {
@@ -43,6 +51,7 @@ def optimize_air(payload: AirCargoPayload):
                     "budget_limit": payload.budget_limit,
                     "deadline_hours": payload.deadline_hours,
                 },
+                "simulation": payload.simulation,
             },
             context=context,
         )
