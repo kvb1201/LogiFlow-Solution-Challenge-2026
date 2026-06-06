@@ -6,11 +6,12 @@ export const MODE_TO_PATH: Record<string, string> = {
   road: '/road',
   air: '/air',
   water: '/water',
+  hybrid: '/hybrid',
   comparator: '/comparator',
 };
 
 export function routeForMode(mode: string): string {
-  return MODE_TO_PATH[mode] || '/comparator';
+  return MODE_TO_PATH[mode] || '/hybrid';
 }
 
 /** Apply AI-parsed fields into zustand setters */

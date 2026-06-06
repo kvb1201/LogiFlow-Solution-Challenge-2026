@@ -15,7 +15,10 @@ export function useShipmentAutorun(
   ready: boolean
 ) {
   const runRef = useRef(run);
-  runRef.current = run;
+
+  useEffect(() => {
+    runRef.current = run;
+  }, [run]);
 
   useEffect(() => {
     if (!ready) return;

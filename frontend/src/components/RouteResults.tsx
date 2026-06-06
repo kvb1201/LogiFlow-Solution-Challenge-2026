@@ -259,7 +259,7 @@ function RouteCard({
       className={[
         'w-full text-left rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden',
         isSelected
-          ? 'border-primary/60 bg-surface-container/60 shadow-[0_0_0_2px_rgba(172,199,255,0.18),0_0_24px_rgba(172,199,255,0.10)] scale-[1.01]'
+          ? 'border-primary/60 bg-surface-container/60 shadow-[0_0_0_2px_rgba(172,199,255,0.18),0_0_24px_rgba(172,199,255,0.10)] sm:scale-[1.01]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:bg-surface-container/30 hover:border-outline-variant/25',
       ].join(' ')}
     >
@@ -609,7 +609,7 @@ export default function RouteResults() {
   return (
     <section>
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-5">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline">
             Analysis
@@ -618,14 +618,14 @@ export default function RouteResults() {
             {routes.length} route{routes.length !== 1 ? 's' : ''} found
           </div>
         </div>
-        <div className="text-[10px] mono text-on-surface-variant">
+        <div className="text-[10px] mono text-on-surface-variant break-words sm:text-right">
           {source} → {destination}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Cards column */}
-        <div className="lg:col-span-1 max-h-[80vh] overflow-y-auto space-y-4 pr-1 overscroll-y-contain [scrollbar-gutter:stable]">
+        <div className="lg:col-span-1 max-h-none space-y-4 pr-0 sm:pr-1 lg:max-h-[80vh] lg:overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
           <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
           {routes.map((r, i) => (
             <RouteCard
@@ -647,7 +647,7 @@ export default function RouteResults() {
         </div>
 
         {/* Map column */}
-        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[320px] h-[70vh] lg:h-[80vh]">
+        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[240px] h-[min(55vh,420px)] sm:min-h-[300px] sm:h-[min(60vh,480px)] lg:h-[80vh] lg:min-h-[320px]">
           <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/25 border border-outline-variant/10 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2 shrink-0 pb-3 border-b border-outline-variant/8">
               <span className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline flex items-center gap-2">

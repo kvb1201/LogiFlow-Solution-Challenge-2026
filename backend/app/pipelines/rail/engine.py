@@ -33,7 +33,7 @@ def _build_recommendation(route, priority, reason):
     """Build a structured recommendation dict from a route."""
     first_train = route["trains"][0] if route.get("trains") else {}
 
-    # Real delay data from RailRadar API
+    # Live Indian Railways delay measurements or LogiFlow ML fallback
     real_delay = route.get("real_delay_data")
     delay_info = {}
     if real_delay:
@@ -41,12 +41,12 @@ def _build_recommendation(route, priority, reason):
             "avg_delay_minutes": real_delay.get("avg_arrival_delay_min", 0),
             "max_delay_minutes": real_delay.get("max_delay_min", 0),
             "stations_measured": real_delay.get("num_stations_measured", 0),
-            "delay_data_source": "railradar_api_real",
+            "delay_data_source": "logiflow_ir_live",
         }
     else:
         delay_info = {
             "avg_delay_minutes": route.get("predicted_delay_min", 0),
-            "delay_data_source": "ml_prediction",
+            "delay_data_source": "logiflow_ml",
         }
 
     # Calculate geometry for mapping route
@@ -280,7 +280,7 @@ def decide(enriched_routes, payload):
             "distance_km": r.get("total_distance_km", 0),
             "avg_speed_kmph": r.get("avg_speed_kmph", 0),
             "avg_delay_min": round(avg_delay, 1),
-            "delay_source": "railradar_api" if real_delay else "ml_prediction",
+            "delay_source": "logiflow_ir_live" if real_delay else "logiflow_ml",
             "running_days": first_train.get("running_days", []),
             "segments": r.get("segments", []),
             "geometry": option_geometry,

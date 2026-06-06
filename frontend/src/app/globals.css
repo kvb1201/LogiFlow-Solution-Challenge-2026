@@ -18,6 +18,7 @@
   --water: oklch(0.79 0.14 185);
   --air: oklch(0.83 0.13 224);
   --hybrid: oklch(0.75 0.19 297);
+  --comparator: oklch(0.72 0.14 250);
   --live: oklch(0.78 0.18 150);
   --warn: oklch(0.82 0.16 80);
   --risk: oklch(0.7 0.22 28);
@@ -96,6 +97,7 @@
   --color-water: var(--water);
   --color-air: var(--air);
   --color-hybrid: var(--hybrid);
+  --color-comparator: var(--comparator);
   --color-live: var(--live);
   --color-warn: var(--warn);
   --color-risk: var(--risk);
@@ -475,6 +477,29 @@
   .btn-app-primary:hover {
     box-shadow: 0 0 52px -8px var(--hybrid);
     filter: brightness(1.08);
+  }
+
+  .results-shell {
+    padding: 1rem;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .results-shell {
+      padding: 1.25rem 1.5rem;
+      padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+    }
+  }
+
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  @media (max-width: 639px) {
+    .no-scale-mobile {
+      transform: none !important;
+    }
   }
 }
 

@@ -1,8 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import { Network, Plane, Ship, TrainFront, Truck } from 'lucide-react';
+import { GitMerge, Network, Plane, Ship, TrainFront, Truck } from 'lucide-react';
 import type { LogisticsMode } from '@/lib/mode-meta';
 
 const icons: Record<LogisticsMode, LucideIcon> = {
+  hybrid: GitMerge,
   comparator: Network,
   rail: TrainFront,
   road: Truck,

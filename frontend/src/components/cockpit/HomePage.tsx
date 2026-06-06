@@ -4,6 +4,7 @@ import { ArrowUpRight, Play, Sparkles } from 'lucide-react';
 import { modeMeta, modeOrder, type LogisticsMode } from '@/lib/mode-meta';
 import { ModeIcon } from './ModeIcon';
 import { AmbientBackdrop } from './AmbientBackdrop';
+import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 
 export function HomePage({ intentSection }: { intentSection: ReactNode }) {
   return (
@@ -23,20 +24,26 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
             </span>
           </div>
 
-          <h1 className="text-balance font-display text-4xl font-black leading-[1.05] text-gradient sm:text-5xl">
+          <h1 className="text-balance font-display text-3xl font-black leading-[1.05] text-gradient sm:text-4xl md:text-5xl">
             LogiFlow
           </h1>
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-[15px] break-words">
             Compare road, rail, air, and water on cost, time, and risk. Describe your shipment in
             plain English — we parse constraints and route you to the right tool.
           </p>
 
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              href="/comparator"
+              href="/hybrid"
               className="inline-flex items-center gap-2 rounded-lg bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-[0_0_40px_-12px_var(--hybrid)] transition-all duration-300 hover:brightness-110 hover:shadow-[0_0_52px_-8px_var(--hybrid)]"
             >
               <Play className="h-4 w-4 fill-current" />
+              Plan multimodal route
+            </Link>
+            <Link
+              href="/comparator"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface/70 px-5 py-2.5 text-sm font-semibold text-foreground backdrop-blur-sm transition-all duration-300 hover:border-border-strong hover:bg-surface-2"
+            >
               Compare all modes
             </Link>
             {/* ModeCard featured check updated below */}
@@ -54,17 +61,24 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
         </section>
 
         <section
-          className="animate-fade-in"
-          style={{ animationDelay: '0.28s', animationFillMode: 'backwards' }}
+          className="mb-10 animate-fade-in"
+          style={{ animationDelay: '0.22s', animationFillMode: 'backwards' }}
         >
           <h2 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
             Choose a mode
           </h2>
           <ul className="grid gap-3 sm:grid-cols-2">
             {modeOrder.map((mode, i) => (
-              <ModeCard key={mode} mode={mode} featured={mode === 'comparator'} index={i} />
+              <ModeCard key={mode} mode={mode} featured={mode === 'hybrid'} index={i} />
             ))}
           </ul>
+        </section>
+
+        <section
+          className="animate-fade-in"
+          style={{ animationDelay: '0.28s', animationFillMode: 'backwards' }}
+        >
+          <RailMlQuantifiers variant="compact" />
         </section>
       </div>
     </div>

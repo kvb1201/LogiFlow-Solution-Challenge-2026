@@ -13,21 +13,24 @@ export type PipelinePageConfig = {
   storeMode: 'rail' | 'road' | 'air' | 'water';
 };
 
-// Exclude the comparator mode from this generic mapping (it has its own page meta)
-export const pipelinePageMeta: Record<Exclude<LogisticsMode, 'comparator'>, PipelinePageConfig> = {
+// Exclude comparator & hybrid — they have dedicated page clients
+export const pipelinePageMeta: Record<
+  Exclude<LogisticsMode, 'comparator' | 'hybrid'>,
+  PipelinePageConfig
+> = {
   rail: {
-    badge: 'Railway Cargo Intelligence · RailRadar Powered',
+    badge: 'LogiFlow Railway Intelligence',
     titleLead: 'Rail',
     titleRest: ' operations',
     description:
-      'AI-powered cargo routing across Indian Railways with real schedule data, live tracking and ML delay prediction.',
+      'LogiFlow-optimized cargo routing across Indian Railways — schedule discovery, scenario simulation, and ML delay prediction tuned by our team.',
     pills: [
-      { icon: 'train', label: 'Live Schedule Data' },
-      { icon: 'radar', label: 'RailRadar Tracking' },
-      { icon: 'psychology', label: 'ML Predictions' },
-      { icon: 'route', label: 'Optimal Routing' },
+      { icon: 'train', label: 'Indian Railways schedule' },
+      { icon: 'verified', label: 'LogiFlow optimized' },
+      { icon: 'psychology', label: 'ML delay model' },
+      { icon: 'route', label: 'Multi-route ranking' },
     ],
-    footer: 'Powered by RailRadar API · Real Indian Railways Data',
+    footer: 'Optimized by the LogiFlow team · Real Indian Railways data',
     analyticsLabel: 'Rail analytics panel',
     loadingMessage: 'Finding routes…',
     storeMode: 'rail',

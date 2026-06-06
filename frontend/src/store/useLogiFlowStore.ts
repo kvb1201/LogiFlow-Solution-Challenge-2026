@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import {
   optimizeCargoRoute,
+  simulateCargoRoute,
   optimizeAirRoute,
   getLiveTrainMap,
+  getStationInfo,
   getStationInfoDirect,
   getLocationCoords,
   fetchRoadRoutes,
@@ -20,6 +22,11 @@ import {
   type ParsedIntent,
 } from '@/services/api';
 import { buildIntentPatch } from '@/lib/applyParsedIntent';
+import {
+  railSimulateToOptimizeResult,
+  type RailSimulationParams,
+  type RailSimulateResult,
+} from '@/lib/railSimulation';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -120,7 +127,7 @@ export interface LogiFlowState {
   /** Train focused from map live dots (for live panel) */
   mapFocusedTrainNumber: string | null;
 
-  /** Latest autocomplete results (RailRadar search) */
+  /** Latest autocomplete results (station search) */
   stationSuggestions: StationSearchResult[];
   setStationSuggestions: (rows: StationSearchResult[]) => void;
 
@@ -161,6 +168,7 @@ export interface LogiFlowState {
     avoidHighways?: boolean;
     trafficAware?: boolean;
     simulation_mode?: boolean;
+    /** Road-only simulation knobs */
     simulation?: {
       traffic_level: number;
       weather_level: number;
@@ -169,10 +177,12 @@ export interface LogiFlowState {
     water?: {
       max_transshipments?: number | null;
     };
+    /** Rail-only simulation knobs */
+    rail_simulation?: RailSimulationParams;
   }) => Promise<void>;
   fetchLiveTrains: () => Promise<void>;
   fetchStationCoord: (code: string) => Promise<StationCoord | null>;
-  /** Load RailRadar delay + live for a train (route card or map) */
+  /** Load live delay + status for a train (route card or map) */
   fetchTrainDelayAndLive: (trainNumber: string) => Promise<void>;
   setMapFocusedTrain: (trainNumber: string | null) => void;
   resetSearch: () => void;
@@ -439,16 +449,33 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         return;
       }
 
-      const result = await optimizeCargoRoute({
-        origin_city: source.trim(),
-        destination_city: destination.trim(),
-        cargo_weight_kg: cargoWeight,
-        cargo_type: cargoType,
-        budget_max_inr: budgetMax,
-        deadline_hours: deadlineHours,
-        priority,
-        departure_date: departureDate,
-      });
+      let result: OptimizeResult;
+
+      if (opts?.simulation_mode && opts.rail_simulation) {
+        const sim = (await simulateCargoRoute({
+          origin_city: source.trim(),
+          destination_city: destination.trim(),
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          priority,
+          weather: opts.rail_simulation.weather,
+          congestion_level: opts.rail_simulation.congestion_level,
+          season: opts.rail_simulation.season,
+          departure_hour: opts.rail_simulation.departure_hour,
+        })) as RailSimulateResult;
+        result = railSimulateToOptimizeResult(sim, priority);
+      } else {
+        result = await optimizeCargoRoute({
+          origin_city: source.trim(),
+          destination_city: destination.trim(),
+          cargo_weight_kg: cargoWeight,
+          cargo_type: cargoType,
+          budget_max_inr: budgetMax,
+          deadline_hours: deadlineHours,
+          priority,
+          departure_date: departureDate,
+        });
+      }
 
       set({
         searchMode: 'rail',
@@ -473,6 +500,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         ...(result.cheapest?.segments || []),
         ...(result.fastest?.segments || []),
         ...(result.safest?.segments || []),
+        ...(result.all_options || []).flatMap((opt) => opt.segments || []),
       ];
       const codes = new Set<string>();
       allSegments.forEach(seg => {
@@ -527,27 +555,38 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   // ── Station coordinate lookup ──────────────────────────────────────
   fetchStationCoord: async (code: string): Promise<StationCoord | null> => {
-    const existing = get().stationCoords[code];
+    const key = code.trim().toUpperCase();
+    const existing = get().stationCoords[key] ?? get().stationCoords[code];
     if (existing) return existing;
 
+    const storeCoord = (info: { code?: string; name?: string; lat?: number; lng?: number }) => {
+      if (info.lat == null || info.lng == null) return null;
+      const coord: StationCoord = {
+        code: (info.code || key).toUpperCase(),
+        name: info.name || key,
+        lat: info.lat,
+        lng: info.lng,
+      };
+      set((state) => ({
+        stationCoords: { ...state.stationCoords, [coord.code]: coord },
+      }));
+      return coord;
+    };
+
     try {
-      const info = await getStationInfoDirect(code);
-      if (info && info.lat && info.lng) {
-        const coord: StationCoord = {
-          code: info.code || code,
-          name: info.name || code,
-          lat: info.lat,
-          lng: info.lng,
-        };
-        set(state => ({
-          stationCoords: { ...state.stationCoords, [code]: coord },
-        }));
-        return coord;
-      }
+      const backend = await getStationInfo(key);
+      const fromBackend = backend ? storeCoord(backend) : null;
+      if (fromBackend) return fromBackend;
     } catch {
-      // Ignore
+      // fall through
     }
-    return null;
+
+    try {
+      const direct = await getStationInfoDirect(key);
+      return direct ? storeCoord(direct) : null;
+    } catch {
+      return null;
+    }
   },
 
   fetchTrainDelayAndLive: async (trainNumber: string) => {
