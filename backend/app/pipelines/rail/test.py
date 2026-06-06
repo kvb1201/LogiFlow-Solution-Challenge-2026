@@ -529,6 +529,38 @@ def test_simulation_mode():
     return True
 
 
+def test_geometry_corridor_slices():
+    """Map geometry must slice each train's own schedule — not borrow a mail train corridor."""
+    from app.pipelines.rail.geometry_builder import _leg_indices
+    from app.pipelines.rail.schedule_resolver import iter_schedule_sources
+
+    print("\n  Geometry corridor slices:")
+
+    def leg_stop_count(train_no: str, fr: str, to: str) -> int:
+        best = 0
+        for _, route in iter_schedule_sources(train_no):
+            start, end = _leg_indices(route, fr, to)
+            if start < 0 or end < start:
+                continue
+            best = max(best, end - start + 1)
+        return best
+
+    duronto = leg_stop_count("12260", "NDLS", "SDAH")
+    assert 4 <= duronto <= 8, f"12260 NDLS→SDAH expected ~5 halts, got {duronto}"
+    print(f"    12260 NDLS→SDAH: {duronto} schedule stops ✅")
+
+    vb_jat = leg_stop_count("22439", "NDLS", "JAT")
+    assert 5 <= vb_jat <= 8, f"22439 NDLS→JAT expected ~6 halts, got {vb_jat}"
+    print(f"    22439 NDLS→JAT: {vb_jat} schedule stops ✅")
+
+    vb_hwh = leg_stop_count("22439", "NDLS", "HWH")
+    assert vb_hwh == 0, f"22439 does not serve NDLS→HWH; got {vb_hwh} stops"
+    print("    22439 NDLS→HWH: not on schedule (direct fallback) ✅")
+
+    print("\n  ✅ Geometry corridor tests PASSED")
+    return True
+
+
 def main():
     print("\n" + "═" * 60)
     print("  LOGIFLOW — RAILWAY CARGO ENGINE TEST SUITE")
@@ -544,6 +576,7 @@ def main():
         ("Pipeline Integration", test_pipeline_integration),
         ("Weather Integration", test_weather_integration),
         ("Simulation Mode", test_simulation_mode),
+        ("Geometry Corridor Slices", test_geometry_corridor_slices),
     ]
 
     passed = 0

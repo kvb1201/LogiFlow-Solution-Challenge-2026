@@ -11,6 +11,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import { CorridorRow } from '@/components/forms/pipeline-form-ui';
 import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
@@ -464,7 +465,15 @@ export default function ComparatorPageClient() {
           {!skipWizard && step === 1 && (
             <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
               <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <CorridorRow
+                accentVar="--hybrid"
+                swapDisabled={!source.trim() && !destination.trim()}
+                onSwap={() => {
+                  const t = source;
+                  setSource(destination);
+                  setDestination(t);
+                }}
+              >
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
                     Origin
@@ -487,7 +496,7 @@ export default function ComparatorPageClient() {
                     className="w-full px-4 py-3.5 rounded-xl border border-white/10 bg-black/30 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </label>
-              </div>
+              </CorridorRow>
               <div className="grid sm:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">

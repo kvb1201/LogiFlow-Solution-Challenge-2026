@@ -316,3 +316,46 @@ def resolve_train_schedule(train_number: str) -> dict[str, Any] | None:
         return scrape_schedule
 
     return None
+
+
+def _route_identity(route: list[dict[str, Any]]) -> tuple[str, ...]:
+    codes: list[str] = []
+    for stop in route:
+        code = (stop.get("stationCode") or stop.get("station_code") or "").strip().upper()
+        if code:
+            codes.append(code)
+    return tuple(codes)
+
+
+def iter_schedule_sources(train_number: str) -> list[tuple[str, list[dict[str, Any]]]]:
+    """
+    All known schedules for a train, ordered for map geometry (most complete first).
+
+    Unlike resolve_train_schedule(), returns every distinct route so geometry can pick
+    the best O-D slice (e.g. delay_scrape with extra halts vs sparse CSV).
+    """
+    tn = normalize_train_number(train_number)
+    if not tn:
+        return []
+
+    seen: set[tuple[str, ...]] = set()
+    out: list[tuple[str, list[dict[str, Any]]]] = []
+
+    def _add(source: str, schedule: dict[str, Any] | None) -> None:
+        if not schedule or not schedule.get("route"):
+            return
+        route = schedule["route"]
+        if len(route) < 2:
+            return
+        key = _route_identity(route)
+        if len(key) < 2 or key in seen:
+            return
+        seen.add(key)
+        tag = str(schedule.get("_schedule_source") or source)
+        out.append((tag, route))
+
+    _add("delay_scrape", _schedule_from_delay_scrape(tn))
+    _add("cache", _schedule_from_cached_entry(tn))
+    _add("csv_2017", _schedule_from_csv(tn))
+
+    return out

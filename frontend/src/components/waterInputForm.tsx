@@ -7,6 +7,7 @@ import AiBriefPanel from '@/components/AiBriefPanel';
 import {
   AdvancedToggle,
   ChoicePills,
+  CorridorRow,
   FormField,
   FormShell,
   FormSubmit,
@@ -284,26 +285,15 @@ export default function WaterInputForm() {
                 'opacity-100 translate-y-0'
               }`}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
-                <div className="hidden md:flex absolute bottom-[18px] left-1/2 -translate-x-1/2 translate-y-1/2 z-10 items-center justify-center">
-                  <button
-                    type="button"
-                    disabled={!source.trim() && !destination.trim()}
-                    onClick={() => {
-                      const t = source;
-                      setSource(destination);
-                      setDestination(t);
-                    }}
-                    className="w-9 h-9 rounded-full bg-surface-container border border-outline-variant/15 flex items-center justify-center shadow-md hover:scale-105 transition-transform disabled:opacity-40"
-                  >
-                    <span
-                      className="material-symbols-outlined text-teal-400"
-                      style={{ fontSize: '15px' }}
-                    >
-                      swap_horiz
-                    </span>
-                  </button>
-                </div>
+              <CorridorRow
+                accentVar="--water"
+                swapDisabled={!source.trim() && !destination.trim()}
+                onSwap={() => {
+                  const t = source;
+                  setSource(destination);
+                  setDestination(t);
+                }}
+              >
                 <LocationInput
                   label="Origin Port / City"
                   value={source}
@@ -322,7 +312,7 @@ export default function WaterInputForm() {
                   placeholder="Search city or port..."
                   hasError={!!error && !destination.trim()}
                 />
-              </div>
+              </CorridorRow>
               {error && (
                 <p className="text-[11px] text-error mt-1.5 flex items-center gap-1">
                   <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>

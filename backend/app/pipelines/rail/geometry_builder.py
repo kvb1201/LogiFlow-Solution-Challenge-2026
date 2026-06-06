@@ -83,18 +83,24 @@ def _resolve_coord(code: str, name: str) -> list[float] | None:
 
 
 def _find_route_indices(route: list[dict], from_station: str, to_station: str) -> tuple[int, int]:
+    """Shortest on-schedule slice between equivalent from/to station codes."""
     from_set = _equiv_set(from_station)
     to_set = _equiv_set(to_station)
-    start_idx, end_idx = -1, -1
+    best_start, best_end = -1, -1
+    best_span = 10**9
     for i, stop in enumerate(route):
         code = _stop_code(stop)
-        if not code:
+        if not code or code not in from_set:
             continue
-        if code in from_set:
-            start_idx = i
-        if code in to_set:
-            end_idx = i
-    return start_idx, end_idx
+        for j in range(i, len(route)):
+            end_code = _stop_code(route[j])
+            if end_code in to_set:
+                span = j - i
+                if span < best_span:
+                    best_span = span
+                    best_start, best_end = i, j
+                break
+    return best_start, best_end
 
 
 def _find_fuzzy_route_slice(route: list[dict], from_station: str, to_station: str) -> tuple[int, int]:
@@ -114,7 +120,7 @@ def _find_fuzzy_route_slice(route: list[dict], from_station: str, to_station: st
 
     from_coord = _resolve_coord(from_station, get_station_name(from_station))
     if not from_coord:
-        return 0, end_idx
+        return -1, -1
 
     from_lng, from_lat = from_coord
     best_i = 0
@@ -264,62 +270,28 @@ def _ensure_origin_anchor(detail: dict[str, Any], from_station: str) -> dict[str
     return detail
 
 
-def _reference_corridor_geometry(from_u: str, to_u: str) -> dict[str, Any] | None:
-    """Borrow the richest CSV route on the same corridor (e.g. Vande Bharat not in CSV)."""
-    candidates = get_trains_for_route(list(_equiv_set(from_u)), list(_equiv_set(to_u)), max_results=50)
-    best: dict[str, Any] | None = None
-    best_n = 0
-    for t in candidates:
-        raw = get_train_route(t["train_no"])
-        if len(raw) < 2:
-            continue
-        route = [
-            {"station_code": s["station_code"], "station_name": s.get("station_name", ""), "distance": s.get("distance", 0)}
-            for s in raw
-        ]
-        start, end = _find_route_indices(route, from_u, to_u)
-        if start < 0 or end < 0 or start > end:
-            start, end = _find_fuzzy_route_slice(route, from_u, to_u)
-        if start < 0 or end < start:
-            continue
-        detail = _build_geometry_detail(route[start : end + 1])
-        if detail["point_count"] > best_n:
-            best = detail
-            best_n = detail["point_count"]
-    if best:
-        best["source"] = "corridor_reference"
-        return _ensure_origin_anchor(best, from_u)
-    return None
-
-
-def _compute_geometry(train_no: str, from_u: str, to_u: str) -> dict[str, Any]:
-    from app.pipelines.rail.railradar_client import get_train_data
-
-    data = get_train_data(train_no, data_type="static")
-    if data and "train" in data and data["train"].get("route"):
-        route = data["train"]["route"]
-        start, end = _find_route_indices(route, from_u, to_u)
-        if start < 0 or end < 0 or start > end:
-            start, end = _find_fuzzy_route_slice(route, from_u, to_u)
-        if start >= 0 and end >= start:
-            detail = _build_geometry_detail(route[start : end + 1])
-            if detail["point_count"] >= 2:
-                sched_src = data["train"].get("_schedule_source") or "csv_2017"
-                detail["source"] = sched_src if sched_src != "csv_2017" else "schedule"
-                return _ensure_origin_anchor(detail, from_u)
-
-    ref = _reference_corridor_geometry(from_u, to_u)
-    if ref and ref.get("point_count", 0) >= 2:
-        return ref
-
+def _direct_geometry(from_u: str, to_u: str) -> dict[str, Any]:
+    """Straight line between two stations when no reliable schedule slice exists."""
     from_c = _resolve_coord(from_u, get_station_name(from_u))
     to_c = _resolve_coord(to_u, get_station_name(to_u))
     if from_c and to_c:
         return {
             "geometry": [from_c, to_c],
             "stops": [
-                {"code": from_u, "name": get_station_name(from_u) or from_u, "city": station_display_city(get_station_name(from_u), from_u), "lng": from_c[0], "lat": from_c[1]},
-                {"code": to_u, "name": get_station_name(to_u) or to_u, "city": station_display_city(get_station_name(to_u), to_u), "lng": to_c[0], "lat": to_c[1]},
+                {
+                    "code": from_u,
+                    "name": get_station_name(from_u) or from_u,
+                    "city": station_display_city(get_station_name(from_u), from_u),
+                    "lng": from_c[0],
+                    "lat": from_c[1],
+                },
+                {
+                    "code": to_u,
+                    "name": get_station_name(to_u) or to_u,
+                    "city": station_display_city(get_station_name(to_u), to_u),
+                    "lng": to_c[0],
+                    "lat": to_c[1],
+                },
             ],
             "point_count": 2,
             "source": "direct",
@@ -327,13 +299,88 @@ def _compute_geometry(train_no: str, from_u: str, to_u: str) -> dict[str, Any]:
     return {"geometry": [], "stops": [], "point_count": 0, "source": "empty"}
 
 
-def _expected_leg_stop_count(train_no: str, from_u: str, to_u: str) -> int:
-    """Stops on the schedule slice between from_u and to_u (for cache freshness)."""
-    from app.pipelines.rail.railradar_client import get_train_data
+_SOURCE_RANK = {
+    "delay_scrape": 0,
+    "runningstatus_scrape": 1,
+    "cache": 2,
+    "csv_2017": 3,
+    "schedule": 4,
+}
 
-    data = get_train_data(train_no, data_type="static")
-    if not data or "train" not in data or not data["train"].get("route"):
-        raw = get_train_route(train_no)
+
+def _leg_indices(route: list[dict], from_u: str, to_u: str) -> tuple[int, int]:
+    start, end = _find_route_indices(route, from_u, to_u)
+    if start < 0 or end < 0 or start > end:
+        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
+    return start, end
+
+
+def _geometry_source_label(source_tag: str) -> str:
+    return "schedule" if source_tag == "csv_2017" else source_tag
+
+
+def _best_schedule_geometry(train_no: str, from_u: str, to_u: str) -> tuple[dict[str, Any] | None, bool]:
+    """Pick the richest valid O-D slice across delay_scrape, cache, and CSV."""
+    from app.pipelines.rail.schedule_resolver import iter_schedule_sources
+
+    best_detail: dict[str, Any] | None = None
+    best_points = -1
+    best_rank = 99
+    has_schedule = False
+
+    for source_tag, route in iter_schedule_sources(train_no):
+        if len(route) < 2:
+            continue
+        has_schedule = True
+        detail = _slice_route_geometry(route, from_u, to_u)
+        if not detail:
+            continue
+        pts = int(detail.get("point_count") or 0)
+        rank = _SOURCE_RANK.get(source_tag, 50)
+        if pts > best_points or (pts == best_points and rank < best_rank):
+            best_detail = dict(detail)
+            best_detail["source"] = _geometry_source_label(source_tag)
+            best_points = pts
+            best_rank = rank
+
+    return best_detail, has_schedule
+
+
+def _slice_route_geometry(route: list[dict], from_u: str, to_u: str) -> dict[str, Any] | None:
+    if len(route) < 2:
+        return None
+    start, end = _find_route_indices(route, from_u, to_u)
+    if start < 0 or end < 0 or start > end:
+        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
+    if start < 0 or end < start:
+        return None
+    detail = _build_geometry_detail(route[start : end + 1])
+    return detail if detail.get("point_count", 0) >= 2 else None
+
+
+def _reference_corridor_geometry(
+    from_u: str,
+    to_u: str,
+    *,
+    prefer_train_no: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Borrow a CSV corridor only when the requested train has no schedule.
+    Prefer the same train number, then the fewest halts (express-like), not the richest path.
+    """
+    candidates = get_trains_for_route(list(_equiv_set(from_u)), list(_equiv_set(to_u)), max_results=50)
+    if prefer_train_no:
+        prefer = str(prefer_train_no).strip()
+        candidates = [t for t in candidates if str(t.get("train_no", "")).strip() == prefer] + [
+            t for t in candidates if str(t.get("train_no", "")).strip() != prefer
+        ]
+
+    best: dict[str, Any] | None = None
+    best_n = 10**9
+    for t in candidates:
+        raw = get_train_route(t["train_no"])
+        if len(raw) < 2:
+            continue
         route = [
             {
                 "station_code": s["station_code"],
@@ -342,17 +389,48 @@ def _expected_leg_stop_count(train_no: str, from_u: str, to_u: str) -> int:
             }
             for s in raw
         ]
-    else:
-        route = data["train"]["route"]
+        detail = _slice_route_geometry(route, from_u, to_u)
+        if not detail:
+            continue
+        n = int(detail.get("point_count") or 0)
+        if n < best_n:
+            best = detail
+            best_n = n
+    if best:
+        best["source"] = "corridor_reference"
+        return _ensure_origin_anchor(best, from_u)
+    return None
 
-    if len(route) < 2:
-        return 0
-    start, end = _find_route_indices(route, from_u, to_u)
-    if start < 0 or end < 0 or start > end:
-        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
-    if start < 0 or end < start:
-        return 0
-    return end - start + 1
+
+def _compute_geometry(train_no: str, from_u: str, to_u: str) -> dict[str, Any]:
+    tn = str(train_no).strip()
+
+    detail, has_schedule = _best_schedule_geometry(tn, from_u, to_u)
+    if detail:
+        return _ensure_origin_anchor(detail, from_u)
+
+    # Train exists but this O-D pair is not on its schedule — do not borrow a mail train's 80+ halts.
+    if has_schedule:
+        return _direct_geometry(from_u, to_u)
+
+    ref = _reference_corridor_geometry(from_u, to_u, prefer_train_no=tn)
+    if ref and ref.get("point_count", 0) >= 2:
+        return ref
+
+    return _direct_geometry(from_u, to_u)
+
+
+def _expected_leg_stop_count(train_no: str, from_u: str, to_u: str) -> int:
+    """Stops on the best schedule slice between from_u and to_u (for cache freshness)."""
+    from app.pipelines.rail.schedule_resolver import iter_schedule_sources
+
+    best = 0
+    for _, route in iter_schedule_sources(train_no):
+        start, end = _leg_indices(route, from_u, to_u)
+        if start < 0 or end < start:
+            continue
+        best = max(best, end - start + 1)
+    return best
 
 
 def get_train_geometry_detail(train_no: str, from_station: str, to_station: str) -> dict[str, Any]:
@@ -365,7 +443,13 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
     if cached and cached.get("geometry") and len(cached["geometry"]) >= 2:
         expected = _expected_leg_stop_count(tn, from_u, to_u)
         cached_n = int(cached.get("point_count") or len(cached["geometry"]))
-        stale = expected >= 4 and cached_n < max(4, int(expected * 0.6))
+        cached_src = str(cached.get("source") or "").lower()
+        stale_sparse = expected >= 4 and cached_n < max(4, int(expected * 0.6))
+        stale_dense = expected >= 2 and (
+            cached_n > expected + 3 or cached_n > max(expected + 2, int(expected * 1.4))
+        )
+        stale_bloated_ref = cached_src == "corridor_reference" or (expected == 0 and cached_n > 12)
+        stale = stale_sparse or stale_dense or stale_bloated_ref
         if not stale:
             return {
                 "geometry": cached["geometry"],
