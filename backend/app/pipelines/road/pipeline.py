@@ -12,11 +12,38 @@ class RoadPipeline(BasePipeline):
     def _get_routes(self, source, destination, payload, context=None):
         """
         Route provider abstraction.
+        Supports single-leg (no stops) and multi-stop journeys.
         STRICT: Only uses real provider. No simulation fallback.
         """
-        from app.pipelines.road.route_provider import get_routes
+        stops = [s for s in (payload.get("stops") or []) if s and s.strip()]
 
-        routes = get_routes(source, destination, payload, context=context)
+        if stops:
+            # ── Multi-stop path ────────────────────────────────────────
+            from app.pipelines.road.multistop import (
+                validate_stops,
+                optimise_stop_order,
+                build_multistop_routes,
+            )
+
+            # 1. Validate (raises ValueError on bad input)
+            stops = validate_stops(source, destination, stops)
+
+            # 2. Optionally reorder
+            if payload.get("optimize_stop_order"):
+                priority = payload.get("priority", "balanced")
+                stops = optimise_stop_order(
+                    source, destination, stops, priority, context=context
+                )
+                print(f"[PIPELINE] Stop order after optimisation: {stops}")
+
+            # 3. Build aggregated multi-stop routes
+            routes = build_multistop_routes(
+                source, destination, stops, payload, context=context
+            )
+        else:
+            # ── Single-leg path (existing behaviour) ──────────────────
+            from app.pipelines.road.route_provider import get_routes
+            routes = get_routes(source, destination, payload, context=context)
 
         if not routes or not isinstance(routes, list):
             raise Exception("Route provider returned no valid routes")
@@ -67,13 +94,17 @@ class RoadPipeline(BasePipeline):
             traffic_variation = (distance % 50) / 300   # reduce artificial noise
             traffic_level = min(1.0, max(0.05, base_traffic + traffic_variation))
 
-            # Convert traffic_level → categorical (0/1/2)
-            if traffic_level < 0.4:
-                traffic_cat = 0
-            elif traffic_level < 0.7:
-                traffic_cat = 1
+            # Convert real-world traffic levels into categories expected by the ML model
+            # TomTom traffic values observed in production are typically ~0.05–0.30,
+            # so use tighter thresholds to preserve differentiation.
+            if traffic_level < 0.10:
+                traffic_cat = 0      # Clear
+            elif traffic_level < 0.20:
+                traffic_cat = 1      # Moderate
+            elif traffic_level < 0.35:
+                traffic_cat = 2      # Heavy
             else:
-                traffic_cat = 2
+                traffic_cat = 3      # Severe / Detour
 
             # Use pre-fetched weather (cached above), inject synthetic variation per-route
             temp = weather_base.get("temp", 30)
@@ -111,7 +142,7 @@ class RoadPipeline(BasePipeline):
                 weather,
                 utilization=utilization,
                 demand=demand,
-                traffic=traffic_level,
+                traffic=traffic_cat,
                 traffic_level=traffic_level,
             )
             print("ML OUTPUT:", traffic_f, weather_f)
@@ -342,6 +373,10 @@ class RoadPipeline(BasePipeline):
         simulation_mode = mode == "simulation"
         priority = payload.get("priority", "balanced")
 
+        # Collect and normalise stops (shared by both realtime + simulation paths)
+        stops = [s for s in (payload.get("stops") or []) if s and s.strip()]
+        is_multistop = bool(stops)
+
         routes = self._get_routes(source, destination, payload, context=context)
 
         # Defensive: ensure routes is always a non-empty list
@@ -463,7 +498,7 @@ class RoadPipeline(BasePipeline):
                 factors.append("Within budget constraint")
             if deadline is not None and route["time"] <= deadline:
                 factors.append("Meets delivery deadline")
-            factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            factors.append(f"Estimated risk level: {round(route['risk'] * 100)}%")
 
             delay = float(route.get("predicted_delay", 0.0))
             if delay > 2.0:
@@ -502,9 +537,20 @@ class RoadPipeline(BasePipeline):
             incident_count = route.get("incident_count", 0)
             if incident_count > 0:
                 factors.append(f"{incident_count} traffic incidents detected on this route")
+
+            # Multi-stop specific context
+            if is_multistop:
+                waypoints = [source] + stops + [destination]
+                factors.append(
+                    f"Multi-stop route: {' → '.join(waypoints)} "
+                    f"({len(stops)} intermediate stop{'s' if len(stops) != 1 else ''})"
+                )
+                if payload.get("optimize_stop_order"):
+                    factors.append("Stop order was automatically optimised for shortest path")
+
             return factors
 
-        def _explain(route, label="best"):
+        def _explain(route, label="best", rank=0):
             factors = []
             seen = set()
 
@@ -569,32 +615,66 @@ class RoadPipeline(BasePipeline):
 
             ml_s = _ml_summary(route)
 
-            return {
+            # ── Route identity ────────────────────────────────────────
+            # Generate a stable route_id for Shipment Health / Route Lock.
+            # Format: road-<source_slug>-<dest_slug>-<rank>-<cost_hash>
+            # This is deterministic for the same input so repeated calls
+            # for the same corridor return the same IDs.
+            import hashlib
+            src_slug = source.lower().replace(" ", "_")[:12]
+            dst_slug = destination.lower().replace(" ", "_")[:12]
+            cost_hash = hashlib.md5(
+                f"{route.get('cost', 0)}-{route.get('time', 0):.2f}-{route.get('risk', 0):.3f}".encode()
+            ).hexdigest()[:8]
+            route_id = f"road-{src_slug}-{dst_slug}-{rank}-{cost_hash}"
+
+            # Attach multi-stop metadata directly to the route dict
+            route_out = {
                 **route,
                 "reason": factors[0] if factors else "Alternative feasible route",
                 "key_factors": factors,
                 "ml_summary": ml_s,
+                "route_id": route_id,
             }
+            if is_multistop:
+                route_out["stops"] = stops
+                route_out["waypoints"] = [source] + stops + [destination]
+                route_out["stop_count"] = len(stops)
+                route_out["stop_order_optimised"] = bool(payload.get("optimize_stop_order"))
+            else:
+                # Single-leg routes also get waypoints for navigation consistency
+                route_out.setdefault("waypoints", [source, destination])
+                route_out.setdefault("stop_count", 0)
+                route_out.setdefault("stop_order_optimised", False)
+
+            return route_out
 
         explained_ranked = [
-            _explain(r, "best" if i == 0 else "alternative")
+            _explain(r, "best" if i == 0 else "alternative", rank=i)
             for i, r in enumerate(cleaned_ranked)
         ]
 
-        print(f"[PIPELINE OUTPUT] mode={payload.get('mode')} routes={len(explained_ranked)}")
+        print(f"[PIPELINE OUTPUT] mode={payload.get('mode')} routes={len(explained_ranked)} multistop={is_multistop}")
 
         return {
             "mode": "road",
             "simulation": simulation_mode,
 
+            # Multi-stop metadata (null when no stops)
+            "multistop": is_multistop,
+            "stops": stops if is_multistop else [],
+            "waypoints": ([source] + stops + [destination]) if is_multistop else [source, destination],
+            "stop_count": len(stops),
+            "stop_order_optimised": bool(payload.get("optimize_stop_order")),
+
             # PRIMARY CONTRACT (for hybrid)
-            "best": _explain(cleaned_ranked[0], "best") if cleaned_ranked else None,
-            "alternatives": [_explain(r, "alternative") for r in cleaned_ranked[1:]],
+            "best": _explain(cleaned_ranked[0], "best", rank=0) if cleaned_ranked else None,
+            "alternatives": [_explain(r, "alternative", rank=i+1) for i, r in enumerate(cleaned_ranked[1:])],
 
             # SECONDARY (optional but useful)
-            "cheapest": _explain(cheapest, "cheapest") if cheapest else None,
-            "fastest": _explain(fastest, "fastest") if fastest else None,
-            "safest": _explain(safest, "safest") if safest else None,
+            "cheapest": _explain(cheapest, "cheapest", rank=0) if cheapest else None,
+            "fastest": _explain(fastest, "fastest", rank=0) if fastest else None,
+            "safest": _explain(safest, "safest", rank=0) if safest else None,
 
             # DEBUG / FULL DATA
             "all": explained_ranked,

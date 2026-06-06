@@ -65,6 +65,18 @@ def generate_mode_insights(route):
         else:
             insights.append("Low expected delay")
 
+    elif mode == "water":
+        insights.append("Lowest cost option for long-distance transit")
+        stops = meta.get("stops", 0)
+        if stops == 0:
+            insights.append("Direct sea lane route")
+        else:
+            insights.append(f"Requires {stops} intermediate transshipments")
+        if delay and delay > 12:
+            insights.append("Significant potential weather or customs clearance delays")
+        else:
+            insights.append("Stable maritime schedule")
+
     else:
         insights.append("General-purpose transport option")
 

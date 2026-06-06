@@ -40,15 +40,15 @@ def generate_hybrid_explanations(
             "constraints": [
                 "Use only the supplied route data",
                 "Do not invent facts or numbers",
-                "Keep the overall reason to 1-2 sentences",
-                "Keep each route explanation to 1 sentence",
-                "Return valid JSON only",
+                "Keep the overall reason under 15 words",
+                "Keep each route explanation, tradeoff, and insight extremely brief and under 12 words",
+                "Return valid JSON only and avoid any wordiness to prevent truncation",
             ],
             "response_schema": {
                 "reason": "string",
                 "tradeoffs": ["string"],
-                "mode_insights": {"road": ["string"], "rail": ["string"], "air": ["string"]},
-                "route_explanations": {"road": "string", "rail": "string", "air": "string"},
+                "mode_insights": {"road": ["string"], "rail": ["string"], "air": ["string"], "water": ["string"]},
+                "route_explanations": {"road": "string", "rail": "string", "air": "string", "water": "string"},
             },
         },
     }
@@ -72,7 +72,8 @@ def generate_hybrid_explanations(
         return None
 
     try:
-        return json.loads(_clean_json_block(text))
+        return json.loads(_clean_json_block(text), strict=False)
     except Exception as exc:
         print(f"[GeminiExplainer] JSON parse failed: {exc}")
+        print(f"[GeminiExplainer] Raw text was: {text}")
         return None
