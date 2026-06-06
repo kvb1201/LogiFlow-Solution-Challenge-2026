@@ -93,16 +93,11 @@ def _sim_risk_score(route, season, weather_data, congestion_level, departure_hou
     return round(max(0.02, min(0.98, total)), 3)
 
 
-def _sim_delay_hours(route, weather_data, congestion_level, season, departure_hour):
-    """
-    Compute deterministic delay based on simulation parameters.
-    """
-    base_duration = route.get("total_duration_hours", 0)
-
+def _scenario_multipliers(weather_data, congestion_level, season, departure_hour):
+    """Scenario knobs shared by heuristic and ML-adjusted simulation."""
     weather_factor, _ = _compute_weather_factor(weather_data)
     congestion_factor = 1.0 + float(congestion_level) * 0.4
 
-    # Season factor
     month = _SEASON_TO_MONTH.get(season, 4)
     if month in RISK_MULTIPLIERS["monsoon_months"]:
         season_factor = 1.15
@@ -113,23 +108,80 @@ def _sim_delay_hours(route, weather_data, congestion_level, season, departure_ho
     else:
         season_factor = 1.0
 
-    # Peak hour factor
     if 7 <= departure_hour <= 10 or 17 <= departure_hour <= 20:
         peak_factor = 1.05
     elif departure_hour >= 23 or departure_hour <= 4:
-        peak_factor = 0.95  # Less congestion at night
+        peak_factor = 0.95
     else:
         peak_factor = 1.0
 
-    adjusted = base_duration * weather_factor * congestion_factor * season_factor * peak_factor
-    delay = max(0, adjusted - base_duration)
-
-    return round(delay, 2), round(adjusted, 2), {
+    return {
         "weather_factor": round(weather_factor, 3),
         "congestion_factor": round(congestion_factor, 3),
         "season_factor": round(season_factor, 3),
         "peak_factor": round(peak_factor, 3),
     }
+
+
+def _route_for_ml_prediction(route, departure_hour):
+    """Inject simulated departure hour so ML features reflect user scenario."""
+    import copy
+
+    patched = copy.deepcopy(route)
+    hour = int(departure_hour) % 24
+    for train in patched.get("trains") or []:
+        train["departure_time"] = f"{hour:02d}:00"
+    return patched
+
+
+def _sim_delay_hours(route, weather_data, congestion_level, season, departure_hour):
+    """
+    ML baseline delay (LogiFlow scraped-delay model) scaled by scenario parameters.
+    """
+    import copy
+
+    base_duration = route.get("total_duration_hours", 0)
+    factors = _scenario_multipliers(weather_data, congestion_level, season, departure_hour)
+    combined = (
+        factors["weather_factor"]
+        * factors["congestion_factor"]
+        * factors["season_factor"]
+        * factors["peak_factor"]
+    )
+
+    ml_delay_min = None
+    ml_delay_hours = None
+    try:
+        from app.pipelines.rail.ml_models import predict_delay
+
+        ml_delay_min = float(predict_delay(_route_for_ml_prediction(route, departure_hour)))
+        ml_delay_hours = max(0.0, ml_delay_min / 60.0)
+    except Exception:
+        ml_delay_min = None
+        ml_delay_hours = None
+
+    if ml_delay_hours is None:
+        # Fallback when ML bundle is unavailable
+        adjusted = base_duration * combined
+        delay = max(0.0, adjusted - base_duration)
+        meta = copy.copy(factors)
+        meta.update({
+            "ml_used": False,
+            "ml_delay_minutes": None,
+            "scenario_multiplier": round(combined, 3),
+        })
+        return round(delay, 2), round(adjusted, 2), meta
+
+    scenario_delay_hours = ml_delay_hours * combined
+    adjusted_eta = base_duration + scenario_delay_hours
+    meta = copy.copy(factors)
+    meta.update({
+        "ml_used": True,
+        "ml_delay_minutes": round(ml_delay_min, 1),
+        "ml_delay_hours": round(ml_delay_hours, 2),
+        "scenario_multiplier": round(combined, 3),
+    })
+    return round(scenario_delay_hours, 2), round(adjusted_eta, 2), meta
 
 
 def simulate(payload):
@@ -169,7 +221,7 @@ def simulate(payload):
     if not feasibility["feasible"]:
         return {"error": f"Cargo not feasible: {feasibility['reason']}"}
 
-    # ── Find routes (uses RailRadar API or CSV fallback) ──────────────
+    # ── Find routes (ConfirmTkt / IR schedule corpus) ─────────────────
     try:
         routes = find_routes(origin, destination, max_direct=10, max_transfer=3)
     except Exception as e:
@@ -207,13 +259,16 @@ def simulate(payload):
             scale=scale,
         )
 
-        # Risk
-        risk = _sim_risk_score(route, season, weather_data, congestion_level, departure_hour)
-
-        # Delay & adjusted ETA
+        # Delay & adjusted ETA (ML baseline × scenario multipliers)
         delay_hours, adjusted_eta, factors = _sim_delay_hours(
             route, weather_data, congestion_level, season, departure_hour
         )
+
+        # Risk: scenario score blended with ML delay magnitude
+        scenario_risk = _sim_risk_score(route, season, weather_data, congestion_level, departure_hour)
+        ml_delay_min = factors.get("ml_delay_minutes") or (delay_hours * 60)
+        ml_risk = min(0.35, float(ml_delay_min) / 180.0)
+        risk = round(min(0.98, scenario_risk * 0.7 + ml_risk * 0.3), 3)
 
         # Booking ease
         ease = calc_booking_ease(route)
@@ -240,7 +295,13 @@ def simulate(payload):
         elif season == "festival":
             key_factors.append("Festival season: higher platform crowding")
 
-        if delay_hours > 2:
+        if factors.get("ml_used"):
+            key_factors.append(
+                f"LogiFlow ML baseline: {factors.get('ml_delay_minutes', 0):.0f} min "
+                f"→ scenario-adjusted: {delay_hours * 60:.0f} min "
+                f"(×{factors.get('scenario_multiplier', 1):.2f})"
+            )
+        elif delay_hours > 2:
             key_factors.append(f"Significant delay expected: {delay_hours:.1f} hrs")
         elif delay_hours > 0.5:
             key_factors.append(f"Moderate delay expected: {delay_hours:.1f} hrs")
@@ -266,6 +327,9 @@ def simulate(payload):
             "congestion_factor": factors["congestion_factor"],
             "season_factor": factors["season_factor"],
             "peak_factor": factors["peak_factor"],
+            "ml_delay_minutes": factors.get("ml_delay_minutes"),
+            "scenario_multiplier": factors.get("scenario_multiplier"),
+            "delay_source": "logiflow_ml_simulation" if factors.get("ml_used") else "logiflow_simulation",
             "tariff_scale": scale,
             "tariff_breakdown": tariff_detail,
             "key_factors": key_factors,

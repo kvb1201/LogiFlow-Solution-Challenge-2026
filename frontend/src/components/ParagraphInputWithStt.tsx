@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useSyncExternalStore } from 'react';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 
 type ParagraphInputWithSttProps = {
@@ -35,12 +35,7 @@ export default function ParagraphInputWithStt({
     lang,
     onFinalTranscript: appendTranscript,
   });
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
   const showMic = mounted && supported;
 
   return (

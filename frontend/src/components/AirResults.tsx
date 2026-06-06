@@ -135,7 +135,7 @@ export default function AirResults() {
   const maxBreakdown = Math.max(...breakdownRows.map(([, v]) => v), 1);
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full min-w-0 space-y-6">
       {/* Mobile / tablet: horizontal route picker */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5 lg:hidden [scrollbar-width:thin]">
         {airRoutes.map((route, index) => {

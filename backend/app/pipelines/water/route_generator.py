@@ -13,6 +13,7 @@ class PortNode:
     name: str
     lat: float
     lng: float
+    infrastructure_quality: float = 0.8
 
 
 def _port_index() -> dict[str, PortNode]:
@@ -23,6 +24,7 @@ def _port_index() -> dict[str, PortNode]:
             name=str(p["name"]),
             lat=float(p["lat"]),
             lng=float(p["lng"]),
+            infrastructure_quality=float(p.get("infrastructure_quality", 0.8)),
         )
     return idx
 
@@ -95,9 +97,13 @@ def generate_port_paths(
             except KeyError:
                 continue
 
+            # Quality-based adjustment factor (prefers high-quality ports)
+            target_infra = _PORT_IDX[nxt].infrastructure_quality
+            quality_factor = 1.0 - 0.15 * (target_infra - 0.8)
+
             # Convert penalty to "distance-like" score component
             penalty = port_call_penalty_km if len(path) > 1 else 0.0
-            new_score = score + d_km + penalty
+            new_score = score + (d_km * quality_factor) + penalty
             heapq.heappush(heap, (new_score, path + [nxt]))
 
     return out
