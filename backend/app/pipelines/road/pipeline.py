@@ -467,7 +467,7 @@ class RoadPipeline(BasePipeline):
                 factors.append("Within budget constraint")
             if deadline is not None and route["time"] <= deadline:
                 factors.append("Meets delivery deadline")
-            factors.append(f"Estimated risk level: {int(route['risk'] * 100)}%")
+            factors.append(f"Estimated risk level: {round(route['risk'] * 100)}%")
 
             delay = float(route.get("predicted_delay", 0.0))
             if delay > 2.0:

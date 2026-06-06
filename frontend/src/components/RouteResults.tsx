@@ -23,6 +23,20 @@ function formatCostCompact(n: number): string {
   return `₹${Math.round(n)}`;
 }
 
+/**
+ * SINGLE SOURCE OF TRUTH for risk display.
+ * Every risk percentage shown in the UI must call this function.
+ * Uses Math.round so 0.106 → 11%, matching the card metric tile.
+ */
+function formatRisk(route: RoadRoute): string {
+  return `${Math.round(Number(route.risk) * 100)}%`;
+}
+
+/** Numeric risk percent (integer) — use for arithmetic comparisons only. */
+function riskPct(route: RoadRoute): number {
+  return Math.round(Number(route.risk) * 100);
+}
+
 function highwayHint(route: RoadRoute): string {
   const h = route.highway_ratio;
   if (h == null || Number.isNaN(h)) return 'Mix n/a';
@@ -159,7 +173,8 @@ function explainConfidence(
 
   const dc = Number(route.cost) - Number(cheapestRoute.cost);
   const dt = Number(route.time) - Number(fastestRoute.time);
-  const dr = Number(route.risk) - Number(safestRoute.risk);
+  // Use riskPct() so comparison units match the displayed integer percentage
+  const drPct = riskPct(route) - riskPct(safestRoute);
 
   const parts: string[] = [];
 
@@ -175,10 +190,11 @@ function explainConfidence(
     parts.push(`${dt.toFixed(1)} hrs slower than fastest`);
   }
 
+  // "lowest operational risk" only shown for the actual safest route
   if (index === indices.safestIndex) {
-    parts.push('lowest operational risk');
-  } else if (dr > 0.01) {
-    parts.push(`risk higher by ${Math.round(dr * 100)}%`);
+    parts.push(`lowest operational risk (${formatRisk(route)})`);
+  } else if (drPct > 0) {
+    parts.push(`risk higher by ${drPct}% vs. safest`);
   }
 
   const delay = delayHrs(route);
@@ -268,7 +284,8 @@ function whyThisRoute(
 
   const costAdv  = Number(nextCheapest.cost) - Number(route.cost);
   const timeAdv  = Number(nextFastest.time)  - Number(route.time);
-  const riskAdv  = (Number(nextSafest.risk)  - Number(route.risk)) * 100;
+  // Compare using integer percents so the number shown matches the card tile
+  const riskAdvPct = riskPct(nextSafest) - riskPct(route); // positive means this route is safer
 
   if (index === indices.cheapestIndex && costAdv > 0) {
     lines.push(`${Math.round((costAdv / Number(nextCheapest.cost)) * 100)}% cheaper than next best option`);
@@ -276,17 +293,17 @@ function whyThisRoute(
   if (index === indices.fastestIndex && timeAdv > 0.05) {
     lines.push(`${timeAdv.toFixed(1)} hrs faster than next best option`);
   }
-  if (index === indices.safestIndex && riskAdv < -1) {
-    lines.push(`Lowest risk among all feasible routes`);
+  if (index === indices.safestIndex && riskAdvPct > 0) {
+    lines.push(`Lowest operational risk (${formatRisk(route)}) among all feasible routes`);
   }
   if (lines.length === 0) {
     // Generic: state what this route does best vs. overall bests
     const dc = Number(route.cost) - Number(allRoutes[indices.cheapestIndex].cost);
     const dt = Number(route.time) - Number(allRoutes[indices.fastestIndex].time);
-    const dr = (Number(route.risk) - Number(allRoutes[indices.safestIndex].risk)) * 100;
+    const drPct = riskPct(route) - riskPct(allRoutes[indices.safestIndex]);
     if (dc < 50) lines.push('Cost within range of cheapest option');
     if (dt < 0.5) lines.push('Time close to fastest route');
-    if (dr < 5) lines.push('Low-risk corridor');
+    if (drPct < 5) lines.push(`Low-risk corridor (${formatRisk(route)})`);
   }
   return lines;
 }
@@ -307,15 +324,22 @@ function whyNotThisRoute(
   const lines: string[] = [];
   const dt = Number(route.time) - Number(rec.time);
   const dc = Number(route.cost) - Number(rec.cost);
-  const dr = (Number(route.risk) - Number(rec.risk)) * 100;
+  // Integer percent diff so units match the card tile
+  const drPct = riskPct(route) - riskPct(rec);
 
   if (dt > 0.05)  lines.push(`Takes ${dt.toFixed(1)} hrs longer than recommended route`);
   if (dc > 0)     lines.push(`Costs ₹${formatCurrency(dc)} more than recommended route`);
-  if (dr > 1)     lines.push(`Risk higher by ${Math.round(dr)}% vs. recommended route`);
+  if (drPct > 0)  lines.push(`Higher risk by ${drPct}% compared to recommended route`);
 
   return lines;
 }
 
+/**
+ * Clean up backend key_factors before display.
+ * Strips the backend-generated "Estimated risk level: X%" entry because
+ * the frontend re-surfaces this value via formatRisk() with consistent
+ * Math.round rounding — preventing any card vs. insight mismatch.
+ */
 function sanitizeInsights(reason: string | undefined, factors: string[]): string[] {
   const r0 = reason?.trim().toLowerCase() ?? '';
   const seen = new Set<string>();
@@ -329,7 +353,9 @@ function sanitizeInsights(reason: string | undefined, factors: string[]): string
       (r0 && low === r0) ||
       /^optimized for\b/i.test(t) ||
       /selected among/i.test(t) ||
-      /within budget/i.test(t)
+      /within budget/i.test(t) ||
+      // Strip backend risk string — frontend renders it via formatRisk() instead
+      /^estimated risk level:/i.test(t)
     ) continue;
     seen.add(low);
     out.push(t.length > 118 ? `${t.slice(0, 115)}…` : t);
@@ -407,6 +433,24 @@ function devValidate(
   console.info(
     `[RouteResults] Indices — fastest: R${fastestIndex + 1}, cheapest: R${cheapestIndex + 1}, safest: R${safestIndex + 1}, recommended: R${recommendedIndex + 1} (priority=${priority})`,
   );
+
+  // Risk consistency: every text reference must equal riskPct(route)
+  routes.forEach((r, i) => {
+    const canonical = Math.round(Number(r.risk) * 100);
+    // Check that no key_factor contains a different risk percentage
+    const factors = Array.isArray(r.key_factors) ? r.key_factors : [];
+    factors.forEach(f => {
+      const m = f.match(/estimated risk level:\s*(\d+)%/i);
+      if (m) {
+        const backendVal = parseInt(m[1], 10);
+        if (backendVal !== canonical) {
+          console.warn(
+            `[RouteResults] Risk mismatch on Route ${i + 1}: card shows ${canonical}%, key_factor says "${f}". Backend sent ${backendVal}%.`,
+          );
+        }
+      }
+    });
+  });
 }
 
 // ── Metric tile ───────────────────────────────────────────────────────
@@ -499,6 +543,25 @@ function RouteCard({
     setDynamicExplanation(null);
     setIsLoadingExplanation(false);
   }, [route]);
+
+  // Dev: verify risk displayed in insight matches card metric
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const cardRisk = riskPct(route);
+    const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
+    factors.forEach(f => {
+      const m = f.match(/estimated risk level:\s*(\d+)%/i);
+      if (m) {
+        const insightRisk = parseInt(m[1], 10);
+        if (insightRisk !== cardRisk) {
+          console.warn(
+            `[RouteCard R${index + 1}] Risk mismatch — card: ${cardRisk}%, insight: "${f}"`,
+            { route_risk_raw: route.risk },
+          );
+        }
+      }
+    });
+  }, [route, index]);
 
   const handleExplain = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -607,7 +670,7 @@ function RouteCard({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
           <MetricTile emoji="⏱" label="Time"     value={Number(route.time).toFixed(1)}                   unit="hrs" />
           <MetricTile emoji="💰" label="Cost"     value={`₹${formatCurrency(route.cost)}`} />
-          <MetricTile emoji="⚠️" label="Risk"     value={`${Math.round(Number(route.risk) * 100)}`}       unit="%" />
+          <MetricTile emoji="⚠️" label="Risk"     value={riskPct(route)}                                  unit="%" />
           <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)}       unit="km" />
         </div>
 
@@ -788,13 +851,17 @@ function RouteCard({
                   {insightLabel}
                 </p>
               )}
+              {/* Risk level — always from formatRisk(), never from backend string */}
+              <p className="text-[11px] text-on-surface-variant mb-1.5 leading-relaxed">
+                Estimated risk level: <span className="font-semibold text-on-surface">{formatRisk(route)}</span>
+              </p>
               {/* Backend reason (filtered) */}
               {route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
                 <p className="text-[11px] text-on-surface-variant mb-1.5 leading-relaxed">
                   {route.reason}
                 </p>
               )}
-              {/* Key factors */}
+              {/* Key factors (backend "Estimated risk level:" stripped by sanitizeInsights) */}
               {insights.length > 0 && (
                 <ul className="text-[11px] text-on-surface-variant space-y-1">
                   {insights.map((factor, idx) => (
