@@ -1,0 +1,47 @@
+{
+  "globalDefaultOTP": 0.76,
+  "airports": {
+    "DEL": {
+      "defaultOTP": 0.78,
+      "byMonth": {
+        "1": 0.70,
+        "2": 0.76,
+        "3": 0.79,
+        "4": 0.81,
+        "5": 0.80,
+        "6": 0.73,
+        "7": 0.71,
+        "8": 0.72,
+        "9": 0.74,
+        "10": 0.79,
+        "11": 0.78,
+        "12": 0.69
+      }
+    },
+    "BOM": {
+      "defaultOTP": 0.79,
+      "byMonth": {
+        "1": 0.72,
+        "6": 0.72,
+        "7": 0.70,
+        "8": 0.71,
+        "9": 0.73,
+        "12": 0.71
+      }
+    },
+    "BLR": { "defaultOTP": 0.82 },
+    "MAA": { "defaultOTP": 0.81 },
+    "HYD": { "defaultOTP": 0.83 },
+    "CCU": { "defaultOTP": 0.74 },
+    "TIR": { "defaultOTP": 0.86 },
+    "GOI": { "defaultOTP": 0.84 },
+    "PNQ": { "defaultOTP": 0.80 },
+    "AMD": { "defaultOTP": 0.79 },
+    "COK": { "defaultOTP": 0.81 },
+    "JAI": { "defaultOTP": 0.77 },
+    "LKO": { "defaultOTP": 0.75 },
+    "GAU": { "defaultOTP": 0.76 },
+    "IXC": { "defaultOTP": 0.78 }
+  },
+  "sourceNote": "Approximate OTP baselines for major Indian airports. Replace via DGCA ETL when available."
+}

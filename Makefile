@@ -1,4 +1,4 @@
-.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode
+.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring
 
 # IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)
@@ -74,6 +74,16 @@ train-delay-ml:
 
 rail-ml-doc:
 	cd backend && ./venv/bin/python scripts/generate_rail_ml_pdf.py
+
+# Download + trim India-focused OpenFlights / OurAirports snapshots
+fetch-air-data:
+	cd backend && python scripts/fetch_air_data.py
+
+verify-air-data:
+	cd backend && python scripts/verify_air_data.py
+
+test-otp-scoring:
+	cd backend && PYTHONPATH=. python -m unittest discover -s tests -p "test_otp*.py" -v
 
 # Run backend only
 dev-backend:

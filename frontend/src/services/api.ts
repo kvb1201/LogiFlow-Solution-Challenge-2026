@@ -3,7 +3,10 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const BACKEND_BASE = '/api';
+const BACKEND_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
+  'http://127.0.0.1:8000';
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -237,6 +240,23 @@ export interface AirAirportInfo {
   city_name?: string;
 }
 
+export interface AirOtpPrediction {
+  baselineOTP: number;
+  adjustedOTP: number;
+  congestionScore: number;
+  congestionLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  factors: {
+    baselineSource: string;
+    weatherPenalty: number;
+    peakHourPenalty: number;
+    weekendPenalty: number;
+    inboundDelayPenalty: number;
+    departureHour: number;
+    departureWeekday: string;
+    weatherCondition: string;
+  };
+}
+
 export interface AirRoute {
   type: string;
   mode: string;
@@ -250,6 +270,9 @@ export interface AirRoute {
   cost_per_kg: number;
   weather_risk: number;
   congestion_risk: number;
+  otp_prediction?: AirOtpPrediction;
+  congestion_score?: number;
+  congestion_level?: string;
   reliability: number;
   cargo_type: string;
   cargo_weight: number;
@@ -279,11 +302,13 @@ export interface AirRoute {
 
 export interface AirOptimizeResult {
   mode: 'air';
+  status?: 'no_routes';
+  message?: string;
   best_route: AirRoute | null;
   alternatives: AirRoute[];
   ranked_routes: AirRoute[];
   total_routes: number;
-  constraints_applied: {
+  constraints_applied?: {
     budget_limit: number | null;
     deadline_hours: number | null;
     max_stops: number | null;
@@ -330,28 +355,39 @@ export interface HybridOptimizeResult {
   demo_mode?: boolean;
   unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
-  best_per_mode?: Partial<Record<'road' | 'rail' | 'air' | 'water', HybridModeRoute | null>> | null;
+  best_per_mode?: {
+    road?: HybridModeRoute | null;
+    rail?: HybridModeRoute | null;
+    air?: HybridModeRoute | null;
+  } | null;
 }
 
-export interface HybridPayload {
+export interface HybridAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface HybridAssistantContext {
   source: string;
   destination: string;
   priority: string;
-  departure_date?: string;
-  cargo_weight_kg?: number;
-  cargo_type?: string;
-  cargo?: { weight: number; type: string };
-  scenario_brief?: string;
-  preferences?: { preferred_mode?: string };
-  constraints?: {
-    excluded_modes?: string[];
-    risk_threshold?: number;
-    delay_tolerance_hours?: number;
-    max_transshipments?: number;
-    budget_max_inr?: number;
-    max_stops?: number;
-    budget_limit?: number;
-  };
+  recommended_mode?: string | null;
+  recommended_reason?: string | null;
+  comparison?: HybridComparisonRow[];
+  tradeoffs?: string[];
+  reason?: string;
+  mode_insights?: Record<string, string[]>;
+  best_per_mode?: HybridOptimizeResult['best_per_mode'];
+}
+
+export interface HybridAssistantPayload {
+  question: string;
+  context: HybridAssistantContext;
+  history?: HybridAssistantMessage[];
+}
+
+export interface HybridAssistantResponse {
+  answer: string;
 }
 
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
@@ -616,6 +652,21 @@ export async function optimizeHybridRoute(payload: HybridPayload): Promise<Hybri
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function askHybridAssistant(
+  payload: HybridAssistantPayload
+): Promise<HybridAssistantResponse> {
+  const res = await fetch(`${BACKEND_BASE}/optimize/assistant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid assistant failed (${res.status}): ${text}`);
   }
   return res.json();
 }
