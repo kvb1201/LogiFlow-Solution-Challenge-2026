@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from app.pipelines.air.config import CITY_TO_AIRPORT, MOCK_ROUTES
+from app.pipelines.air.config import CITY_TO_AIRPORT
 from app.pipelines.air.engine import score_routes
 from app.pipelines.air.ml_models import predict_delay_probability
 from app.pipelines.base import BasePipeline
@@ -89,13 +89,8 @@ class AirPipeline(BasePipeline):
                 route["is_fallback"] = False
             return live_routes
 
-        # No real routes found — return empty instead of mock data
-        print(f"[AIR] No routes found for {source} \u2192 {destination}")
-        print(f"[AIR] Skipping fallback routes")
-        return []
-
-        # No synthetic fallback: if we have no live or mock routes, return empty
-        # so the API can surface a clean "No route available" response.
+        # No OpenFlights support for this airport pair — return empty for a clean no_routes response.
+        print(f"[AIR] No routes found for {source} -> {destination}")
         return []
 
     def _engineer_features(self, routes, source, destination, payload, context=None):
@@ -111,7 +106,7 @@ class AirPipeline(BasePipeline):
             if cargo_type not in supported:
                 continue
 
-            delay_prob, weather_risk, reliability, congestion_risk = predict_delay_probability(
+            delay_prob, weather_risk, reliability, congestion_risk, otp_prediction = predict_delay_probability(
                 route,
                 source,
                 destination,
@@ -155,10 +150,13 @@ class AirPipeline(BasePipeline):
                 "cost_per_kg": route.get("cost_per_kg", 0),
                 "weather_risk": weather_risk,
                 "congestion_risk": congestion_risk,
+                "otp_prediction": otp_prediction,
+                "congestion_score": otp_prediction["congestionScore"],
+                "congestion_level": otp_prediction["congestionLevel"],
                 "reliability": round(reliability, 3),
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
-                "data_source": route.get("data_source", "mock"),
+                "data_source": route.get("data_source", "openflights"),
                 "is_fallback": route.get("is_fallback", True),
                 "route_support_type": route.get("route_support_type", "inferred"),
                 "supported_by": route.get("supported_by", "internal_fallback"),
@@ -181,6 +179,9 @@ class AirPipeline(BasePipeline):
                     "delay_prob": delay_prob,
                     "weather_risk": weather_risk,
                     "congestion_risk": congestion_risk,
+                    "otp_prediction": otp_prediction,
+                    "congestion_score": otp_prediction["congestionScore"],
+                    "congestion_level": otp_prediction["congestionLevel"],
                     "reliability": round(reliability, 3),
                     "cargo_type": cargo_type,
                     "cargo_weight": cargo_weight,
@@ -256,11 +257,12 @@ class AirPipeline(BasePipeline):
             else:
                 reasons.append(f"{route['stops']} stop route trades speed for lower fare")
 
+        reasons.append(f"Congestion: {route.get('congestion_level', 'Unknown')} ({route.get('congestion_score', 0)}/100)")
         reasons.append(f"Predicted delay probability: {int(route['delay_prob'] * 100)}%")
         reasons.append(f"Airline reliability score: {route['reliability']:.2f}")
         reasons.append(f"Confidence score: {route['confidence_score']}% ({route['confidence_label']})")
         reasons.extend(route.get("business_rules_applied", []))
-        reasons.append(f"Data source: {route.get('data_source', 'mock')}")
+        reasons.append(f"Data source: {route.get('data_source', 'openflights')}")
 
         route["reason"] = reasons[0]
         route["key_factors"] = reasons
@@ -337,7 +339,6 @@ class AirPipeline(BasePipeline):
         reasons = []
         support_type = route.get("route_support_type", "inferred")
         stops = int(route.get("stops", 0))
-        is_fallback = route.get("is_fallback", False)
 
         if support_type == "direct":
             score += 18
@@ -346,12 +347,7 @@ class AirPipeline(BasePipeline):
             score += 10
             reasons.append("Airport chain is supported by the OpenFlights route snapshot.")
         else:
-            reasons.append("Route is inferred from nearest-airport matching and fallback airline heuristics.")
-
-        # Penalize mock/fallback routes — they have no real schedule validation
-        if is_fallback:
-            score -= 15
-            reasons.append("Route is based on fallback/mock data — no verified schedule.")
+            reasons.append("Route support type could not be verified from OpenFlights.")
 
         reliability_bonus = round((reliability - 0.7) * 45)
         score += reliability_bonus

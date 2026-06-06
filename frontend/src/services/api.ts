@@ -236,6 +236,23 @@ export interface AirAirportInfo {
   city_name?: string;
 }
 
+export interface AirOtpPrediction {
+  baselineOTP: number;
+  adjustedOTP: number;
+  congestionScore: number;
+  congestionLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  factors: {
+    baselineSource: string;
+    weatherPenalty: number;
+    peakHourPenalty: number;
+    weekendPenalty: number;
+    inboundDelayPenalty: number;
+    departureHour: number;
+    departureWeekday: string;
+    weatherCondition: string;
+  };
+}
+
 export interface AirRoute {
   type: string;
   mode: string;
@@ -249,6 +266,9 @@ export interface AirRoute {
   cost_per_kg: number;
   weather_risk: number;
   congestion_risk: number;
+  otp_prediction?: AirOtpPrediction;
+  congestion_score?: number;
+  congestion_level?: string;
   reliability: number;
   cargo_type: string;
   cargo_weight: number;
@@ -278,11 +298,13 @@ export interface AirRoute {
 
 export interface AirOptimizeResult {
   mode: 'air';
+  status?: 'no_routes';
+  message?: string;
   best_route: AirRoute | null;
   alternatives: AirRoute[];
   ranked_routes: AirRoute[];
   total_routes: number;
-  constraints_applied: {
+  constraints_applied?: {
     budget_limit: number | null;
     deadline_hours: number | null;
     max_stops: number | null;

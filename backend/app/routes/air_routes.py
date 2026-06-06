@@ -47,30 +47,46 @@ def optimize_air(payload: AirCargoPayload):
             context=context,
         )
 
+        constraints_applied = {
+            "budget_limit": payload.budget_limit,
+            "deadline_hours": payload.deadline_hours,
+            "max_stops": payload.max_stops,
+            "cargo_type": payload.cargo_type,
+            "cargo_weight_kg": payload.cargo_weight_kg,
+        }
+
         # AirPipeline currently returns a dict with best/alternatives/all.
         # Keep backward compatibility with older list-style outputs.
         if isinstance(result, dict):
             ranked_routes = result.get("all") or []
             best_route = result.get("best")
             alternatives = result.get("alternatives") or []
+            no_routes = (
+                result.get("status") == "no_routes"
+                or not ranked_routes
+                or best_route is None
+            )
+            no_routes_message = result.get(
+                "message",
+                "No valid air routes found for the selected corridor",
+            )
         else:
             ranked_routes = result or []
             best_route = ranked_routes[0] if ranked_routes else None
             alternatives = ranked_routes[1:] if len(ranked_routes) > 1 else []
+            no_routes = not ranked_routes or best_route is None
+            no_routes_message = "No valid air routes found for the selected corridor"
 
-        if not ranked_routes or best_route is None:
-            raise HTTPException(status_code=404, detail="No route available")
-
-        # Handle explicit "no routes" status cleanly (HTTP 200, not an error)
-        if result.get("status") == "no_routes":
+        if no_routes:
             return {
                 "mode": "air",
                 "status": "no_routes",
-                "message": result.get("message", "No valid air routes found"),
+                "message": no_routes_message,
                 "best_route": None,
                 "alternatives": [],
                 "ranked_routes": [],
                 "total_routes": 0,
+                "constraints_applied": constraints_applied,
             }
 
         return {
@@ -79,13 +95,7 @@ def optimize_air(payload: AirCargoPayload):
             "alternatives": alternatives,
             "ranked_routes": ranked_routes,
             "total_routes": len(ranked_routes),
-            "constraints_applied": {
-                "budget_limit": payload.budget_limit,
-                "deadline_hours": payload.deadline_hours,
-                "max_stops": payload.max_stops,
-                "cargo_type": payload.cargo_type,
-                "cargo_weight_kg": payload.cargo_weight_kg,
-            },
+            "constraints_applied": constraints_applied,
             "error": result.get("error") if isinstance(result, dict) else None,
         }
 
