@@ -184,7 +184,7 @@ def train_schedule(train_number: str):
 @router.get("/trains/{train_number}/geometry")
 async def train_route_geometry(train_number: str, from_code: str, to_code: str):
     """
-    Polyline coordinates for a train leg (intermediate stations sampled from schedule).
+    Polyline coordinates for a train leg (all intermediate stations on the A→B slice).
     Returns [lng, lat] pairs suitable for map rendering.
     """
     from fastapi.concurrency import run_in_threadpool
