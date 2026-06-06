@@ -131,3 +131,43 @@ def normalize_air(route):
             "stops": stops
         },
     }
+
+
+def normalize_water(route):
+    time = max(float(route.get("time", 0)), 0.0)
+    cost = float(route.get("cost", 0))
+    risk = float(route.get("risk", 0.2))
+    delay = float(route.get("expected_delay_hours", 0.0))
+    reliability = float(route.get("reliability_score", 0.8))
+    delay_prob = float(route.get("delay_prob", 0.1))
+    transshipments = int(route.get("transshipments", 0))
+
+    delay_ratio = delay / max(time, EPS)
+    delay_ratio = clamp(delay_ratio)
+
+    transshipment_penalty = clamp(1.0 - 0.2 * transshipments)
+
+    confidence = (
+        0.4 * reliability +
+        0.3 * (1.0 - delay_ratio) +
+        0.2 * (1.0 - risk) +
+        0.1 * transshipment_penalty
+    )
+    confidence = clamp(confidence)
+
+    risk_bd = route.get("risk_breakdown") or {}
+
+    return {
+        "mode": "water",
+        "time_hr": time,
+        "cost_inr": cost,
+        "risk": clamp(risk),
+        "delay_hr": delay,
+        "confidence": clamp(confidence),
+        "meta": {
+            "reliability": reliability,
+            "weather_risk": float(risk_bd.get("weather", 0.15)),
+            "congestion_risk": float(risk_bd.get("congestion", 0.2)),
+            "stops": transshipments,
+        },
+    }

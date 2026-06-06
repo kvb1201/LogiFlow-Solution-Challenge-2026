@@ -174,6 +174,13 @@ def gemini_generate_content(
             )
             body = resp.json() if resp.content else {}
             if resp.ok:
+                candidates = body.get("candidates") or []
+                if candidates:
+                    c = candidates[0] or {}
+                    finish_reason = c.get("finishReason")
+                    if finish_reason and finish_reason != "STOP":
+                        print(f"[GeminiService] Warning: model {model_id} finished with reason {finish_reason}")
+                        print(f"[GeminiService] Candidate content: {c.get('content')}")
                 text = _extract_text(body)
                 if text:
                     return text, None
