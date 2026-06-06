@@ -11,11 +11,13 @@ import {
 import dynamic from 'next/dynamic';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
+import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -284,6 +286,9 @@ export default function ComparatorPageClient() {
     setAutoTriggered(true);
 
     try {
+      const warm = await ensureBackendWarm(90_000);
+      if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
+
       const data = await optimizeHybridRoute({
         source: origin,
         destination: dest,

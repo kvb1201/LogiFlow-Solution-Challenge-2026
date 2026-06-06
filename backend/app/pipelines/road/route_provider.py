@@ -5,7 +5,7 @@ import math
 import requests
 from requests.exceptions import RequestException
 
-from app.utils.coordinates import get_coords
+from app.services.geocoder import geocode_latlng
 
 # Load .env from both:
 # - backend/.env (historical)
@@ -16,58 +16,24 @@ load_dotenv(_here.parents[4] / ".env")  # repo-root/.env
 
 TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
 
-if not TOMTOM_API_KEY:
-    raise Exception("TOMTOM_API_KEY not set (expected in backend/.env or repo-root .env)")
-
 
 def geocode_city(city: str, context=None):
-    import urllib.parse
-
-    # Check request-level cache first
+    """Resolve city → (lat, lng) via Google Maps Geocoding API (then fallbacks)."""
     cache_key = f"geocode:{city}"
     if context and context.has(cache_key):
         print(f"[CACHE HIT] {cache_key}")
         return context.get(cache_key)
 
-    encoded_city = urllib.parse.quote(city)
-    url = f"https://api.tomtom.com/search/2/geocode/{encoded_city}.json"
-    params = {"key": TOMTOM_API_KEY}
+    result = geocode_latlng(city, context=context)
+    if result:
+        return result
 
-    try:
-        res = requests.get(url, params=params, timeout=5).json()
-        if not res.get("results"):
-            # Fallback: if "City, District" fails, try just "City"
-            if "," in city:
-                fallback_city = city.split(",")[0].strip()
-                print(f"Geocoding failed for '{city}', trying fallback: '{fallback_city}'")
-                return geocode_city(fallback_city, context=context)
-            fallback_lat, fallback_lon = get_coords(city)
-            print(f"Geocoding fallback for '{city}' -> cached/openstreetmap coordinates")
-            result = (fallback_lat, fallback_lon)
-            if context:
-                context.set(cache_key, result)
-            return result
+    if "," in city:
+        short = city.split(",")[0].strip()
+        print(f"Geocoding retry for '{city}' → '{short}'")
+        return geocode_city(short, context=context)
 
-        pos = res["results"][0]["position"]
-        result = (pos["lat"], pos["lon"])
-        print(f"[API CALL] {cache_key}")
-        if context:
-            context.set(cache_key, result)
-        return result
-    except RequestException as e:
-        print(f"DEBUG: TomTom geocode timeout/network error for '{city}': {str(e)}")
-        fallback_lat, fallback_lon = get_coords(city)
-        result = (fallback_lat, fallback_lon)
-        if context:
-            context.set(cache_key, result)
-        return result
-    except Exception as e:
-        print(f"DEBUG: Geocode error for '{city}': {str(e)}")
-        fallback_lat, fallback_lon = get_coords(city)
-        result = (fallback_lat, fallback_lon)
-        if context:
-            context.set(cache_key, result)
-        return result
+    return None
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -85,8 +51,12 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 def _fallback_routes(source, destination, payload, reason):
     """Generate deterministic fallback road routes when TomTom is unavailable."""
-    lat1, lon1 = get_coords(source)
-    lat2, lon2 = get_coords(destination)
+    c1 = geocode_latlng(source)
+    c2 = geocode_latlng(destination)
+    if not c1 or not c2:
+        return []
+    lat1, lon1 = c1
+    lat2, lon2 = c2
 
     base_distance = max(_haversine_km(lat1, lon1, lat2, lon2), 40.0)
     base_speed = 50.0
@@ -162,8 +132,18 @@ def get_routes(source, destination, payload=None, context=None):
     if simulation_mode:
         print("[ROUTE_PROVIDER] Simulation mode active → using real routes (no synthetic generation)")
 
-    lat1, lon1 = geocode_city(source, context=context)
-    lat2, lon2 = geocode_city(destination, context=context)
+    c1 = geocode_city(source, context=context)
+    c2 = geocode_city(destination, context=context)
+    if not c1 or not c2:
+        print(f"[ROUTE_PROVIDER] Geocode failed for {source} / {destination}")
+        return _fallback_routes(source, destination, payload, "geocode_failed")
+
+    lat1, lon1 = c1
+    lat2, lon2 = c2
+
+    if not TOMTOM_API_KEY:
+        print("[ROUTE_PROVIDER] TOMTOM_API_KEY not set — using haversine fallback routes")
+        return _fallback_routes(source, destination, payload, "tomtom_key_missing")
 
     url = f"https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 

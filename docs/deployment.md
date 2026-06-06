@@ -31,9 +31,36 @@
 ### Health Check
 
 ```
-GET /
+GET /health
 → {"status": "ok"}
 ```
+
+### Render cold start (free tier)
+
+On the **free** plan, Render stops your service after **~15 minutes** of no traffic. The next request can take **30–90 seconds** to boot (503 errors until uvicorn is ready).
+
+**You cannot make a sleeping free instance start instantly** — something must either keep it awake or you upgrade to always-on.
+
+| Option | Cost | Effect |
+|--------|------|--------|
+| **Render Starter** ($7/mo) | Paid | Instance never sleeps — instant responses |
+| **GitHub Actions keep-alive** | Free | Pings `/health` every 14 min (see `.github/workflows/warm-render-backend.yml`). Add repo secret `BACKEND_URL`. |
+| **UptimeRobot / cron-job.org** | Free | External monitor hits `https://your-api.onrender.com/health` every 5–14 min |
+| **App warmup** (built-in) | Free | Frontend pings `/api/warm-backend` on load and before optimize |
+
+The built-in warmup reduces 503s for users but the **first visitor after a long idle gap** may still wait ~30s while Render boots.
+
+### Alternatives to Render
+
+| Platform | Fits this FastAPI app? | Cold start |
+|----------|--------------------------|------------|
+| **Firebase Hosting** | Frontend only — does not run Python/FastAPI | N/A |
+| **Firebase Cloud Functions** | Possible with heavy refactor; 60s timeout limits; not ideal for 13s+ `/optimize` | Can be slow |
+| **Google Cloud Run** | ✅ Good fit — containerize backend, set `min-instances: 1` for always warm | ~0s with min instances ($) |
+| **Fly.io / Railway** | ✅ Similar to Render | Paid tiers stay warm |
+| **Render Starter** | ✅ Easiest — no code changes | Always on |
+
+**Recommendation:** Stay on Render + enable the GitHub keep-alive workflow, or upgrade to **Render Starter** if you need guaranteed instant startup for demos.
 
 ---
 
@@ -56,7 +83,8 @@ GET /
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | ✅ | Backend URL (e.g., `https://logiflow-api.onrender.com`) |
+| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup (e.g., `https://logiflow-api.onrender.com`) |
+| `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set |
 
 ### Configuration
 

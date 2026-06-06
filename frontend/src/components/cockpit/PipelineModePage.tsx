@@ -7,7 +7,7 @@ import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
 import { PipelineModeLanding } from './PipelineModeLanding';
 import { PipelineResultsChrome } from './PipelineResultsChrome';
 
-type PipelineMode = Exclude<LogisticsMode, 'comparator'>;
+type PipelineMode = Exclude<LogisticsMode, 'comparator' | 'hybrid'>;
 
 export function PipelineModePage({
   mode,
@@ -49,7 +49,7 @@ export function PipelineModePage({
           <p className="text-sm text-muted-foreground">{config.loadingMessage}</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 lg:overflow-y-auto">{results}</div>
+        <div className="results-shell min-h-0 flex-1 lg:overflow-y-auto">{results}</div>
       )}
     </div>
   );

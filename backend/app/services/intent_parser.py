@@ -47,14 +47,35 @@ _MODE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(road|truck|highway|lorry)\b", re.I), "road"),
     (re.compile(r"\b(flight|air|airway|air cargo)\b", re.I), "air"),
     (re.compile(r"\b(ship|boat|maritime|water|port|sea)\b", re.I), "water"),
-    (re.compile(r"\b(compare all|multimodal|hybrid|all modes)\b", re.I), "hybrid"),
+    (re.compile(r"\b(compare all|all modes|comparator|which mode|best mode)\b", re.I), "comparator"),
+    (
+        re.compile(
+            r"\b(hybrid|multimodal|mixture|mix of|multiple modes|intermodal|"
+            r"train.*(?:then|and).*flight|rail.*(?:then|and).*air|don't know which medium)\b",
+            re.I,
+        ),
+        "hybrid",
+    ),
 ]
 
 _PRIORITY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(cheapest|lowest cost|budget|sabse\s+sasta|sabse\s+saste|sasta\s+tarika|saste\s+tarike)\b", re.I), "cost"),
-    (re.compile(r"\b(fastest|urgent|asap|quickly|jaldi|within \d+ (?:day|hour))\b", re.I), "time"),
+    (
+        re.compile(
+            r"\b(fastest|urgent|asap|quickly|jaldi|time\s+constraints?|time\s+priority|"
+            r"time\s+sensitive|minimize\s+time|as\s+fast\s+as\s+possible|within \d+ (?:day|hour))\b",
+            re.I,
+        ),
+        "time",
+    ),
     (re.compile(r"\b(safest|low risk|reliable)\b", re.I), "safe"),
 ]
+
+_NO_BUDGET_PATTERNS = re.compile(
+    r"\b(no\s+cost\s+constraints?|cost\s+doesn'?t\s+matter|cost\s+is\s+not\s+(?:a\s+)?(?:issue|constraint)|"
+    r"unlimited\s+budget|money\s+is\s+no\s+object)\b",
+    re.I,
+)
 
 
 def _find_cities(text: str) -> list[str]:
@@ -160,7 +181,7 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
                 weight_kg /= 1000
             break
 
-    budget = _parse_budget_inr(text)
+    budget = None if _NO_BUDGET_PATTERNS.search(text) else _parse_budget_inr(text)
 
     deadline_hours: float | None = None
     dm = re.search(r"within\s+(\d+(?:\.\d+)?)\s*(day|days|hour|hours|hr|hrs)\b", text, re.I)
@@ -188,6 +209,8 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
             break
     if cargo_type is None and re.search(r"\b(medicine|medical|pharma|anar|pomegranate|fruit|fruits|perishable)\b", text, re.I):
         cargo_type = "Perishable"
+    if cargo_type is None and re.search(r"\b(wood|timber|lumber)\b", text, re.I):
+        cargo_type = "General"
 
     applied = bool(source and destination)
     summary_parts = []
@@ -195,8 +218,14 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
         summary_parts.append(f"{source} → {destination}")
     if weight_kg:
         summary_parts.append(f"{int(weight_kg)} kg")
+    if cargo_type:
+        summary_parts.append(cargo_type)
+    if priority != "balanced":
+        summary_parts.append(f"priority: {priority}")
     if budget:
         summary_parts.append(f"budget ₹{int(budget):,}")
+    elif _NO_BUDGET_PATTERNS.search(text):
+        summary_parts.append("no cost limit")
     if suggested_mode:
         summary_parts.append(f"mode: {suggested_mode}")
 
