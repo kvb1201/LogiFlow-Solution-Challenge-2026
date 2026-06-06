@@ -2,7 +2,8 @@
 
 import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
-import { PipelineModePage } from '@/components/cockpit/PipelineModePage';
+import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import Link from "next/link";
 
 export default function AirPageClient() {
   const error = useLogiFlowStore((state) => state.error);
@@ -17,7 +18,8 @@ export default function AirPageClient() {
   const hasResults = airRoutes.length > 0;
   const showAirLoading = loading && loadingMode === 'air';
   const showNoRoutePage =
-    !!error && /no route available|no air routes found|no feasible routes|air optimize failed \(404\)/i.test(error);
+    (!hasResults && hasSearched && searchMode === 'air' && !showAirLoading) ||
+    (!!error && /no valid air routes found|no route available|no air routes found|no feasible routes/i.test(error));
 
   if (!hasSearched) {
     return (

@@ -352,6 +352,26 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           budget_limit: budgetMax,
           deadline_hours: deadlineHours,
         });
+        if (result.status === 'no_routes') {
+          set({
+            searchMode: 'air',
+            airRoutes: [],
+            selectedAirRouteIndex: 0,
+            airConstraintsApplied: result.constraints_applied ?? null,
+            error: result.message || `No valid air routes found between ${source.trim()} and ${destination.trim()}.`,
+            recommendations: { cheapest: null, fastest: null, safest: null },
+            allOptions: [],
+            constraintsApplied: null,
+            routeMetadata: null,
+            routes: [],
+            selectedRoute: 0,
+            trainDelayDetail: null,
+            selectedTrainLive: null,
+            detailTrainNumber: null,
+            mapFocusedTrainNumber: null,
+          });
+          return;
+        }
         set({
           searchMode: 'air',
           airRoutes: result.ranked_routes || [],
@@ -521,13 +541,16 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       const isWaterNoRouteCase =
         /no maritime routes found/i.test(msg) ||
         /no water routes.*satisfy/i.test(msg);
+      const isAirNoRouteCase =
+        /no valid air routes found/i.test(msg) ||
+        /no route available/i.test(msg);
       const friendlyNoRouteMessage =
         'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       const mode = opts?.mode || get().searchMode || 'rail';
       set({
         searchMode: mode,
         // Expected empty results: keep message for dedicated empty-state UI, not crash styling.
-        error: isRailNoRouteCase ? msg || friendlyNoRouteMessage : msg,
+        error: isRailNoRouteCase || isAirNoRouteCase ? msg || friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         waterRoutes: [],
@@ -540,7 +563,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         constraintsApplied: null,
         routeMetadata: null,
       });
-      if (!isRailNoRouteCase && !isWaterNoRouteCase) {
+      if (!isRailNoRouteCase && !isWaterNoRouteCase && !isAirNoRouteCase) {
         console.error('Optimize error:', err);
       }
     } finally {

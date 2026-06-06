@@ -1,5 +1,5 @@
 'use client';
-
+import Link from "next/link";
 import React, { useMemo, useState, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
@@ -25,6 +25,20 @@ function sourceLabel(dataSource: string) {
   return dataSource;
 }
 
+function congestionTone(level: string | undefined) {
+  switch (level) {
+    case 'Low':
+      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20';
+    case 'Medium':
+      return 'bg-amber-500/15 text-amber-200 border-amber-500/20';
+    case 'High':
+      return 'bg-orange-500/15 text-orange-200 border-orange-500/20';
+    case 'Critical':
+      return 'bg-red-500/15 text-red-200 border-red-500/20';
+    default:
+      return 'bg-secondary/10 text-secondary border-secondary/20';
+  }
+}
 function routeTagTone(routeSupportType: string) {
   if (routeSupportType.includes('direct')) return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
   if (routeSupportType.includes('hub')) return 'bg-sky-500/10 text-sky-200 border-sky-500/20';
@@ -250,6 +264,46 @@ export default function AirResults() {
                 <StatCard label="Risk" value={formatPercent(selected.risk * 100)} hint="Disruption exposure" />
                 <StatCard label="Delay prob." value={formatPercent(selected.delay_prob * 100)} hint="Schedule slip" />
               </div>
+
+              {(selected.congestion_score != null || selected.otp_prediction) && (
+                <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest/30 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-outline">OTP congestion</div>
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${congestionTone(selected.congestion_level)}`}>
+                      {selected.congestion_level ?? selected.otp_prediction?.congestionLevel ?? '—'} · {selected.congestion_score ?? selected.otp_prediction?.congestionScore ?? '—'}/100
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div>
+                      <div className="text-outline">Baseline OTP</div>
+                      <div className="mono font-medium text-on-surface">
+                        {formatPercent((selected.otp_prediction?.baselineOTP ?? 0) * 100)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Adjusted OTP</div>
+                      <div className="mono font-medium text-on-surface">
+                        {formatPercent((selected.otp_prediction?.adjustedOTP ?? 0) * 100)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Weather</div>
+                      <div className="font-medium text-on-surface">
+                        {selected.otp_prediction?.factors?.weatherCondition ?? '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Departure</div>
+                      <div className="font-medium text-on-surface">
+                        {selected.otp_prediction?.factors?.departureWeekday ?? '—'}{' '}
+                        {selected.otp_prediction?.factors?.departureHour != null
+                          ? `${selected.otp_prediction.factors.departureHour}:00`
+                          : ''}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {airConstraintsApplied && (
                 <div className="grid grid-cols-2 gap-2 sm:gap-3">
