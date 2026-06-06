@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
 import { WATER_PORTS, WATER_PORT_REGION_COUNT } from '@/lib/water-ports';
+import { classifyWaterNoRoute, isWaterNoRouteMessage } from '@/lib/water-no-route';
 
 // ── Formatting helpers ────────────────────────────────────────────────
 
@@ -469,6 +470,85 @@ function DetailPanel({
   );
 }
 
+// ── No routes empty state ─────────────────────────────────────────────
+
+function WaterNoRoutesEmpty({
+  source,
+  destination,
+  error,
+  onTryAgain,
+}: {
+  source: string;
+  destination: string;
+  error: string | null;
+  onTryAgain: () => void;
+}) {
+  const kind = classifyWaterNoRoute(error);
+  const isConstraints = kind === 'constraints';
+
+  return (
+    <section className="flex min-h-[min(70vh,520px)] items-center justify-center px-4 py-12 sm:px-8">
+      <div className="w-full max-w-lg rounded-2xl border border-teal-400/20 bg-surface-container-low/40 p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/10 border border-teal-400/20">
+          <span
+            className="material-symbols-outlined text-teal-400"
+            style={{ fontSize: '28px', fontVariationSettings: "'FILL' 1" }}
+          >
+            {isConstraints ? 'tune' : 'sailing'}
+          </span>
+        </div>
+
+        <h2 className="text-lg font-semibold text-on-surface">
+          {isConstraints ? 'No routes match your filters' : 'No maritime lane in our network'}
+        </h2>
+
+        <p className="mt-2 text-sm font-medium text-on-surface">
+          {source || 'Origin'} → {destination || 'Destination'}
+        </p>
+
+        <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">
+          {isConstraints
+            ? 'We found port paths, but none satisfied your budget, transshipment, or risk constraints. Try relaxing max transshipments or widening the corridor.'
+            : 'Our static global port graph does not connect these two ports with a feasible sea lane. This is a coverage gap — not a server failure.'}
+        </p>
+
+        <div className="mt-5 rounded-xl border border-outline-variant/12 bg-surface-container/25 px-4 py-3 text-left text-[11px] text-on-surface-variant space-y-2">
+          <p className="font-semibold text-on-surface text-xs">What you can try</p>
+          <ul className="space-y-1.5">
+            <li className="flex gap-2">
+              <span className="text-teal-400 shrink-0">•</span>
+              <span>Pick a major hub port closer to each coast (e.g. Singapore, Jebel Ali, Colombo).</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-teal-400 shrink-0">•</span>
+              <span>
+                Increase max transshipments in advanced options if a multi-hop lane exists.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-teal-400 shrink-0">•</span>
+              <span>
+                Network today: {WATER_PORTS.length} ports across {WATER_PORT_REGION_COUNT} regions (not live AIS).
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <button
+          type="button"
+          onClick={onTryAgain}
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-500/15 px-5 py-2.5 text-sm font-semibold text-teal-300 transition hover:bg-teal-500/25"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+            edit_location_alt
+          </span>
+          Search another corridor
+        </button>
+      </div>
+    </section>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────
 
 export default function WaterRouteResults() {
@@ -477,6 +557,11 @@ export default function WaterRouteResults() {
   const setSelected = useLogiFlowStore((s) => s.setSelectedWaterRoute);
   const source = useLogiFlowStore((s) => s.source);
   const destination = useLogiFlowStore((s) => s.destination);
+  const error = useLogiFlowStore((s) => s.error);
+  const hasSearched = useLogiFlowStore((s) => s.hasSearched);
+  const loading = useLogiFlowStore((s) => s.loading);
+  const loadingMode = useLogiFlowStore((s) => s.loadingMode);
+  const resetSearch = useLogiFlowStore((s) => s.resetSearch);
 
   const safeIndex = Math.min(Math.max(selected, 0), Math.max(routes.length - 1, 0));
   const active = routes[safeIndex];
@@ -489,6 +574,24 @@ export default function WaterRouteResults() {
       minRisk: Math.min(...routes.map((route) => Number(route.risk))),
     };
   }, [routes]);
+
+  const showWaterLoading = loading && loadingMode === 'water';
+  const showNoRoutes =
+    hasSearched &&
+    !showWaterLoading &&
+    routes.length === 0 &&
+    (isWaterNoRouteMessage(error) || !error);
+
+  if (showNoRoutes) {
+    return (
+      <WaterNoRoutesEmpty
+        source={source}
+        destination={destination}
+        error={error}
+        onTryAgain={resetSearch}
+      />
+    );
+  }
 
   if (!routes.length || !active || !stats) return null;
 
