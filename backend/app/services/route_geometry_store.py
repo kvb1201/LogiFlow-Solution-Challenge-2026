@@ -29,12 +29,41 @@ def list_geometry_rows(*, limit: int = 100, offset: int = 0) -> list[dict[str, A
 def count_geometry_rows() -> int:
     if not sb.is_configured():
         return 0
-    rows = sb.rest_get(
-        _GEOMETRY_TABLE,
-        {"select": "train_number", "limit": "1000"},
-        timeout_s=30,
-    )
-    return len(rows)
+    return len(list_geometry_keys())
+
+
+def list_geometry_keys() -> set[tuple[str, str, str]]:
+    """All cached (train_number, from_code, to_code) keys in Supabase."""
+    if not sb.is_configured():
+        return set()
+    keys: set[tuple[str, str, str]] = set()
+    offset = 0
+    page = 1000
+    while True:
+        rows = sb.rest_get(
+            _GEOMETRY_TABLE,
+            {
+                "select": "train_number,from_code,to_code",
+                "order": "train_number.asc",
+                "limit": str(page),
+                "offset": str(offset),
+            },
+            timeout_s=60,
+        )
+        if not rows:
+            break
+        for row in rows:
+            keys.add(
+                (
+                    str(row.get("train_number") or "").strip(),
+                    str(row.get("from_code") or "").strip().upper(),
+                    str(row.get("to_code") or "").strip().upper(),
+                )
+            )
+        if len(rows) < page:
+            break
+        offset += page
+    return keys
 
 
 def get_cached_geometry(train_number: str, from_code: str, to_code: str) -> dict[str, Any] | None:
