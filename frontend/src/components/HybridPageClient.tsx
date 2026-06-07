@@ -9,6 +9,7 @@ import {
 } from '@/services/api';
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import { CorridorRow } from '@/components/forms/pipeline-form-ui';
 import { ensureBackendWarm } from '@/lib/backendWarmup';
@@ -45,6 +46,7 @@ export default function HybridPageClient() {
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   const showForm = !loading && !result?.recommended;
 
@@ -312,9 +314,27 @@ export default function HybridPageClient() {
               setResult(null);
               setStep(1);
             }}
+            onSave={() => setSaveModalOpen(true)}
           />
         )}
       </div>
+
+      <SaveReportModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        prefill={{
+          source,
+          destination,
+          stops: result?.recommended?.segments?.map(s => String(s.to_city)).slice(0, -1) || [],
+          mode: 'hybrid',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: result?.recommended as unknown as Record<string, unknown>,
+          estimatedCost: result?.recommended?.total_cost_inr,
+          estimatedTime: result?.recommended?.total_time_hr,
+          riskScore: (result?.recommended as any)?.total_risk_score || (result?.recommended as any)?.risk_score,
+        }}
+      />
     </div>
   );
 }

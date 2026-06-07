@@ -32,19 +32,25 @@ def is_configured() -> bool:
     return False
 
 
-def get_airport_on_time_probability(airport_code: str, date_str: str):
+def get_airport_on_time_probability(airport_code: str, date_str: str) -> Optional[float]:
     """
-    Placeholder for future live on-time integrations.
-    The free-stack version uses heuristic congestion risk instead.
+    Baseline OTP only (no penalties). Prefer OTPScoringService.score() for full congestion metrics.
     """
-    return None
+    from app.services.otp_scoring_service import get_otp_scoring_service
+
+    code = (airport_code or "").strip().upper()
+    if not code:
+        return None
+
+    otp, _source = get_otp_scoring_service().lookup_baseline_otp(code, date_str)
+    return round(max(0.0, min(float(otp), 1.0)), 3)
 
 
 def get_live_air_routes(source: str, destination: str, departure_date: str) -> List[dict]:
     """
     Use the checked-in OpenFlights route snapshot as a free route-support dataset.
-    If the snapshot has no matching direct or one-stop support, return an empty list
-    so the pipeline can fall back to inferred candidates.
+    Returns direct and one-stop candidates when OpenFlights supports the airport pair.
+    Returns an empty list when no route support exists (pipeline surfaces no_routes).
     """
     _ = departure_date
     source_airport = _resolve_airport_details(source)
@@ -53,6 +59,10 @@ def get_live_air_routes(source: str, destination: str, departure_date: str) -> L
     source_code = source_airport.get("code")
     destination_code = destination_airport.get("code")
     if not source_code or not destination_code:
+        return []
+
+    if source_code == destination_code:
+        # Don't support intra-city flights even if the dataset has loops
         return []
 
     routes = []

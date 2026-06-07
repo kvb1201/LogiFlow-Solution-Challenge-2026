@@ -7,9 +7,11 @@ import { formatHours, formatInr, modeLabel } from '@/lib/hybrid-ui';
 export function ComposeResults({
   result,
   onEdit,
+  onSave,
 }: {
   result: ComposeResult;
   onEdit: () => void;
+  onSave?: () => void;
 }) {
   const recommended = result.recommended;
   const alternatives = (result.alternatives || []).filter((a) => a.id !== recommended?.id);
@@ -30,6 +32,18 @@ export function ComposeResults({
       )}
 
       <ItineraryCard itinerary={recommended} recommended variant="full" />
+
+      {onSave && (
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={onSave}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-500/10 border border-violet-400/30 px-4 py-2 text-sm font-semibold text-violet-300 hover:bg-violet-500/20 transition-all"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
+            Save Report
+          </button>
+        </div>
+      )}
 
       {baselines.length > 0 && (
         <div className="flex flex-wrap gap-2">
