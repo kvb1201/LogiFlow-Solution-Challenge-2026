@@ -67,10 +67,12 @@ class AirPipeline(BasePipeline):
         constraints = payload.get("constraints") or {}
         mode = payload.get("mode", "realtime")
         simulation = payload.get("simulation") or {} if mode == "simulation" else {}
+        weight = float(cargo.get("weight", 100))
         return {
             "mode": mode,
             "priority": self._normalize_priority(payload.get("priority")),
-            "cargo_weight": float(cargo.get("weight", 100)),
+            "cargo_weight": weight,
+            "cargo_volume": float(cargo.get("volume", weight / 167.0)),
             "cargo_type": str(cargo.get("type", "general")).lower(),
             "max_stops": constraints.get("max_stops"),
             "budget_limit": constraints.get("budget_limit"),
@@ -101,6 +103,7 @@ class AirPipeline(BasePipeline):
     def _engineer_features(self, routes, source, destination, payload, context=None):
         engineered = []
         cargo_weight = payload["cargo_weight"]
+        cargo_volume = payload["cargo_volume"]
         cargo_type = payload["cargo_type"]
         cargo_rule = self.CARGO_RULES.get(cargo_type, self.CARGO_RULES["general"])
         departure_date = self._get_departure_date(payload)
@@ -146,7 +149,7 @@ class AirPipeline(BasePipeline):
 
             stops = int(route.get("stops", 0))
             time = float(route.get("duration", 0))
-            cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_type, cargo_rule)
+            cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_volume, cargo_type, cargo_rule)
             cost = cost_breakdown["total"]
 
             # Apply simulation mode to cost
@@ -200,6 +203,7 @@ class AirPipeline(BasePipeline):
                 "reliability": round(reliability, 3),
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
+                "cargo_volume": cargo_volume,
                 "data_source": route.get("data_source", "openflights"),
                 "is_fallback": route.get("is_fallback", True),
                 "route_support_type": route.get("route_support_type", "inferred"),
@@ -235,6 +239,7 @@ class AirPipeline(BasePipeline):
                     "reliability": round(reliability, 3),
                     "cargo_type": cargo_type,
                     "cargo_weight": cargo_weight,
+                    "cargo_volume": cargo_volume,
                     "source_airport": source_airport,
                     "destination_airport": destination_airport,
                     "hub_airport": route.get("hub_airport"),
@@ -410,27 +415,37 @@ class AirPipeline(BasePipeline):
         route["eta"] = f"{route['time']} hrs"
         return route
 
-    def _build_cost_breakdown(self, route, cargo_weight, cargo_type, cargo_rule):
-        base_freight = float(route.get("cost_per_kg", 0)) * cargo_weight
-        fuel_surcharge = round(base_freight * 0.12, 2)
-        terminal_fee = round(320 + cargo_weight * cargo_rule["security_fee_per_kg"], 2)
-        handling_fee = round(route.get("stops", 0) * cargo_rule["handling_fee_per_stop"], 2)
-        cargo_markup = round(base_freight * (cargo_rule["base_markup"] - 1), 2)
-        heavy_lift_fee = round(max(0.0, cargo_weight - 180) * 1.1, 2)
-        total = round(
-            base_freight + fuel_surcharge + terminal_fee + handling_fee + cargo_markup + heavy_lift_fee,
-            2,
-        )
+    def _build_cost_breakdown(self, route, cargo_weight, cargo_volume, cargo_type, cargo_rule):
+        actual_weight = cargo_weight
+        volumetric_weight = cargo_volume * 167.0
+        chargeable_weight = max(actual_weight, volumetric_weight)
+
+        route_rate = float(route.get("cost_per_kg", 0))
+        fuel_rate = route_rate * 0.12  # Extracted from previous 12% surcharge logic
+        security_rate = cargo_rule.get("security_fee_per_kg", 0.0)
+
+        freight = round(chargeable_weight * route_rate, 2)
+        fuel = round(chargeable_weight * fuel_rate, 2)
+        security = round(chargeable_weight * security_rate, 2)
+        
+        awb_fee = 320.0
+        terminal_fee = round(route.get("stops", 0) * cargo_rule.get("handling_fee_per_stop", 0.0), 2)
+
+        cargo_markup = round(freight * (cargo_rule.get("base_markup", 1.0) - 1.0), 2)
+
+        total = round(freight + fuel + security + awb_fee + terminal_fee + cargo_markup, 2)
+
         return {
-            "base_freight": round(base_freight, 2),
-            "fuel_surcharge": fuel_surcharge,
+            "base_freight": freight,
+            "fuel_surcharge": fuel,
+            "security_fee": security,
+            "awb_fee": awb_fee,
             "terminal_fee": terminal_fee,
-            "handling_fee": handling_fee,
             "cargo_markup": cargo_markup,
-            "heavy_lift_fee": heavy_lift_fee,
             "total": total,
             "currency": "INR",
             "pricing_basis": f"{cargo_type} cargo business rule model",
+            "chargeable_weight": chargeable_weight,
         }
 
     def _evaluate_business_rules(self, route, cargo_weight, cargo_type, cargo_rule):

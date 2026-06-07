@@ -64,6 +64,21 @@ export default function AirPageClient() {
                 AI-powered cargo routing across <span className="text-secondary font-medium">air</span>{' '}
                 with route support confidence, cargo rules, and detailed cost breakdowns.
               </p>
+
+              <div className="flex flex-wrap justify-center gap-6 mt-6 animate-fade-in" style={{ animationDelay: '0.3s', animationFillMode: 'backwards' }}>
+                <div className="text-center">
+                  <div className="text-xl sm:text-2xl font-black text-sky-300">70</div>
+                  <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Airports</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl sm:text-2xl font-black text-sky-300">1,051</div>
+                  <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Flight Routes</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl sm:text-2xl font-black text-sky-300">8</div>
+                  <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Major Airlines</div>
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-wrap justify-center gap-2 mb-8">
@@ -133,6 +148,13 @@ export default function AirPageClient() {
                 </Link>{' '}
                 in one workflow.
               </p>
+              <div className="flex flex-wrap items-center gap-4 mt-5 text-xs font-medium text-sky-200/70 uppercase tracking-wider">
+                <span><strong className="text-sky-100 font-bold text-[13px]">70</strong> Airports</span>
+                <span className="w-1 h-1 rounded-full bg-sky-500/50"></span>
+                <span><strong className="text-sky-100 font-bold text-[13px]">1,051</strong> Active Routes</span>
+                <span className="w-1 h-1 rounded-full bg-sky-500/50"></span>
+                <span><strong className="text-sky-100 font-bold text-[13px]">8</strong> Airlines</span>
+              </div>
             </div>
             <div className="flex gap-2 shrink-0">
               <button
