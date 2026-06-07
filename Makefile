@@ -106,6 +106,10 @@ dev-backend:
 	@echo "⚙️ Starting Backend (FastAPI)..."
 	cd backend && ./run
 
+# Recreate venv python symlinks when packages install to 3.13 but `python` points at 3.9
+fix-backend-venv:
+	cd backend/venv/bin && rm -f python python3 && ln -sf python3.13 python3 && ln -sf python3.13 python
+
 # Clean environments if needed
 clean:
 	@echo "🧹 Cleaning up node_modules and venv..."

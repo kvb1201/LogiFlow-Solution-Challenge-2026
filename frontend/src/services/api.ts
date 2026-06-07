@@ -811,7 +811,7 @@ async function fetchRailModelInfoFromSupabase(): Promise<RailModelInfo | null> {
           Accept: 'application/json',
         },
         cache: 'no-store',
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(4_000),
       }
     );
     if (!res.ok) return null;
@@ -830,20 +830,17 @@ async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
 }
 
 export async function fetchRailModelInfo(): Promise<RailModelInfo> {
+  const staticPromise = fetchRailModelInfoFallback().catch(() => null);
   const fromSupabase = await fetchRailModelInfoFromSupabase();
   if (fromSupabase) return fromSupabase;
 
-  try {
-    const fallback = await fetchRailModelInfoFallback();
-    if (hasQuantifierValues(fallback)) return fallback;
-  } catch {
-    /* try Render below */
-  }
+  const fallback = await staticPromise;
+  if (fallback && hasQuantifierValues(fallback)) return fallback;
 
   try {
     const res = await fetch(`${BACKEND_BASE}/railway/model-info`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) throw new Error(`Model info failed (${res.status})`);
     const data = (await res.json()) as RailModelInfo;
@@ -852,15 +849,22 @@ export async function fetchRailModelInfo(): Promise<RailModelInfo> {
     /* static fallback last */
   }
 
-  return fetchRailModelInfoFallback();
+  return (await staticPromise) ?? fetchRailModelInfoFallback();
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
-  const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.stations || [];
+  try {
+    const res = await fetch(
+      `${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.stations || [];
+  } catch {
+    return [];
+  }
 }
 
 export async function searchCities(query: string): Promise<Array<{ name: string; lat?: number; lng?: number }>> {
