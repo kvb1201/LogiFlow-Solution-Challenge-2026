@@ -11,7 +11,7 @@ function backendBase(): string | null {
 }
 
 /** Wake Render (or any sleeping backend) by hitting /health with a long timeout. */
-export async function GET() {
+export async function GET(request: Request) {
   const base = backendBase();
   if (!base) {
     return NextResponse.json(
@@ -30,17 +30,20 @@ export async function GET() {
     const body = res.ok ? await res.json().catch(() => ({})) : null;
 
     if (res.ok) {
-      // Preload lightweight rail routes after wake (helps first map geometry request).
-      void Promise.all([
-        fetch(`${base}/railway/stations`, {
-          cache: 'no-store',
-          signal: AbortSignal.timeout(30_000),
-        }),
-        fetch(`${base}/railway/model-info`, {
-          cache: 'no-store',
-          signal: AbortSignal.timeout(30_000),
-        }),
-      ]).catch(() => {});
+      // Preload rail metadata once per cold wake — skip when client only needs /health (lite=1).
+      const lite = new URL(request.url).searchParams.get('lite') === '1';
+      if (!lite) {
+        void Promise.all([
+          fetch(`${base}/railway/stations`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(30_000),
+          }),
+          fetch(`${base}/railway/model-info`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(30_000),
+          }),
+        ]).catch(() => {});
+      }
 
       return NextResponse.json({ warmed: true, elapsed_ms, backend: base, health: body });
     }
