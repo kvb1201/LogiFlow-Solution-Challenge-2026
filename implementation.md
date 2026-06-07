@@ -1,3 +1,4 @@
+
 # Smart Trip Monitoring MVP Implementation
 
 ## Architecture Implemented
