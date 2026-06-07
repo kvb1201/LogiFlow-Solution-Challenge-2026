@@ -1,154 +1,96 @@
-# 📡 LogiFlow API Contract
+# LogiFlow API Contract
 
-Defines the request/response structure for backend ↔ frontend communication.
+Base URL (local): `http://localhost:8000`
 
----
-
-# 🚀 Base URL
-
-```
-http://localhost:8000
-```
+Production: `https://logiflow-solution-challenge-2026.onrender.com`
 
 ---
 
-# 🔹 Endpoint: Optimize Route
+## Health
 
-### POST `/optimize`
+`GET /health` → `{"status": "ok"}`
 
 ---
 
-# 📥 Request Body
+## Intent
+
+`POST /intent/parse` — natural-language shipment brief → structured cities, weight, priority, mode hints.
+
+---
+
+## Location funnel
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/locations/resolve?place=PRYJ` | Resolve one place to canonical city + station codes |
+| `GET` | `/locations/resolve-pair?source=…&destination=…` | Resolve both endpoints |
+
+---
+
+## Mode pipelines
+
+| Method | Path | Body highlights |
+|--------|------|-----------------|
+| `POST` | `/road/optimize` | `source`, `destination`, vehicle, traffic options |
+| `POST` | `/railway/optimize` | `source`, `destination`, `weight_kg`, `cargo_type`, `departure_date` |
+| `POST` | `/air/optimize` | `source`, `destination`, cargo weight/volume |
+| `POST` | `/water/optimize` | `source`, `destination`, cargo details |
+
+Each returns ranked options or `{status: "no_routes"}`.
+
+---
+
+## Rail extras
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/railway/trains/{train_number}/geometry?from_code=&to_code=` | Corridor polyline + intermediate stops |
+| `GET` | `/railway/model-info` | Delay ML metadata (JSON; no model pickle load) |
+| `GET` | `/railway/search/stations?query=` | Station autocomplete |
+
+**Frontend note:** ML quantifiers are also stored in Supabase `rail_ml_metrics` (`id=current`) for instant Vercel reads.
+
+---
+
+## Cross-mode
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/comparator/routes` | Run road + rail + air + water in parallel, rank winner |
+| `POST` | `/compose` | Chained multimodal itineraries via hub templates |
+| `POST` | `/explain` | Standalone explanation for a chosen route |
+
+---
+
+## Planner (authenticated)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/planner/reports` | Save shipment report |
+| `GET` | `/planner/reports/{id}/route-health` | Smart trip monitoring |
+| `POST` | `/planner/reports/{id}/execute` | Start trip lifecycle |
+
+---
+
+## Common response fields (normalized route)
 
 ```json
 {
-  "source": "Surat",
-  "destination": "Mumbai",
-  "priority": "Fast",
-  "preferences": {
-    "preferred_mode": "road"
-  },
-  "constraints": {
-    "excluded_modes": ["water"]
-  }
-}
-```
-
----
-
-## 🔸 Fields Explanation
-
-| Field | Type | Description |
-|------|------|------------|
-| source | string | Starting location |
-| destination | string | Ending location |
-| priority | string | One of: Fast, Cheap, Safe |
-| preferences.preferred_mode | string/null | Preferred transport mode |
-| constraints.excluded_modes | array | Modes to exclude |
-
----
-
-# 📤 Response Body
-
-```json
-{
-  "best_route": {
-    "type": "Road",
-    "mode": "road",
-    "time": 6,
-    "cost": 2500,
-    "risk": 0.4,
-    "segments": [
-      {
-        "from": { "name": "Surat", "lat": 21.1702, "lng": 72.8311 },
-        "to": { "name": "Mumbai", "lat": 19.0760, "lng": 72.8777 },
-        "mode": "road"
-      }
-    ]
-  },
-  "alternatives": [
-    {
-      "type": "Rail",
-      "mode": "rail",
-      "time": 5,
-      "cost": 1800,
-      "risk": 0.5,
-      "segments": [...]
-    }
+  "mode": "rail",
+  "time": 12.5,
+  "cost": 850,
+  "risk": 0.15,
+  "confidence": 0.8,
+  "segments": [
+    { "from": "NDLS", "to": "CNB", "mode": "rail", "train_number": "12303" }
   ]
 }
 ```
 
 ---
 
-## 🔸 Response Explanation
+## Errors
 
-### best_route
-- The optimal route based on priority + constraints
-
-### alternatives
-- Other possible routes sorted by score
-
----
-
-## 🔸 Route Object
-
-| Field | Type | Description |
-|------|------|------------|
-| type | string | Human-readable label |
-| mode | string | road / rail / water / hybrid |
-| time | number | Estimated time |
-| cost | number | Estimated cost |
-| risk | number | Risk score (0–1) |
-| segments | array | Route breakdown |
-
----
-
-## 🔸 Segment Object
-
-| Field | Type | Description |
-|------|------|------------|
-| from | object | { name, lat, lng } |
-| to | object | { name, lat, lng } |
-| mode | string | Mode of this segment |
-
----
-
-# ⚠️ Important Rules
-
-- Backend always returns coordinates (lat, lng)
-- Frontend should NOT maintain its own location mapping
-- Response structure must remain consistent
-
----
-
-# 🧪 Example Curl Request
-
-```bash
-curl -X POST http://localhost:8000/optimize \
--H "Content-Type: application/json" \
--d '{
-  "source": "Surat",
-  "destination": "Mumbai",
-  "priority": "Fast"
-}'
-```
-
----
-
-# 🚀 Future Extensions
-
-Planned additions:
-
-- simulation endpoint
-- ML predictions (delay/risk)
-- real-time traffic integration
-
----
-
-# 📌 Summary
-
-This contract ensures:
-- consistent frontend-backend communication
-- predictable data structure
-- scalable system evolution
+- `404` / empty body — route not found for mode
+- `503` — Render cold start (retry after warmup)
+- `{status: "no_routes"}` — honest empty result (not an HTTP error)
