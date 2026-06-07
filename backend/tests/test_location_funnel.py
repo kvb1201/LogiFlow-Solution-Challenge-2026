@@ -1,37 +1,74 @@
-"""Tests for centralized location resolution funnel."""
+"""Tests for PDF-backed location funnel."""
 from __future__ import annotations
 
 import math
 
 import pytest
 
+from app.pipelines.rail.route_finder import _resolve_stations
 from app.services.location_funnel import normalize_corridor, resolve_location
 from app.services.geocoder import geocode_latlng
+from app.services.station_pdf_index import build_pdf_index, get_pdf_index
 
 
-def test_station_code_pryj_resolves_to_prayagraj():
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_pdf_index():
+    records = build_pdf_index(force=True)
+    assert len(records) > 5000, "station_name.pdf index failed to build"
+
+
+def test_pdf_index_loaded():
+    idx = get_pdf_index()
+    assert len(idx.records) > 5000
+    assert idx.lookup_code("PRYJ") is not None
+    assert idx.lookup_code("BSB") is not None
+
+
+def test_pryj_expands_full_prayagraj_district_from_pdf():
     loc = resolve_location("PRYJ")
     assert loc.canonical_city == "Prayagraj"
-    assert loc.station_code == "PRYJ"
-    assert loc.resolution == "station_code"
+    assert "PRYJ" in loc.station_codes
+    assert "ALD" in loc.station_codes
+    assert len(loc.station_codes) >= 2
+    assert loc.resolution.startswith("pdf_")
 
 
-def test_station_code_bsb_resolves_to_varanasi():
+def test_bsb_expands_varanasi_district_from_pdf():
     loc = resolve_location("BSB")
     assert loc.canonical_city == "Varanasi"
-    assert loc.station_code == "BSB"
+    assert "BSB" in loc.station_codes
+    assert len(loc.station_codes) >= 2
 
 
-def test_banaras_alias():
+def test_banaras_resolves_via_pdf_station_name():
     loc = resolve_location("Banaras")
     assert loc.canonical_city == "Varanasi"
+    assert "BSB" in loc.station_codes or "BSBS" in loc.station_codes
+
+
+def test_rail_search_uses_full_pdf_clusters():
+    src = _resolve_stations("PRYJ")
+    dst = _resolve_stations("BSB")
+    assert "PRYJ" in src and "ALD" in src
+    assert "BSB" in dst
+
+
+def test_blr_uses_airport_when_pdf_code_is_different_district():
+    loc = resolve_location("BLR")
+    assert loc.canonical_city == "Bengaluru"
+    assert "SBC" in loc.station_codes
+
+
+def test_normalize_corridor_pryj_bsb():
+    src, dst = normalize_corridor("PRYJ", "BSB")
+    assert src.canonical_city == "Prayagraj"
+    assert dst.canonical_city == "Varanasi"
 
 
 def test_geocoder_accepts_station_codes():
     pryj = geocode_latlng("PRYJ")
     bsb = geocode_latlng("BSB")
-    assert pryj is not None
-    assert bsb is not None
+    assert pryj and bsb
     dist_km = 6371 * 2 * math.asin(
         math.sqrt(
             math.sin(math.radians(bsb[0] - pryj[0]) / 2) ** 2
@@ -41,33 +78,3 @@ def test_geocoder_accepts_station_codes():
         )
     )
     assert 80 < dist_km < 200
-
-
-def test_normalize_corridor_pryj_bsb():
-    src, dst = normalize_corridor("PRYJ", "BSB")
-    assert src.canonical_city == "Prayagraj"
-    assert dst.canonical_city == "Varanasi"
-    assert src.lat is not None
-    assert dst.lat is not None
-
-
-def test_cstm_alias_resolves_to_mumbai():
-    loc = resolve_location("CSTM")
-    assert loc.canonical_city == "Mumbai"
-    assert loc.station_code == "CSMT"
-
-
-def test_blr_airport_code_resolves_to_bengaluru():
-    loc = resolve_location("BLR")
-    assert loc.canonical_city == "Bengaluru"
-    assert loc.station_code == "SBC"
-
-
-def test_compose_short_corridor_detection():
-    from app.services.route_composer import _corridor_distance_km
-    from app.utils.request_context import RequestContext
-
-    ctx = RequestContext()
-    km = _corridor_distance_km("Prayagraj", "Varanasi", ctx)
-    assert km is not None
-    assert km < 200

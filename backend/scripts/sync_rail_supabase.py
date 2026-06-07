@@ -95,6 +95,50 @@ def sync_geometry_corridor(from_code: str, to_code: str, *, max_trains: int = 5)
     return uploaded
 
 
+def sync_geometry_trains(target: int = 100) -> int:
+    """Upload geometry for `target` unique train legs into Supabase."""
+    from app.pipelines.rail.config import CITY_TO_STATION
+    from app.pipelines.rail.data_loader import get_trains_for_route, load_data
+    from app.pipelines.rail.geometry_builder import get_train_geometry_detail
+    from app.services.location_funnel import resolve_location
+
+    if not sb.is_configured():
+        print("Supabase not configured — set SUPABASE_URL and SUPABASE_KEY in .env")
+        return 0
+
+    load_data()
+    cities = [c for c in CITY_TO_STATION if not c.isupper() and " JN" not in c.upper()]
+    uploaded = 0
+    seen: set[tuple[str, str, str]] = set()
+
+    for i, src_city in enumerate(cities):
+        if uploaded >= target:
+            break
+        for dst_city in cities[i + 1 : i + 10]:
+            if uploaded >= target:
+                break
+            src = resolve_location(src_city)
+            dst = resolve_location(dst_city)
+            trains = get_trains_for_route(src.station_codes, dst.station_codes, max_results=12)
+            for train in trains:
+                if uploaded >= target:
+                    break
+                train_no = str(train.get("train_number") or train.get("train_no") or "").strip()
+                from_u = str(train.get("from_station") or src.station_codes[0]).upper()
+                to_u = str(train.get("to_station") or dst.station_codes[0]).upper()
+                key = (train_no, from_u, to_u)
+                if not train_no or key in seen:
+                    continue
+                seen.add(key)
+                detail = get_train_geometry_detail(train_no, from_u, to_u)
+                pts = int(detail.get("point_count") or 0)
+                if pts >= 2:
+                    uploaded += 1
+                    print(f"  ✓ [{uploaded}/{target}] {train_no} {from_u}→{to_u} ({pts} pts)")
+    print(f"Uploaded {uploaded} train geometries to Supabase")
+    return uploaded
+
+
 def sync_geometry(max_pairs: int = 30) -> int:
     from app.pipelines.rail.config import CITY_TO_STATION
     from app.pipelines.rail.data_loader import get_trains_for_route, load_data
@@ -149,6 +193,12 @@ def main() -> None:
         default="",
         help="Sync one corridor: FROM,TO station codes (e.g. PRYJ,BSB)",
     )
+    parser.add_argument(
+        "--trains",
+        type=int,
+        default=0,
+        help="Sync N unique train legs to train_route_geometry (e.g. 100 for audit)",
+    )
     parser.add_argument("--all", action="store_true", help="Sync stations + geometry")
     args = parser.parse_args()
 
@@ -158,7 +208,9 @@ def main() -> None:
 
     if args.all or args.stations:
         sync_stations()
-    if args.corridor:
+    if args.trains:
+        sync_geometry_trains(target=args.trains)
+    elif args.corridor:
         parts = [p.strip() for p in args.corridor.split(",") if p.strip()]
         if len(parts) != 2:
             print("ERROR: --corridor expects FROM,TO (e.g. PRYJ,BSB)")
@@ -166,7 +218,7 @@ def main() -> None:
         sync_geometry_corridor(parts[0], parts[1])
     elif args.all or args.geometry:
         sync_geometry(max_pairs=args.pairs)
-    if not (args.all or args.stations or args.geometry or args.corridor):
+    if not (args.all or args.stations or args.geometry or args.corridor or args.trains):
         parser.print_help()
 
 
