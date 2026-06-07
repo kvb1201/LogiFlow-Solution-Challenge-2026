@@ -46,7 +46,7 @@ export function ReportsPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">My Plans</h1>
           </div>
           <Link
-            href="/road"
+            href="/dashboard"
             className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>add</span>
@@ -121,7 +121,7 @@ export function ReportsPage() {
               Optimize a route and click <strong>Save Report</strong> to save it here.
             </p>
             <Link
-              href="/road"
+              href="/dashboard"
               className="inline-flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
             >
               Start planning
