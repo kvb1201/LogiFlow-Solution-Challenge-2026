@@ -9,4 +9,9 @@ if [ -f .env ]; then
   set +a
 fi
 
-uvicorn app.main:app --reload
+PY="${VIRTUAL_ENV}/bin/python3.13"
+if [ ! -x "$PY" ]; then
+  PY="${VIRTUAL_ENV}/bin/python"
+fi
+
+exec "$PY" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000

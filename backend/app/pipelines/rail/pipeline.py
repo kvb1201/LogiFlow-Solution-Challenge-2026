@@ -14,7 +14,7 @@ from app.pipelines.rail.tariff import calc_parcel_cost
 from app.pipelines.rail.engine import decide
 from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
 
-_ENABLE_LLM_EXPLANATION = os.getenv("RAIL_ENABLE_LLM_EXPLANATION", "true").lower() == "true"
+_ENABLE_LLM_EXPLANATION = os.getenv("RAIL_ENABLE_LLM_EXPLANATION", "false").lower() == "true"
 _LLM_EXPLANATION_TIMEOUT_S = int(os.getenv("RAIL_LLM_EXPLANATION_TIMEOUT_S", "4"))
 _OPTIMIZE_RESPONSE_BUDGET_S = float(os.getenv("RAIL_OPTIMIZE_RESPONSE_BUDGET_S", "20"))
 

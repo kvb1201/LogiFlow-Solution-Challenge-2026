@@ -27,6 +27,7 @@ import {
   type RailSimulationParams,
   type RailSimulateResult,
 } from '@/lib/railSimulation';
+import { ensureBackendWarm } from '@/lib/backendWarmup';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -156,6 +157,9 @@ export interface LogiFlowState {
   // UI state
   loading: boolean;
   loadingMode: 'rail' | 'road' | 'water' | 'air' | null;
+  railLoadingStep: number;
+  railLoadingDetail: string;
+  railLoadingStartedAt: number | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -267,6 +271,9 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   loading: false,
   loadingMode: null,
+  railLoadingStep: -1,
+  railLoadingDetail: '',
+  railLoadingStartedAt: null,
   hasSearched: false,
   activeView: 'recommendations',
   error: null,
@@ -312,6 +319,9 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     hasSearched: false,
     loading: false,
     loadingMode: null,
+    railLoadingStep: -1,
+    railLoadingDetail: '',
+    railLoadingStartedAt: null,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
     airRoutes: [],
@@ -351,7 +361,24 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     } = get();
     if (!source.trim() || !destination.trim()) return;
     const mode = opts?.mode || 'rail';
-    set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
+    const corridorLabel = `${source.trim()} → ${destination.trim()}`;
+    set({
+      loading: true,
+      loadingMode: mode,
+      hasSearched: true,
+      error: null,
+      ...(mode === 'rail'
+        ? {
+            railLoadingStep: 0,
+            railLoadingDetail: corridorLabel,
+            railLoadingStartedAt: Date.now(),
+          }
+        : {
+            railLoadingStep: -1,
+            railLoadingDetail: '',
+            railLoadingStartedAt: null,
+          }),
+    });
 
     // ALWAYS fetch source/destination city coordinates for the map immediately
     // to ensure user sees "dots" even if everything else fails.
@@ -517,6 +544,17 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
       let result: OptimizeResult;
 
+      set({
+        railLoadingStep: 1,
+        railLoadingDetail: 'Pinging Render — cold start may take up to 90s',
+      });
+      await ensureBackendWarm(120_000);
+
+      set({
+        railLoadingStep: 2,
+        railLoadingDetail: `${cargoWeight.toLocaleString()} kg ${cargoType} · ${priority} priority`,
+      });
+
       if (opts?.simulation_mode && opts.rail_simulation) {
         const sim = (await simulateCargoRoute({
           origin_city: source.trim(),
@@ -561,6 +599,12 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         selectedRoute: 0,
       });
 
+      const optionCount = result.all_options?.length ?? 0;
+      set({
+        railLoadingStep: 3,
+        railLoadingDetail: `${optionCount} ranked routes — resolving station coordinates`,
+      });
+
       // Fetch station coordinates for map (from segments)
       const allSegments = [
         ...(result.cheapest?.segments || []),
@@ -577,6 +621,11 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       // Fetch coords in parallel
       const coordPromises = Array.from(codes).map(code => get().fetchStationCoord(code));
       await Promise.allSettled(coordPromises);
+
+      set({
+        railLoadingStep: 4,
+        railLoadingDetail: 'Recommendations ready',
+      });
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
@@ -613,7 +662,13 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         console.error('Optimize error:', err);
       }
     } finally {
-      set({ loading: false, loadingMode: null });
+      set({
+        loading: false,
+        loadingMode: null,
+        railLoadingStep: -1,
+        railLoadingDetail: '',
+        railLoadingStartedAt: null,
+      });
     }
   },
 
