@@ -274,13 +274,13 @@ def lookup_otp_baseline_fallback(airport_iata: str) -> tuple[Optional[float], st
     global_default = float(regions_data.get("globalDefaultOTP", 0.76))
 
     if code:
-        airport_scores = regions_data.get("airports") or {}
-        if code in airport_scores:
-            return float(airport_scores[code]), "airport_baseline"
-
         supabase_score = get_otp_from_supabase(airport_iata=code)
         if supabase_score is not None:
             return supabase_score, "airport_baseline"
+
+        airport_scores = regions_data.get("airports") or {}
+        if code in airport_scores:
+            return float(airport_scores[code]), "airport_baseline"
 
     region = lookup_region_for_airport(code) if code else None
     if region:
