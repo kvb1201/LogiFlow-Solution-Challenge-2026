@@ -14,6 +14,7 @@ from app.routes.explain_routes import router as explain_router
 from app.routes.intent_routes import intent_router
 from app.routes.compose import router as compose_router
 
+from app.routes.auth_routes import router as auth_router
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
 # CORS — allow Vercel frontend, localhost dev, and Capacitor mobile apps
@@ -31,7 +32,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
 def _warm_rail_data():
     """
     Optional rail CSV preload. Disabled by default on Render free tier (512MB RAM).
@@ -50,6 +50,16 @@ def _warm_rail_data():
     except Exception as exc:
         print(f"[startup] Rail preload skipped: {exc}")
 
+@app.on_event("startup")
+async def startup_event():
+    from app.config.database import engine, Base
+    import app.models.domain
+    
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
+    _warm_rail_data()
+
 
 @app.get("/health")
 def health_check():
@@ -65,3 +75,5 @@ app.include_router(air_router)
 app.include_router(explain_router)
 app.include_router(intent_router)
 app.include_router(compose_router)
+
+app.include_router(auth_router)
