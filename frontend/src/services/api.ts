@@ -790,11 +790,37 @@ export interface RailModelInfo {
 }
 
 const RAIL_ML_FALLBACK_URL = '/data/rail-ml-metrics.json';
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 function hasQuantifierValues(info: RailModelInfo | null): boolean {
   return Boolean(
     info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
   );
+}
+
+async function fetchRailModelInfoFromSupabase(): Promise<RailModelInfo | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/rail_ml_metrics?id=eq.current&select=payload`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ payload?: RailModelInfo }>;
+    const payload = rows[0]?.payload;
+    return payload && hasQuantifierValues(payload) ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
@@ -804,6 +830,16 @@ async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
 }
 
 export async function fetchRailModelInfo(): Promise<RailModelInfo> {
+  const fromSupabase = await fetchRailModelInfoFromSupabase();
+  if (fromSupabase) return fromSupabase;
+
+  try {
+    const fallback = await fetchRailModelInfoFallback();
+    if (hasQuantifierValues(fallback)) return fallback;
+  } catch {
+    /* try Render below */
+  }
+
   try {
     const res = await fetch(`${BACKEND_BASE}/railway/model-info`, {
       cache: 'no-store',
@@ -812,11 +848,11 @@ export async function fetchRailModelInfo(): Promise<RailModelInfo> {
     if (!res.ok) throw new Error(`Model info failed (${res.status})`);
     const data = (await res.json()) as RailModelInfo;
     if (hasQuantifierValues(data)) return data;
-    const fallback = await fetchRailModelInfoFallback();
-    return { ...fallback, ...data, quantifiers: fallback.quantifiers ?? data.quantifiers };
   } catch {
-    return fetchRailModelInfoFallback();
+    /* static fallback last */
   }
+
+  return fetchRailModelInfoFallback();
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
