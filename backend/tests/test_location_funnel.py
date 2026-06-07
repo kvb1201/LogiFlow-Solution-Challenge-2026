@@ -51,6 +51,18 @@ def test_normalize_corridor_pryj_bsb():
     assert dst.lat is not None
 
 
+def test_cstm_alias_resolves_to_mumbai():
+    loc = resolve_location("CSTM")
+    assert loc.canonical_city == "Mumbai"
+    assert loc.station_code == "CSMT"
+
+
+def test_blr_airport_code_resolves_to_bengaluru():
+    loc = resolve_location("BLR")
+    assert loc.canonical_city == "Bengaluru"
+    assert loc.station_code == "SBC"
+
+
 def test_compose_short_corridor_detection():
     from app.services.route_composer import _corridor_distance_km
     from app.utils.request_context import RequestContext
