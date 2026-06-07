@@ -241,14 +241,17 @@ def simulate(payload):
         t_name = first_train.get("train_name", "")
         t_type = first_train.get("train_type", "")
         t_number = first_train.get("train_no", "")
-        scale = determine_scale(t_name, t_type, t_number)
+        from app.pipelines.rail.tariff import resolve_billing_scale
 
-        # Cost (deterministic from tariff tables)
+        scale = resolve_billing_scale(cargo_type, t_name, t_type, t_number)
+
         cost = calc_parcel_cost(
             distance_km=distance,
             weight_kg=weight,
             train_name=t_name,
             train_type=t_type,
+            train_number=t_number,
+            cargo_type=cargo_type,
             scale=scale,
         )
         tariff_detail = get_tariff_breakdown(
@@ -256,6 +259,7 @@ def simulate(payload):
             weight_kg=weight,
             train_name=t_name,
             train_type=t_type,
+            cargo_type=cargo_type,
             scale=scale,
         )
 

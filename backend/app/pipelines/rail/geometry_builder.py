@@ -341,43 +341,82 @@ def _geometry_source_label(source_tag: str) -> str:
     return "schedule" if source_tag == "csv_2017" else source_tag
 
 
+def _slice_route_geometry(
+    route: list[dict],
+    from_u: str,
+    to_u: str,
+) -> tuple[dict[str, Any] | None, bool]:
+    """
+    Slice schedule between from_u and to_u.
+
+    Returns (detail, exact_match). exact_match is True only when both endpoints
+    appear on the schedule (hub aliases included) — never fuzzy geocode-only.
+    """
+    if len(route) < 2:
+        return None, False
+    start, end = _find_route_indices(route, from_u, to_u)
+    exact = start >= 0 and end >= 0 and start <= end
+    if not exact:
+        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
+    if start < 0 or end < start:
+        return None, False
+    detail = _build_geometry_detail(route[start : end + 1])
+    if detail.get("point_count", 0) < 2:
+        return None, False
+    return detail, exact
+
+
+def _is_better_geometry_candidate(
+    pts: int,
+    rank: int,
+    exact: bool,
+    *,
+    best_points: int,
+    best_rank: int,
+    best_exact: bool,
+) -> bool:
+    """Exact O-D on schedule always beats fuzzy geocode slices with more points."""
+    if exact and not best_exact:
+        return True
+    if not exact and best_exact:
+        return False
+    return pts > best_points or (pts == best_points and rank < best_rank)
+
+
 def _best_schedule_geometry(train_no: str, from_u: str, to_u: str) -> tuple[dict[str, Any] | None, bool]:
-    """Pick the richest valid O-D slice across delay_scrape, cache, and CSV."""
+    """Pick the best valid O-D slice across delay_scrape, cache, and CSV."""
     from app.pipelines.rail.schedule_resolver import iter_schedule_sources
 
     best_detail: dict[str, Any] | None = None
     best_points = -1
     best_rank = 99
+    best_exact = False
     has_schedule = False
 
     for source_tag, route in iter_schedule_sources(train_no):
         if len(route) < 2:
             continue
         has_schedule = True
-        detail = _slice_route_geometry(route, from_u, to_u)
+        detail, exact = _slice_route_geometry(route, from_u, to_u)
         if not detail:
             continue
         pts = int(detail.get("point_count") or 0)
         rank = _SOURCE_RANK.get(source_tag, 50)
-        if pts > best_points or (pts == best_points and rank < best_rank):
+        if _is_better_geometry_candidate(
+            pts,
+            rank,
+            exact,
+            best_points=best_points,
+            best_rank=best_rank,
+            best_exact=best_exact,
+        ):
             best_detail = dict(detail)
             best_detail["source"] = _geometry_source_label(source_tag)
             best_points = pts
             best_rank = rank
+            best_exact = exact
 
     return best_detail, has_schedule
-
-
-def _slice_route_geometry(route: list[dict], from_u: str, to_u: str) -> dict[str, Any] | None:
-    if len(route) < 2:
-        return None
-    start, end = _find_route_indices(route, from_u, to_u)
-    if start < 0 or end < 0 or start > end:
-        start, end = _find_fuzzy_route_slice(route, from_u, to_u)
-    if start < 0 or end < start:
-        return None
-    detail = _build_geometry_detail(route[start : end + 1])
-    return detail if detail.get("point_count", 0) >= 2 else None
 
 
 def _reference_corridor_geometry(
@@ -411,7 +450,7 @@ def _reference_corridor_geometry(
             }
             for s in raw
         ]
-        detail = _slice_route_geometry(route, from_u, to_u)
+        detail, _ = _slice_route_geometry(route, from_u, to_u)
         if not detail:
             continue
         n = int(detail.get("point_count") or 0)
@@ -482,7 +521,16 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
             cached_n > expected + 3 or cached_n > max(expected + 2, int(expected * 1.4))
         )
         stale_bloated_ref = cached_src == "corridor_reference" or (expected == 0 and cached_n > 12)
-        stale = stale_sparse or stale_dense or stale_bloated_ref
+        first_code = str((cached_stops[0] or {}).get("code") or "").upper()
+        last_code = str((cached_stops[-1] or {}).get("code") or "").upper()
+        stale_wrong_endpoints = bool(
+            cached_stops
+            and (
+                (first_code and first_code not in _equiv_set(from_u))
+                or (last_code and last_code not in _equiv_set(to_u))
+            )
+        )
+        stale = stale_sparse or stale_dense or stale_bloated_ref or stale_wrong_endpoints
         if not stale:
             return {
                 "geometry": cached["geometry"],

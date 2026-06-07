@@ -81,7 +81,7 @@ def sync_geometry_corridor(from_code: str, to_code: str, *, max_trains: int = 5)
 
     load_data()
     from_u, to_u = from_code.strip().upper(), to_code.strip().upper()
-    trains = get_trains_for_route(from_u, to_u) or []
+    trains = get_trains_for_route([from_u], [to_u], max_results=max_trains) or []
     uploaded = 0
     for train in trains[:max_trains]:
         train_no = str(train.get("train_number") or train.get("train_no") or "").strip()
@@ -164,7 +164,7 @@ def sync_geometry(max_pairs: int = 30) -> int:
             if not src_codes or not dst_codes:
                 continue
             from_u, to_u = src_codes[0], dst_codes[0]
-            trains = get_trains_for_route(from_u, to_u) or []
+            trains = get_trains_for_route([from_u], [to_u], max_results=max_trains) or []
             if not trains:
                 continue
             train_no = str(trains[0].get("train_number") or trains[0].get("train_no") or "").strip()
