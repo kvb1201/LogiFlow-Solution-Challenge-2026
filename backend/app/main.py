@@ -15,6 +15,7 @@ from app.routes.intent_routes import intent_router
 from app.routes.compose import router as compose_router
 
 from app.routes.auth_routes import router as auth_router
+from app.routes.planner_routes import router as planner_router
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
 
 # CORS — allow Vercel frontend, localhost dev, and Capacitor mobile apps
@@ -53,7 +54,7 @@ def _warm_rail_data():
 @app.on_event("startup")
 async def startup_event():
     from app.config.database import engine, Base
-    import app.models.domain
+    import app.models.domain  # registers User, UserPreferences, ShipmentReport with Base
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -77,3 +78,4 @@ app.include_router(intent_router)
 app.include_router(compose_router)
 
 app.include_router(auth_router)
+app.include_router(planner_router)

@@ -345,6 +345,27 @@ export interface HybridModeRoute {
   train_name?: string | null;
   airline?: string | null;
   distance_km?: number | null;
+  /** Alternate field names the backend sometimes uses */
+  time?: number | null;
+  cost?: number | null;
+  geometry?: [number, number][] | null;
+}
+
+export interface HybridPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  scenario_brief?: string;
+  cargo?: { weight: number; type: string };
+  constraints?: {
+    budget_max_inr?: number;
+    budget_limit?: number;
+    delay_tolerance_hours?: number;
+    excluded_modes?: string[];
+  };
 }
 
 export interface HybridOptimizeResult {
@@ -359,6 +380,7 @@ export interface HybridOptimizeResult {
     road?: HybridModeRoute | null;
     rail?: HybridModeRoute | null;
     air?: HybridModeRoute | null;
+    water?: HybridModeRoute | null;
   } | null;
 }
 
