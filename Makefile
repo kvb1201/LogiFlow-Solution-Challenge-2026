@@ -68,6 +68,10 @@ sync-rail-geometry-trains:
 audit-rail-geometry:
 	cd backend && ./venv/bin/python scripts/audit_rail_geometry.py --limit $(or $(TRAINS),100)
 
+# Push rail ML model-info to Supabase (Vercel reads without Render cold start)
+sync-rail-ml-metrics:
+	cd backend && ./venv/bin/python scripts/sync_rail_ml_metrics.py
+
 # Build station_name.pdf index (7k+ stations → stations_from_pdf_cache.json)
 build-station-pdf-index:
 	cd backend && ./venv/bin/python -c "from app.services.station_pdf_index import build_pdf_index; n=len(build_pdf_index(force=True)); print(f'Indexed {n} stations from station_name.pdf')"
