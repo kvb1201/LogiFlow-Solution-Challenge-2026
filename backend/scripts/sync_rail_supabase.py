@@ -139,6 +139,91 @@ def sync_geometry_trains(target: int = 100) -> int:
     return uploaded
 
 
+def sync_geometry_full(
+    *,
+    max_trains_per_pair: int = 20,
+    skip_existing: bool = True,
+) -> int:
+    """
+    Upload geometry for every city-pair in CITY_TO_STATION × all direct trains.
+
+    Covers the full all-India search surface the app uses (~90 cities, ~8k pairs).
+    """
+    from app.pipelines.rail.config import CITY_TO_STATION
+    from app.pipelines.rail.data_loader import get_trains_for_route, load_data
+    from app.pipelines.rail.geometry_builder import get_train_geometry_detail
+    from app.services.location_funnel import resolve_location
+    from app.services.route_geometry_store import list_geometry_keys
+
+    if not sb.is_configured():
+        print("Supabase not configured — set SUPABASE_URL and SUPABASE_KEY in .env")
+        return 0
+
+    load_data()
+    cities = sorted(
+        c for c in CITY_TO_STATION.keys() if not c.isupper() and " JN" not in c.upper()
+    )
+    existing = list_geometry_keys() if skip_existing else set()
+    print(f"Existing geometries in Supabase: {len(existing)}")
+    print(f"Scanning {len(cities)} cities ({len(cities) * (len(cities) - 1)} directed pairs)...")
+
+    uploaded = 0
+    skipped = 0
+    failed = 0
+    seen: set[tuple[str, str, str]] = set()
+
+    for src_city in cities:
+        for dst_city in cities:
+            if src_city == dst_city:
+                continue
+            try:
+                src = resolve_location(src_city)
+                dst = resolve_location(dst_city)
+            except Exception:
+                continue
+            trains = get_trains_for_route(
+                src.station_codes, dst.station_codes, max_results=max_trains_per_pair
+            )
+            if not trains:
+                continue
+            for train in trains:
+                train_no = str(
+                    train.get("train_number") or train.get("train_no") or ""
+                ).strip()
+                from_u = str(train.get("from_station") or src.station_codes[0]).upper()
+                to_u = str(train.get("to_station") or dst.station_codes[0]).upper()
+                key = (train_no, from_u, to_u)
+                if not train_no or key in seen:
+                    continue
+                seen.add(key)
+                if skip_existing and key in existing:
+                    skipped += 1
+                    continue
+                try:
+                    detail = get_train_geometry_detail(train_no, from_u, to_u)
+                except Exception as exc:
+                    failed += 1
+                    print(f"  ✗ {train_no} {from_u}→{to_u}: {exc}")
+                    continue
+                pts = int(detail.get("point_count") or 0)
+                if pts >= 2:
+                    uploaded += 1
+                    existing.add(key)
+                    if uploaded % 25 == 0 or uploaded <= 5:
+                        print(
+                            f"  ✓ [{uploaded}] {train_no} {from_u}→{to_u} "
+                            f"({pts} pts, {detail.get('source')}) — skipped {skipped}"
+                        )
+                    if uploaded % 200 == 0:
+                        get_train_geometry_detail.cache_clear()
+
+    print(
+        f"Full sync done: {uploaded} uploaded, {skipped} already cached, "
+        f"{failed} failed, {len(seen)} unique legs scanned"
+    )
+    return uploaded
+
+
 def sync_geometry(max_pairs: int = 30) -> int:
     from app.pipelines.rail.config import CITY_TO_STATION
     from app.pipelines.rail.data_loader import get_trains_for_route, load_data
@@ -164,7 +249,7 @@ def sync_geometry(max_pairs: int = 30) -> int:
             if not src_codes or not dst_codes:
                 continue
             from_u, to_u = src_codes[0], dst_codes[0]
-            trains = get_trains_for_route([from_u], [to_u], max_results=max_trains) or []
+            trains = get_trains_for_route([from_u], [to_u], max_results=10) or []
             if not trains:
                 continue
             train_no = str(trains[0].get("train_number") or trains[0].get("train_no") or "").strip()
@@ -200,6 +285,22 @@ def main() -> None:
         help="Sync N unique train legs to train_route_geometry (e.g. 100 for audit)",
     )
     parser.add_argument("--all", action="store_true", help="Sync stations + geometry")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Sync ALL city-pair train geometries to Supabase (all-India bulk)",
+    )
+    parser.add_argument(
+        "--no-skip",
+        action="store_true",
+        help="With --full: recompute even if already in Supabase",
+    )
+    parser.add_argument(
+        "--max-trains",
+        type=int,
+        default=20,
+        help="Max trains per city pair for --full (default 20)",
+    )
     args = parser.parse_args()
 
     if not sb.is_configured():
@@ -208,7 +309,12 @@ def main() -> None:
 
     if args.all or args.stations:
         sync_stations()
-    if args.trains:
+    if args.full:
+        sync_geometry_full(
+            max_trains_per_pair=args.max_trains,
+            skip_existing=not args.no_skip,
+        )
+    elif args.trains:
         sync_geometry_trains(target=args.trains)
     elif args.corridor:
         parts = [p.strip() for p in args.corridor.split(",") if p.strip()]
@@ -218,7 +324,14 @@ def main() -> None:
         sync_geometry_corridor(parts[0], parts[1])
     elif args.all or args.geometry:
         sync_geometry(max_pairs=args.pairs)
-    if not (args.all or args.stations or args.geometry or args.corridor or args.trains):
+    if not (
+        args.all
+        or args.stations
+        or args.geometry
+        or args.corridor
+        or args.trains
+        or args.full
+    ):
         parser.print_help()
 
 
