@@ -303,7 +303,7 @@ export function ReportDetailPage({ reportId }: Props) {
 
         {/* Route Health — only for active trips */}
         {report.status === 'active' && (
-          <section className="mb-6">
+          <section id="route-health" className="mb-6">
             <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">Route Health</h2>
             <RouteHealthCard reportId={report.id} />
           </section>

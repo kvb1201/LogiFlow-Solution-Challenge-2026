@@ -52,7 +52,7 @@ interface PlannerState {
   restartTrip: (id: string) => Promise<void>;
 
   // Route health
-  fetchRouteHealth: (id: string) => Promise<void>;
+  fetchRouteHealth: (id: string, actualLocation?: string) => Promise<void>;
 
   // Notifications
   fetchNotifications: () => Promise<void>;
@@ -198,10 +198,10 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
 
   // ── Route health ────────────────────────────────────────────────────
 
-  fetchRouteHealth: async (id) => {
+  fetchRouteHealth: async (id, actualLocation) => {
     set({ routeHealthLoading: true });
     try {
-      const health = await getRouteHealth(id);
+      const health = await getRouteHealth(id, actualLocation);
       set({ routeHealth: health, routeHealthLoading: false });
     } catch (err) {
       set({ routeHealthLoading: false, error: err instanceof Error ? err.message : 'Failed to fetch route health' });

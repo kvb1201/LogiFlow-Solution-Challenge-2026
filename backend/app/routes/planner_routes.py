@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -14,6 +14,7 @@ from app.models.report import (
 )
 from app.config.database import get_db
 from app.dependencies import get_current_user
+from app.services.trip_progress import evaluate_route_health
 
 router = APIRouter(prefix="/planner", tags=["planner"])
 
@@ -377,58 +378,57 @@ async def restart_trip(
     return _report_to_response(report)
 
 
-# ── Route Health Placeholder ─────────────────────────────────────────
+# ── Smart Route Health ────────────────────────────────────────────────
 
 @router.get("/reports/{report_id}/route-health")
 async def get_route_health(
     report_id: str,
+    actual_location: str | None = Query(default=None),
+    current_location: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Placeholder route health endpoint.
-    Returns simulated health metrics based on report data.
-    Full implementation will integrate live weather, traffic, and delay APIs.
+    Evaluate trip progress and route health.
+
+    actual_location/current_location is used only for this health check and is
+    not persisted to the shipment report.
     """
     report = await _get_owned_report(report_id, db, current_user)
 
-    # Placeholder calculation based on existing report data
-    risk = report.risk_score or 0.15
-    estimated_time = report.estimated_time or 12
+    driver_location = actual_location or current_location
+    health = evaluate_route_health(report, driver_location)
 
-    # Simulate a health score (inverse of risk, with some randomization)
-    import random
-    random.seed(hash(report.id) % 2**32)
-
-    base_score = max(0.3, 1.0 - risk)
-    jitter = random.uniform(-0.05, 0.05)
-    current_score = round(min(1.0, max(0.0, base_score + jitter)), 2)
-
-    # Determine health level
-    if current_score >= 0.75:
-        health_level = "healthy"
-        recommended_action = "No action needed. Route conditions are favorable."
-        estimated_delay = round(random.uniform(0, 0.5), 1)
-    elif current_score >= 0.5:
-        health_level = "moderate"
-        recommended_action = "Monitor conditions. Minor delays possible."
-        estimated_delay = round(random.uniform(0.5, 2.0), 1)
-    else:
-        health_level = "at_risk"
-        recommended_action = "Consider rerouting. Significant delays expected."
-        estimated_delay = round(random.uniform(2.0, 6.0), 1)
+    if health["health_level"] in {"moderate", "at_risk"}:
+        existing_result = await db.execute(
+            select(ShipmentNotification).where(
+                ShipmentNotification.user_id == current_user.id,
+                ShipmentNotification.report_id == report.id,
+                ShipmentNotification.type == f"route_health_{health['health_level']}",
+                ShipmentNotification.read == False,
+            )
+        )
+        existing = existing_result.scalars().first()
+        if not existing:
+            detail = (
+                f"Deviation: {health['deviation_level']}; "
+                f"ETA variance: {health['eta_variance_minutes']} min."
+            )
+            await _create_notification(
+                db,
+                current_user.id,
+                report.id,
+                f"route_health_{health['health_level']}",
+                f"Route health for '{report.name}' is {health['health_level'].replace('_', ' ')}. {detail}",
+            )
+            await db.commit()
 
     return {
         "report_id": report.id,
-        "status": report.status,
-        "current_route_score": current_score,
-        "recommended_action": recommended_action,
-        "estimated_delay": estimated_delay,
-        "health_level": health_level,
         "mode": report.mode,
         "source": report.source,
         "destination": report.destination,
-        "checked_at": datetime.utcnow().isoformat(),
+        **health,
     }
 
 
