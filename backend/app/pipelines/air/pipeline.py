@@ -7,6 +7,7 @@ from app.pipelines.base import BasePipeline
 from app.services.air_data_service import get_live_air_routes
 from app.services.airport_locator_service import resolve_city_to_airport
 from app.services.air_weather_service import get_route_weather_context
+from app.services.air_timezone_service import build_route_schedule
 
 
 class AirPipeline(BasePipeline):
@@ -173,6 +174,12 @@ class AirPipeline(BasePipeline):
             source_airport = route.get("source_airport") or CITY_TO_AIRPORT.get(source, {"code": source[:3].upper(), "name": source})
             destination_airport = route.get("destination_airport") or CITY_TO_AIRPORT.get(destination, {"code": destination[:3].upper(), "name": destination})
             confidence_score, confidence_reasons = self._build_confidence(route, reliability, cargo_rule, business_rules)
+            schedule = build_route_schedule(
+                departure_date,
+                time,
+                source_airport,
+                destination_airport,
+            )
 
             engineered.append({
                 "type": "Air",
@@ -238,6 +245,11 @@ class AirPipeline(BasePipeline):
                     "confidence_reasons": confidence_reasons,
                     "cost_breakdown": cost_breakdown,
                     "business_rules_applied": business_rules["messages"],
+                    "schedule": schedule,
+                    "departure_local": schedule["departure_local"],
+                    "arrival_local": schedule["arrival_local"],
+                    "departure_utc": schedule["departure_utc"],
+                    "arrival_utc": schedule["arrival_utc"],
                 },
             })
 
