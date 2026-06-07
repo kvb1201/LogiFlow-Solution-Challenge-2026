@@ -1,188 +1,203 @@
-# LogiFlow Implementation — Shipment Reports, Trip Lifecycle, Route Health & Notifications
+# Smart Trip Monitoring MVP Implementation
 
 ## Architecture Implemented
 
-The implementation extends LogiFlow's existing multimodal freight optimization platform with a complete shipment planning lifecycle:
+LogiFlow now extends the existing flow from:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend (Next.js)                    │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌────────────┐ │
-│  │ Dashboard │  │ Reports  │  │  Detail   │  │  NavBar    │ │
-│  │  Section  │  │   Page   │  │   Page    │  │  Notif.    │ │
-│  └──────────┘  └──────────┘  └───────────┘  └────────────┘ │
-│       │              │             │               │         │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │              usePlannerStore (Zustand)                  │ │
-│  │  reports · trip lifecycle · route health · notifications│ │
-│  └────────────────────────────────────────────────────────┘ │
-│       │              │             │               │         │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │           plannerApi.ts (apiClient + JWT)               │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                    /api/* → rewrite
-                           │
-┌─────────────────────────────────────────────────────────────┐
-│                     Backend (FastAPI)                         │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │              planner_routes.py                          │ │
-│  │  CRUD · execute · stop · cancel · restart               │ │
-│  │  route-health · notifications                           │ │
-│  └────────────────────────────────────────────────────────┘ │
-│       │                                                      │
-│  ┌────────────┐  ┌──────────────────┐  ┌────────────────┐  │
-│  │ShipmentReport│ │ShipmentNotification│ │ User (extended)│  │
-│  └────────────┘  └──────────────────┘  └────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
+Plan -> Execute
+
+to:
+
+Plan -> Execute -> Monitor -> Reassess
+
+The implementation reuses the current authenticated planner architecture:
+
+- `ShipmentReport` remains the source of truth for saved plans and trip lifecycle state.
+- `ShipmentNotification` remains the notification system.
+- `planner_routes.py` remains the backend planner API boundary.
+- `plannerApi.ts` and `usePlannerStore` remain the frontend API/store integration.
+- Report detail pages and the dashboard remain the primary monitoring surfaces.
+
+No duplicate report, trip, route-health, or notification systems were introduced.
 
 ## Files Modified
 
-### Backend
+- `backend/app/routes/planner_routes.py`
+- `backend/app/services/trip_progress.py`
+- `frontend/src/services/plannerApi.ts`
+- `frontend/src/store/usePlannerStore.ts`
+- `frontend/src/components/auth/Dashboard.tsx`
+- `frontend/src/components/planner/ReportDetailPage.tsx`
+- `frontend/src/components/planner/RouteHealthCard.tsx`
+- `implementation.md`
 
-| File | Change |
-|------|--------|
-| `backend/app/models/domain.py` | Added `started_at`, `completed_at`, `expected_end_time`, `buffer_minutes` to `ShipmentReport`. Added `ShipmentNotification` model. Added `notifications` relationship to `User`. |
-| `backend/app/models/report.py` | Extended `ReportResponse` with trip lifecycle fields. Added `NotificationResponse` schema. |
-| `backend/app/routes/planner_routes.py` | Added trip lifecycle endpoints (execute, stop, cancel, restart), route-health placeholder, notification CRUD endpoints. Auto-generates notifications on trip state changes. |
+Local validation also touched `backend/logiflow.db`; temporary validation rows were removed after the API workflow completed.
 
-### Frontend
+## Backend Changes
 
-| File | Change |
-|------|--------|
-| `frontend/src/services/api.ts` | Added `HybridPayload` interface. Added `water` to `best_per_mode` type. Extended `HybridModeRoute` with `time`, `cost`, `geometry` fields. |
-| `frontend/src/components/ComparatorPageClient.tsx` | Removed unsafe `as` type assertions — now uses typed field access. |
-| `frontend/src/services/plannerApi.ts` | Added `executeTrip`, `stopTrip`, `cancelTrip`, `restartTrip`, `getRouteHealth`, notification API functions. Extended `ShipmentReport` type with lifecycle fields. |
-| `frontend/src/store/usePlannerStore.ts` | Added trip lifecycle actions, route health state, notification state management. |
-| `frontend/src/components/planner/ReportDetailPage.tsx` | Added trip lifecycle buttons (Execute, Stop, Cancel, Restart), route health card, trip timing display. |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | **[NEW]** Route health display card with healthy/moderate/at-risk states. |
-| `frontend/src/components/planner/NotificationBell.tsx` | **[NEW]** Notification bell with unread badge, dropdown panel, mark-read functionality. |
-| `frontend/src/components/NavBar.tsx` | Added "My Plans" link for authenticated users. Replaced placeholder Bell with `NotificationBell`. |
+- Replaced the previous route-health placeholder with Smart Trip Monitoring logic.
+- Added optional `actual_location` and `current_location` query support to:
+  - `GET /planner/reports/{id}/route-health`
+- Added notification generation for moderate and at-risk route-health checks.
+- Kept trip lifecycle endpoints unchanged and reused:
+  - `POST /planner/reports/{id}/execute`
+  - `POST /planner/reports/{id}/stop`
+  - `POST /planner/reports/{id}/cancel`
+  - `POST /planner/reports/{id}/restart`
 
-## Backend APIs Added
+## Frontend Changes
 
-### Trip Lifecycle
+- Updated `RouteHealthResponse` to match the Smart Trip Monitoring API shape.
+- Updated planner store route-health fetching to accept optional actual driver location input.
+- Rebuilt `RouteHealthCard` to show:
+  - health level
+  - progress percentage
+  - ETA variance
+  - delay risk
+  - estimated location
+  - actual location
+  - deviation level
+  - recommended action
+- Added route-health controls:
+  - Use Estimated Location
+  - Enter Current Location
+- Added Active Trips section to Dashboard with:
+  - shipment name
+  - source -> destination
+  - mode badge
+  - started time
+  - ETA
+  - progress percentage
+  - health badge
+  - View Trip action
+  - Check Route Health action
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/planner/reports/{id}/execute` | POST | Start a planned trip → status becomes `active`, records `started_at`, calculates `expected_end_time` with buffer |
-| `/planner/reports/{id}/stop` | POST | Complete an active trip → status becomes `completed`, records `completed_at` |
-| `/planner/reports/{id}/cancel` | POST | Cancel a trip → status becomes `cancelled` |
-| `/planner/reports/{id}/restart` | POST | Restart a completed/cancelled trip → status becomes `active` again |
+## Progress Engine
 
-### Route Health
+Added `backend/app/services/trip_progress.py`.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/planner/reports/{id}/route-health` | GET | Returns placeholder route health data (score, delay estimate, health level, recommended action) |
+`calculate_trip_progress(started_at, expected_end_time, current_time)` returns:
 
-### Notifications
+- `progress_percentage`
+- `elapsed_minutes`
+- `remaining_minutes`
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/planner/notifications` | GET | List user's notifications (newest first, limit 50) |
-| `/planner/notifications/unread-count` | GET | Get count of unread notifications |
-| `/planner/notifications/{id}/read` | POST | Mark a single notification as read |
-| `/planner/notifications/read-all` | POST | Mark all notifications as read |
+Rules implemented:
 
-## Database Models Added
+- before start -> `0%`
+- after ETA -> `100%`
+- progress is always clamped from `0` to `100`
+- calculations are reusable and centralized
 
-### ShipmentReport (extended)
+## Route Health API
 
-New columns:
-- `started_at` (DateTime, nullable) — when trip was started
-- `completed_at` (DateTime, nullable) — when trip was completed
-- `expected_end_time` (DateTime, nullable) — calculated ETA with buffer
-- `buffer_minutes` (Integer, nullable, default=30) — buffer time in minutes
+`GET /planner/reports/{id}/route-health`
 
-### ShipmentNotification (new)
+Returns:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | String (PK) | UUID |
-| `user_id` | String (FK → users) | Owner |
-| `report_id` | String (FK → shipment_reports, nullable) | Related report |
-| `type` | String | Event type: `trip_started`, `trip_stopped`, `trip_cancelled`, `trip_restarted` |
-| `message` | String | Human-readable notification message |
-| `created_at` | DateTime | Creation timestamp |
-| `read` | Boolean | Whether the user has read this notification |
+- `status`
+- `health_level`
+- `progress_percentage`
+- `eta_variance_minutes`
+- `delay_risk`
+- `recommended_action`
+- `estimated_location`
+- `actual_location`
+- `deviation_level`
+- `deviation_km`
+- `checked_at`
 
-## Frontend Pages/Components Added
+Supported values:
 
-### RouteHealthCard
-- Fetches route health from the API on mount
-- Displays health level with appropriate visual treatment:
-  - **Healthy** (≥75% score): Green, check_circle icon
-  - **Moderate** (50-74% score): Amber, warning icon
-  - **At Risk** (<50% score): Red, error icon
-- Shows estimated delay, recommended action, last check time
+- `health_level`: `healthy`, `moderate`, `at_risk`
+- `deviation_level`: `none`, `minor`, `major`
+- `recommended_action`: `continue`, `monitor`, `reoptimize`
 
-### NotificationBell
-- Unread badge with count (9+ overflow)
-- Dropdown panel with notification list
-- Trip lifecycle notifications with appropriate icons and colors
-- Click-to-navigate to related report
-- Mark individual or all notifications as read
+## Estimated Location Logic
 
-## Shipment Report Flow
+Estimated location is computed from:
 
-1. User optimizes a route on any pipeline page (road, rail, air, water, hybrid)
-2. Clicks **Save Report** → `SaveReportModal` opens with pre-filled data
-3. Report saves via `POST /planner/reports` → appears in Dashboard and My Plans
-4. User can view, rename, delete, or regenerate reports
-5. Expiration badges show when plans are >24h old
+- report source
+- report stops
+- report destination
+- trip progress percentage
 
-## Execute Trip Flow
+The engine selects the current route segment from the progress percentage and interpolates between waypoint coordinates using the existing offline geocoder/coordinate utilities. If coordinates are unavailable, it still returns a segment label such as `Between Ahmedabad and Jaipur` with low confidence.
 
-1. From report detail page, user clicks **Execute Trip** (available for `planned`/`draft`)
-2. Backend sets status to `active`, records `started_at`, calculates `expected_end_time`
-3. Notification auto-generated: "Trip X has been started"
-4. Report detail shows trip timing info and **Route Health** card
-5. User can click **Check Route Health** to refresh health data
-6. User clicks **Stop Trip** to mark as `completed`
-7. User can **Restart Trip** from completed/cancelled state
+## Deviation Detection Logic
 
-## Route Health Framework
+Actual driver location is optional and only affects the current route-health evaluation. It does not overwrite the shipment route.
 
-- Placeholder implementation using report risk score with deterministic jitter
-- Returns: `status`, `current_route_score`, `recommended_action`, `estimated_delay`, `health_level`
-- Frontend displays as a themed card with healthy/moderate/at-risk states
-- Ready for integration with live weather, traffic, and delay APIs
+When `actual_location` is provided:
 
-## Notification Framework
+- the city is geocoded through the existing coordinate utility
+- distance from estimated location is calculated with haversine distance
+- deviation is classified as:
+  - `none`: under 50 km
+  - `minor`: 50 km to under 150 km
+  - `major`: 150 km or more
 
-- Notifications auto-generated on trip lifecycle events
-- Stored in `shipment_notifications` table
-- Frontend polls unread count on page load
-- Bell icon in NavBar shows unread badge
-- Dropdown panel lists notifications with mark-read
-- No real-time WebSocket yet — poll-based refresh
+## Health Scoring Logic
 
-## Build Verification Results
+Health is scored from:
 
-```
-$ npx tsc --noEmit
-# Clean — no errors
+- saved report `risk_score`
+- deviation level
+- overdue minutes past ETA
 
-$ npm run build
-✓ Compiled successfully in 2.1s
-✓ TypeScript clean in 2.7s
-✓ 16/16 static pages generated
-```
+Output mapping:
 
-All routes render correctly:
-- `/` — Home
-- `/dashboard` — Dashboard with reports section
-- `/reports` — My Plans page with filters
-- `/reports/[id]` — Report detail with trip lifecycle
-- All pipeline pages (road, rail, air, water, hybrid, comparator)
+- `healthy` + `low` delay risk -> `continue`
+- `moderate` + `medium` delay risk -> `monitor`
+- `at_risk` + `high` delay risk -> `reoptimize`
 
-## Remaining Limitations
+Major deviation or significant overdue time forces an at-risk result.
 
-1. **Route Health**: Uses placeholder calculations. Needs integration with live weather, traffic, and delay APIs for production accuracy.
-2. **Notifications**: Poll-based only. WebSocket/SSE real-time notifications not yet implemented.
-3. **Trip restart**: Currently resets the trip entirely. A true "resume from current location" would need GPS/location integration.
-4. **Database migrations**: Uses `create_all` on startup. For production, use Alembic migrations for schema changes.
-5. **Notification cleanup**: No auto-expiry for old notifications. Could add a cleanup job.
+## Notification Integration
+
+Route-health checks reuse `ShipmentNotification`.
+
+When a check returns `moderate` or `at_risk`, the backend creates a notification with:
+
+- report id
+- user id
+- route-health notification type
+- deviation level
+- ETA variance
+
+Duplicate unread notifications of the same route-health level are not repeatedly created for the same report.
+
+## Validation Results
+
+Passed:
+
+- `npx tsc --noEmit`
+- `npm run build`
+- backend startup with FastAPI/Uvicorn
+- backend `/health`
+- frontend startup with Next dev server
+- frontend `/login` HTTP 200
+
+Validated authenticated API flow:
+
+- Login/session validation via JWT session path: `200`
+- Save Report: `201`, report created as `planned`
+- Execute Trip: `200`, report became `active`
+- Active Trips Dashboard data: active report returned by planner listing
+- Route Health using estimated location: `healthy`, `continue`
+- Estimated Location: returned `Between Ahmedabad and Jaipur`
+- Actual Location Input with `Mumbai`: accepted and evaluated
+- Deviation Detection with `Mumbai`/`Kolkata`: `major`
+- Health Scoring: major deviation produced `at_risk`, `high`, `reoptimize`
+- Notification Generation: route-health notification created
+
+Note: Real Google OAuth token exchange was not exercised locally because no live Google credential was available. The protected app session path was validated with the same JWT format produced after OAuth login.
+
+## Known Limitations
+
+- Estimated location is time-progress based, not GPS based.
+- Deviation detection depends on city-level geocoding accuracy.
+- ETA variance is heuristic and does not yet include live traffic/weather feeds.
+- Dashboard health badges use saved risk as an immediate summary; detailed route health is evaluated on the report detail route-health API.
+- Notifications are poll/read based; no WebSocket or SSE real-time delivery is implemented.
+- Production database migrations are still not introduced; the app continues using existing startup metadata creation.

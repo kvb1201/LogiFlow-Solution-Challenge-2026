@@ -64,10 +64,29 @@ export interface UpdateReportPayload {
 export interface RouteHealthResponse {
   report_id: string;
   status: string;
-  current_route_score: number;
-  recommended_action: string;
-  estimated_delay: number;
   health_level: 'healthy' | 'moderate' | 'at_risk';
+  progress_percentage: number;
+  elapsed_minutes: number;
+  remaining_minutes: number;
+  eta_variance_minutes: number;
+  delay_risk: 'low' | 'medium' | 'high';
+  recommended_action: 'continue' | 'monitor' | 'reoptimize';
+  estimated_location: {
+    label: string;
+    latitude: number | null;
+    longitude: number | null;
+    segment_start: string;
+    segment_end: string;
+    confidence: string;
+  };
+  actual_location: {
+    label: string;
+    latitude: number | null;
+    longitude: number | null;
+    confidence: string;
+  } | null;
+  deviation_level: 'none' | 'minor' | 'major';
+  deviation_km: number | null;
   mode: string;
   source: string;
   destination: string;
@@ -184,8 +203,11 @@ export async function restartTrip(id: string): Promise<ShipmentReport> {
 
 // ── Route Health ──────────────────────────────────────────────────────
 
-export async function getRouteHealth(id: string): Promise<RouteHealthResponse> {
-  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/route-health`, {
+export async function getRouteHealth(id: string, actualLocation?: string): Promise<RouteHealthResponse> {
+  const params = new URLSearchParams();
+  if (actualLocation?.trim()) params.set('actual_location', actualLocation.trim());
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/route-health${query}`, {
     method: 'GET',
     requireAuth: true,
   });

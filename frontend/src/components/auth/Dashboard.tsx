@@ -2,11 +2,45 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, TrendingUp } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired } from '@/services/plannerApi';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+
+function formatShortDate(value: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getProgress(startedAt: string | null, expectedEndTime: string | null) {
+  if (!startedAt || !expectedEndTime) return 0;
+  const start = new Date(startedAt).getTime();
+  const end = new Date(expectedEndTime).getTime();
+  const now = Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  if (now <= start) return 0;
+  if (now >= end) return 100;
+  return Math.round(((now - start) / (end - start)) * 100);
+}
+
+function getHealthLevel(riskScore: number | null) {
+  const risk = riskScore ?? 0.15;
+  if (risk >= 0.6) return 'at_risk';
+  if (risk >= 0.35) return 'moderate';
+  return 'healthy';
+}
+
+const HEALTH_BADGES = {
+  healthy: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20',
+  moderate: 'bg-amber-500/12 text-amber-300 border-amber-500/20',
+  at_risk: 'bg-red-500/12 text-red-400 border-red-500/20',
+} as const;
 
 export function Dashboard() {
   const user = useAuthStore(s => s.user);
@@ -20,6 +54,7 @@ export function Dashboard() {
   const activePlans    = reports.filter(r => r.status === 'active').length;
   const expiredPlans   = reports.filter(r => isExpired(r)).length;
   const recentReports  = reports.slice(0, 4);
+  const activeReports  = reports.filter(r => r.status === 'active').slice(0, 4);
 
   return (
     <div className="relative w-full overflow-hidden">
@@ -150,6 +185,87 @@ export function Dashboard() {
             </div>
           ) : null}
         </section>
+
+        {/* ── Active Trips ───────────────────────────────────────────── */}
+        {activeReports.length > 0 && (
+          <section className="mb-10">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-0.5">
+                  Monitor
+                </div>
+                <h2 className="text-lg font-bold text-foreground">Active Trips</h2>
+              </div>
+              <Link href="/reports?status=active" className="flex items-center gap-1.5 text-sm text-primary hover:underline">
+                View active
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {activeReports.map(report => {
+                const progress = getProgress(report.started_at, report.expected_end_time);
+                const health = getHealthLevel(report.risk_score);
+                return (
+                  <div key={report.id} className="rounded-2xl border border-border/40 bg-surface/35 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-foreground">{report.name}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground mono">
+                          {report.source} → {report.destination}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-md border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">
+                          {report.mode}
+                        </span>
+                        <span className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${HEALTH_BADGES[health]}`}>
+                          {health.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low/35 px-3 py-2">
+                        <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-outline">Started</div>
+                        <div className="text-[11px] font-semibold text-foreground">{formatShortDate(report.started_at)}</div>
+                      </div>
+                      <div className="rounded-xl border border-outline-variant/10 bg-surface-container-low/35 px-3 py-2">
+                        <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-outline">ETA</div>
+                        <div className="text-[11px] font-semibold text-foreground">{formatShortDate(report.expected_end_time)}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="mb-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Progress</span>
+                        <span className="mono">{progress}%</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-surface-container-low">
+                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={`/reports/${report.id}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border/35 px-3 py-1.5 text-[11px] font-semibold text-foreground transition hover:border-border/70"
+                      >
+                        View Trip
+                      </Link>
+                      <Link
+                        href={`/reports/${report.id}#route-health`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:bg-primary/20"
+                      >
+                        Check Route Health
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Create New Plan */}
         <section className="mb-10">
