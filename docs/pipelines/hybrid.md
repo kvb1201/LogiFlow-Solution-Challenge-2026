@@ -11,8 +11,9 @@ Input: source, destination, priority, explanation_mode
   │
   ├─ 1. Parallel Execution
   │     ├─ Road Pipeline ──┐
-  │     ├─ Rail Pipeline ──┼── ThreadPoolExecutor (timeout=30s)
-  │     └─ Air Pipeline  ──┘
+  │     ├─ Rail Pipeline ──┤
+  │     ├─ Air Pipeline  ──┼── ThreadPoolExecutor max_workers=4 (timeout=30s)
+  │     └─ Water Pipeline ─┘
   │
   ├─ 2. Mode Availability Detection
   │     ├─ status: "no_routes" → skip mode
@@ -38,7 +39,7 @@ Output: {recommended_mode, comparison, tradeoffs, available_modes}
 ## Key Features
 
 ### Parallel Execution with Timeout
-- Uses `ThreadPoolExecutor(max_workers=3)` to run pipelines concurrently
+- Uses `ThreadPoolExecutor(max_workers=4)` to run road, rail, air, and water concurrently
 - Each pipeline has a **30-second timeout** via `future.result(timeout=30)`
 - Timed-out pipelines are treated as unavailable — remaining modes proceed
 
