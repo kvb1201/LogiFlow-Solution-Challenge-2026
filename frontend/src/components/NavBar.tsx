@@ -8,6 +8,7 @@ import type { LogisticsMode } from '@/lib/mode-meta';
 import { ModeIcon } from '@/components/cockpit/ModeIcon';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useAuthStore } from '@/store/useAuthStore';
+import { NotificationBell } from '@/components/planner/NotificationBell';
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -93,6 +94,16 @@ export default function NavBar() {
             >
               Compare
             </Link>
+            <Link
+              href="/reports"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isActive('/reports')
+                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              My Plans
+            </Link>
           </nav>
         ) : (
           // Unauthenticated nav
@@ -131,13 +142,18 @@ export default function NavBar() {
             </div>
           )}
 
-          <button
-            type="button"
-            className="hidden h-8 w-8 place-items-center rounded-md border border-border bg-surface/60 text-muted-foreground transition-colors hover:text-foreground sm:grid"
-            aria-label="Alerts"
-          >
-            <Bell className="h-3.5 w-3.5" />
-          </button>
+          {/* Notification bell */}
+          {token && user ? (
+            <NotificationBell />
+          ) : (
+            <button
+              type="button"
+              className="hidden h-8 w-8 place-items-center rounded-md border border-border bg-surface/60 text-muted-foreground transition-colors hover:text-foreground sm:grid"
+              aria-label="Alerts"
+            >
+              <Bell className="h-3.5 w-3.5" />
+            </button>
+          )}
 
           {/* Auth buttons */}
           {token && user ? (

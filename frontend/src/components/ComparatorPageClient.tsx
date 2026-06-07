@@ -730,8 +730,8 @@ export default function ComparatorPageClient() {
                     </h4>
                     {data ? (
                       <div className="text-xs space-y-1 font-mono text-on-surface-variant">
-                        <p>Time {formatHours(data.time_hr ?? (data as { time?: number }).time)}</p>
-                        <p>Cost {formatInr(data.cost_inr ?? (data as { cost?: number }).cost)}</p>
+                        <p>Time {formatHours(data.time_hr ?? data.time)}</p>
+                        <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
                       </div>
                     ) : (
                       <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
@@ -742,16 +742,16 @@ export default function ComparatorPageClient() {
             </div>
 
             {Boolean(
-              (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
+              result.best_per_mode?.road?.geometry?.length
             ) && (
               <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
                 <MapView
                   routes={[
-                    result.best_per_mode!.road! as {
-                      geometry: [number, number][];
-                      time: number;
-                      cost: number;
-                      risk: number;
+                    {
+                      geometry: result.best_per_mode!.road!.geometry!,
+                      time: result.best_per_mode!.road!.time_hr ?? result.best_per_mode!.road!.time ?? 0,
+                      cost: result.best_per_mode!.road!.cost_inr ?? result.best_per_mode!.road!.cost ?? 0,
+                      risk: result.best_per_mode!.road!.risk ?? 0,
                     },
                   ]}
                   selectedRoute={0}

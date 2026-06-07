@@ -1,21 +1,34 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Plus, TrendingUp, AlertCircle } from 'lucide-react';
+import { ArrowUpRight, TrendingUp } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
+import { usePlannerStore } from '@/store/usePlannerStore';
+import { isExpired } from '@/services/plannerApi';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 
 export function Dashboard() {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthStore(s => s.user);
   const firstName = user?.name.split(' ')[0] || 'User';
+
+  const { reports, fetchReports, loading: reportsLoading } = usePlannerStore();
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  const totalPlans     = reports.length;
+  const activePlans    = reports.filter(r => r.status === 'active').length;
+  const expiredPlans   = reports.filter(r => isExpired(r)).length;
+  const recentReports  = reports.slice(0, 4);
 
   return (
     <div className="relative w-full overflow-hidden">
       <AmbientBackdrop variant="subtle" />
 
       <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
-        {/* Welcome Section */}
-        <div className="mb-10 sm:mb-14">
+
+        {/* Welcome */}
+        <div className="mb-10 sm:mb-12">
           <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
             Welcome back, {firstName}
           </h1>
@@ -24,74 +37,136 @@ export function Dashboard() {
           </p>
         </div>
 
-        {/* Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          {[
-            {
-              label: 'Planned Shipments',
-              value: '0',
-              icon: '📋',
-              trend: 'Ready to create your first shipment',
-            },
-            {
-              label: 'Active Trips',
-              value: '0',
-              icon: '🚀',
-              trend: 'No active shipments',
-            },
-            {
-              label: 'Completed Trips',
-              value: '0',
-              icon: '✅',
-              trend: 'Track completed shipments',
-            },
-            {
-              label: 'Notifications',
-              value: '0',
-              icon: '🔔',
-              trend: 'Stay updated on route changes',
-            },
-          ].map((card, i) => (
-            <div
-              key={card.label}
-              className="rounded-2xl border border-border/50 bg-surface/40 backdrop-blur-sm p-5 sm:p-6 hover:border-border-strong hover:bg-surface/60 transition-all animate-fade-in"
-              style={{
-                animationDelay: `${0.1 + i * 0.05}s`,
-                animationFillMode: 'backwards',
-              }}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                    {card.label}
-                  </p>
-                </div>
-                <span className="text-2xl">{card.icon}</span>
+        {/* ── Smart AI Planner ─────────────────────────────────────────── */}
+        <section className="mb-10">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-0.5">
+                Smart AI Planner
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold text-foreground mb-1">{card.value}</p>
-                  <p className="text-xs text-muted-foreground">{card.trend}</p>
-                </div>
-              </div>
+              <h2 className="text-lg font-bold text-foreground">My Shipment Plans</h2>
             </div>
-          ))}
-        </div>
+            <Link
+              href="/reports"
+              className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              View all
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          {/* Plan stats */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: 'Total Plans',   value: totalPlans,   icon: '📋' },
+              { label: 'Active Plans',  value: activePlans,  icon: '🚀',
+                highlight: activePlans > 0 },
+              { label: 'Expired',       value: expiredPlans, icon: '⏰',
+                warn: expiredPlans > 0 },
+            ].map(s => (
+              <div key={s.label} className={[
+                'rounded-2xl border p-4 transition-all',
+                s.warn && s.value > 0
+                  ? 'border-amber-500/20 bg-amber-500/5'
+                  : s.highlight && s.value > 0
+                  ? 'border-emerald-500/20 bg-emerald-500/5'
+                  : 'border-border/40 bg-surface/40',
+              ].join(' ')}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</p>
+                  <span className="text-lg">{s.icon}</span>
+                </div>
+                <p className="text-2xl font-bold text-foreground">{reportsLoading ? '…' : s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Recent plans */}
+          {!reportsLoading && recentReports.length > 0 ? (
+            <div className="rounded-2xl border border-border/40 bg-surface/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/20 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Recent Plans
+                </span>
+                <Link href="/reports" className="text-[11px] text-primary hover:underline">See all →</Link>
+              </div>
+              <ul className="divide-y divide-border/15">
+                {recentReports.map(r => {
+                  const expired = isExpired(r);
+                  return (
+                    <li key={r.id}>
+                      <Link
+                        href={`/reports/${r.id}`}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-surface/60 transition-colors group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                            {r.name}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mono mt-0.5 truncate">
+                            {r.source} → {r.destination}
+                            {r.stops.length > 0 && ` · ${r.stops.length} stop${r.stops.length !== 1 ? 's' : ''}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {expired && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-semibold">
+                              Outdated
+                            </span>
+                          )}
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-semibold uppercase tracking-wide ${
+                            { draft: 'bg-surface-container text-outline border-outline-variant/20',
+                              planned: 'bg-primary/10 text-primary border-primary/20',
+                              active: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20',
+                              completed: 'bg-violet-500/12 text-violet-300 border-violet-500/20',
+                              cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
+                            }[r.status]
+                          }`}>
+                            {r.status}
+                          </span>
+                          <span className="material-symbols-outlined text-muted-foreground group-hover:text-primary transition-colors" style={{ fontSize: '14px' }}>
+                            chevron_right
+                          </span>
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : !reportsLoading ? (
+            <div className="rounded-2xl border border-dashed border-border/40 bg-surface/20 p-8 text-center">
+              <span className="text-3xl block mb-3">📭</span>
+              <p className="text-sm font-medium text-foreground mb-1">No plans yet</p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Optimize a route and click <strong>Save Report</strong> to save it here.
+              </p>
+              <Link
+                href="/road"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
+              >
+                Start planning
+              </Link>
+            </div>
+          ) : null}
+        </section>
 
         {/* Quick Actions */}
-        <div className="mb-10">
+        <section className="mb-10">
           <h2 className="text-lg font-bold text-foreground mb-4">Quick Actions</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <button
-              onClick={() => alert('Shipment planner coming soon!')}
-              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-hybrid/50 hover:bg-surface/60 transition-all group"
+            <Link
+              href="/reports"
+              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-primary/40 hover:bg-surface/60 transition-all group"
             >
               <div className="flex items-center gap-3 mb-2">
-                <Plus className="h-5 w-5 text-hybrid" />
-                <span className="font-semibold text-foreground">Create Shipment</span>
+                <span className="text-xl">📋</span>
+                <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                  My Plans
+                </span>
               </div>
-              <p className="text-sm text-muted-foreground">Plan a new shipment with AI assistance</p>
-            </button>
+              <p className="text-sm text-muted-foreground">View and manage your saved shipment plans</p>
+            </Link>
 
             <Link
               href="/hybrid"
@@ -104,60 +179,22 @@ export function Dashboard() {
               <p className="text-sm text-muted-foreground">Compare and optimize multimodal routes</p>
             </Link>
 
-            <button
-              onClick={() => alert('Reports coming soon!')}
-              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-water/50 hover:bg-surface/60 transition-all group"
+            <Link
+              href="/road"
+              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-road/50 hover:bg-surface/60 transition-all group"
             >
               <div className="flex items-center gap-3 mb-2">
-                <AlertCircle className="h-5 w-5 text-water" />
-                <span className="font-semibold text-foreground">View Reports</span>
+                <span className="text-xl">🚛</span>
+                <span className="font-semibold text-foreground">Road Routes</span>
               </div>
-              <p className="text-sm text-muted-foreground">Analyze shipment performance</p>
-            </button>
+              <p className="text-sm text-muted-foreground">Plan road shipments with traffic & risk scoring</p>
+            </Link>
           </div>
-        </div>
+        </section>
 
-        {/* Planned Features Section */}
-        <div className="rounded-2xl border border-border/30 bg-surface/20 backdrop-blur-sm p-6 sm:p-8">
-          <h2 className="text-lg font-bold text-foreground mb-4">Coming Soon</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              {
-                title: 'Shipment Planner',
-                description: 'Create and manage planned shipments with AI assistance',
-              },
-              {
-                title: 'Route Execution',
-                description: 'Execute optimized trips and track shipments in real-time',
-              },
-              {
-                title: 'Route Health',
-                description: 'Monitor shipment status and identify disruptions',
-              },
-              {
-                title: 'Smart Notifications',
-                description: 'Receive alerts for traffic, weather, and ETA changes',
-              },
-              {
-                title: 'Saved Reports',
-                description: 'Generate and archive shipment performance reports',
-              },
-              {
-                title: 'Shipment Lifecycle',
-                description: 'Track complete journey from planning to completion',
-              },
-            ].map((feature) => (
-              <div key={feature.title} className="rounded-lg border border-border/30 bg-surface/40 p-4">
-                <h3 className="font-semibold text-foreground mb-1">{feature.title}</h3>
-                <p className="text-xs text-muted-foreground">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CTA Section */}
-        <div className="mt-12 text-center animate-fade-in">
-          <p className="text-muted-foreground mb-6">Ready to start optimizing your logistics?</p>
+        {/* CTA */}
+        <div className="text-center">
+          <p className="text-muted-foreground mb-5">Ready to start optimizing your logistics?</p>
           <Link
             href="/hybrid"
             className="inline-flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background shadow-[0_0_40px_-12px_var(--hybrid)] transition-all duration-300 hover:brightness-110 hover:shadow-[0_0_52px_-8px_var(--hybrid)]"
@@ -166,6 +203,7 @@ export function Dashboard() {
             <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
+
       </div>
     </div>
   );
