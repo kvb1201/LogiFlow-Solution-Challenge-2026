@@ -4,6 +4,7 @@ import NavBar from '@/components/NavBar';
 import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 
+import { AuthInitializer } from '@/components/auth/AuthInitializer';
 export const metadata: Metadata = {
   title: 'LogiFlow — Multimodal Logistics',
   description:
@@ -30,6 +31,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-dvh flex flex-col overflow-x-hidden font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
+          <AuthInitializer />
         <BackendWarmup />
         <NavBar />
         <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
