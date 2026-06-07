@@ -6,22 +6,23 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 
 def _is_production() -> bool:
-    return bool(os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("VERCEL"))
+    # Only hosted deploy markers — never treat local Next/Vercel CLI as production.
+    return bool(os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT"))
 
 
-JWT_SECRET = os.getenv("JWT_SECRET") or (
-    None if _is_production() else "local-dev-jwt-secret"
-)
-if not JWT_SECRET:
-    raise RuntimeError("JWT_SECRET environment variable is required")
+def _env(name: str, *, dev_default: str) -> str:
+    val = (os.getenv(name) or "").strip()
+    if val:
+        return val
+    if _is_production():
+        raise RuntimeError(f"{name} environment variable is required")
+    return dev_default
 
+
+JWT_SECRET = _env("JWT_SECRET", dev_default="local-dev-jwt-secret")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or (
-    None if _is_production() else "local-dev.apps.googleusercontent.com"
-)
-if not GOOGLE_CLIENT_ID:
-    raise RuntimeError("GOOGLE_CLIENT_ID environment variable is required")
+GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", dev_default="local-dev.apps.googleusercontent.com")
 
 def verify_google_token(credential: str) -> dict:
     """

@@ -15,8 +15,11 @@ import {
   type Recommendation,
   type RankedOption,
   type RouteGeometryStop,
+  type RouteSegment,
 } from '@/services/api';
-import { ensureBackendWarm } from '@/lib/backendWarmup';
+
+const NO_SEGMENTS: RouteSegment[] = [];
+import { ensureBackendReachable } from '@/lib/backendWarmup';
 import {
   formatRailDataSource,
   formatRailDelaySource,
@@ -630,7 +633,12 @@ export default function RailwayDashboard() {
 
   const activeTrainNumber = activeRec?.train_number || activeOption?.train_number || '';
   const activeTrainName = activeRec?.train_name || activeOption?.train_name || '';
-  const activeSegments = activeRec?.segments || activeOption?.segments || [];
+  const activeSegments = activeRec?.segments ?? activeOption?.segments ?? NO_SEGMENTS;
+
+  const corridorFetchKey =
+    activeTrainNumber && activeSegments.length > 0
+      ? `${activeTrainNumber}|${activeSegments.map((s) => `${s.from ?? ''}-${s.to ?? ''}`).join(';')}`
+      : '';
 
   useEffect(() => {
     if (!hasSearched || loading) return;
@@ -638,21 +646,20 @@ export default function RailwayDashboard() {
   }, [hasSearched, loading, setLiveMapMode]);
 
   useEffect(() => {
-    const trainNo = activeRec?.train_number || activeOption?.train_number || '';
-    const segments = activeRec?.segments || activeOption?.segments || [];
     const controller = new AbortController();
 
-    if (!trainNo || !segments.length) {
-      setRouteGeometry(null);
-      setRouteStops([]);
-      setGeometryLoading(false);
+    if (!corridorFetchKey) {
+      // Use stable NO_SEGMENTS + functional updates — setRouteStops([]) was a new [] every run → infinite loop
+      setRouteGeometry((prev) => (prev === null ? prev : null));
+      setRouteStops((prev) => (prev.length === 0 ? prev : NO_SEGMENTS));
+      setGeometryLoading((prev) => (prev === false ? prev : false));
       return () => controller.abort();
     }
 
     setGeometryLoading(true);
 
-    void ensureBackendWarm(120_000)
-      .then(() => buildTrainCorridorGeometry(trainNo, segments, controller.signal))
+    void ensureBackendReachable()
+      .then(() => buildTrainCorridorGeometry(activeTrainNumber, activeSegments, controller.signal))
       .then((result) => {
         if (controller.signal.aborted) return;
         setRouteGeometry(result.geometry.length >= 2 ? result.geometry : null);
@@ -661,15 +668,16 @@ export default function RailwayDashboard() {
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        setRouteGeometry(null);
-        setRouteStops([]);
+        setRouteGeometry((prev) => (prev === null ? prev : null));
+        setRouteStops((prev) => (prev.length === 0 ? prev : NO_SEGMENTS));
       })
       .finally(() => {
         if (!controller.signal.aborted) setGeometryLoading(false);
       });
 
     return () => controller.abort();
-  }, [activeRec, activeOption]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by corridorFetchKey string only
+  }, [corridorFetchKey]);
 
   const showRailLoading = loading && loadingMode === 'rail';
   const showNoRoutePage =

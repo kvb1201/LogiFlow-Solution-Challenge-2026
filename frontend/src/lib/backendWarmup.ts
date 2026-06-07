@@ -7,6 +7,8 @@ const KEEPALIVE_INTERVAL_MS = 3 * 60 * 1000;
 
 let inflight: Promise<boolean> | null = null;
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+/** Once warm in this tab, skip full warm-backend preload on train switches / re-renders. */
+let sessionWarm = false;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,12 +28,32 @@ async function pingOnce(timeoutMs = WARM_PING_TIMEOUT_MS): Promise<boolean> {
  * Ping the backend until it responds or maxWaitMs elapses.
  * Deduplicates concurrent callers (layout + optimize share one flight).
  */
+async function pingHealthOnly(timeoutMs = 6_000): Promise<boolean> {
+  const base =
+    process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, '') ||
+    (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8000' : '');
+  if (!base) return false;
+  try {
+    const res = await fetch(`${base}/health`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureBackendWarm(maxWaitMs = 120_000): Promise<boolean> {
+  if (sessionWarm) return true;
   if (inflight) return inflight;
 
   inflight = (async () => {
     try {
-      if (await pingOnce(6_000)) return true;
+      if (await pingOnce(6_000)) {
+        sessionWarm = true;
+        return true;
+      }
     } catch {
       // cold start — fall through to retry loop
     }
@@ -39,7 +61,10 @@ export async function ensureBackendWarm(maxWaitMs = 120_000): Promise<boolean> {
     const deadline = Date.now() + maxWaitMs;
     while (Date.now() < deadline) {
       try {
-        if (await pingOnce()) return true;
+        if (await pingOnce()) {
+          sessionWarm = true;
+          return true;
+        }
       } catch {
         // Render may still be booting — retry
       }
@@ -53,6 +78,16 @@ export async function ensureBackendWarm(maxWaitMs = 120_000): Promise<boolean> {
   } finally {
     inflight = null;
   }
+}
+
+/** Lightweight check for map geometry / API calls — no warm-backend preload storm. */
+export async function ensureBackendReachable(timeoutMs = 5_000): Promise<boolean> {
+  if (sessionWarm) return true;
+  if (await pingHealthOnly(timeoutMs)) {
+    sessionWarm = true;
+    return true;
+  }
+  return ensureBackendWarm(15_000);
 }
 
 function startKeepAliveLoop(): void {
