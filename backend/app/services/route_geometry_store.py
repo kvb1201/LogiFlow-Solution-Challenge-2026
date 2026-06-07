@@ -10,6 +10,33 @@ _GEOMETRY_TABLE = "train_route_geometry"
 _STATION_TABLE = "station_coordinates"
 
 
+def list_geometry_rows(*, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    """Fetch corridor geometry rows from Supabase (audit / map reads)."""
+    if not sb.is_configured():
+        return []
+    return sb.rest_get(
+        _GEOMETRY_TABLE,
+        {
+            "select": "train_number,from_code,to_code,stops,geometry,source,point_count",
+            "order": "train_number.asc",
+            "limit": str(max(1, limit)),
+            "offset": str(max(0, offset)),
+        },
+        timeout_s=30,
+    )
+
+
+def count_geometry_rows() -> int:
+    if not sb.is_configured():
+        return 0
+    rows = sb.rest_get(
+        _GEOMETRY_TABLE,
+        {"select": "train_number", "limit": "1000"},
+        timeout_s=30,
+    )
+    return len(rows)
+
+
 def get_cached_geometry(train_number: str, from_code: str, to_code: str) -> dict[str, Any] | None:
     if not sb.is_configured():
         return None

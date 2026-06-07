@@ -13,27 +13,37 @@ from app.pipelines.rail.station_resolver import resolve_station
 
 def _resolve_stations(city_name):
     """
-    Resolve a city name to its primary station code using local resolver.
-    Returns a list with a single station code.
+    Resolve a place to all rail station codes for that city cluster.
+
+    Uses the centralized location funnel so PRYJ expands to [PRYJ, ALD], etc.
     """
+    from app.services.location_funnel import resolve_location
+
+    loc = resolve_location(city_name)
+    out: list[str] = []
+    seen: set[str] = set()
+    for code in loc.station_codes or []:
+        key = str(code).strip().upper()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    if loc.station_code:
+        key = str(loc.station_code).strip().upper()
+        if key and key not in seen:
+            out.insert(0, key)
+
+    if out:
+        return out
+
+    # Legacy fallback when funnel cannot cluster the place.
     raw_input = city_name.strip()
     city_key = raw_input.split(",")[0].strip()
     candidates = []
-
-    # Always try resolved station code first so downstream (ConfirmTkt) receives a code.
     code = resolve_station(city_name)
     if code:
         candidates.append(code)
-
-    # Keep the original input as a secondary fallback for providers that accept text queries.
     candidates.append(raw_input)
-
-    # Final fallback: assume already a station code form.
     candidates.append(city_key.upper())
-
-    # Deduplicate while preserving order.
-    out = []
-    seen = set()
     for c in candidates:
         normalized = (c or "").strip()
         if not normalized:

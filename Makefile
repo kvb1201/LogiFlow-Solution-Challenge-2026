@@ -60,6 +60,18 @@ dev-frontend:
 	@echo "💻 Starting Frontend (Next.js)..."
 	cd frontend && npm run dev
 
+# Upload N train corridor geometries to Supabase (default 100 for audit)
+sync-rail-geometry-trains:
+	cd backend && ./venv/bin/python scripts/sync_rail_supabase.py --trains $(or $(TRAINS),100)
+
+# Audit map geometry: reads train_route_geometry from Supabase only
+audit-rail-geometry:
+	cd backend && ./venv/bin/python scripts/audit_rail_geometry.py --limit $(or $(TRAINS),100)
+
+# Build station_name.pdf index (7k+ stations → stations_from_pdf_cache.json)
+build-station-pdf-index:
+	cd backend && ./venv/bin/python -c "from app.services.station_pdf_index import build_pdf_index; n=len(build_pdf_index(force=True)); print(f'Indexed {n} stations from station_name.pdf')"
+
 # Fetch online IR catalogs (datameet + vstflugel) + build station_coords_cache.json
 build-station-coords:
 	cd backend && PYTHONUNBUFFERED=1 ./venv/bin/python -u scripts/build_station_coords_cache.py --force-fetch

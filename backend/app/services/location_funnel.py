@@ -1,12 +1,8 @@
 """
 Central location normalizer — one funnel for every pipeline.
 
-Accepts city names, station codes (PRYJ, BSB), aliases (Banaras, Allahabad),
-and resolves per-mode equivalents:
-
-  - canonical_city  → road / air / water / hybrid compose
-  - station_code    → rail primary code
-  - lat/lng         → distance checks & maps
+Primary source: backend/data/station_name.pdf (7k+ stations with district/state).
+Secondary: rail CITY_TO_STATION clusters, airports.csv IATA, station coords.
 """
 from __future__ import annotations
 
@@ -14,22 +10,11 @@ import importlib.util
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
+from app.services.station_pdf_index import fuzzy_pdf_code, get_pdf_index, pdf_station_codes_for_place
 
 _STATION_CODE_RE = re.compile(r"^[A-Z0-9]{2,5}$")
-
-_CITY_ALIAS: dict[str, str] = {
-    "banaras": "Varanasi",
-    "benares": "Varanasi",
-    "kashi": "Varanasi",
-    "allahabad": "Prayagraj",
-    "prayagraj jn": "Prayagraj",
-    "new delhi": "Delhi",
-    "bombay": "Mumbai",
-    "bangalore": "Bengaluru",
-    "calcutta": "Kolkata",
-    "madras": "Chennai",
-}
 
 _rail_cfg = None
 
@@ -66,95 +51,124 @@ def _clean(raw: str) -> str:
     return re.sub(r",\s*india\s*$", "", (raw or "").strip(), flags=re.I)
 
 
-def _is_station_code(token: str) -> bool:
-    t = (token or "").strip().upper()
-    if not _STATION_CODE_RE.fullmatch(t):
-        return False
+def _city_key_for_station(code: str) -> str | None:
     cfg = _load_rail_config()
-    if t in cfg.STATION_TO_CITY:
-        return True
-    try:
-        from app.pipelines.rail.station_resolver import resolve_station
+    code_u = (code or "").strip().upper()
+    best_key: str | None = None
+    best_rank = (9, 9, 999)
+    for city, codes in cfg.CITY_TO_STATION.items():
+        norm = [str(c).upper() for c in codes]
+        if code_u not in norm:
+            continue
+        idx = norm.index(code_u)
+        rank = (
+            0 if not city.isupper() and " JN" not in city.upper() else 1,
+            idx,
+            len(city),
+        )
+        if rank < best_rank:
+            best_rank = rank
+            best_key = city
+    return best_key
 
-        return resolve_station(t) == t
+
+def _curated_cluster(city_key: str) -> list[str]:
+    cfg = _load_rail_config()
+    return [str(c).upper() for c in cfg.CITY_TO_STATION.get(city_key, []) if c]
+
+
+def _expand_equivalents(codes: list[str]) -> list[str]:
+    from app.pipelines.rail.station_coordinates import equivalent_station_codes
+
+    out: list[str] = []
+    for code in codes:
+        for c in equivalent_station_codes(code):
+            cu = str(c).upper()
+            if cu and cu not in out:
+                out.append(cu)
+    return out
+
+
+def _merge_station_lists(*groups: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for code in group:
+            cu = str(code).upper()
+            if cu and cu not in seen:
+                seen.add(cu)
+                out.append(cu)
+    return out
+
+
+def _city_key_from_iata(token: str) -> tuple[str | None, list[str]]:
+    if not re.fullmatch(r"[A-Z]{3}", (token or "").strip().upper()):
+        return None, []
+    try:
+        from app.services.airport_locator_service import get_airport_by_iata
+
+        ap = get_airport_by_iata(token.upper())
+        if not ap:
+            return None, []
+        muni = str(ap.get("municipality") or ap.get("city_name") or ap.get("name") or "").strip()
+        if not muni:
+            return None, []
+        muni = muni.split(",")[0].strip()
+        district, _primary, pdf_codes, _ = pdf_station_codes_for_place(muni)
+        city_key = _city_key_for_station(pdf_codes[0]) if pdf_codes else None
+        if not city_key:
+            cfg = _load_rail_config()
+            for city in cfg.CITY_TO_STATION:
+                if city.lower() == muni.lower():
+                    city_key = city
+                    break
+        curated = _curated_cluster(city_key) if city_key else []
+        return city_key or muni, _merge_station_lists(curated, pdf_codes)
     except Exception:
-        return len(t) <= 4
+        return None, []
 
 
-def _canonicalize_city_label(city: str) -> str:
-    """Map station labels (PRAYAGRAJ JN, Allahabad) to pipeline city names."""
-    key = city.lower().strip()
-    if key in _CITY_ALIAS:
-        return _CITY_ALIAS[key]
-    matched = _match_city_name(city)
-    if matched:
-        return _CITY_ALIAS.get(matched.lower(), matched)
-    return city
-
-
-def _city_from_station(code: str) -> str | None:
-    cfg = _load_rail_config()
-    code_u = code.upper()
-    candidates = [
-        city for city, codes in cfg.CITY_TO_STATION.items() if code_u in codes
-    ]
-    if candidates:
-        for city in candidates:
-            canon = _canonicalize_city_label(city)
-            if canon != city or city.lower() in _CITY_ALIAS:
-                return canon
-        for city in sorted(
-            candidates,
-            key=lambda c: (c.isupper(), " JN" in c.upper(), len(c)),
-        ):
-            if not city.isupper() and " JN" not in city.upper():
-                return _canonicalize_city_label(city)
-        return _canonicalize_city_label(candidates[0])
-
-    city = cfg.STATION_TO_CITY.get(code_u)
-    if city:
-        return _canonicalize_city_label(city)
+def _iata_overrides_pdf(token: str, pdf_primary: str | None) -> bool:
     try:
-        from app.pipelines.rail.station_coordinates import get_station_meta
+        from app.services.airport_locator_service import get_airport_by_iata
 
-        meta = get_station_meta(code_u)
-        if meta and meta.get("city"):
-            return _canonicalize_city_label(str(meta["city"]))
+        ap = get_airport_by_iata(token.upper())
+        if not ap:
+            return False
+        muni = str(ap.get("municipality") or "").lower()
+        if not muni or not pdf_primary:
+            return True
+        rec = get_pdf_index().lookup_code(pdf_primary)
+        if not rec:
+            return True
+        dist = rec.district.lower()
+        return muni not in dist and dist not in muni
+    except Exception:
+        return False
+
+
+def _coords_for_codes(codes: list[str], label: str, *, context=None) -> tuple[float | None, float | None]:
+    try:
+        from app.pipelines.rail.station_coordinates import get_station_latlng
+
+        for code in codes:
+            hit = get_station_latlng(code)
+            if hit:
+                return float(hit[0]), float(hit[1])
     except Exception:
         pass
-    return None
+    try:
+        from app.services.geocoder import geocode_latlng
 
-
-def _stations_for_city(city: str) -> list[str]:
-    cfg = _load_rail_config()
-    return list(cfg.CITY_TO_STATION.get(city, []))
-
-
-def _match_city_name(text: str) -> str | None:
-    key = _clean(text).lower()
-    if not key:
-        return None
-    if key in _CITY_ALIAS:
-        return _CITY_ALIAS[key]
-
-    cfg = _load_rail_config()
-    for city in cfg.CITY_TO_STATION:
-        cl = city.lower()
-        if cl == key:
-            return city
-    best: str | None = None
-    best_len = 0
-    for city in cfg.CITY_TO_STATION:
-        cl = city.lower()
-        if key in cl or cl in key:
-            if len(cl) > best_len:
-                best = city
-                best_len = len(cl)
-    return best
+        hit = geocode_latlng(label, context=context)
+        if hit:
+            return float(hit[0]), float(hit[1])
+    except Exception:
+        pass
+    return None, None
 
 
 def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
-    """Resolve any location string to canonical pipeline inputs."""
     original = _clean(raw)
     if not original:
         return ResolvedLocation(
@@ -167,70 +181,63 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
         )
 
     token = original.upper()
-    station_code: str | None = None
-    canonical_city: str | None = None
+    district: str | None = None
+    primary_code: str | None = None
+    station_codes: list[str] = []
     resolution = "unknown"
+    city_key: str | None = None
 
-    # ── 1) Explicit station code (PRYJ, BSB, NDLS…) ─────────────────
-    if _is_station_code(token):
-        station_code = token
-        canonical_city = _city_from_station(station_code)
-        resolution = "station_code"
+    # ── 1) IATA airport code (3 letters) checked before PDF rail BLR≠Bengaluru
+    if re.fullmatch(r"[A-Z]{3}", token):
+        iata_key, iata_codes = _city_key_from_iata(token)
+        if iata_codes:
+            city_key = iata_key
+            station_codes = list(iata_codes)
+            primary_code = iata_codes[0]
+            resolution = "iata_airport"
 
-    # ── 2) Rail station resolver (city fragments, names) ───────────
-    if not canonical_city:
-        try:
-            from app.pipelines.rail.station_resolver import resolve_station
+    # ── 2) PDF index (station_name.pdf) ─────────────────────────────
+    if not station_codes:
+        pdf_district, pdf_primary, pdf_codes, pdf_res = pdf_station_codes_for_place(original)
+        if pdf_codes:
+            district = pdf_district
+            primary_code = pdf_primary
+            station_codes = list(pdf_codes)
+            resolution = pdf_res
+            city_key = _city_key_for_station(primary_code) if primary_code else None
 
-            code = resolve_station(original)
-            if code:
-                station_code = code.upper()
-                canonical_city = _city_from_station(station_code) or _match_city_name(original)
-                resolution = "station_resolver"
-        except Exception:
-            pass
+    # ── 4) Merge curated CITY_TO_STATION cluster ────────────────────
+    if not city_key and primary_code:
+        city_key = _city_key_for_station(primary_code)
+    curated = _curated_cluster(city_key) if city_key else []
+    station_codes = _expand_equivalents(_merge_station_lists(curated, station_codes))
 
-    # ── 3) City name / alias ────────────────────────────────────────
-    if not canonical_city:
-        canonical_city = _match_city_name(original)
-        if canonical_city:
-            resolution = "city_name"
-            codes = _stations_for_city(canonical_city)
-            station_code = station_code or (codes[0] if codes else None)
+    if not station_codes and primary_code:
+        station_codes = _expand_equivalents([primary_code])
 
-    # ── 4) Fallback — keep cleaned text ─────────────────────────────
-    if not canonical_city:
-        canonical_city = original
-        resolution = "passthrough"
+    canonical_city = (
+        city_key
+        if city_key and city_key in _load_rail_config().CITY_TO_STATION
+        else (district or original)
+    )
+    if canonical_city and canonical_city.isupper():
+        canonical_city = canonical_city.title()
 
-    station_codes = _stations_for_city(canonical_city)
-    if station_code and station_code not in station_codes:
-        station_codes = [station_code, *station_codes]
-    elif not station_codes and station_code:
-        station_codes = [station_code]
-
-    lat: float | None = None
-    lng: float | None = None
-    try:
-        from app.services.geocoder import geocode_latlng
-
-        hit = geocode_latlng(canonical_city, context=context)
-        if not hit and station_code:
-            hit = geocode_latlng(station_code, context=context)
-        if hit:
-            lat, lng = float(hit[0]), float(hit[1])
-    except Exception:
-        pass
+    lat, lng = _coords_for_codes(
+        station_codes or ([primary_code] if primary_code else []),
+        canonical_city,
+        context=context,
+    )
 
     display = canonical_city
-    if station_code and station_code.upper() != canonical_city.upper():
-        display = f"{canonical_city} ({station_code})"
+    if primary_code and primary_code.upper() != (canonical_city or "").upper():
+        display = f"{canonical_city} ({primary_code})"
 
     return ResolvedLocation(
         raw=original,
         display_name=display,
         canonical_city=canonical_city,
-        station_code=station_code,
+        station_code=primary_code or (station_codes[0] if station_codes else None),
         station_codes=station_codes,
         lat=lat,
         lng=lng,
@@ -244,7 +251,6 @@ def normalize_corridor(
     *,
     context=None,
 ) -> tuple[ResolvedLocation, ResolvedLocation]:
-    """Normalize both ends of a corridor for all pipelines."""
     src = resolve_location(source, context=context)
     dst = resolve_location(destination, context=context)
     if context is not None:
@@ -259,6 +265,5 @@ def corridor_endpoints(
     *,
     context=None,
 ) -> tuple[str, str]:
-    """Return (canonical_city, canonical_city) for pipeline calls."""
     src, dst = normalize_corridor(source, destination, context=context)
     return src.canonical_city, dst.canonical_city
