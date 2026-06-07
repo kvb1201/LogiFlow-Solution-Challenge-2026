@@ -32,6 +32,9 @@ class RailPipeline(BasePipeline):
         """
         Generate rail cargo routes between source and destination cities.705072
         """
+        from app.services.location_funnel import corridor_endpoints
+
+        source, destination = corridor_endpoints(source, destination, context=context)
         try:
             departure_date = (payload or {}).get("departure_date")
             # API-first route discovery; CSV is used only as fallback inside find_routes.
