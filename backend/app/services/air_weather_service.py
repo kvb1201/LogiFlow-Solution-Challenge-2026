@@ -1,4 +1,5 @@
-from app.services.weather_service import get_weather
+from app.services.airport_locator_service import resolve_city_to_airport
+from app.services.weather_service import get_weather, get_weather_by_coords
 
 
 def _condition_penalty(condition: str) -> float:
@@ -14,16 +15,26 @@ def _condition_penalty(condition: str) -> float:
     return 0.02
 
 
-def _single_city_weather_risk(city: str, context=None) -> dict:
-    cache_key = f"weather:{city}"
+def _fetch_weather_for_location(city: str, airport: dict | None, context=None) -> dict:
+    cache_key = f"weather:{city}:{(airport or {}).get('code', '')}"
     if context and context.has(cache_key):
         weather = context.get(cache_key)
         print(f"[CACHE HIT] {cache_key}")
     else:
-        weather = get_weather(city)
+        lat = (airport or {}).get("lat")
+        lng = (airport or {}).get("lng")
+        if lat is not None and lng is not None:
+            weather = get_weather_by_coords(float(lat), float(lng))
+        else:
+            weather = get_weather(city)
         print(f"[API CALL] {cache_key}")
         if context:
             context.set(cache_key, weather)
+    return weather
+
+
+def _single_city_weather_risk(city: str, airport: dict | None = None, context=None) -> dict:
+    weather = _fetch_weather_for_location(city, airport, context=context)
 
     temp = float(weather.get("temp", 30))
     rain = float(weather.get("rain", 0))
@@ -36,6 +47,7 @@ def _single_city_weather_risk(city: str, context=None) -> dict:
 
     return {
         "city": city,
+        "airport_code": (airport or {}).get("code"),
         "temp": temp,
         "rain": rain,
         "condition": condition,
@@ -44,12 +56,19 @@ def _single_city_weather_risk(city: str, context=None) -> dict:
 
 
 def get_route_weather_context(source: str, destination: str, context=None) -> dict:
-    source_weather = _single_city_weather_risk(source, context=context)
-    destination_weather = _single_city_weather_risk(destination, context=context)
+    source_airport = resolve_city_to_airport(source)
+    destination_airport = resolve_city_to_airport(destination)
+
+    source_weather = _single_city_weather_risk(source, airport=source_airport, context=context)
+    destination_weather = _single_city_weather_risk(
+        destination, airport=destination_airport, context=context
+    )
     combined = round((source_weather["risk"] + destination_weather["risk"]) / 2, 3)
 
     return {
         "source_weather": source_weather,
         "destination_weather": destination_weather,
         "combined_weather_risk": combined,
+        "source_airport": source_airport,
+        "destination_airport": destination_airport,
     }

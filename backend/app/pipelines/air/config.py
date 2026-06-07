@@ -27,4 +27,11 @@ AIRLINE_RELIABILITY = {
     "Air India": 0.76,
     "Akasa Air": 0.82,
     "SpiceJet": 0.68,
+    "Emirates": 0.86,
+    "Qatar Airways": 0.87,
+    "Singapore Airlines": 0.90,
+    "Lufthansa": 0.84,
+    "British Airways": 0.82,
+    "International carriers": 0.80,
+    "Multiple carriers": 0.78,
 }
