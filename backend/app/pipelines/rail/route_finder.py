@@ -155,8 +155,14 @@ def find_routes(
                     req_fs = fs.upper()
                     req_ts = ts.upper()
 
+                    from app.pipelines.rail.station_coordinates import canonical_station_code
+
                     train_no = train.get("trainNumber", "")
-                    train_key = (train_no, actual_fs or fs.upper(), actual_ts or ts.upper())
+                    train_key = (
+                        train_no,
+                        canonical_station_code(actual_fs or fs),
+                        canonical_station_code(actual_ts or ts),
+                    )
                     if train_key in seen_trains:
                         continue
                     seen_trains.add(train_key)
