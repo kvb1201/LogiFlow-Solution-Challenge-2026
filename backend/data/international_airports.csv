@@ -1,0 +1,23 @@
+iata,icao,airport_name,city,country,latitude,longitude,timezone
+BLR,VOBL,Kempegowda International Airport,Bengaluru,India,13.198889,77.705556,Asia/Kolkata
+BOM,VABB,Chhatrapati Shivaji Maharaj International Airport,Mumbai,India,19.088686,72.867919,Asia/Kolkata
+DEL,VIDP,Indira Gandhi International Airport,Delhi,India,28.5562,77.1,Asia/Kolkata
+DXB,OMDB,Dubai International Airport,Dubai,United Arab Emirates,25.252778,55.364444,Asia/Dubai
+SIN,WSSS,Singapore Changi Airport,Singapore,Singapore,1.3644,103.991,Asia/Singapore
+FRA,EDDF,Frankfurt Airport,Frankfurt,Germany,50.026421,8.543125,Europe/Berlin
+LHR,EGLL,London Heathrow Airport,London,United Kingdom,51.4706,-0.461941,Europe/London
+JFK,KJFK,John F. Kennedy International Airport,New York,United States,40.641311,-73.778139,America/New_York
+AMS,EHAM,Amsterdam Airport Schiphol,Amsterdam,Netherlands,52.308601,4.763889,Europe/Amsterdam
+CDG,LFPG,Charles de Gaulle Airport,Paris,France,49.012798,2.55,Europe/Paris
+HKG,VHHH,Hong Kong International Airport,Hong Kong,Hong Kong,22.308901,113.914603,Asia/Hong_Kong
+NRT,RJAA,Narita International Airport,Tokyo,Japan,35.764722,140.386389,Asia/Tokyo
+ICN,RKSI,Incheon International Airport,Seoul,South Korea,37.469075,126.450539,Asia/Seoul
+ORD,KORD,O'Hare International Airport,Chicago,United States,41.974162,-87.907321,America/Chicago
+LAX,KLAX,Los Angeles International Airport,Los Angeles,United States,33.942536,-118.408075,America/Los_Angeles
+DOH,OTHH,Hamad International Airport,Doha,Qatar,25.273056,51.608056,Asia/Qatar
+IST,LTFM,Istanbul Airport,Istanbul,Turkey,41.275278,28.751944,Europe/Istanbul
+SYD,YSSY,Sydney Kingsford Smith Airport,Sydney,Australia,-33.946111,151.177222,Australia/Sydney
+YYZ,CYYZ,Toronto Pearson International Airport,Toronto,Canada,43.677721,-79.624819,America/Toronto
+MAA,VOMM,Chennai International Airport,Chennai,India,12.994444,80.180556,Asia/Kolkata
+HYD,VOHS,Rajiv Gandhi International Airport,Hyderabad,India,17.240556,78.428333,Asia/Kolkata
+CCU,VECC,Netaji Subhas Chandra Bose International Airport,Kolkata,India,22.654739,88.446722,Asia/Kolkata
