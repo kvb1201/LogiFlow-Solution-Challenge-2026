@@ -19,6 +19,7 @@ import {
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -249,6 +250,7 @@ export default function ComparatorPageClient() {
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
+  const [saveMode, setSaveMode] = useState<Mode | null>(null);
 
   const skipWizard = loading || Boolean(result) || (autoTriggered && !error);
 
@@ -729,11 +731,20 @@ export default function ComparatorPageClient() {
                       {MODE_META[mode].label}
                     </h4>
                     {data ? (
-                      <div className="text-xs space-y-1 font-mono text-on-surface-variant">
-                        <p>Time {formatHours(data.time_hr ?? data.time)}</p>
-                        <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
-                      </div>
-                    ) : (
+                      <>
+                        <div className="text-xs space-y-1 font-mono text-on-surface-variant">
+                          <p>Time {formatHours(data.time_hr ?? data.time)}</p>
+                          <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
+                        </div>
+                        <button
+                          onClick={() => setSaveMode(mode)}
+                          className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg bg-surface/50 border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-on-surface hover:bg-white/10 transition-all"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+                          Save Report
+                        </button>
+                      </>
+                  ) : (
                       <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
                     )}
                   </div>
@@ -772,6 +783,27 @@ export default function ComparatorPageClient() {
           </div>
         )}
       </div>
+
+      <SaveReportModal
+        isOpen={saveMode !== null}
+        onClose={() => setSaveMode(null)}
+        prefill={{
+          source,
+          destination,
+          stops: [],
+          mode: 'comparator',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: saveMode ? { 
+            ...(result?.best_per_mode?.[saveMode] || {}), 
+            selected_from_comparator: true, 
+            selected_mode: saveMode 
+          } as Record<string, unknown> : undefined,
+          estimatedCost: saveMode ? (result?.best_per_mode?.[saveMode]?.cost_inr ?? result?.best_per_mode?.[saveMode]?.cost ?? undefined) : undefined,
+          estimatedTime: saveMode ? (result?.best_per_mode?.[saveMode]?.time_hr ?? result?.best_per_mode?.[saveMode]?.time ?? undefined) : undefined,
+          riskScore: saveMode ? (result?.best_per_mode?.[saveMode]?.risk ?? undefined) : undefined,
+        }}
+      />
     </div>
   );
 }

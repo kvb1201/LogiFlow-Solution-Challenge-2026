@@ -32,6 +32,15 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
 };
 
+const MODE_STYLES: Record<string, string> = {
+  road: 'bg-secondary/10 text-secondary border-secondary/20',
+  rail: 'bg-primary/10 text-primary border-primary/20',
+  air: 'bg-sky-400/10 text-sky-400 border-sky-400/20',
+  water: 'bg-teal-400/10 text-teal-400 border-teal-400/20',
+  hybrid: 'bg-violet-400/10 text-violet-400 border-violet-400/20',
+  comparator: 'bg-amber-400/10 text-amber-400 border-amber-400/20',
+};
+
 interface Props { reportId: string }
 
 export function ReportDetailPage({ reportId }: Props) {
@@ -157,7 +166,7 @@ export function ReportDetailPage({ reportId }: Props) {
               </p>
             </div>
             <Link
-              href={`/road?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
+              href={`/${report.mode}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
               className="shrink-0 flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition"
             >
               Regenerate Plan
@@ -207,7 +216,7 @@ export function ReportDetailPage({ reportId }: Props) {
               </div>
             )}
             <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface-container/40 border border-border/15 text-muted-foreground uppercase tracking-wide">
+              <span className={`text-[9px] px-2 py-0.5 rounded-md border font-bold uppercase tracking-widest ${MODE_STYLES[report.mode] || 'bg-surface-container/40 border-border/15 text-muted-foreground'}`}>
                 {report.mode}
               </span>
               {report.cargo_type && (
@@ -370,7 +379,7 @@ export function ReportDetailPage({ reportId }: Props) {
         {/* General Actions */}
         <div className="flex flex-wrap gap-3 mb-8">
           <Link
-            href={`/road?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
+            href={`/${report.mode}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
             className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>refresh</span>

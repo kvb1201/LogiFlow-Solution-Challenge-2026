@@ -151,43 +151,68 @@ export function Dashboard() {
           ) : null}
         </section>
 
-        {/* Quick Actions */}
+        {/* Create New Plan */}
         <section className="mb-10">
-          <h2 className="text-lg font-bold text-foreground mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <h2 className="text-lg font-bold text-foreground mb-4">Create New Plan</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <Link
-              href="/reports"
-              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-primary/40 hover:bg-surface/60 transition-all group"
+              href="/comparator"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-primary/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
             >
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-xl">📋</span>
-                <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                  My Plans
-                </span>
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>rule</span>
               </div>
-              <p className="text-sm text-muted-foreground">View and manage your saved shipment plans</p>
+              <span className="font-semibold text-sm text-foreground">Compare</span>
             </Link>
 
             <Link
               href="/hybrid"
-              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-rail/50 hover:bg-surface/60 transition-all group"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-violet-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
             >
-              <div className="flex items-center gap-3 mb-2">
-                <TrendingUp className="h-5 w-5 text-rail" />
-                <span className="font-semibold text-foreground">Optimize Routes</span>
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-violet-400" style={{ fontVariationSettings: "'FILL' 1" }}>alt_route</span>
               </div>
-              <p className="text-sm text-muted-foreground">Compare and optimize multimodal routes</p>
+              <span className="font-semibold text-sm text-foreground">Hybrid</span>
             </Link>
 
             <Link
               href="/road"
-              className="rounded-xl border border-border/50 bg-surface/40 backdrop-blur-sm p-6 hover:border-road/50 hover:bg-surface/60 transition-all group"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-emerald-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
             >
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-xl">🚛</span>
-                <span className="font-semibold text-foreground">Road Routes</span>
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-emerald-400" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
               </div>
-              <p className="text-sm text-muted-foreground">Plan road shipments with traffic & risk scoring</p>
+              <span className="font-semibold text-sm text-foreground">Road</span>
+            </Link>
+
+            <Link
+              href="/rail"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-sky-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
+            >
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-sky-400" style={{ fontVariationSettings: "'FILL' 1" }}>train</span>
+              </div>
+              <span className="font-semibold text-sm text-foreground">Rail</span>
+            </Link>
+
+            <Link
+              href="/air"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-amber-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
+            >
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-amber-400" style={{ fontVariationSettings: "'FILL' 1" }}>flight_takeoff</span>
+              </div>
+              <span className="font-semibold text-sm text-foreground">Air</span>
+            </Link>
+
+            <Link
+              href="/water"
+              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-teal-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
+            >
+              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-teal-400" style={{ fontVariationSettings: "'FILL' 1" }}>directions_boat</span>
+              </div>
+              <span className="font-semibold text-sm text-foreground">Water</span>
             </Link>
           </div>
         </section>

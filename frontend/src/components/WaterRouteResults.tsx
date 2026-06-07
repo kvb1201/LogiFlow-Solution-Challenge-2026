@@ -5,6 +5,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
 import { WATER_PORTS, WATER_PORT_REGION_COUNT } from '@/lib/water-ports';
 import { classifyWaterNoRoute, isWaterNoRouteMessage } from '@/lib/water-no-route';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
 // ── Formatting helpers ────────────────────────────────────────────────
 
@@ -250,6 +251,7 @@ function DetailPanel({
   minCost,
   minTime,
   minRisk,
+  onSave,
 }: {
   route: WaterRoute;
   source: string;
@@ -257,6 +259,7 @@ function DetailPanel({
   minCost: number;
   minTime: number;
   minRisk: number;
+  onSave?: () => void;
 }) {
   const priority = useLogiFlowStore((s) => s.priority);
   const [explanation, setExplanation] = useState<{ key: string; text: string } | null>(null);
@@ -294,7 +297,18 @@ function DetailPanel({
               {whyThisRoute(route, minCost, minTime, minRisk)}
             </p>
           </div>
-          <Badge tone="teal">{stopsLabel(route)}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge tone="teal">{stopsLabel(route)}</Badge>
+            {onSave && (
+              <button
+                onClick={onSave}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-teal-500/10 border border-teal-400/30 px-3 py-1.5 text-xs font-semibold text-teal-400 hover:bg-teal-500/20 transition-all"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+                Save Report
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Key factors (Item #3 — shows when backend populates them) */}
@@ -562,6 +576,10 @@ export default function WaterRouteResults() {
   const loading = useLogiFlowStore((s) => s.loading);
   const loadingMode = useLogiFlowStore((s) => s.loadingMode);
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);
+  const cargoType = useLogiFlowStore((s) => s.cargoType);
+  const priority = useLogiFlowStore((s) => s.priority);
+
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   const safeIndex = Math.min(Math.max(selected, 0), Math.max(routes.length - 1, 0));
   const active = routes[safeIndex];
@@ -664,10 +682,28 @@ export default function WaterRouteResults() {
               minCost={stats.minCost}
               minTime={stats.minTime}
               minRisk={stats.minRisk}
+              onSave={() => setSaveModalOpen(true)}
             />
           </div>
         </div>
       </div>
+
+      <SaveReportModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        prefill={{
+          source,
+          destination,
+          stops: active?.segments?.map(s => s.to).slice(0, -1) || [],
+          mode: 'water',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: active as unknown as Record<string, unknown>,
+          estimatedCost: active?.cost,
+          estimatedTime: active?.time,
+          riskScore: active?.risk,
+        }}
+      />
     </section>
   );
 }

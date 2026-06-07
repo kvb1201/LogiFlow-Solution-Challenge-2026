@@ -11,7 +11,7 @@ import { apiClient } from '@/lib/apiClient';
 // ── Types ─────────────────────────────────────────────────────────────
 
 export type ReportStatus = 'draft' | 'planned' | 'active' | 'completed' | 'cancelled';
-export type ReportMode = 'road' | 'rail' | 'air' | 'water' | 'hybrid';
+export type ReportMode = 'road' | 'rail' | 'air' | 'water' | 'hybrid' | 'comparator';
 
 export interface ShipmentReport {
   id: string;
