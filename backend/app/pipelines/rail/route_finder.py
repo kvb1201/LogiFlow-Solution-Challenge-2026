@@ -83,6 +83,29 @@ def _minutes_to_time_str(minutes):
     return f"{h:02d}:{m:02d}"
 
 
+def _dedupe_routes_by_train_no(routes: list) -> list:
+    """One direct route per train — multi-hub API queries (HWH/KOAA/SRC) reuse the same service."""
+    from app.pipelines.rail.station_coordinates import normalize_train_number
+
+    out: list = []
+    seen: set[str] = set()
+    for r in routes:
+        if r.get("has_transfer"):
+            out.append(r)
+            continue
+        trains = r.get("trains") or []
+        if not trains:
+            out.append(r)
+            continue
+        norm = normalize_train_number(trains[0].get("train_no", ""))
+        if norm and norm in seen:
+            continue
+        if norm:
+            seen.add(norm)
+        out.append(r)
+    return out
+
+
 def find_routes(
     source_city,
     dest_city,
@@ -126,7 +149,7 @@ def find_routes(
 
         api_budget_s = float(os.getenv("RAIL_API_PAIR_BUDGET_S", "22"))
         api_started = time.monotonic()
-        seen_trains = set()
+        seen_train_nos: set[str] = set()
         # Query API for each station pair (hub codes only — see _resolve_stations)
         for fs in from_stations:
             for ts in to_stations:
@@ -155,17 +178,13 @@ def find_routes(
                     req_fs = fs.upper()
                     req_ts = ts.upper()
 
-                    from app.pipelines.rail.station_coordinates import canonical_station_code
+                    from app.pipelines.rail.station_coordinates import normalize_train_number
 
                     train_no = train.get("trainNumber", "")
-                    train_key = (
-                        train_no,
-                        canonical_station_code(actual_fs or fs),
-                        canonical_station_code(actual_ts or ts),
-                    )
-                    if train_key in seen_trains:
+                    norm_no = normalize_train_number(train_no)
+                    if not norm_no or norm_no in seen_train_nos:
                         continue
-                    seen_trains.add(train_key)
+                    seen_train_nos.add(norm_no)
 
                     # Extract schedule for this segment
                     from_schedule = train.get("fromStationSchedule", {})
@@ -298,6 +317,7 @@ def find_routes(
         except Exception as e:
             print(f"  [RouteFinder] CSV fallback load failed: {e}")
 
-    # Sort by duration
+    # Sort by duration, then collapse duplicate train numbers from hub-pair loops
     routes.sort(key=lambda x: x.get("total_duration_minutes", 9999))
+    routes = _dedupe_routes_by_train_no(routes)
     return routes[:max_direct]
