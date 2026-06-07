@@ -35,6 +35,10 @@ class HybridPipeline:
         if context is None:
             context = RequestContext()
 
+        from app.services.location_funnel import corridor_endpoints
+
+        source, destination = corridor_endpoints(source, destination, context=context)
+
         road_pipeline = get_pipeline("road")
         rail_pipeline = get_pipeline("rail")
         air_pipeline = get_pipeline("air")
