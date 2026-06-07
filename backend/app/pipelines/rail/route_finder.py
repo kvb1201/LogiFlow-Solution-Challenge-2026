@@ -11,12 +11,18 @@ from app.pipelines.rail.config import STATION_TO_CITY
 from app.pipelines.rail.station_resolver import resolve_station
 
 
-def _resolve_stations(city_name):
+def _resolve_stations(city_name, *, for_api: bool = False):
     """
-    Resolve a place to all rail station codes for that city cluster.
+    Resolve a place to rail station codes.
 
-    Uses the centralized location funnel so PRYJ expands to [PRYJ, ALD], etc.
+    for_api=True: hub stations only (fast scrape — avoids 50×50 pair explosions).
+    for_api=False: full funnel cluster (CSV / offline index).
     """
+    if for_api:
+        from app.services.location_funnel import api_station_codes_for_place
+
+        return api_station_codes_for_place(city_name)
+
     from app.services.location_funnel import resolve_location
 
     loc = resolve_location(city_name)
@@ -102,8 +108,8 @@ def find_routes(
           - total_distance_km, total_duration_minutes
           - segments: structured segment list
     """
-    from_stations = _resolve_stations(source_city)
-    to_stations = _resolve_stations(dest_city)
+    from_stations = _resolve_stations(source_city, for_api=use_api)
+    to_stations = _resolve_stations(dest_city, for_api=use_api)
 
     if not from_stations:
         print(f"  [RouteFinder] Unknown source: {source_city}")
@@ -115,10 +121,20 @@ def find_routes(
     routes = []
     # ── PRIMARY: API-first (IRCTC Connect/RapidAPI through client) ────
     if use_api:
+        import os
+        import time
+
+        api_budget_s = float(os.getenv("RAIL_API_PAIR_BUDGET_S", "22"))
+        api_started = time.monotonic()
         seen_trains = set()
-        # Query API for each station pair
+        # Query API for each station pair (hub codes only — see _resolve_stations)
         for fs in from_stations:
             for ts in to_stations:
+                if time.monotonic() - api_started > api_budget_s:
+                    print(f"  [RouteFinder] API budget ({api_budget_s}s) reached — using results so far")
+                    break
+                if len(routes) >= max_direct:
+                    break
                 api_data = railradar_client.get_trains_between(
                     fs,
                     ts,
@@ -234,13 +250,20 @@ def find_routes(
                             "running_days": days_list,
                         }],
                     })
+            if len(routes) >= max_direct:
+                break
+            if time.monotonic() - api_started > api_budget_s:
+                break
 
     # ── FALLBACK: CSV/local schedule data (only when API yields nothing) ─
     if not routes:
         try:
             from app.pipelines.rail import data_loader
+
+            csv_from = _resolve_stations(source_city, for_api=False)
+            csv_to = _resolve_stations(dest_city, for_api=False)
             direct_trains = data_loader.get_trains_for_route(
-                from_stations, to_stations, max_results=max_direct
+                csv_from, csv_to, max_results=max_direct
             )
             for t in direct_trains:
                 routes.append({
