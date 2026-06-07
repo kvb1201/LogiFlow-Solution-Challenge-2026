@@ -31,6 +31,32 @@ _CITY_ALIAS: dict[str, str] = {
     "madras": "Chennai",
 }
 
+# Alternate spellings, legacy codes, and IATA airport codes → primary rail station.
+_STATION_ALIASES: dict[str, str] = {
+    "CSTM": "CSMT",
+    "BCT": "CSMT",
+    "MMCT": "CSMT",
+    "BOM": "CSMT",
+    "BLR": "SBC",
+    "MAA": "MAS",
+    "DEL": "NDLS",
+    "CCU": "HWH",
+    "HYD": "HYB",
+    "PNQ": "PUNE",
+    "GOI": "MAO",
+    "AMD": "ADI",
+    "JAI": "JP",
+    "LKO": "LJN",
+    "VNS": "BSB",
+    "IXB": "NJP",
+    "GAU": "GHY",
+    "BBI": "BBS",
+    "TRV": "TVC",
+    "COK": "ERS",
+    "IXC": "CDG",
+    "ATQ": "ASR",
+}
+
 _rail_cfg = None
 
 
@@ -64,6 +90,11 @@ class ResolvedLocation:
 
 def _clean(raw: str) -> str:
     return re.sub(r",\s*india\s*$", "", (raw or "").strip(), flags=re.I)
+
+
+def _normalize_station_token(token: str) -> str:
+    t = (token or "").strip().upper()
+    return _STATION_ALIASES.get(t, t)
 
 
 def _is_station_code(token: str) -> bool:
@@ -166,16 +197,17 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
             resolution="empty",
         )
 
-    token = original.upper()
+    token = _normalize_station_token(original.upper())
     station_code: str | None = None
     canonical_city: str | None = None
     resolution = "unknown"
+    alias_applied = token != original.upper()
 
     # ── 1) Explicit station code (PRYJ, BSB, NDLS…) ─────────────────
     if _is_station_code(token):
         station_code = token
         canonical_city = _city_from_station(station_code)
-        resolution = "station_code"
+        resolution = "station_alias" if alias_applied else "station_code"
 
     # ── 2) Rail station resolver (city fragments, names) ───────────
     if not canonical_city:
