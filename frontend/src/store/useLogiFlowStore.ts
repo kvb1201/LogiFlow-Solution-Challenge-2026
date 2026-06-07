@@ -28,6 +28,7 @@ import {
   type RailSimulateResult,
 } from '@/lib/railSimulation';
 import { ensureBackendWarm } from '@/lib/backendWarmup';
+import { dedupeRailOptions } from '@/lib/dedupeRailOptions';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -588,7 +589,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           fastest: result.fastest,
           safest: result.safest,
         },
-        allOptions: result.all_options || [],
+        allOptions: dedupeRailOptions(result.all_options || []),
         airRoutes: [],
         selectedAirRouteIndex: 0,
         airConstraintsApplied: null,

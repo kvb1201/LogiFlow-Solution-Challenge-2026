@@ -159,7 +159,9 @@ def decide(enriched_routes, payload):
         if not trains:
             deduped_filtered.append(r)
             continue
-        tno = str(trains[0].get("train_no", "")).strip()
+        from app.pipelines.rail.station_coordinates import normalize_train_number
+
+        tno = normalize_train_number(trains[0].get("train_no", ""))
         if not tno:
             deduped_filtered.append(r)
             continue
