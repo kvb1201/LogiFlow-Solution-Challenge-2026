@@ -32,8 +32,29 @@ def _stop_name(stop: dict) -> str:
     return str(stop.get("station_name") or stop.get("stationName") or get_station_name(_stop_code(stop)) or "")
 
 
+@lru_cache(maxsize=512)
+def _hub_equiv_codes(code: str) -> frozenset[str]:
+    """Station aliases plus same-city hub terminals (e.g. CSMT ↔ LTT for Mumbai)."""
+    c = (code or "").strip().upper()
+    if not c:
+        return frozenset()
+    cluster: set[str] = set(equivalent_station_codes(c))
+    try:
+        from app.pipelines.rail.config import CITY_TO_STATION
+
+        for city_codes in CITY_TO_STATION.values():
+            norm = {str(x).strip().upper() for x in city_codes if x}
+            if c not in norm:
+                continue
+            for alt in norm:
+                cluster.update(equivalent_station_codes(alt))
+    except Exception:
+        pass
+    return frozenset(cluster)
+
+
 def _equiv_set(code: str) -> set[str]:
-    return set(equivalent_station_codes((code or "").upper()))
+    return set(_hub_equiv_codes((code or "").upper()))
 
 
 def _coord_pair(lng: float, lat: float) -> list[float] | None:
@@ -447,7 +468,8 @@ def get_train_geometry_detail(train_no: str, from_station: str, to_station: str)
         cached_src = str(cached.get("source") or "").lower()
         cached_stops = cached.get("stops") or []
         # Trust rich corridor caches without re-scanning the 355k-row delay CSV.
-        if cached_n >= 2 and cached_stops and cached_src not in ("corridor_reference",):
+        # Never trust sparse "direct" chords — hub-alias fixes may unlock schedule slices.
+        if cached_n >= 2 and cached_stops and cached_src not in ("corridor_reference", "direct"):
             return {
                 "geometry": cached["geometry"],
                 "stops": cached_stops,

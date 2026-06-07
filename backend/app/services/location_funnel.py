@@ -281,7 +281,10 @@ def api_station_codes_for_place(raw: str, *, max_codes: int = 6) -> list[str]:
 
     for key, codes in cfg.CITY_TO_STATION.items():
         if key.lower() in {canonical.lower(), raw_clean.lower()}:
-            return _expand_equivalents([str(c).upper() for c in codes])[:max_codes]
+            from app.pipelines.rail.station_coordinates import dedupe_station_codes
+
+            # One API query per physical hub — skip alias doubles (PRYJ+ALD, BCT+MMCT).
+            return dedupe_station_codes([str(c).upper() for c in codes])[:max_codes]
 
     out: list[str] = []
     if loc.station_code:

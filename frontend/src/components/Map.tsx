@@ -35,6 +35,60 @@ const makeIcon = (svg: string, size: number) =>
 
 // ── Map colors ───────────────────────────────────────────────────────
 
+/** Light text on the dark Carto basemap (see globals.css). */
+const MAP_LABEL_TOOLTIP = { className: 'logiflow-map-label' };
+
+/** Hover-only station tooltip — never permanent (avoids label pile-up on long routes). */
+const MAP_HOVER_LABEL = { ...MAP_LABEL_TOOLTIP, direction: 'top' as const, sticky: true };
+
+type CorridorDrawState = {
+  geometry: [number, number][];
+  stops: RouteGeometryStop[];
+  color: string;
+};
+
+function stopLabel(stop: RouteGeometryStop, idx: number, total: number): string {
+  return (
+    stop.city ||
+    stop.name ||
+    stop.code ||
+    (idx === 0 ? 'Origin' : idx === total - 1 ? 'Destination' : `Stop ${idx + 1}`)
+  );
+}
+
+function stopTooltipSub(stop: RouteGeometryStop): string {
+  if (stop.name && stop.city && stop.name.toUpperCase() !== stop.city.toUpperCase()) {
+    return `<br/><span style="opacity:0.75;font-size:10px">${stop.name}${stop.code ? ` (${stop.code})` : ''}</span>`;
+  }
+  if (stop.code) {
+    return `<br/><span style="opacity:0.75;font-size:10px">${stop.code}</span>`;
+  }
+  return '';
+}
+
+/** Thin interactive hubs when zoomed out so dense corridors stay clickable. */
+function hubDisplayStep(stopCount: number, zoom: number): number {
+  const intermediates = Math.max(0, stopCount - 2);
+  if (intermediates <= 10) return 1;
+  if (zoom >= 10) return 1;
+  if (zoom >= 8) return 2;
+  if (zoom >= 6) return Math.max(2, Math.ceil(intermediates / 18));
+  return Math.max(3, Math.ceil(intermediates / 10));
+}
+
+function shouldRenderHub(idx: number, total: number, step: number): boolean {
+  if (idx === 0 || idx === total - 1) return true;
+  if (step <= 1) return true;
+  return (idx - 1) % step === 0;
+}
+
+function hubRadii(zoom: number, isEndpoint: boolean): { glow: number; core: number } {
+  const scale = zoom >= 10 ? 1.15 : zoom >= 7 ? 1 : 0.85;
+  return isEndpoint
+    ? { glow: 13 * scale, core: 9 * scale }
+    : { glow: 9 * scale, core: 6 * scale };
+}
+
 const ROUTE_COLORS: Record<string, string> = {
   cheapest: '#10b981',
   fastest: '#f59e0b',
@@ -87,7 +141,10 @@ export default function MapView({
   const trainLayerRef = useRef<L.LayerGroup | null>(null);
   const stationLayerRef = useRef<L.LayerGroup | null>(null);
   const indiaBoundaryRef = useRef<L.LayerGroup | null>(null);
+  const corridorDrawRef = useRef<CorridorDrawState | null>(null);
+  const renderCorridorHubsRef = useRef<(state: CorridorDrawState) => void>(() => {});
   const [mapTick, setMapTick] = useState(0);
+  const [mapReady, setMapReady] = useState(false);
   const [animPhase, setAnimPhase] = useState(0);
 
   const {
@@ -125,13 +182,13 @@ export default function MapView({
       const marker = L.marker([srcCoord.lat, srcCoord.lng], {
         icon: makeIcon(stationDotSvg('#10b981', true), 24),
       }).addTo(stationLayerRef.current);
-      marker.bindTooltip(`<strong>Source:</strong> ${source}`, { direction: 'top', permanent: true });
+      marker.bindTooltip(`<strong>Source:</strong> ${source}`, MAP_HOVER_LABEL);
     }
     if (dstCoord) {
       const marker = L.marker([dstCoord.lat, dstCoord.lng], {
         icon: makeIcon(stationDotSvg('#ef4444', true), 24),
       }).addTo(stationLayerRef.current);
-      marker.bindTooltip(`<strong>Destination:</strong> ${destination}`, { direction: 'top', permanent: true });
+      marker.bindTooltip(`<strong>Destination:</strong> ${destination}`, MAP_HOVER_LABEL);
     }
 
     if (srcCoord || dstCoord) {
@@ -194,16 +251,41 @@ export default function MapView({
 
     const map = mapRef.current;
     const bump = () => setMapTick(n => n + 1);
+    const onZoomEnd = () => {
+      bump();
+      const corridor = corridorDrawRef.current;
+      if (corridor) renderCorridorHubsRef.current(corridor);
+    };
     map.on('moveend', bump);
-    map.on('zoomend', bump);
+    map.on('zoomend', onZoomEnd);
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' && mapContainerRef.current
+        ? new ResizeObserver(() => {
+            map.invalidateSize();
+            bump();
+          })
+        : null;
+    resizeObserver?.observe(mapContainerRef.current!);
+
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      setMapReady(true);
+      bump();
+    });
 
     return () => {
+      resizeObserver?.disconnect();
+      setMapReady(false);
       indiaBoundaryRef.current?.remove();
       indiaBoundaryRef.current = null;
       map.off('moveend', bump);
-      map.off('zoomend', bump);
+      map.off('zoomend', onZoomEnd);
       map.remove();
       mapRef.current = null;
+      routeLayerRef.current = null;
+      trainLayerRef.current = null;
+      stationLayerRef.current = null;
     };
   }, []);
 
@@ -332,7 +414,7 @@ export default function MapView({
               ${seg.departure ? `Departs: ${seg.departure}` : ''}
               ${delayLine}
             </div>`,
-            { direction: 'top', offset: [0, -10], permanent: isFirst }
+            { ...MAP_HOVER_LABEL, offset: [0, -10] }
           );
 
           stationLayerRef.current!.addLayer(stationMarker);
@@ -370,7 +452,7 @@ export default function MapView({
               ${seg.distance_km ? `${seg.distance_km} km` : ''}
               ${delayLine}
             </div>`,
-            { direction: 'top', offset: [0, -10], permanent: isLast }
+            { ...MAP_HOVER_LABEL, offset: [0, -10] }
           );
 
           stationLayerRef.current!.addLayer(stationMarker);
@@ -420,13 +502,57 @@ export default function MapView({
     [stationCoords, fetchStationCoord, delayForCode]
   );
 
-  // ── Draw scraped schedule geometry (intermediate stations) ───────────
-  const drawGeometryPath = useCallback(
-    (geometry: [number, number][], stops: RouteGeometryStop[], color: string) => {
-      if (!routeLayerRef.current || !stationLayerRef.current || !mapRef.current) return;
-      if (geometry.length < 2) return;
+  const addCorridorHub = useCallback(
+    (
+      latLng: [number, number],
+      stop: RouteGeometryStop,
+      idx: number,
+      total: number,
+      dotColor: string,
+      zoom: number
+    ) => {
+      if (!stationLayerRef.current) return;
 
-      routeLayerRef.current.clearLayers();
+      const isEndpoint = idx === 0 || idx === total - 1;
+      const { glow, core } = hubRadii(zoom, isEndpoint);
+      const label = stopLabel(stop, idx, total);
+      const tip = `<strong>${label}</strong>${stopTooltipSub(stop)}`;
+
+      const halo = L.circleMarker(latLng, {
+        radius: glow,
+        color: dotColor,
+        fillColor: dotColor,
+        fillOpacity: isEndpoint ? 0.22 : 0.14,
+        weight: 0,
+        interactive: false,
+      });
+      stationLayerRef.current.addLayer(halo);
+
+      const hub = L.circleMarker(latLng, {
+        radius: core,
+        color: '#f8fafc',
+        fillColor: dotColor,
+        fillOpacity: 0.95,
+        weight: isEndpoint ? 2.5 : 1.5,
+        opacity: 1,
+      });
+      hub.bindTooltip(tip, MAP_HOVER_LABEL);
+      hub.on('mouseover', () => {
+        hub.setStyle({ radius: core + 2, weight: isEndpoint ? 3 : 2 });
+        hub.bringToFront();
+      });
+      hub.on('mouseout', () => {
+        hub.setStyle({ radius: core, weight: isEndpoint ? 2.5 : 1.5 });
+      });
+      stationLayerRef.current.addLayer(hub);
+    },
+    []
+  );
+
+  const renderCorridorHubs = useCallback(
+    ({ geometry, stops, color }: CorridorDrawState) => {
+      if (!stationLayerRef.current || !mapRef.current || geometry.length < 2) return;
+
       stationLayerRef.current.clearLayers();
 
       const latLngs: [number, number][] = geometry.map(([lng, lat]) => [lat, lng]);
@@ -442,6 +568,38 @@ export default function MapView({
                 lng,
                 lat,
               }));
+
+      const zoom = mapRef.current.getZoom();
+      const step = hubDisplayStep(stopMeta.length, zoom);
+
+      stopMeta.forEach((stop, idx) => {
+        if (!shouldRenderHub(idx, stopMeta.length, step)) return;
+        const latLng = latLngs[idx];
+        if (!latLng) return;
+        const isFirst = idx === 0;
+        const isLast = idx === stopMeta.length - 1;
+        const dotColor = isFirst ? '#10b981' : isLast ? '#ef4444' : color;
+        addCorridorHub(latLng, stop, idx, stopMeta.length, dotColor, zoom);
+      });
+    },
+    [addCorridorHub]
+  );
+
+  useEffect(() => {
+    renderCorridorHubsRef.current = renderCorridorHubs;
+  }, [renderCorridorHubs]);
+
+  // ── Draw scraped schedule geometry (intermediate stations) ───────────
+  const drawGeometryPath = useCallback(
+    (geometry: [number, number][], stops: RouteGeometryStop[], color: string) => {
+      if (!routeLayerRef.current || !stationLayerRef.current || !mapRef.current) return;
+      if (geometry.length < 2) return;
+
+      corridorDrawRef.current = { geometry, stops, color };
+
+      routeLayerRef.current.clearLayers();
+
+      const latLngs: [number, number][] = geometry.map(([lng, lat]) => [lat, lng]);
 
       const glow = L.polyline(latLngs, {
         color,
@@ -460,59 +618,24 @@ export default function MapView({
       routeLayerRef.current.addLayer(line);
 
       line.bindTooltip(
-        `<div style="font-family:system-ui,sans-serif;font-size:11px">
+        `<div style="font-family:system-ui,sans-serif;font-size:11px;color:#f8fafc">
           ${selectedRec?.train_name || selectedOption?.train_name || 'Train route'}<br/>
           ${selectedRec?.train_number || selectedOption?.train_number || ''}
         </div>`,
-        { sticky: true }
+        { ...MAP_LABEL_TOOLTIP, sticky: true }
       );
 
-      stopMeta.forEach((stop, idx) => {
-        const latLng = latLngs[idx];
-        if (!latLng) return;
-        const isFirst = idx === 0;
-        const isLast = idx === stopMeta.length - 1;
-        const label = stop.city || stop.name || stop.code || (isFirst ? 'Origin' : isLast ? 'Destination' : `Stop ${idx + 1}`);
-        const dotColor = isFirst ? '#10b981' : isLast ? '#ef4444' : color;
-        const sub = stop.name && stop.city && stop.name.toUpperCase() !== stop.city.toUpperCase()
-          ? `<br/><span style="opacity:0.7;font-size:10px">${stop.name}${stop.code ? ` (${stop.code})` : ''}</span>`
-          : stop.code
-            ? `<br/><span style="opacity:0.7;font-size:10px">${stop.code}</span>`
-            : '';
-
-        if (isFirst || isLast) {
-          const marker = L.marker(latLng, {
-            icon: makeIcon(stationDotSvg(dotColor, true), 24),
-            zIndexOffset: 120,
-          });
-          marker.bindTooltip(`<strong>${label}</strong>${sub}`, { direction: 'top', permanent: true });
-          stationLayerRef.current!.addLayer(marker);
-          return;
-        }
-
-        const mid = L.circleMarker(latLng, {
-          radius: 5,
-          color: dotColor,
-          fillColor: dotColor,
-          fillOpacity: 0.85,
-          weight: 1,
-          opacity: 0.9,
-        });
-        mid.bindTooltip(`<strong>${label}</strong>${sub}`, {
-          direction: 'top',
-          permanent: true,
-          className: 'logiflow-city-label',
-        });
-        stationLayerRef.current!.addLayer(mid);
-      });
+      renderCorridorHubs({ geometry, stops, color });
 
       mapRef.current.fitBounds(L.latLngBounds(latLngs), { padding: [60, 60], maxZoom: 8 });
     },
-    [selectedRec, selectedOption]
+    [selectedRec, selectedOption, renderCorridorHubs]
   );
 
   // ── React to selection + delay data ─────────────────────────────────
   useEffect(() => {
+    if (!mapReady) return;
+
     const key = highlightType && ROUTE_COLORS[highlightType] ? highlightType : 'selected';
     const color = ROUTE_COLORS[key] ?? ROUTE_COLORS.selected;
     const segments = selectedRec?.segments || selectedOption?.segments;
@@ -531,6 +654,7 @@ export default function MapView({
       return;
     }
 
+    corridorDrawRef.current = null;
     void drawRoute(segments, color);
   }, [
     selectedRec,
@@ -541,6 +665,7 @@ export default function MapView({
     routeGeometry,
     routeStops,
     drawGeometryPath,
+    mapReady,
   ]);
 
   return <div ref={mapContainerRef} className="w-full h-full" />;

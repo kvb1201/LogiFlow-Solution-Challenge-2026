@@ -146,6 +146,28 @@ def equivalent_station_codes(code: str) -> list[str]:
     return out
 
 
+def canonical_station_code(code: str) -> str:
+    """Stable representative for alias pairs (PRYJ/ALD, NDLS/DLI, BCT/MMCT)."""
+    codes = equivalent_station_codes(code)
+    return min(codes) if codes else (code or "").strip().upper()
+
+
+def dedupe_station_codes(codes: list[str]) -> list[str]:
+    """Drop alias duplicates while preserving first-seen hub order."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in codes:
+        c = (raw or "").strip().upper()
+        if not c:
+            continue
+        canon = canonical_station_code(c)
+        if canon in seen:
+            continue
+        seen.add(canon)
+        out.append(c)
+    return out
+
+
 @lru_cache(maxsize=1)
 def _load_generated_cache() -> dict[str, dict]:
     if not os.path.exists(_CACHE_PATH):
