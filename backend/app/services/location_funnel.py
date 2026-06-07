@@ -267,3 +267,29 @@ def corridor_endpoints(
 ) -> tuple[str, str]:
     src, dst = normalize_corridor(source, destination, context=context)
     return src.canonical_city, dst.canonical_city
+
+
+def api_station_codes_for_place(raw: str, *, max_codes: int = 6) -> list[str]:
+    """
+    Hub stations for live scrape/API queries — not the full PDF district cluster.
+    Full clusters stay on resolve_location().station_codes for CSV fallback.
+    """
+    loc = resolve_location(raw)
+    cfg = _load_rail_config()
+    canonical = (loc.canonical_city or "").strip()
+    raw_clean = _clean(raw)
+
+    for key, codes in cfg.CITY_TO_STATION.items():
+        if key.lower() in {canonical.lower(), raw_clean.lower()}:
+            return _expand_equivalents([str(c).upper() for c in codes])[:max_codes]
+
+    out: list[str] = []
+    if loc.station_code:
+        out.append(str(loc.station_code).upper())
+    for code in loc.station_codes or []:
+        cu = str(code).upper()
+        if cu and cu not in out:
+            out.append(cu)
+        if len(out) >= max_codes:
+            break
+    return out
