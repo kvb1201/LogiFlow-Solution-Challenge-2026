@@ -48,7 +48,8 @@ install:
 	@echo "📦 Installing frontend dependencies..."
 	cd frontend && npm install
 	@echo "🐍 Installing backend dependencies..."
-	cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+	cd backend && (test -d venv || python3.13 -m venv venv) && ./venv/bin/pip install -r requirements.txt
+	@$(MAKE) fix-backend-venv
 
 # Run everything concurrently
 dev:

@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()
+# Always load backend/.env before route imports (auth, DB, etc.)
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
