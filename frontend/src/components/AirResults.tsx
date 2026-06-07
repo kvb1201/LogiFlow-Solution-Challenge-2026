@@ -1,8 +1,9 @@
 'use client';
-
+import Link from "next/link";
 import React, { useMemo, useState, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(value));
@@ -25,6 +26,20 @@ function sourceLabel(dataSource: string) {
   return dataSource;
 }
 
+function congestionTone(level: string | undefined) {
+  switch (level) {
+    case 'Low':
+      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20';
+    case 'Medium':
+      return 'bg-amber-500/15 text-amber-200 border-amber-500/20';
+    case 'High':
+      return 'bg-orange-500/15 text-orange-200 border-orange-500/20';
+    case 'Critical':
+      return 'bg-red-500/15 text-red-200 border-red-500/20';
+    default:
+      return 'bg-secondary/10 text-secondary border-secondary/20';
+  }
+}
 function routeTagTone(routeSupportType: string) {
   if (routeSupportType.includes('direct')) return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
   if (routeSupportType.includes('hub')) return 'bg-sky-500/10 text-sky-200 border-sky-500/20';
@@ -60,11 +75,14 @@ export default function AirResults() {
   const source = useLogiFlowStore((state) => state.source);
   const destination = useLogiFlowStore((state) => state.destination);
   const airConstraintsApplied = useLogiFlowStore((state) => state.airConstraintsApplied);
+  const cargoType = useLogiFlowStore((state) => state.cargoType);
+  const priority = useLogiFlowStore((state) => state.priority);
 
   const selected = airRoutes[selectedAirRouteIndex] ?? airRoutes[0];
 
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   useEffect(() => {
     setDynamicExplanation(null);
@@ -222,11 +240,20 @@ export default function AirResults() {
                     {source} → {destination}
                   </p>
                 </div>
-                <div className={`shrink-0 self-start rounded-xl border px-3 py-2 ${confidenceTone(selected.confidence_score)}`}>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider">Confidence</div>
-                  <div className="text-sm font-semibold">
-                    {formatPercent(selected.confidence_score)} · {selected.confidence_label}
+                <div className={`shrink-0 self-start flex flex-col gap-2`}>
+                  <div className={`rounded-xl border px-3 py-2 ${confidenceTone(selected.confidence_score)}`}>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider">Confidence</div>
+                    <div className="text-sm font-semibold">
+                      {formatPercent(selected.confidence_score)} · {selected.confidence_label}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => setSaveModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 rounded-xl bg-sky-500/10 border border-sky-400/30 px-3 py-2 text-xs font-semibold text-sky-400 hover:bg-sky-500/20 transition-all"
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+                    Save Report
+                  </button>
                 </div>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">{selected.reason}</p>
@@ -250,6 +277,46 @@ export default function AirResults() {
                 <StatCard label="Risk" value={formatPercent(selected.risk * 100)} hint="Disruption exposure" />
                 <StatCard label="Delay prob." value={formatPercent(selected.delay_prob * 100)} hint="Schedule slip" />
               </div>
+
+              {(selected.congestion_score != null || selected.otp_prediction) && (
+                <div className="rounded-xl border border-outline-variant/10 bg-surface-container-lowest/30 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-outline">OTP congestion</div>
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${congestionTone(selected.congestion_level)}`}>
+                      {selected.congestion_level ?? selected.otp_prediction?.congestionLevel ?? '—'} · {selected.congestion_score ?? selected.otp_prediction?.congestionScore ?? '—'}/100
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div>
+                      <div className="text-outline">Baseline OTP</div>
+                      <div className="mono font-medium text-on-surface">
+                        {formatPercent((selected.otp_prediction?.baselineOTP ?? 0) * 100)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Adjusted OTP</div>
+                      <div className="mono font-medium text-on-surface">
+                        {formatPercent((selected.otp_prediction?.adjustedOTP ?? 0) * 100)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Weather</div>
+                      <div className="font-medium text-on-surface">
+                        {selected.otp_prediction?.factors?.weatherCondition ?? '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-outline">Departure</div>
+                      <div className="font-medium text-on-surface">
+                        {selected.otp_prediction?.factors?.departureWeekday ?? '—'}{' '}
+                        {selected.otp_prediction?.factors?.departureHour != null
+                          ? `${selected.otp_prediction.factors.departureHour}:00`
+                          : ''}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {airConstraintsApplied && (
                 <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -447,6 +514,23 @@ export default function AirResults() {
           </div>
         </div>
       </div>
+
+      <SaveReportModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        prefill={{
+          source,
+          destination,
+          stops: selected?.stops > 0 ? [selected?.air_details?.hub_airport?.name].filter(Boolean) as string[] : [],
+          mode: 'air',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: selected as unknown as Record<string, unknown>,
+          estimatedCost: selected?.cost,
+          estimatedTime: selected?.time,
+          riskScore: selected?.risk,
+        }}
+      />
     </div>
   );
 }

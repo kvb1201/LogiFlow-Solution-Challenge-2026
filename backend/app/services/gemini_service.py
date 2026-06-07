@@ -30,9 +30,9 @@ _MODEL_FALLBACKS = (
 )
 
 
-def _gemini_config() -> tuple[str | None, str]:
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_RAIL")
-    model = os.getenv("GEMINI_MODEL_RAIL") or os.getenv("GEMINI_MODEL") or _DEFAULT_MODEL
+def _gemini_config() -> Tuple[Optional[str], str]:
+    key = os.getenv("GEMINI_API_KEY")
+    model = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
     return key, model
 
 

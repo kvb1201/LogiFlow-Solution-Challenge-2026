@@ -3,12 +3,15 @@
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { fetchExplanation } from '@/services/api';
 import {
   buildGoogleMapsUrl,
   getRouteNavigationInfo,
   devAssertNavigationConsistency,
 } from '@/lib/routeNavigation';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import type { ReportMode } from '@/services/plannerApi';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -520,12 +523,15 @@ function NavigationDisclaimer({ waypoints, wasOptimised }: { waypoints: string[]
 function NavigationActions({
   route,
   isSelected,
+  onSave,
 }: {
   route: RoadRoute;
   isSelected: boolean;
+  onSave: () => void;
 }) {
   const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const user = useAuthStore(s => s.user);
 
   const navInfo = useMemo(() => getRouteNavigationInfo(route), [route]);
 
@@ -631,6 +637,27 @@ function NavigationActions({
             wasOptimised={navInfo.wasStopOrderOptimised}
           />
         )}
+
+        {/* Save Report */}
+        <div className="mt-2.5 pt-2.5 border-t border-outline-variant/8">
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onSave(); }}
+            title={!user ? 'Sign in to save reports' : 'Save this optimized route as a shipment plan'}
+            className={[
+              'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200 border w-full justify-center',
+              isSelected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                : 'bg-surface-container/30 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/60 hover:text-on-surface',
+            ].join(' ')}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+              bookmark_add
+            </span>
+            Save Report
+            {!user && <span className="text-[9px] opacity-60">(sign in required)</span>}
+          </button>
+        </div>
       </div>
     </>
   );
@@ -688,8 +715,13 @@ function RouteCard({
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
-  const priority = useLogiFlowStore(s => s.priority);
+  const priority   = useLogiFlowStore(s => s.priority);
+  const storeSource      = useLogiFlowStore(s => s.source);
+  const storeDestination = useLogiFlowStore(s => s.destination);
+  const cargoType        = useLogiFlowStore(s => s.cargoType);
+  const searchMode       = useLogiFlowStore(s => s.searchMode);
 
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
@@ -760,6 +792,7 @@ function RouteCard({
   };
 
   return (
+    <>
     <div
       role="button"
       tabIndex={0}
@@ -1113,10 +1146,29 @@ function RouteCard({
           )}
         </div>
 
-        {/* Navigation actions — Start Driving + Share Route */}
-        <NavigationActions route={route} isSelected={isSelected} />
+        {/* Navigation actions — Start Driving + Share Route + Save Report */}
+        <NavigationActions route={route} isSelected={isSelected} onSave={() => setSaveModalOpen(true)} />
       </div>
     </div>
+
+    {/* Save Report modal — rendered outside the card button so clicks don't bubble */}
+    <SaveReportModal
+      isOpen={saveModalOpen}
+      onClose={() => setSaveModalOpen(false)}
+      prefill={{
+        source: source || storeSource,
+        destination: destination || storeDestination,
+        stops: route.stops,
+        mode: (searchMode === 'road' ? 'road' : searchMode === 'rail' ? 'rail' : searchMode === 'air' ? 'air' : searchMode === 'water' ? 'water' : 'road') as ReportMode,
+        cargoType,
+        optimizationInput: { priority, route_id: route.route_id },
+        optimizationResult: route as unknown as Record<string, unknown>,
+        estimatedCost: route.cost,
+        estimatedTime: route.time,
+        riskScore: route.risk,
+      }}
+    />
+  </>
   );
 }
 

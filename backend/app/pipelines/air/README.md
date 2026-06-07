@@ -12,349 +12,126 @@ The airway pipeline selects the best air cargo option using:
 - delay probability
 - cargo constraints
 
-The pipeline is designed as a scoring-based decision engine, not as a simple route lookup.
+The pipeline is a scoring-based decision engine backed by checked-in OpenFlights route data — not a live commercial schedule API.
 
 ## Current Stack
 
 The current version uses a free-stack architecture:
 
-- `Nominatim` for city geocoding
-- `OurAirports CSV` for airport lookup
-- `OpenFlights routes.dat` for direct and one-stop route support
+- `OurAirports CSV` (India-focused snapshot) for airport lookup and coordinates
+- `OpenFlights routes.dat` (India intra-country snapshot) for direct and one-stop route support
+- `air_otp_stats.json` for airport on-time probability baselines
+- `Nominatim` / unified geocoder for cities not in static mappings
 - `OpenWeather` for live weather enrichment
-- internal fallback route generation for air route candidates
 - internal scoring engine for route ranking
 
-There is no paid flight schedule API in the active code path right now.
+There is no paid flight schedule API in the active code path.
 
 ## End-to-End Flow
 
-The air pipeline currently follows this flow:
-
-1. Receive user input:
-   - source
-   - destination
-   - priority
-   - cargo weight
-   - cargo type
-   - constraints
-
+1. Receive user input (source, destination, priority, cargo, constraints).
 2. Resolve airports:
-   - normalize city aliases like `Bangalore -> Bengaluru`
-   - check static city-airport mappings
-   - if not found, geocode the city with Nominatim
-   - if `airports.csv` is present, find the nearest airport from the OurAirports dataset
-
-3. Generate candidate routes:
-   - if `routes.dat` contains a direct airport pair, build a dataset-backed direct route
-   - if `routes.dat` supports a one-stop airport chain, build dataset-backed one-stop routes
-   - otherwise create fallback synthetic air routes using the resolved airport pair
-
-4. Enrich routes with operational signals:
-   - weather risk from OpenWeather
-   - heuristic congestion risk
-   - airline reliability
+   - normalize city aliases (`Bangalore` → `Bengaluru`)
+   - static city-airport mappings
+   - nearest airport from `backend/data/airports.csv` (within 100 km)
+3. Generate candidate routes from `backend/data/routes.dat`:
+   - direct airport pairs when supported
+   - up to three one-stop hub chains when supported
+   - **no synthetic fallback** when OpenFlights has no match
+4. Enrich routes:
+   - weather risk (OpenWeather)
+   - airport OTP from `air_otp_stats.json`
+   - airline reliability table
    - stop-based delay penalty
-
-5. Apply route constraints:
-   - `max_stops`
-   - `budget_limit`
-   - cargo support
-
-6. Score all feasible routes:
-   - weighted scoring based on priority
-   - lowest score wins
-
-7. Return:
-   - best route
-   - alternatives
-   - reasoning metadata
+5. Apply constraints (`max_stops`, `budget_limit`, cargo type).
+6. Score and rank by priority.
+7. Return best route, alternatives, and metadata — or `status: no_routes` (HTTP 200).
 
 ## Files and Responsibilities
 
-### `pipeline.py`
-
-This is the main orchestration file.
-
-It is responsible for:
-
-- normalizing priority values
-- reading input payload values
-- calling airport resolution and route generation
-- engineering route features
-- applying constraints
-- invoking the scoring engine
-- attaching explanation fields
-
-This is the file where the full air decision engine is assembled.
-
-### `config.py`
-
-This file stores static reference data:
-
-- city-airport mappings
-- city aliases
-- airline reliability defaults
-- curated mock routes
-
-It acts as the local knowledge base for the air pipeline.
-
-### `engine.py`
-
-This file contains the weighted scoring logic.
-
-It defines the weights for:
-
-- `fast`
-- `cheap`
-- `balanced`
-- `safe`
-
-It normalizes route values and computes a final score for ranking.
-
-### `ml_models.py`
-
-This file contains the delay-probability logic.
-
-Even though it is named `ml_models`, the current implementation is heuristic-enriched rather than a trained model.
-
-It combines:
-
-- base route delay risk
-- weather risk
-- congestion fallback
-- airline reliability
-- number of stops
-
-This gives an ML-style delay estimate without needing a paid historical flight API.
+| File | Role |
+|------|------|
+| `pipeline.py` | Orchestration: fetch → engineer → constrain → score → explain |
+| `config.py` | Static city-airport mappings, aliases, airline reliability |
+| `engine.py` | Priority-weighted ranking |
+| `ml_models.py` | Delay probability heuristics (OTP + weather + reliability) |
 
 ## Service Layer
 
-### `app/services/air_data_service.py`
+| Service | Role |
+|---------|------|
+| `air_data_service.py` | OpenFlights graph, OTP lookup, route candidate builder |
+| `airport_locator_service.py` | City → airport resolution |
+| `air_weather_service.py` | Weather → route risk signals |
+| `geocoding_service.py` | City geocoding when not in static map |
 
-This file is now the free-stack route-support adapter.
+## Data Files
 
-Its job is to expose the same interface the pipeline expects while avoiding any paid provider dependency.
+Checked in under `backend/data/` (regenerate with `make fetch-air-data`):
 
-Current behavior:
+| File | Source | Contents |
+|------|--------|----------|
+| `airports.csv` | [OurAirports](https://ourairports.com/data/) | ~115 Indian airports with IATA + coordinates |
+| `routes.dat` | [OpenFlights](https://openflights.org/data.html) | ~1,050 intra-India route records |
+| `otp-baselines.json` | Internal baselines | Airport OTP for congestion scoring via `OTPScoringService` |
 
-- `is_configured()` returns `False`
-- `get_live_air_routes()` reads `backend/data/routes.dat`
-- it returns direct and one-stop candidates when OpenFlights supports the airport pair
-- if no route support exists, it intentionally pushes the pipeline into the fallback path
+Optional env overrides:
 
-This means the air pipeline stays modular and can later be reconnected to a live schedule provider without changing the main scoring code.
-
-### `app/services/airport_locator_service.py`
-
-This service resolves a city into an airport.
-
-Order of resolution:
-
-1. city alias normalization
-2. static city-airport mapping
-3. nearest airport from OurAirports CSV
-4. final fallback airport code from city name
-
-This file is the bridge between city-level user input and airport-level route logic.
-
-### `app/services/geocoding_service.py`
-
-This service geocodes city names using Nominatim.
-
-It is only used when the city is not already covered by static mapping.
-
-It also caches lookups to avoid repeated requests.
-
-### `app/services/air_weather_service.py`
-
-This service converts raw weather data into risk signals suitable for decision-making.
-
-It computes:
-
-- source weather risk
-- destination weather risk
-- combined route weather risk
-
-### `app/services/weather_service.py`
-
-This existing service calls OpenWeather.
-
-If the key is missing or the request fails, it returns a safe fallback weather object so the pipeline still runs.
-
-## Data Sources
-
-### 1. Nominatim
-
-Used for:
-
-- city -> latitude/longitude geocoding
-
-Why:
-
-- free
-- lightweight
-- good enough for city lookup
-
-### 2. OurAirports CSV
-
-Used for:
-
-- latitude/longitude -> nearest airport
-- airport metadata lookup
-
-Why:
-
-- free
-- local file
-- no runtime API limits
-
-### 3. OpenWeather
-
-Used for:
-
-- live weather enrichment
-
-Why:
-
-- gives route-relevant operational signals
-- useful for estimating risk and delay probability
-
-### 4. OpenFlights `routes.dat`
-
-Used for:
-
-- direct airport-pair validation
-- one-stop route support through known hubs
-- supporting-airline hints in API responses
-
-Why:
-
-- free local dataset
-- better than blindly assuming every airport pair has a valid flight
-- keeps the project demo-safe without paid API dependencies
+- `OURAIRPORTS_CSV_PATH`
+- `OPENFLIGHTS_ROUTES_PATH`
+- `AIR_OTP_STATS_PATH`
 
 ## Data Source Labels in Responses
 
-The pipeline now labels route origin clearly:
+| Label | Meaning |
+|-------|---------|
+| `openflights` / `openflights_routes.dat` | Route backed by checked-in OpenFlights snapshot |
 
-- `free_stack_mock_catalog`
-  - route came from curated mock data for a known lane
-
-- `free_stack_dynamic_fallback`
-  - route was generated dynamically after airport resolution
-
-- `openflights_routes.dat`
-  - route is backed by the checked-in OpenFlights route snapshot
-
-These labels make it easy to explain to teammates or judges where the route came from.
+When no OpenFlights support exists for an airport pair, the API returns `status: no_routes` with HTTP 200 (not 404).
 
 ## Constraint Handling
 
-The current air pipeline supports:
-
-- cargo type filtering
+- cargo type filtering (general / fragile / perishable)
 - `max_stops`
 - `budget_limit`
-
-This makes the route selection cargo-aware instead of just distance-based.
-
-## Why This Still Counts as Real-Time
-
-The pipeline is not using real-time commercial flight schedules right now, but it still uses real-time operational enrichment:
-
-- real city geocoding
-- real airport selection support
-- real weather enrichment
-- dynamic route scoring
-
-So the current version is best described as:
-
-`free-stack operationally enriched air routing`
-
-rather than:
-
-`live commercial schedule search`
-
-## What Is Missing Right Now
-
-These pieces are intentionally not active:
-
-- paid flight schedule APIs
-- historical flight delay models
-- real cargo tariff APIs
-- confirmed daily airline schedules
-
-These can be added later without changing the core scoring structure.
+- `deadline_hours`
 
 ## Setup
 
-### Required for basic fallback mode
+### Required
 
-Nothing is strictly required.
+Air data files must be present. From repo root:
 
-The pipeline will run even without:
+```bash
+make fetch-air-data    # download + trim India snapshots
+make verify-air-data   # CI smoke check
+```
 
-- OpenWeather key
-- OurAirports CSV
-- OpenFlights routes data
+Or commit the generated files (recommended for zero-setup deploys).
 
-because all services have safe fallbacks.
+### Optional
 
-### Recommended setup
+Add to `backend/.env`:
 
-1. Put `airports.csv` in:
-
-`backend/data/airports.csv`
-
-2. Put `routes.dat` in:
-
-`backend/data/routes.dat`
-
-3. Optionally add:
-
-`OPENWEATHER_API_KEY=...`
-
-to `backend/.env`
-
-### Optional override
-
-If you want to store the CSV somewhere else, set:
-
-`OURAIRPORTS_CSV_PATH=absolute_path_to_airports.csv`
-
-If you want to store the routes snapshot somewhere else, set:
-
-`OPENFLIGHTS_ROUTES_PATH=absolute_path_to_routes.dat`
+```
+OPENWEATHER_API_KEY=...
+```
 
 ## How to Test
 
-### Pipeline test
-
-Run from `backend/`:
+From `backend/`:
 
 ```powershell
-.\myenv\Scripts\python.exe -m app.pipelines.air.test
+python scripts/verify_air_data.py
+python -m app.pipelines.air.test
 ```
 
-### API test
-
-Start the server:
-
-```powershell
-.\myenv\Scripts\python.exe -m uvicorn app.main:app --reload
-```
-
-Then test in Swagger at:
-
-`http://127.0.0.1:8000/docs`
-
-Use:
+API example (Swagger at `/docs`):
 
 ```json
 {
-  "source": "Tirupati",
-  "destination": "Bangalore",
+  "source": "Delhi",
+  "destination": "Mumbai",
   "priority": "fast",
   "departure_date": "2026-04-10",
   "cargo_weight_kg": 500,
@@ -364,8 +141,15 @@ Use:
 }
 ```
 
-## Teammate Summary
+## What Is Not Active Yet
 
-If you need a short explanation for teammates:
+- paid commercial flight schedule APIs
+- trained delay ML model (OTP baselines are used instead)
+- real cargo tariff APIs
+- flight path map geometry
 
-“Right now the air pipeline uses a free-stack design. We resolve cities to airports using static mappings plus Nominatim and optionally OurAirports, enrich routes with weather risk from OpenWeather, generate candidate air routes internally, and rank them using a weighted scoring decision engine. The architecture is modular so a live flight schedule provider can be plugged in later without changing the core logic.”
+These can be added without changing the core scoring structure.
+
+See also: [docs/air-otp-congestion-scoring.md](../../../docs/air-otp-congestion-scoring.md)
+
+"The air pipeline resolves cities to Indian airports using static mappings plus OurAirports, finds route support from a trimmed OpenFlights snapshot, enriches with weather and OTP baselines, and ranks options with a weighted scoring engine. When no route exists in the dataset, it returns a clean `no_routes` response — no fabricated flights."
