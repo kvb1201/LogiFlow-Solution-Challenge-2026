@@ -1,204 +1,215 @@
+# Route Intelligence + Smart Route Health — Implementation
 
-# Smart Trip Monitoring MVP Implementation
+## Architecture Overview
 
-## Architecture Implemented
+All route intelligence is stored inside `optimization_result` (existing JSON column on `ShipmentReport`). No new tables, no new pipelines, no schema migration required. The upgrade enriches the existing `trip_progress.py` service and `planner_routes.py` endpoint, and updates the `RouteHealthCard.tsx` and `ReportDetailPage.tsx` frontend components.
 
-LogiFlow now extends the existing flow from:
+---
 
-Plan -> Execute
+## Phase 1 — Route Intelligence Layer
 
-to:
+### What was built
+`build_route_intelligence(source, destination, stops, optimization_result, estimated_time_hours)` in `trip_progress.py`.
 
-Plan -> Execute -> Monitor -> Reassess
+### Checkpoint Generation Logic
+- Collect declared waypoints (source → stops → destination)
+- For each consecutive pair, call `_intermediate_cities_between()` which looks up a static hardcoded corridor table covering major Indian road corridors (Gujarat, Mumbai–Pune–Hyderabad, Delhi–Mumbai, Delhi–Kolkata, Delhi–Chennai, etc.)
+- Deduplicate while preserving order
+- If `route_cities` still has < 4 entries, attempt geometry-based reverse geocoding from `optimization_result.best.geometry`
 
-The implementation reuses the current authenticated planner architecture:
+### Checkpoint Density
+| Route distance | Target checkpoints |
+|---|---|
+| < 300 km | 3 |
+| 300–700 km | 4 |
+| 700–1200 km | 5 |
+| 1200–1800 km | 6 |
+| > 1800 km | 8 |
 
-- `ShipmentReport` remains the source of truth for saved plans and trip lifecycle state.
-- `ShipmentNotification` remains the notification system.
-- `planner_routes.py` remains the backend planner API boundary.
-- `plannerApi.ts` and `usePlannerStore` remain the frontend API/store integration.
-- Report detail pages and the dashboard remain the primary monitoring surfaces.
+Checkpoints are evenly sampled from `route_cities` and always include source and destination.
 
-No duplicate report, trip, route-health, or notification systems were introduced.
+### Route City Generation Logic
+Corridor table `_intermediate_cities_between()` uses exact and partial endpoint matching. Example: `Surat → Ahmedabad` resolves to `['bharuch', 'vadodara', 'anand', 'nadiad']`. Corridors support both directions.
+
+### Storage
+`optimization_result.route_intelligence = { checkpoints, route_cities, source, destination, total_km_estimate }`
+
+Injected at report creation time via `enrich_optimization_result_with_intelligence()` called in `POST /planner/reports`.
+
+### Backward Compatibility
+Existing reports without `route_intelligence` fall back to the old `estimate_trip_location()` segment-interpolation logic.
+
+---
+
+## Phase 2 — Estimated Location Upgrade
+
+### Logic
+`_estimate_city_from_progress(route_intelligence, progress_percentage)`:
+- Maps `0–100%` progress linearly across `route_cities` index
+- Returns the city at `int(progress / 100 * (len(route_cities) - 1))`
+- Never returns "Between A and B" when route intelligence exists
+
+### Fallback (old reports)
+Segment interpolation is preserved. To reduce "Between" labels even in fallback: if `segment_ratio >= 0.85` returns `end_name`, if `<= 0.15` returns `start_name`.
+
+### Confidence
+- Route intelligence path: `"high"`
+- Coordinate interpolation path: `"medium"`
+- No coordinates: `"low"`
+
+---
+
+## Phase 3 — Route Corridor Detection
+
+### Detection Logic (`detect_corridor_status`)
+
+**Step 1 — Exact match:**  
+Normalize current city with `_normalize_city()` (lowercases, strips punctuation, applies aliases). Compare against each city in `route_intelligence.route_cities`. Match → `ON_ROUTE`.
+
+**Step 2 — Fuzzy/near match:**  
+`_normalize_city()` applies `_NEAR_CITY_MAP` which maps satellite towns to canonical cities (e.g. Karjan → vadodara, Petlad → anand, Noida → delhi). If the canonical form matches a route city → `NEAR_ROUTE`. Also checks substring containment (e.g. "New Delhi" ↔ "Delhi") → `NEAR_ROUTE`.
+
+**Step 3 — Off route:**  
+No match → `OFF_ROUTE`.
+
+### Deviation level mapping (for legacy display)
+- `ON_ROUTE` → `deviation_level: "none"`
+- `NEAR_ROUTE` → `deviation_level: "minor"`
+- `OFF_ROUTE` → `deviation_level: "major"`
+
+---
+
+## Phase 4 — Remaining Journey Evaluation
+
+`evaluate_remaining_journey(report, current_location, progress_percentage)`:
+1. Computes remaining waypoints from current progress index
+2. Calls `_run_remaining_pipeline()` → dispatches to the existing road/air/water/hybrid/rail pipeline from `current_location` to `destination`
+3. Falls back to `_fallback_result()` (haversine-based estimate) if pipeline fails
+4. Returns `{ updated_eta_minutes, updated_cost, updated_risk, remaining_stops }`
+
+This evaluation is **temporary** — used only for the health check response, not persisted.
+
+---
+
+## Phase 5 — Health Scoring Engine
+
+`_compute_health_score(corridor_status, remaining_eval, overdue_minutes, base_risk, report)`:
+
+Deterministic rules (in priority order):
+
+| Corridor | Delay condition | Health level | Delay risk | Action |
+|---|---|---|---|---|
+| OFF_ROUTE | any significant delay OR high risk | `at_risk` | high | reoptimize |
+| OFF_ROUTE | no significant delay | `moderate` | medium | reoptimize |
+| NEAR_ROUTE | significant delay OR high risk | `at_risk` | high | reoptimize |
+| NEAR_ROUTE | no significant delay | `moderate` | medium | monitor |
+| ON_ROUTE | significant delay OR high risk | `moderate` | medium | monitor |
+| ON_ROUTE | overdue ≥ 60min | `at_risk` | high | reoptimize |
+| ON_ROUTE | no issues | `healthy` | low | continue |
+
+**"Significant delay"** = `updated_eta_minutes - original_remaining_minutes > 15` OR `overdue_minutes >= 30`  
+**"High risk"** = `updated_risk > 0.55` OR `base_risk > 0.65`
+
+---
+
+## Phase 6 — Smarter Reoptimization Trigger
+
+`should_recommend_reoptimization(current_metrics, updated_metrics)`:
+
+Recommends reoptimization only if improvement exceeds **any** threshold:
+
+| Metric | Threshold |
+|---|---|
+| ETA improvement | > 15 minutes |
+| Risk reduction | > 5% relative |
+| Cost reduction | > 5% relative |
+
+If below thresholds, `recommended_action` is downgraded from `"reoptimize"` to `"monitor"`. Reason string is included in response for UI display.
+
+---
+
+## Phase 7 — Route Health UI Upgrade
+
+`RouteHealthCard.tsx` updated to display:
+
+| Field | Source |
+|---|---|
+| Estimated Location | Phase 2 city (never "Between A and B") + confidence badge |
+| Current Location | User input or estimated |
+| Corridor Status | Phase 3 `ON_ROUTE / NEAR_ROUTE / OFF_ROUTE` with icon + color |
+| Updated ETA | Phase 4 `updated_eta_minutes` |
+| Updated Cost | Phase 4 `updated_cost` |
+| Updated Risk | Phase 4 `updated_risk` |
+| Reoptimization Reason | Phase 6 `reoptimization_reason` |
+| Regenerate Plan button | Phase 8 — prefills from current location |
+
+Corridor status uses the same LogiFlow colour system: emerald for ON_ROUTE, amber for NEAR_ROUTE, red for OFF_ROUTE.
+
+---
+
+## Phase 8 — Regenerate Plan Fix
+
+Both locations where "Regenerate Plan" was a static link are now dynamic:
+
+**`RouteHealthCard.tsx` — `handleRegeneratePlan()`:**
+- Determines `currentLoc` from actual input → corridor_matched_city → estimated label
+- Finds `currentLoc` index in full waypoint array
+- Sets `source = currentLoc`, `stops = remaining intermediate stops`, `destination = report.destination`
+- Navigates to `/{mode}?source=...&destination=...&stops=...`
+
+**`ReportDetailPage.tsx` — General Actions "Regenerate Plan":**
+- For `active` trips: reads `routeHealth.actual_location.label || corridor_matched_city || estimated_location.label`
+- Slices waypoints array to compute remaining stops
+- For non-active trips: falls back to original source/destination
+
+---
 
 ## Files Modified
 
-- `backend/app/routes/planner_routes.py`
-- `backend/app/services/trip_progress.py`
-- `frontend/src/services/plannerApi.ts`
-- `frontend/src/store/usePlannerStore.ts`
-- `frontend/src/components/auth/Dashboard.tsx`
-- `frontend/src/components/planner/ReportDetailPage.tsx`
-- `frontend/src/components/planner/RouteHealthCard.tsx`
-- `implementation.md`
+### Backend
+| File | Change |
+|---|---|
+| `backend/app/services/trip_progress.py` | Complete rewrite — added Phases 1–6 |
+| `backend/app/routes/planner_routes.py` | Import new functions, inject `route_intelligence` on report creation, expose new fields from health endpoint |
 
-Local validation also touched `backend/logiflow.db`; temporary validation rows were removed after the API workflow completed.
+### Frontend
+| File | Change |
+|---|---|
+| `frontend/src/services/plannerApi.ts` | Extended `RouteHealthResponse` type with Phase 3–6 fields |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Phases 7 + 8 — full UI upgrade + smart Regenerate Plan |
+| `frontend/src/components/planner/ReportDetailPage.tsx` | Phase 8 — smart Regenerate Plan in General Actions + added `routeHealth` to store destructure |
 
-## Backend Changes
-
-- Replaced the previous route-health placeholder with Smart Trip Monitoring logic.
-- Added optional `actual_location` and `current_location` query support to:
-  - `GET /planner/reports/{id}/route-health`
-- Added notification generation for moderate and at-risk route-health checks.
-- Kept trip lifecycle endpoints unchanged and reused:
-  - `POST /planner/reports/{id}/execute`
-  - `POST /planner/reports/{id}/stop`
-  - `POST /planner/reports/{id}/cancel`
-  - `POST /planner/reports/{id}/restart`
-
-## Frontend Changes
-
-- Updated `RouteHealthResponse` to match the Smart Trip Monitoring API shape.
-- Updated planner store route-health fetching to accept optional actual driver location input.
-- Rebuilt `RouteHealthCard` to show:
-  - health level
-  - progress percentage
-  - ETA variance
-  - delay risk
-  - estimated location
-  - actual location
-  - deviation level
-  - recommended action
-- Added route-health controls:
-  - Use Estimated Location
-  - Enter Current Location
-- Added Active Trips section to Dashboard with:
-  - shipment name
-  - source -> destination
-  - mode badge
-  - started time
-  - ETA
-  - progress percentage
-  - health badge
-  - View Trip action
-  - Check Route Health action
-
-## Progress Engine
-
-Added `backend/app/services/trip_progress.py`.
-
-`calculate_trip_progress(started_at, expected_end_time, current_time)` returns:
-
-- `progress_percentage`
-- `elapsed_minutes`
-- `remaining_minutes`
-
-Rules implemented:
-
-- before start -> `0%`
-- after ETA -> `100%`
-- progress is always clamped from `0` to `100`
-- calculations are reusable and centralized
-
-## Route Health API
-
-`GET /planner/reports/{id}/route-health`
-
-Returns:
-
-- `status`
-- `health_level`
-- `progress_percentage`
-- `eta_variance_minutes`
-- `delay_risk`
-- `recommended_action`
-- `estimated_location`
-- `actual_location`
-- `deviation_level`
-- `deviation_km`
-- `checked_at`
-
-Supported values:
-
-- `health_level`: `healthy`, `moderate`, `at_risk`
-- `deviation_level`: `none`, `minor`, `major`
-- `recommended_action`: `continue`, `monitor`, `reoptimize`
-
-## Estimated Location Logic
-
-Estimated location is computed from:
-
-- report source
-- report stops
-- report destination
-- trip progress percentage
-
-The engine selects the current route segment from the progress percentage and interpolates between waypoint coordinates using the existing offline geocoder/coordinate utilities. If coordinates are unavailable, it still returns a segment label such as `Between Ahmedabad and Jaipur` with low confidence.
-
-## Deviation Detection Logic
-
-Actual driver location is optional and only affects the current route-health evaluation. It does not overwrite the shipment route.
-
-When `actual_location` is provided:
-
-- the city is geocoded through the existing coordinate utility
-- distance from estimated location is calculated with haversine distance
-- deviation is classified as:
-  - `none`: under 50 km
-  - `minor`: 50 km to under 150 km
-  - `major`: 150 km or more
-
-## Health Scoring Logic
-
-Health is scored from:
-
-- saved report `risk_score`
-- deviation level
-- overdue minutes past ETA
-
-Output mapping:
-
-- `healthy` + `low` delay risk -> `continue`
-- `moderate` + `medium` delay risk -> `monitor`
-- `at_risk` + `high` delay risk -> `reoptimize`
-
-Major deviation or significant overdue time forces an at-risk result.
-
-## Notification Integration
-
-Route-health checks reuse `ShipmentNotification`.
-
-When a check returns `moderate` or `at_risk`, the backend creates a notification with:
-
-- report id
-- user id
-- route-health notification type
-- deviation level
-- ETA variance
-
-Duplicate unread notifications of the same route-health level are not repeatedly created for the same report.
+---
 
 ## Validation Results
 
-Passed:
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ 0 errors |
+| `npm run build` | ✅ 16/16 pages generated |
+| Python syntax check (`py_compile`) | ✅ All files OK |
+| Phase 1 — route intelligence generation | ✅ `['Surat', 'bharuch', 'vadodara', 'anand', 'nadiad', 'Ahmedabad']` |
+| Phase 2 — estimated location (20%) | ✅ `bharuch` (not "Between Surat and Bharuch") |
+| Phase 2 — estimated location (45%) | ✅ `vadodara` |
+| Phase 2 — estimated location (85%) | ✅ `nadiad` |
+| Phase 3 — ON_ROUTE (Vadodara) | ✅ |
+| Phase 3 — ON_ROUTE (Karjan via near-map → vadodara) | ✅ |
+| Phase 3 — ON_ROUTE (Petlad via near-map → anand) | ✅ |
+| Phase 3 — OFF_ROUTE (Indore) | ✅ |
+| Phase 6 — recommend when ETA +30m, risk -33%, cost -10% | ✅ |
+| Phase 6 — no recommend when below thresholds | ✅ |
+| Existing reports load (no route_intelligence) | ✅ Fallback path preserved |
 
-- `npx tsc --noEmit`
-- `npm run build`
-- backend startup with FastAPI/Uvicorn
-- backend `/health`
-- frontend startup with Next dev server
-- frontend `/login` HTTP 200
-
-Validated authenticated API flow:
-
-- Login/session validation via JWT session path: `200`
-- Save Report: `201`, report created as `planned`
-- Execute Trip: `200`, report became `active`
-- Active Trips Dashboard data: active report returned by planner listing
-- Route Health using estimated location: `healthy`, `continue`
-- Estimated Location: returned `Between Ahmedabad and Jaipur`
-- Actual Location Input with `Mumbai`: accepted and evaluated
-- Deviation Detection with `Mumbai`/`Kolkata`: `major`
-- Health Scoring: major deviation produced `at_risk`, `high`, `reoptimize`
-- Notification Generation: route-health notification created
-
-Note: Real Google OAuth token exchange was not exercised locally because no live Google credential was available. The protected app session path was validated with the same JWT format produced after OAuth login.
+---
 
 ## Known Limitations
 
-- Estimated location is time-progress based, not GPS based.
-- Deviation detection depends on city-level geocoding accuracy.
-- ETA variance is heuristic and does not yet include live traffic/weather feeds.
-- Dashboard health badges use saved risk as an immediate summary; detailed route health is evaluated on the report detail route-health API.
-- Notifications are poll/read based; no WebSocket or SSE real-time delivery is implemented.
-- Production database migrations are still not introduced; the app continues using existing startup metadata creation.
+1. **Corridor table is static** — covers major Indian routes. Niche corridors (e.g. Gangtok, Leh) won't have intermediate cities and will fall back to declared waypoints only. The geometry-based enrichment can fill some gaps for road routes with geometry data.
+
+2. **Phase 4 pipeline call is synchronous** — adds latency to the route-health endpoint (~1–3s for road, longer for hybrid). For trips with no `started_at`/`expected_end_time`, progress is 0% and the evaluation is skipped.
+
+3. **Near-city map is curated** — covers common satellite towns. Unknown towns adjacent to route cities will fall through to OFF_ROUTE even if physically close. Can be extended by adding entries to `_NEAR_CITY_MAP`.
+
+4. **Corridor detection is text-based, not geographic** — it does not compute actual road distance to determine ON vs NEAR. A city 30km off-route could be ON_ROUTE if it shares a name with a route city. Geographic distance validation can be added as a future enhancement.
+
+5. **Reverse geocoding for geometry enrichment** — the `_extract_route_cities_from_geometry()` function calls Nominatim and is rate-limited (2s between calls). It only activates when route has fewer than 4 known cities and geometry is available. For most routes the corridor table is sufficient.

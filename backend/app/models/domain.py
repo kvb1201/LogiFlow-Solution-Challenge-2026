@@ -42,6 +42,7 @@ class ShipmentReport(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_report_id = Column(String, ForeignKey("shipment_reports.id", ondelete="SET NULL"), nullable=True, index=True)
 
     name = Column(String, nullable=False)
     source = Column(String, nullable=False)
@@ -70,6 +71,8 @@ class ShipmentReport(Base):
     expires_at = Column(DateTime, nullable=True)  # default: 24 h after creation
 
     user = relationship("User", back_populates="shipment_reports")
+    parent_report = relationship("ShipmentReport", remote_side=[id], back_populates="revisions", foreign_keys=[parent_report_id])
+    revisions = relationship("ShipmentReport", back_populates="parent_report", foreign_keys=[parent_report_id])
     notifications = relationship("ShipmentNotification", back_populates="report", cascade="all, delete-orphan")
 
 
@@ -86,4 +89,3 @@ class ShipmentNotification(Base):
 
     user = relationship("User", back_populates="notifications")
     report = relationship("ShipmentReport", back_populates="notifications")
-

@@ -11,6 +11,8 @@ import {
   cancelTrip,
   restartTrip,
   getRouteHealth,
+  reoptimizeTrip,
+  saveRevision,
   listNotifications,
   getUnreadCount,
   markNotificationRead,
@@ -19,6 +21,8 @@ import {
   type CreateReportPayload,
   type UpdateReportPayload,
   type RouteHealthResponse,
+  type ReoptimizationRecommendation,
+  type ReoptimizationResponse,
   type ShipmentNotification,
 } from '@/services/plannerApi';
 
@@ -31,6 +35,8 @@ interface PlannerState {
   // Route health
   routeHealth: RouteHealthResponse | null;
   routeHealthLoading: boolean;
+  reoptimization: ReoptimizationResponse | null;
+  reoptimizationLoading: boolean;
 
   // Notifications
   notifications: ShipmentNotification[];
@@ -53,6 +59,14 @@ interface PlannerState {
 
   // Route health
   fetchRouteHealth: (id: string, actualLocation?: string) => Promise<void>;
+  reoptimizeTrip: (id: string, payload: { current_location: string; remaining_stops: string[]; destination: string }) => Promise<ReoptimizationResponse>;
+  saveRevision: (id: string, payload: {
+    name?: string;
+    current_location: string;
+    remaining_stops: string[];
+    destination: string;
+    recommendation: ReoptimizationRecommendation;
+  }) => Promise<ShipmentReport>;
 
   // Notifications
   fetchNotifications: () => Promise<void>;
@@ -69,6 +83,8 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
 
   routeHealth: null,
   routeHealthLoading: false,
+  reoptimization: null,
+  reoptimizationLoading: false,
 
   notifications: [],
   unreadCount: 0,
@@ -205,6 +221,37 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
       set({ routeHealth: health, routeHealthLoading: false });
     } catch (err) {
       set({ routeHealthLoading: false, error: err instanceof Error ? err.message : 'Failed to fetch route health' });
+    }
+  },
+
+  reoptimizeTrip: async (id, payload) => {
+    set({ reoptimizationLoading: true, error: null });
+    try {
+      const response = await reoptimizeTrip(id, payload);
+      set({ reoptimization: response, reoptimizationLoading: false });
+      void get().fetchUnreadCount();
+      return response;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to reoptimize trip';
+      set({ reoptimizationLoading: false, error: msg });
+      throw new Error(msg);
+    }
+  },
+
+  saveRevision: async (id, payload) => {
+    set({ saving: true, error: null });
+    try {
+      const report = await saveRevision(id, payload);
+      set(state => ({
+        reports: [report, ...state.reports.filter(r => r.id !== report.id)],
+        saving: false,
+      }));
+      void get().fetchUnreadCount();
+      return report;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save revision';
+      set({ saving: false, error: msg });
+      throw new Error(msg);
     }
   },
 

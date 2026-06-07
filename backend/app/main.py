@@ -51,6 +51,25 @@ def _warm_rail_data():
     except Exception as exc:
         print(f"[startup] Rail preload skipped: {exc}")
 
+
+async def _ensure_revision_columns(conn):
+    """Lightweight compatibility patch for existing SQLite/Postgres databases."""
+    from sqlalchemy import inspect, text
+
+    columns = await conn.run_sync(
+        lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("shipment_reports")}
+    )
+    if "parent_report_id" in columns:
+        return
+
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        await conn.execute(text("ALTER TABLE shipment_reports ADD COLUMN parent_report_id VARCHAR"))
+    else:
+        await conn.execute(text("ALTER TABLE shipment_reports ADD COLUMN parent_report_id VARCHAR NULL"))
+    print("[startup] Added shipment_reports.parent_report_id")
+
+
 @app.on_event("startup")
 async def startup_event():
     from app.config.database import engine, Base
@@ -58,6 +77,7 @@ async def startup_event():
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_revision_columns(conn)
         
     _warm_rail_data()
 

@@ -47,6 +47,8 @@ export function ReportDetailPage({ reportId }: Props) {
   const router = useRouter();
   const {
     reports,
+    routeHealth,
+    fetchReports,
     updateReportData,
     removeReport,
     executeTrip,
@@ -64,6 +66,10 @@ export function ReportDetailPage({ reportId }: Props) {
   const [draftName, setDraftName] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
   const [tripAction, setTripAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetchReports();
+  }, [fetchReports]);
 
   // Load from store first (instant), then verify from API
   useEffect(() => {
@@ -139,6 +145,16 @@ export function ReportDetailPage({ reportId }: Props) {
   const waypoints = report.stops.length > 0
     ? [report.source, ...report.stops, report.destination]
     : [report.source, report.destination];
+  const parentReport = report.parent_report_id
+    ? reports.find(r => r.id === report.parent_report_id) ?? null
+    : null;
+  const childRevisions = reports.filter(r => r.parent_report_id === report.id);
+  const siblingRevisions = parentReport
+    ? reports.filter(r => r.parent_report_id === parentReport.id)
+    : [];
+  const revisionHistory = parentReport
+    ? [parentReport, ...siblingRevisions].filter((r, index, arr) => arr.findIndex(x => x.id === r.id) === index)
+    : childRevisions;
 
   return (
     <div className="relative w-full min-h-screen">
@@ -305,7 +321,58 @@ export function ReportDetailPage({ reportId }: Props) {
         {report.status === 'active' && (
           <section id="route-health" className="mb-6">
             <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">Route Health</h2>
-            <RouteHealthCard reportId={report.id} />
+            <RouteHealthCard report={report} />
+          </section>
+        )}
+
+        {(parentReport || revisionHistory.length > 0) && (
+          <section className="mb-6">
+            <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">Revision History</h2>
+            <div className="rounded-2xl border border-border/40 bg-surface/30 p-4">
+              {parentReport && (
+                <div className="mb-3 rounded-xl border border-primary/20 bg-primary/8 px-3 py-2.5">
+                  <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Original Plan</div>
+                  <Link href={`/reports/${parentReport.id}`} className="text-sm font-semibold text-primary hover:underline">
+                    {parentReport.name}
+                  </Link>
+                  <div className="mt-0.5 text-[10px] text-muted-foreground mono">
+                    {parentReport.source} → {parentReport.destination}
+                  </div>
+                </div>
+              )}
+
+              {revisionHistory.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[9px] uppercase tracking-widest text-outline font-bold">Revisions</div>
+                  {revisionHistory.map(revision => (
+                    <Link
+                      key={revision.id}
+                      href={`/reports/${revision.id}`}
+                      className={[
+                        'block rounded-xl border px-3 py-2.5 transition',
+                        revision.id === report.id
+                          ? 'border-emerald-500/25 bg-emerald-500/8'
+                          : 'border-border/25 bg-surface-container-low/25 hover:border-primary/30',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-foreground">
+                            {revision.id === report.id ? `${revision.name} (Current)` : revision.name}
+                          </div>
+                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground mono">
+                            {revision.source} → {revision.destination}
+                          </div>
+                        </div>
+                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md border font-semibold uppercase tracking-wide ${STATUS_STYLES[revision.status]}`}>
+                          {revision.status}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -378,13 +445,49 @@ export function ReportDetailPage({ reportId }: Props) {
 
         {/* General Actions */}
         <div className="flex flex-wrap gap-3 mb-8">
-          <Link
-            href={`/${report.mode}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
-            className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>refresh</span>
-            Regenerate Plan
-          </Link>
+          {/* Phase 8 — Regenerate Plan: for active trips prefill from current location */}
+          {(() => {
+            // Determine source for regenerate:
+            // active trip → use current location from route health (corridor-matched or estimated)
+            // otherwise  → use original source
+            let regenSource = report.source;
+            let regenStops: string[] = report.stops;
+            let regenDestination = report.destination;
+
+            if (report.status === 'active' && routeHealth?.report_id === report.id) {
+              const currentLoc =
+                routeHealth.actual_location?.label ||
+                routeHealth.corridor_matched_city ||
+                routeHealth.estimated_location?.label ||
+                report.source;
+
+              regenSource = currentLoc;
+
+              // Remaining stops: all waypoints strictly after current location
+              const allWaypoints = [report.source, ...report.stops, report.destination];
+              const normLoc = currentLoc.toLowerCase();
+              const locIdx = allWaypoints.findIndex(w => w.toLowerCase() === normLoc);
+              const afterLoc = locIdx >= 0 ? allWaypoints.slice(locIdx + 1) : allWaypoints.slice(1);
+              regenStops = afterLoc.slice(0, -1);   // exclude destination
+              regenDestination = report.destination;
+            }
+
+            const params = new URLSearchParams({
+              source: regenSource,
+              destination: regenDestination,
+            });
+            if (regenStops.length > 0) params.set('stops', regenStops.join(','));
+
+            return (
+              <Link
+                href={`/${report.mode}?${params.toString()}`}
+                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>refresh</span>
+                Regenerate Plan
+              </Link>
+            );
+          })()}
 
           <Link
             href="/reports"
