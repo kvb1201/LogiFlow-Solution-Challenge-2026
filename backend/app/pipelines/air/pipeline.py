@@ -504,6 +504,9 @@ class AirPipeline(BasePipeline):
         return "watch"
 
     def generate(self, source, destination, payload=None, context=None):
+        from app.services.location_funnel import corridor_endpoints
+
+        source, destination = corridor_endpoints(source, destination, context=context)
         try:
             normalized = self._get_payload(payload)
             mode = normalized.get("mode", "realtime")

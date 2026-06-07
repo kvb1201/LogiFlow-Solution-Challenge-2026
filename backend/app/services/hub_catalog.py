@@ -91,6 +91,11 @@ def _match_city_key(place: str) -> str | None:
 
 def canonical_city(place: str) -> str:
     """Single canonical label for pipeline calls — avoids duplicate geocode/scrape."""
+    from app.services.location_funnel import resolve_location
+
+    resolved = resolve_location(place)
+    if resolved.canonical_city:
+        return resolved.canonical_city
     matched = _match_city_key(place)
     if matched:
         return matched
