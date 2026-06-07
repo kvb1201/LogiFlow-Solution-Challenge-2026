@@ -13,6 +13,7 @@ from app.routes.air_routes import air_router
 from app.routes.explain_routes import router as explain_router
 from app.routes.intent_routes import intent_router
 from app.routes.compose import router as compose_router
+from app.routes.location_routes import location_router
 
 from app.routes.auth_routes import router as auth_router
 from app.routes.planner_routes import router as planner_router
@@ -76,6 +77,7 @@ app.include_router(air_router)
 app.include_router(explain_router)
 app.include_router(intent_router)
 app.include_router(compose_router)
+app.include_router(location_router)
 
 app.include_router(auth_router)
 app.include_router(planner_router)

@@ -11,6 +11,8 @@ _STATION_TABLE = "station_coordinates"
 
 
 def get_cached_geometry(train_number: str, from_code: str, to_code: str) -> dict[str, Any] | None:
+    if not sb.is_configured():
+        return None
     rows = sb.rest_get(
         _GEOMETRY_TABLE,
         {
@@ -20,6 +22,7 @@ def get_cached_geometry(train_number: str, from_code: str, to_code: str) -> dict
             "to_code": f"eq.{to_code.upper()}",
             "limit": "1",
         },
+        timeout_s=20,
     )
     return rows[0] if rows else None
 
@@ -56,6 +59,7 @@ def get_station_coord(station_code: str) -> dict[str, Any] | None:
             "station_code": f"eq.{station_code.upper()}",
             "limit": "1",
         },
+        timeout_s=20,
     )
     return rows[0] if rows else None
 
