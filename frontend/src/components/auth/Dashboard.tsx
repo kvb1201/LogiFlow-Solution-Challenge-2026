@@ -53,6 +53,7 @@ export function Dashboard() {
   const totalPlans     = reports.length;
   const activePlans    = reports.filter(r => r.status === 'active').length;
   const expiredPlans   = reports.filter(r => isExpired(r)).length;
+  const reoptimizedTrips = reports.filter(r => r.parent_report_id != null).length;
   const recentReports  = reports.slice(0, 4);
   const activeReports  = reports.filter(r => r.status === 'active').slice(0, 4);
 
@@ -91,11 +92,13 @@ export function Dashboard() {
           </div>
 
           {/* Plan stats */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
             {[
               { label: 'Total Plans',   value: totalPlans,   icon: '📋' },
               { label: 'Active Plans',  value: activePlans,  icon: '🚀',
                 highlight: activePlans > 0 },
+              { label: 'Reoptimized',   value: reoptimizedTrips, icon: '🔁',
+                highlight: reoptimizedTrips > 0 },
               { label: 'Expired',       value: expiredPlans, icon: '⏰',
                 warn: expiredPlans > 0 },
             ].map(s => (

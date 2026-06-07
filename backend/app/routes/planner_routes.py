@@ -10,11 +10,18 @@ from app.models.report import (
     ReportUpdateRequest,
     ReportResponse,
     NotificationResponse,
+    ReoptimizeRequest,
+    ReoptimizationSaveRequest,
     MAX_REPORTS_PER_USER,
 )
 from app.config.database import get_db
 from app.dependencies import get_current_user
-from app.services.trip_progress import evaluate_route_health
+from app.services.reoptimization_service import build_reoptimization_recommendation, extract_plan_metrics
+from app.services.trip_progress import (
+    evaluate_route_health,
+    enrich_optimization_result_with_intelligence,
+    should_recommend_reoptimization,
+)
 
 router = APIRouter(prefix="/planner", tags=["planner"])
 
@@ -25,6 +32,7 @@ def _report_to_response(r: ShipmentReport) -> ReportResponse:
     return ReportResponse(
         id=r.id,
         user_id=r.user_id,
+        parent_report_id=r.parent_report_id,
         name=r.name,
         source=r.source,
         destination=r.destination,
@@ -91,8 +99,23 @@ async def create_report(
         )
 
     now = datetime.utcnow()
+    if body.parent_report_id:
+        parent = await _get_owned_report(body.parent_report_id, db, current_user)
+        if parent.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Phase 1 — Inject route_intelligence into optimization_result
+    enriched_result = enrich_optimization_result_with_intelligence(
+        body.optimization_result,
+        body.source,
+        body.destination,
+        body.stops or [],
+        body.estimated_time,
+    )
+
     report = ShipmentReport(
         user_id=current_user.id,
+        parent_report_id=body.parent_report_id,
         name=body.name,
         source=body.source,
         destination=body.destination,
@@ -100,7 +123,7 @@ async def create_report(
         mode=body.mode,
         cargo_type=body.cargo_type,
         optimization_input=body.optimization_input,
-        optimization_result=body.optimization_result,
+        optimization_result=enriched_result,
         estimated_cost=body.estimated_cost,
         estimated_time=body.estimated_time,
         risk_score=body.risk_score,
@@ -430,6 +453,122 @@ async def get_route_health(
         "destination": report.destination,
         **health,
     }
+
+@router.post("/reports/{report_id}/reoptimize")
+async def reoptimize_trip(
+    report_id: str,
+    body: ReoptimizeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a revised plan candidate without modifying the original report."""
+    report = await _get_owned_report(report_id, db, current_user)
+
+    recommendation = build_reoptimization_recommendation(
+        report,
+        body.current_location,
+        body.remaining_stops,
+        body.destination,
+    )
+
+    await _create_notification(
+        db,
+        current_user.id,
+        report.id,
+        "reoptimization_generated",
+        f"Updated plan generated for '{report.name}' from {body.current_location} to {body.destination}.",
+    )
+    await db.commit()
+
+    return {
+        "report_id": report.id,
+        "status": report.status,
+        "recommendation": recommendation,
+    }
+
+
+@router.post("/reports/{report_id}/revisions", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
+async def save_report_revision(
+    report_id: str,
+    body: ReoptimizationSaveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Persist a re-optimized plan as a new linked ShipmentReport revision."""
+    parent = await _get_owned_report(report_id, db, current_user)
+    recommendation = body.recommendation
+    updated_plan = recommendation.get("updated_plan") if isinstance(recommendation, dict) else None
+    if not isinstance(updated_plan, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid reoptimization recommendation")
+
+    optimization_result = updated_plan.get("optimization_result")
+    if not isinstance(optimization_result, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing updated optimization result")
+
+    metrics = updated_plan.get("metrics") if isinstance(updated_plan.get("metrics"), dict) else {}
+    extracted = extract_plan_metrics(optimization_result)
+    estimated_cost = metrics.get("cost") if metrics.get("cost") is not None else extracted["cost"]
+    estimated_time = metrics.get("time") if metrics.get("time") is not None else extracted["time"]
+    risk_score = metrics.get("risk") if metrics.get("risk") is not None else extracted["risk"]
+
+    now = datetime.utcnow()
+    revision_status = "active" if parent.status == "active" else "planned"
+    revision = ShipmentReport(
+        user_id=current_user.id,
+        parent_report_id=parent.id,
+        name=body.name or f"{parent.name} · Revision",
+        source=body.current_location,
+        destination=body.destination,
+        stops=body.remaining_stops,
+        mode=parent.mode,
+        cargo_type=parent.cargo_type,
+        optimization_input={
+            **(parent.optimization_input or {}),
+            "source": body.current_location,
+            "destination": body.destination,
+            "stops": body.remaining_stops,
+            "reoptimized_from_report_id": parent.id,
+            "reoptimized_at": now.isoformat(),
+        },
+        optimization_result=optimization_result,
+        estimated_cost=estimated_cost,
+        estimated_time=estimated_time,
+        risk_score=risk_score,
+        status=revision_status,
+        started_at=now if revision_status == "active" else None,
+        completed_at=None,
+        expected_end_time=(
+            now + timedelta(hours=estimated_time or parent.estimated_time or 24, minutes=parent.buffer_minutes or 30)
+            if revision_status == "active"
+            else None
+        ),
+        buffer_minutes=parent.buffer_minutes,
+        created_at=now,
+        updated_at=now,
+        expires_at=now + timedelta(hours=REPORT_TTL_HOURS),
+    )
+    db.add(revision)
+    await db.flush()
+
+    await _create_notification(
+        db,
+        current_user.id,
+        parent.id,
+        "revision_saved",
+        f"Revision '{revision.name}' was saved for '{parent.name}'.",
+    )
+    if revision_status == "active":
+        await _create_notification(
+            db,
+            current_user.id,
+            revision.id,
+            "trip_switched_to_revision",
+            f"Active trip continued with revised plan '{revision.name}'.",
+        )
+
+    await db.commit()
+    await db.refresh(revision)
+    return _report_to_response(revision)
 
 
 # ── Notifications ────────────────────────────────────────────────────

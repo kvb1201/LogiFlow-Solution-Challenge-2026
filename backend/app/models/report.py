@@ -10,6 +10,7 @@ MAX_REPORTS_PER_USER = 50
 
 class ReportCreateRequest(BaseModel):
     name: str
+    parent_report_id: Optional[str] = None
     source: str
     destination: str
     stops: list[str] = []
@@ -92,6 +93,7 @@ class ReportUpdateRequest(BaseModel):
 class ReportResponse(BaseModel):
     id: str
     user_id: str
+    parent_report_id: Optional[str] = None
     name: str
     source: str
     destination: str
@@ -128,3 +130,56 @@ class NotificationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class ReoptimizeRequest(BaseModel):
+    current_location: str
+    remaining_stops: list[str] = []
+    destination: str
+
+    @field_validator("current_location")
+    @classmethod
+    def current_location_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Current location is required")
+        return v.strip()
+
+    @field_validator("destination")
+    @classmethod
+    def reopt_destination_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Destination is required")
+        return v.strip()
+
+
+class ReoptimizationSaveRequest(BaseModel):
+    name: Optional[str] = None
+    current_location: str
+    remaining_stops: list[str] = []
+    destination: str
+    recommendation: dict[str, Any]
+
+    @field_validator("name")
+    @classmethod
+    def revision_name_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Revision name cannot be empty")
+        if len(v) > 120:
+            raise ValueError("Revision name must be 120 characters or fewer")
+        return v
+
+    @field_validator("current_location")
+    @classmethod
+    def revision_current_location_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Current location is required")
+        return v.strip()
+
+    @field_validator("destination")
+    @classmethod
+    def revision_destination_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Destination is required")
+        return v.strip()

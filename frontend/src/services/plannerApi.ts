@@ -16,6 +16,7 @@ export type ReportMode = 'road' | 'rail' | 'air' | 'water' | 'hybrid' | 'compara
 export interface ShipmentReport {
   id: string;
   user_id: string;
+  parent_report_id: string | null;
   name: string;
   source: string;
   destination: string;
@@ -39,6 +40,7 @@ export interface ShipmentReport {
 
 export interface CreateReportPayload {
   name: string;
+  parent_report_id?: string;
   source: string;
   destination: string;
   stops?: string[];
@@ -87,10 +89,56 @@ export interface RouteHealthResponse {
   } | null;
   deviation_level: 'none' | 'minor' | 'major';
   deviation_km: number | null;
+  // Phase 3 — Corridor Detection
+  corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
+  corridor_matched_city: string;
+  // Phase 4 — Remaining Journey
+  updated_eta_minutes: number | null;
+  updated_cost: number | null;
+  updated_risk: number | null;
+  // Phase 6 — Reoptimization trigger
+  reoptimization_recommended: boolean;
+  reoptimization_reason: string;
   mode: string;
   source: string;
   destination: string;
   checked_at: string;
+}
+
+export interface ReoptimizationMetrics {
+  cost: number | null;
+  time: number | null;
+  risk: number | null;
+}
+
+export interface ReoptimizationRecommendation {
+  generated_at: string;
+  parent_report_id: string;
+  mode: string;
+  current_location: string;
+  remaining_stops: string[];
+  destination: string;
+  current_plan: {
+    source: string;
+    destination: string;
+    stops: string[];
+    metrics: ReoptimizationMetrics;
+  };
+  updated_plan: {
+    source: string;
+    destination: string;
+    stops: string[];
+    metrics: ReoptimizationMetrics;
+    optimization_result: Record<string, unknown>;
+  };
+  eta_delta_minutes: number | null;
+  recommended_action: 'save_revision';
+}
+
+export interface ReoptimizationResponse {
+  report_id: string;
+  status: string;
+  recommendation: ReoptimizationRecommendation;
 }
 
 export interface ShipmentNotification {
@@ -212,6 +260,36 @@ export async function getRouteHealth(id: string, actualLocation?: string): Promi
     requireAuth: true,
   });
   return parseJson<RouteHealthResponse>(res);
+}
+
+export async function reoptimizeTrip(
+  id: string,
+  payload: { current_location: string; remaining_stops: string[]; destination: string }
+): Promise<ReoptimizationResponse> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/reoptimize`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    requireAuth: true,
+  });
+  return parseJson<ReoptimizationResponse>(res);
+}
+
+export async function saveRevision(
+  id: string,
+  payload: {
+    name?: string;
+    current_location: string;
+    remaining_stops: string[];
+    destination: string;
+    recommendation: ReoptimizationRecommendation;
+  }
+): Promise<ShipmentReport> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/revisions`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    requireAuth: true,
+  });
+  return parseJson<ShipmentReport>(res);
 }
 
 // ── Notifications ─────────────────────────────────────────────────────
