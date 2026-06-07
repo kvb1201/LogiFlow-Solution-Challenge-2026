@@ -13,6 +13,15 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
 };
 
+const MODE_STYLES: Record<string, string> = {
+  road: 'bg-secondary/10 text-secondary border-secondary/20',
+  rail: 'bg-primary/10 text-primary border-primary/20',
+  air: 'bg-sky-400/10 text-sky-400 border-sky-400/20',
+  water: 'bg-teal-400/10 text-teal-400 border-teal-400/20',
+  hybrid: 'bg-violet-400/10 text-violet-400 border-violet-400/20',
+  comparator: 'bg-amber-400/10 text-amber-400 border-amber-400/20',
+};
+
 function fmt(v: number | null | undefined, prefix = '', suffix = '') {
   if (v == null || !Number.isFinite(v)) return '—';
   return `${prefix}${Math.round(v).toLocaleString('en-IN')}${suffix}`;
@@ -110,7 +119,7 @@ export function ReportCard({ report }: Props) {
         {/* Expiry & mode row */}
         <div className="flex items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-surface-container/40 border border-border/15 text-muted-foreground uppercase tracking-wide">
+            <span className={`text-[9px] px-2 py-0.5 rounded-md border font-bold uppercase tracking-widest ${MODE_STYLES[report.mode] || 'bg-surface-container/40 border-border/15 text-muted-foreground'}`}>
               {report.mode}
             </span>
             <span className="text-[9px] text-muted-foreground">

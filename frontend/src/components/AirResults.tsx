@@ -3,6 +3,7 @@ import Link from "next/link";
 import React, { useMemo, useState, useEffect } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(value));
@@ -74,11 +75,14 @@ export default function AirResults() {
   const source = useLogiFlowStore((state) => state.source);
   const destination = useLogiFlowStore((state) => state.destination);
   const airConstraintsApplied = useLogiFlowStore((state) => state.airConstraintsApplied);
+  const cargoType = useLogiFlowStore((state) => state.cargoType);
+  const priority = useLogiFlowStore((state) => state.priority);
 
   const selected = airRoutes[selectedAirRouteIndex] ?? airRoutes[0];
 
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   useEffect(() => {
     setDynamicExplanation(null);
@@ -236,11 +240,20 @@ export default function AirResults() {
                     {source} → {destination}
                   </p>
                 </div>
-                <div className={`shrink-0 self-start rounded-xl border px-3 py-2 ${confidenceTone(selected.confidence_score)}`}>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider">Confidence</div>
-                  <div className="text-sm font-semibold">
-                    {formatPercent(selected.confidence_score)} · {selected.confidence_label}
+                <div className={`shrink-0 self-start flex flex-col gap-2`}>
+                  <div className={`rounded-xl border px-3 py-2 ${confidenceTone(selected.confidence_score)}`}>
+                    <div className="text-[9px] font-semibold uppercase tracking-wider">Confidence</div>
+                    <div className="text-sm font-semibold">
+                      {formatPercent(selected.confidence_score)} · {selected.confidence_label}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => setSaveModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 rounded-xl bg-sky-500/10 border border-sky-400/30 px-3 py-2 text-xs font-semibold text-sky-400 hover:bg-sky-500/20 transition-all"
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+                    Save Report
+                  </button>
                 </div>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">{selected.reason}</p>
@@ -501,6 +514,23 @@ export default function AirResults() {
           </div>
         </div>
       </div>
+
+      <SaveReportModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        prefill={{
+          source,
+          destination,
+          stops: selected?.stops > 0 ? [selected?.air_details?.hub_airport?.name].filter(Boolean) as string[] : [],
+          mode: 'air',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: selected as unknown as Record<string, unknown>,
+          estimatedCost: selected?.cost,
+          estimatedTime: selected?.time,
+          riskScore: selected?.risk,
+        }}
+      />
     </div>
   );
 }

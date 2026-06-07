@@ -8,6 +8,7 @@ import RailwayLoading from '@/components/RailwayLoading';
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import {
   buildTrainCorridorGeometry,
   fetchExplanation,
@@ -301,11 +302,13 @@ function DetailPanel({
   ranked,
   trainDelayDetail,
   selectedTrainLive,
+  onSave,
 }: {
   rec: Recommendation | null;
   ranked: RankedOption | null;
   trainDelayDetail: import('@/services/api').TrainDelayData | null;
   selectedTrainLive: Record<string, unknown> | null;
+  onSave?: () => void;
 }) {
   const liveEntries = useMemo(() => {
     if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
@@ -379,6 +382,20 @@ function DetailPanel({
             <div className="text-[10px] text-outline mono">{distanceKm} km</div>
           </div>
         </div>
+        
+        {/* Save Report Action */}
+        {onSave && (
+          <div className="mb-3">
+            <button
+              onClick={onSave}
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+              Save to My Plans
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-1.5">
           <MetricChip label="HOURS" value={`${durationH}h`} />
           <MetricChip label="RISK IDX" value={riskPct} />
@@ -598,12 +615,15 @@ export default function RailwayDashboard() {
     resetSearch,
     setLiveMapMode,
     routeMetadata,
+    cargoType,
+    priority,
   } = useLogiFlowStore();
 
   const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
   const [routeGeometry, setRouteGeometry] = useState<[number, number][] | null>(null);
   const [routeStops, setRouteStops] = useState<RouteGeometryStop[]>([]);
   const [geometryLoading, setGeometryLoading] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
   const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
@@ -850,9 +870,30 @@ export default function RailwayDashboard() {
             ranked={activeOption}
             trainDelayDetail={trainDelayDetail}
             selectedTrainLive={selectedTrainLive as Record<string, unknown> | null}
+            onSave={() => setSaveModalOpen(true)}
           />
         </aside>
       </main>
+
+      {/* Save Report Modal */}
+      {activeRec || activeOption ? (
+        <SaveReportModal
+          isOpen={saveModalOpen}
+          onClose={() => setSaveModalOpen(false)}
+          prefill={{
+            source,
+            destination,
+            stops: activeSegments.slice(0, -1).map(s => s.to_name || s.to),
+            mode: 'rail',
+            cargoType,
+            optimizationInput: { priority },
+            optimizationResult: (activeRec || activeOption) as unknown as Record<string, unknown>,
+            estimatedCost: activeRec?.parcel_cost_inr ?? activeOption?.parcel_cost_inr,
+            estimatedTime: activeRec?.duration_hours ?? activeOption?.effective_hours,
+            riskScore: activeRec?.risk_score ?? activeOption?.risk_score,
+          }}
+        />
+      ) : null}
     </div>
   );
 }
