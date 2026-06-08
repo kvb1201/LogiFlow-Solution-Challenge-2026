@@ -1,194 +1,179 @@
-# Route Intelligence V3
+# Shipment Tracking Consistency Refactor
 
-## Phase 1 — Geometry-Based Checkpoints
+## Architecture
 
-### Architecture
+### Immutable vs Mutable vs Derived
 
-The route intelligence pipeline now has two paths:
+| Field | State | Where stored |
+|---|---|---|
+| `source` | Immutable | `ShipmentReport.source` |
+| `destination` | Immutable | `ShipmentReport.destination` |
+| `route_intelligence.route_cities` | Immutable | `optimization_result.route_intelligence` |
+| `route_intelligence.checkpoints` | Immutable | `optimization_result.route_intelligence` |
+| `route_geometry` | Immutable | `optimization_result.best.geometry` |
+| `current_location` | **Only mutable state** | `optimization_result.current_location` |
+| `progress_percentage` | Derived | Never stored |
+| `completed_cities` | Derived | Never stored |
+| `remaining_cities` | Derived | Never stored |
+| `remaining_distance_km` | Derived | Never stored |
+| `remaining_eta_minutes` | Derived | Never stored |
+| `shipment_health` | Derived | Never stored |
+| `recommendation` | Derived | Never stored |
 
-```
-Route Geometry (present)
-  ↓
-Distance-Based Sampling
-  ↓
-Nominatim Reverse Geocode
-  ↓
-Place-Type Filtering
-  ↓
-RouteCheckpoint objects (name, place_type, distance_from_start, lat, lng, source)
-  ↓
-Sort by distance_from_start
-  ↓
-Deduplicate by normalised name
-  ↓
-Inject source/destination endpoints
-  ↓
-route_intelligence stored
+---
 
-Route Geometry (absent or < 3 checkpoints)
-  ↓
-Corridor Table Fallback
-  ↓
-Same RouteCheckpoint structure
-```
+## Requirement 1 — Route Corridor is Immutable
 
-### Sampling Intervals
+The `update-location` endpoint previously trimmed `route_intelligence.route_cities` and mutated `report.stops`. Both are removed.
 
-| Route Length | Interval |
-|---|---|
-| < 100 km | 10 km |
-| 100–300 km | 15 km |
-| 300–800 km | 25 km |
-| 800+ km | 40 km |
+The endpoint now writes only `optimization_result.current_location`. Nothing else changes.
 
-Implemented in `_geometry_sampling_interval_km(total_km)`.
-
-### Place-Type Filtering
-
-`_extract_place_name()` accepts only: `city`, `town`, `municipality`, `village`, `hamlet`.
-
-Rejected OSM categories: `highway`, `industrial`, `suburb`, `locality`, `neighbourhood`.
-
-Road names, motorway junctions, and industrial zones produce empty strings and are skipped.
-
-### Checkpoint Object Structure
-
-```json
-{
-  "name": "Bharuch",
-  "place_type": "city",
-  "distance_from_start": 45.2,
-  "latitude": 21.7064,
-  "longitude": 72.9974,
-  "source": "geometry"
-}
-```
-
-For corridor fallback: `"source": "corridor"`. For declared waypoints: `"source": "waypoint"`.
-
-### Corridor Table as Fallback
-
-Corridors are invoked when:
-- No geometry is available in `optimization_result`
-- Geometry produces fewer than 3 checkpoints
-
-This makes them a safety net for air/rail/water routes that have no road polyline.
-
-### Route City Generation
-
-`route_cities` is a backward-compatible flat list of names derived from the checkpoint objects after deduplication. Used for all downstream display and corridor detection.
-
-### Estimated Location (Phase 2 from previous spec)
-
-`_estimate_city_from_progress()` now uses `distance_from_start` from rich checkpoint objects when available:
-
+Before (broken):
 ```python
-target_km = (progress_pct / 100) * total_km
-best_cp = min(checkpoints, key=lambda c: abs(c["distance_from_start"] - target_km))
-return best_cp["name"]
+# Was trimming route_cities — caused backtracking bug
+route_intelligence["route_cities"] = full_rc[split_idx:]
+route_intelligence["completed_cities"] = full_rc[:split_idx]
+report.stops = remaining_stops  # was being trimmed
 ```
 
-This is more accurate than array-index mapping for routes with uneven checkpoint spacing.
-
-### Corridor Detection Enhancement
-
-`detect_corridor_status()` now has a third step for geometry-sourced checkpoints: coordinate proximity check. If a city is within 15 km of a checkpoint → `ON_ROUTE`, within 40 km → `NEAR_ROUTE`. This handles cities not present by name in the checkpoint list but physically adjacent to the route.
-
----
-
-## Phase 2 — Deterministic Health Scoring Engine
-
-### Inputs
-
-| Input | Source |
-|---|---|
-| `corridor_status` | Route corridor detection |
-| `overdue_minutes` | `now - expected_end_time` |
-| `original_remaining_minutes` | `expected_end_time - now` |
-| `updated_eta_minutes` | Remaining journey pipeline |
-| `base_risk` | `report.risk_score` |
-| `updated_risk` | Remaining journey pipeline |
-| `pipeline_metrics` | `remaining_eval.pipeline_result.best` |
-
-### Scoring Weights
-
-| Component | Weight | Calculation |
-|---|---|---|
-| Route Adherence | 40 pts | ON_ROUTE=40, NEAR_ROUTE=24, OFF_ROUTE=4 |
-| ETA Impact | 25 pts | Linear decay on eta_gap/original_remaining |
-| Traffic Impact | 5 pts | From `traffic_factor` or `traffic_level` in pipeline |
-| Weather Impact | 5 pts | From `weather_factor` or `weather_level` in pipeline |
-| Risk Impact | 25 pts | `25 × (1 - effective_risk)` |
-
-**Total = 100 pts**
-
-### Determinism Guarantee
-
-Same inputs → same output, always. No random numbers, no time-sensitive branching within the scoring function itself. `compute_health_score()` is a pure function of its arguments.
-
-### Confidence Score (0–100)
-
-Reflects how much of the score was backed by real pipeline data vs estimation:
-
-| Data available | Points |
-|---|---|
-| Base (corridor + progress always present) | 50 |
-| `updated_eta_minutes` from pipeline | +15 |
-| `updated_risk` from pipeline | +10 |
-| Traffic data | +12 |
-| Weather data | +13 |
-
-### Output
-
-```json
-{
-  "health_score": 96,
-  "health_level": "healthy",
-  "confidence": 75,
-  "component_scores": {
-    "adherence": 40.0,
-    "eta": 24.2,
-    "traffic": 5.0,
-    "weather": 5.0,
-    "risk": 22.0
-  },
-  "inputs": { ... }
-}
+After (correct):
+```python
+existing_result["current_location"] = current_location
+existing_result["current_location_updated_at"] = now.isoformat()
+# Nothing else written — route_cities, stops, checkpoints untouched
 ```
 
 ---
 
-## Phase 3 — Smart Reoptimization Recommendation
+## Requirement 2 — Only `current_location` is Mutable
 
-### Thresholds
+`ShipmentLocationUpdateRequest` accepts only `{ current_location: str }`. No metric fields.
 
-| Score | Level | Action |
-|---|---|---|
-| 80–100 | Healthy | `continue` |
-| 60–79 | Moderate | `monitor` |
-| 40–59 | Suggest | `suggest_reoptimization` |
-| 0–39 | At Risk | `strongly_recommend_reoptimization` |
+The backend records the location and returns the updated report. All derived values are computed on the next call to `GET /route-health`.
 
-### Improvement Gate
+---
 
-Even when the score indicates reoptimization, the system checks whether the improvement meets thresholds before issuing the recommendation. If improvement is below threshold, the action is downgraded to `monitor`.
+## Dynamic Progress Calculation (Requirement 3)
 
-Thresholds: ETA improvement > 15 min OR risk reduction > 5% OR cost reduction > 5%.
+### `derive_progress_and_eta(current_location, route_cities, mode, original_estimated_time_hours)`
 
-### Output
-
-```json
-{
-  "action": "suggest_reoptimization",
-  "label": "Reoptimization suggested",
-  "suggest_reoptimization": true,
-  "improvement_meets_threshold": true,
-  "improvement_reasons": ["ETA improves by 30m", "Risk reduces by 33%"],
-  "health_score": 50
-}
+**Formula:**
+```
+covered_km     = project(current_location) onto route polyline
+progress_pct   = (covered_km / total_route_km) × 100
+remaining_km   = total_route_km - covered_km
 ```
 
-Returned in `evaluate_route_health()` as `"recommendation"` key. Never triggers automatic reoptimization.
+**Projection algorithm:**
+For each consecutive segment in `route_cities`:
+1. Compute the nearest-point on the segment to `current_location` using vector projection (dot product, clamped to `[0,1]`)
+2. Compute perpendicular distance from city to that projected point
+3. Take the segment with minimum perpendicular distance
+4. `covered_km = cumulative_up_to_segment_start + t × segment_length`
+
+This handles any city — both cities explicitly listed in `route_cities` and intermediate corridor cities like Karjan (between Bharuch and Vadodara).
+
+**Validated results (Surat → Vadodara corridor):**
+
+| City | Progress | ETA |
+|---|---|---|
+| Surat | 0% | ~240m |
+| Ankleshwar | 68.4% | 87m |
+| Bharuch | 72.6% | 76m |
+| Karjan | 88.2% | 33m |
+| Vadodara | 100% | 0m |
+
+---
+
+## Dynamic Remaining ETA (Requirement 4)
+
+**Formula:**
+```
+remaining_eta = remaining_km / speed_kmh × 60  (geometry path)
+             OR original_time × (remaining_km / total_km)  (time_ratio fallback)
+```
+
+**Speed model:**
+| Mode | Speed |
+|---|---|
+| road | 55 km/h |
+| rail | 80 km/h |
+| air | 700 km/h |
+| water | 25 km/h |
+
+The pipeline ETA (`updated_eta_minutes` from `evaluate_remaining_journey`) takes precedence over the speed-model ETA when available.
+
+The response field `progress_derived_from` indicates which method was used: `"geometry"`, `"time_ratio"`, or `"unavailable"`.
+
+---
+
+## Dynamic Corridor Rendering (Requirement 5)
+
+### `split_route_at_location(route_cities, current_location)`
+
+Computes `(completed_cities, remaining_cities)` at query time. Never persisted.
+
+Algorithm:
+1. Exact name match (case-insensitive)
+2. Coordinate proximity: if current city is within 30 km of a route checkpoint, treat as that checkpoint
+
+**Example: Bharuch selected on Surat → Vadodara**
+```
+route_cities:  [Surat, kosamba, ankleshwar, bharuch, karjan, Vadodara]
+current:       bharuch
+
+completed:     [Surat, kosamba, ankleshwar]
+remaining:     [karjan, Vadodara]
+```
+
+**Example: After backtrack to Ankleshwar**
+```
+route_cities:  [Surat, kosamba, ankleshwar, bharuch, karjan, Vadodara]  ← UNCHANGED
+current:       ankleshwar
+
+completed:     [Surat, kosamba]
+remaining:     [bharuch, karjan, Vadodara]
+```
+
+The route_cities list is the same in both calls. No mutation required or performed.
+
+---
+
+## Backtracking Support (Requirement 6)
+
+Because `route_cities` is never trimmed, selecting any city in the route — including previously "passed" cities — works correctly.
+
+The old implementation trimmed `route_cities` to `[current_location:]` on each update. This meant that after reaching Karjan, the list became `[karjan, Vadodara]` — Bharuch was no longer selectable without a page reload.
+
+Now: `route_cities` always contains the full route from source to destination. `split_route_at_location` recomputes the completed/remaining split every time from scratch.
+
+---
+
+## Route Health from Current Location (Requirement 7)
+
+`evaluate_route_health` priority order:
+
+1. `actual_location_name` query param (fresh user input — ephemeral check)
+2. `optimization_result.current_location` (confirmed stored location)
+3. Progress-based estimate (only when no confirmed location exists)
+
+When a confirmed location exists, progress estimation is skipped entirely. The location is used directly as the driver city for all derived computations.
+
+---
+
+## UI: Progress/Distance/ETA display (Requirement 8)
+
+`RouteHealthCard.tsx` progress metrics panel now shows:
+
+| Metric | Source |
+|---|---|
+| Progress | `routeHealth.progress_percentage` (geometry-derived) |
+| Remaining | `routeHealth.remaining_distance_km` km (+ `total_route_km` as sub-label) |
+| Remaining ETA | `routeHealth.remaining_eta_minutes` (geometry or pipeline) |
+
+Sub-labels show `"distance-based"` when `progress_derived_from === "geometry"`.
+
+The corridor display uses `completed_cities`/`remaining_cities` from the health response — recomputed on every Evaluate.
 
 ---
 
@@ -196,46 +181,31 @@ Returned in `evaluate_route_health()` as `"recommendation"` key. Never triggers 
 
 | File | Change |
 |---|---|
-| `backend/app/services/trip_progress.py` | Complete rewrite — geometry pipeline, deterministic health engine, threshold recommendations |
-| `frontend/src/services/plannerApi.ts` | `RouteHealthResponse` extended with `health_confidence`, `health_component_scores`, `recommendation` |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | `ACTION_LABELS` extended for new action strings, recommended action uses `recommendation.label`, confidence/components displayed |
+| `backend/app/routes/planner_routes.py` | `update-location` endpoint: removed all route mutation, now only writes `current_location` |
+| `backend/app/services/trip_progress.py` | Added `derive_progress_and_eta`, `split_route_at_location`, `_cumulative_distances`, `_distance_along_route`; rewrote `evaluate_route_health` to use dynamic derivation |
+| `frontend/src/services/plannerApi.ts` | `RouteHealthResponse` extended with `remaining_distance_km`, `remaining_eta_minutes`, `covered_distance_km`, `total_route_km`, `progress_derived_from` |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Progress metrics panel uses distance/ETA fields; removed "route will be trimmed" copy |
 
 ---
 
 ## Validation Results
 
-| Check | Result |
-|---|---|
-| `npx tsc --noEmit` | ✅ 0 errors |
-| `npm run build` | ✅ 16/16 pages |
-| Backend `py_compile` | ✅ All files OK |
-| Sampling interval < 100 km → 10 km | ✅ |
-| Sampling interval 100–300 km → 15 km | ✅ |
-| Sampling interval 300–800 km → 25 km | ✅ |
-| Sampling interval 800+ km → 40 km | ✅ |
-| Corridor fallback activated when no geometry | ✅ |
-| Corridor checkpoints have `name`, `distance_from_start`, `place_type` | ✅ |
-| Route ordering preserved (source first, dest last) | ✅ |
-| Determinism (3 identical calls → identical scores) | ✅ |
-| Confidence score present in output | ✅ |
-| Component breakdown present | ✅ |
-| Traffic factor lowers score | ✅ |
-| Phase 3 score=95 → continue | ✅ |
-| Phase 3 score=70 → monitor | ✅ |
-| Phase 3 score=50 → suggest_reoptimization | ✅ |
-| Phase 3 score=20 → strongly_recommend | ✅ |
-| Improvement below threshold → downgraded to monitor | ✅ |
-| Clear improvement → reasons listed | ✅ |
-| Existing shipment update flow intact | ✅ |
-
----
-
-## Known Limitations
-
-1. **Geometry path requires Nominatim access** — reverse geocoding requires an outbound HTTP connection to `nominatim.openstreetmap.org`. On air/rail/water routes where geometry is absent, the corridor fallback is used automatically with no latency penalty.
-
-2. **Nominatim rate limit** — enforced at 1 request/second via a global lock. For a 500 km road route with 25 km sampling, that's ~20 geocoding calls taking ~20 seconds at route creation time. This is a one-time cost stored in `optimization_result`.
-
-3. **Traffic/weather in health score depends on pipeline** — the 5+5 pt traffic/weather components only score non-trivially when the remaining-journey pipeline returns `traffic_factor`/`weather_factor`. Air and water routes may not populate these, leaving those components at full 5 pts each (neutral, not a penalty).
-
-4. **OFF_ROUTE score floor** — an OFF_ROUTE shipment with no delay and low risk scores ~59 (just below `at_risk` threshold of 60). This is correct: being off-route is inherently a health concern regardless of other factors. The adherence component contributes only 4 pts (10% of 40) for OFF_ROUTE.
+| Scenario | Expected | Result |
+|---|---|---|
+| Bharuch → Ankleshwar: progress decreases | ✓ 72.6% → 68.4% | PASS |
+| Bharuch → Ankleshwar: ETA increases | ✓ 76m → 87m | PASS |
+| Bharuch → Ankleshwar: remaining route grows | ✓ 2 → 3 cities | PASS |
+| Backtrack Karjan → Bharuch: progress decreases | ✓ 88.2% → 72.6% | PASS |
+| Backtrack Karjan → Bharuch: ETA increases | ✓ 33m → 76m | PASS |
+| Backtrack Karjan → Bharuch: route NOT corrupted | ✓ route unchanged | PASS |
+| Forward Bharuch → Karjan: progress increases | ✓ 72.6% → 88.2% | PASS |
+| Forward Bharuch → Karjan: ETA decreases | ✓ 76m → 33m | PASS |
+| Forward Bharuch → Karjan: remaining route shrinks | ✓ 2 → 1 city | PASS |
+| 5 operations: route_cities unchanged | ✓ immutable | PASS |
+| Split at Bharuch: completed=[Surat,kosamba,ankleshwar] | ✓ | PASS |
+| Split at Ankleshwar: completed=[Surat,kosamba] | ✓ | PASS |
+| Split at Surat (source): completed=[] | ✓ | PASS |
+| Split at Vadodara (dest): remaining=[] | ✓ | PASS |
+| `npx tsc --noEmit` | 0 errors | PASS |
+| `npm run build` | 16/16 pages | PASS |
+| Backend `py_compile` | 0 errors | PASS |

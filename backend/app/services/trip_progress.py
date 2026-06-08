@@ -499,6 +499,214 @@ def enrich_optimization_result_with_intelligence(
 
 
 # ---------------------------------------------------------------------------
+# Requirements 3 & 4 — Dynamic progress and ETA derived from route geometry
+# ---------------------------------------------------------------------------
+
+# Route speed model — used when no pipeline result is available
+_MODE_SPEED: dict[str, float] = {
+    "road":   55.0,
+    "air":   700.0,
+    "rail":   80.0,
+    "water":  25.0,
+    "hybrid": 55.0,
+}
+
+
+def _cumulative_distances(cities: list[str]) -> list[float]:
+    """
+    Cumulative haversine distances [0.0, d01, d01+d12, …] along a city list.
+    Unknown coordinates contribute 0 km to that segment.
+    """
+    cum: list[float] = [0.0]
+    for i in range(1, len(cities)):
+        ca = get_coords(cities[i - 1])
+        cb = get_coords(cities[i])
+        seg = _haversine_km(ca, cb) if (ca and cb) else 0.0
+        cum.append(cum[-1] + seg)
+    return cum
+
+
+def _distance_along_route(
+    city: str,
+    route_cities: list[str],
+    cumulative: list[float],
+) -> float | None:
+    """
+    Return the cumulative km from route start to `city`.
+
+    For cities explicitly in route_cities: exact lookup.
+    For intermediate cities not in the list: coordinate projection
+    onto the nearest route segment.
+    Returns None only when coordinates are completely unavailable.
+    """
+    city_lower = city.strip().lower()
+
+    # Exact name match
+    for i, rc in enumerate(route_cities):
+        if rc.strip().lower() == city_lower:
+            return cumulative[i]
+
+    # Coordinate projection
+    city_coords = get_coords(city)
+    if not city_coords:
+        return None
+
+    c_lat, c_lng = city_coords
+    rc_coords = [get_coords(rc) for rc in route_cities]
+    best_dist_to_route = float("inf")
+    best_d_from_start = 0.0
+
+    for i in range(len(route_cities) - 1):
+        a = rc_coords[i]
+        b = rc_coords[i + 1]
+        if not a or not b:
+            continue
+        ax, ay = a[1], a[0]
+        bx, by = b[1], b[0]
+        cx, cy = c_lng, c_lat
+        dx, dy = bx - ax, by - ay
+        seg_sq = dx * dx + dy * dy
+        t = 0.0 if seg_sq < 1e-12 else max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / seg_sq))
+        proj_lat = a[0] + t * (b[0] - a[0])
+        proj_lng = a[1] + t * (b[1] - a[1])
+        d_to_route = _haversine_km((c_lat, c_lng), (proj_lat, proj_lng))
+        if d_to_route < best_dist_to_route:
+            best_dist_to_route = d_to_route
+            seg_len = cumulative[i + 1] - cumulative[i]
+            best_d_from_start = cumulative[i] + t * seg_len
+
+    return best_d_from_start
+
+
+def derive_progress_and_eta(
+    current_location: str,
+    route_cities: list[str],
+    mode: str = "road",
+    original_estimated_time_hours: float | None = None,
+) -> dict[str, Any]:
+    """
+    Requirement 3 & 4: compute progress_percentage, remaining_distance_km,
+    and remaining_eta_minutes purely from route geometry and current_location.
+
+    Never reads stored progress. Never uses checkpoint indices.
+
+    Returns:
+        progress_percentage     float  0–100
+        covered_distance_km     float
+        remaining_distance_km   float
+        total_route_km          float
+        remaining_eta_minutes   int
+        derived_from            "geometry" | "time_ratio" | "unavailable"
+    """
+    if not route_cities or len(route_cities) < 2:
+        eta = int(round((original_estimated_time_hours or 0) * 60))
+        return {
+            "progress_percentage": 0.0,
+            "covered_distance_km": 0.0,
+            "remaining_distance_km": 0.0,
+            "total_route_km": 0.0,
+            "remaining_eta_minutes": eta,
+            "derived_from": "unavailable",
+        }
+
+    cum = _cumulative_distances(route_cities)
+    total_km = cum[-1]
+
+    if total_km < 0.1:
+        eta = int(round((original_estimated_time_hours or 0) * 60))
+        return {
+            "progress_percentage": 0.0,
+            "covered_distance_km": 0.0,
+            "remaining_distance_km": 0.0,
+            "total_route_km": 0.0,
+            "remaining_eta_minutes": eta,
+            "derived_from": "unavailable",
+        }
+
+    covered_km = _distance_along_route(current_location, route_cities, cum)
+
+    if covered_km is None:
+        eta = int(round((original_estimated_time_hours or 0) * 60))
+        return {
+            "progress_percentage": 0.0,
+            "covered_distance_km": 0.0,
+            "remaining_distance_km": round(total_km, 1),
+            "total_route_km": round(total_km, 1),
+            "remaining_eta_minutes": eta,
+            "derived_from": "unavailable",
+        }
+
+    covered_km = max(0.0, min(total_km, covered_km))
+    remaining_km = total_km - covered_km
+    progress_pct = round((covered_km / total_km) * 100, 1)
+
+    speed_kmh = _MODE_SPEED.get((mode or "road").lower(), 55.0)
+
+    if speed_kmh > 0 and total_km > 1.0:
+        remaining_eta = int(round((remaining_km / speed_kmh) * 60))
+        derived_from = "geometry"
+    elif original_estimated_time_hours and total_km > 0:
+        remaining_ratio = remaining_km / total_km
+        remaining_eta = int(round(original_estimated_time_hours * remaining_ratio * 60))
+        derived_from = "time_ratio"
+    else:
+        remaining_eta = 0
+        derived_from = "unavailable"
+
+    return {
+        "progress_percentage": progress_pct,
+        "covered_distance_km": round(covered_km, 1),
+        "remaining_distance_km": round(remaining_km, 1),
+        "total_route_km": round(total_km, 1),
+        "remaining_eta_minutes": remaining_eta,
+        "derived_from": derived_from,
+    }
+
+
+def split_route_at_location(
+    route_cities: list[str],
+    current_location: str,
+) -> tuple[list[str], list[str]]:
+    """
+    Requirements 5 & 6: split the immutable route_cities into
+    (completed_cities, remaining_cities) at current_location.
+
+    Works for any city including backtracking — route_cities is never
+    mutated, the split is recomputed every call.
+
+    Returns (before_current, after_current).  current_location itself
+    is the "current" node and appears in neither list.
+    """
+    if not route_cities:
+        return [], []
+
+    current_norm = current_location.strip().lower()
+
+    # Exact name match
+    for i, rc in enumerate(route_cities):
+        if rc.strip().lower() == current_norm:
+            return route_cities[:i], route_cities[i + 1:]
+
+    # Coordinate proximity — handles intermediate corridor cities
+    city_coords = get_coords(current_location)
+    if city_coords:
+        best_idx = 0
+        best_d = float("inf")
+        for i, rc in enumerate(route_cities):
+            rc_coords = get_coords(rc)
+            if rc_coords:
+                d = _haversine_km(city_coords, rc_coords)
+                if d < best_d:
+                    best_d = d
+                    best_idx = i
+        if best_d <= 30:  # within 30 km — treat as that checkpoint
+            return route_cities[:best_idx], route_cities[best_idx + 1:]
+
+    # Not locatable — treat as before start
+    return [], list(route_cities)
+
+
+# ---------------------------------------------------------------------------
 # Estimated location from progress %
 # ---------------------------------------------------------------------------
 
@@ -997,18 +1205,26 @@ def evaluate_route_health(
     actual_location_name: Optional[str] = None,
     current_time: Optional[datetime] = None,
 ) -> dict[str, Any]:
+    """
+    Master health evaluation.
+
+    Architecture:
+      - route_intelligence.route_cities is read-only (immutable)
+      - current_location is the only mutable state (stored in opt_result)
+      - progress, ETA, split corridor are ALL derived at query time
+      - backtracking works automatically — any city in route_cities is valid
+    """
     now = current_time or datetime.utcnow()
 
     opt_result = report.optimization_result or {}
+    # Route intelligence is IMMUTABLE — always read the original
     route_intelligence: Optional[dict[str, Any]] = opt_result.get("route_intelligence")
     confirmed_location: str = (opt_result.get("current_location") or "").strip()
 
-    # Driver city priority: explicit param > confirmed stored > nothing
+    # Driver city priority: explicit param → confirmed stored → nothing
     driver_city: str = (actual_location_name or "").strip() or confirmed_location
 
-    progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
-
-    # ── Estimated location ────────────────────────────────────────────
+    # ── Requirement 7: use driver_city directly, skip estimated when known ─
     if driver_city:
         coords = get_coords(driver_city)
         estimated = LocationEstimate(
@@ -1020,9 +1236,40 @@ def evaluate_route_health(
             confidence="confirmed" if driver_city == confirmed_location else "medium",
         )
     else:
-        estimated = estimate_trip_location(report, progress.progress_percentage)
+        # Fallback: no current location known → estimate from time-based progress
+        time_progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
+        estimated = estimate_trip_location(report, time_progress.progress_percentage)
 
-    # ── Corridor status ───────────────────────────────────────────────
+    # ── Requirement 3 & 4: dynamic progress/ETA from route geometry ───
+    # Use the FULL immutable route_cities — never a trimmed copy
+    full_route_cities: list[str] = (
+        route_intelligence.get("route_cities") if route_intelligence else None
+    ) or []
+
+    effective_location = driver_city or estimated.label
+    dynamic = derive_progress_and_eta(
+        current_location=effective_location,
+        route_cities=full_route_cities,
+        mode=report.mode or "road",
+        original_estimated_time_hours=report.estimated_time,
+    )
+
+    progress_pct = dynamic["progress_percentage"]
+    remaining_km = dynamic["remaining_distance_km"]
+    remaining_eta_minutes = dynamic["remaining_eta_minutes"]
+
+    # Also compute legacy time-based progress for backward compat fields
+    time_prog = calculate_trip_progress(report.started_at, report.expected_end_time, now)
+
+    # ── Requirement 5 & 6: split corridor — derived, not persisted ────
+    completed_cities: list[str] = []
+    remaining_cities: list[str] = []
+    if driver_city and full_route_cities:
+        completed_cities, remaining_cities = split_route_at_location(full_route_cities, driver_city)
+    elif full_route_cities:
+        remaining_cities = full_route_cities[:]
+
+    # ── Corridor detection ────────────────────────────────────────────
     actual_location = None
     deviation_km: Optional[float] = None
     corridor_status = "ON_ROUTE"
@@ -1044,25 +1291,35 @@ def evaluate_route_health(
             corridor_matched_city = res["matched_city"]
         else:
             if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-                deviation_km = round(_haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1)
+                deviation_km = round(
+                    _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
+                )
                 if deviation_km >= 150:
                     corridor_status = "OFF_ROUTE"
                 elif deviation_km >= 50:
                     corridor_status = "NEAR_ROUTE"
 
         if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-            deviation_km = round(_haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1)
+            deviation_km = round(
+                _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
+            )
 
-    # ── Remaining journey ─────────────────────────────────────────────
+    # ── Remaining journey evaluation (pipeline) ───────────────────────
     current_for_eval = driver_city or estimated.label
     remaining_eval: dict[str, Any] = {}
-    if current_for_eval and progress.progress_percentage < 100:
+    if current_for_eval and progress_pct < 100:
         try:
-            remaining_eval = evaluate_remaining_journey(report, current_for_eval, progress.progress_percentage)
+            remaining_eval = evaluate_remaining_journey(
+                report, current_for_eval, progress_pct
+            )
         except Exception:
             remaining_eval = {}
 
-    # ── Overdue / time ────────────────────────────────────────────────
+    # Use pipeline ETA when available (more accurate than speed model)
+    pipeline_eta = remaining_eval.get("updated_eta_minutes")
+    final_eta_minutes = pipeline_eta if pipeline_eta is not None else remaining_eta_minutes
+
+    # ── Overdue / time fields ─────────────────────────────────────────
     overdue_minutes = 0
     if report.expected_end_time and now > report.expected_end_time:
         overdue_minutes = int((now - report.expected_end_time).total_seconds() // 60)
@@ -1077,31 +1334,29 @@ def evaluate_route_health(
 
     base_risk = min(1.0, max(0.0, float(report.risk_score or 0.15)))
     updated_risk = remaining_eval.get("updated_risk")
-    updated_eta = remaining_eval.get("updated_eta_minutes")
 
-    # Extract pipeline metrics for traffic/weather signals
+    # Pipeline metrics for traffic/weather signals
     pipeline_metrics: Optional[dict[str, Any]] = None
     if remaining_eval.get("pipeline_result"):
         best_route = remaining_eval["pipeline_result"].get("best") or {}
         if best_route:
             pipeline_metrics = best_route
 
-    # ── Phase 2 — health score ────────────────────────────────────────
+    # ── Health scoring ────────────────────────────────────────────────
     score_result = compute_health_score(
         corridor_status=corridor_status,
         overdue_minutes=overdue_minutes,
         original_remaining_minutes=original_remaining,
-        updated_eta_minutes=updated_eta,
+        updated_eta_minutes=final_eta_minutes,
         base_risk=base_risk,
         updated_risk=updated_risk,
         pipeline_metrics=pipeline_metrics,
     )
-
     health_score = score_result["health_score"]
     health_level = score_result["health_level"]
     confidence = score_result["confidence"]
 
-    # ── Phase 3 — recommendation ──────────────────────────────────────
+    # ── Recommendation ────────────────────────────────────────────────
     current_metrics = {
         "cost": report.estimated_cost,
         "time": report.estimated_time,
@@ -1109,12 +1364,15 @@ def evaluate_route_health(
     }
     updated_metrics = remaining_eval.get("metrics") or {}
     recommendation = get_reoptimization_recommendation(health_score, current_metrics, updated_metrics)
-
     recommended_action = recommendation["action"]
     reopt_recommended = recommendation["suggest_reoptimization"]
-    reopt_reason = "; ".join(recommendation["improvement_reasons"]) if recommendation["improvement_reasons"] else recommendation["label"]
+    reopt_reason = (
+        "; ".join(recommendation["improvement_reasons"])
+        if recommendation["improvement_reasons"]
+        else recommendation["label"]
+    )
 
-    # ── Legacy fields (backward compat) ──────────────────────────────
+    # ── Legacy compat fields ──────────────────────────────────────────
     if corridor_status == "OFF_ROUTE":
         deviation_level = "major"
     elif corridor_status == "NEAR_ROUTE":
@@ -1128,42 +1386,35 @@ def evaluate_route_health(
     elif deviation_level == "major":
         eta_variance_minutes += max(60, int(total_minutes * 0.15))
 
-    delay_risk = "high" if health_score < _THRESHOLD_SUGGEST else "medium" if health_score < _THRESHOLD_MONITOR else "low"
-
-    # ── Split corridor for display ────────────────────────────────────
-    full_route_cities: list[str] = (
-        route_intelligence.get("route_cities") if route_intelligence else None
-    ) or []
-    completed_cities: list[str] = []
-    remaining_cities: list[str] = []
-
-    if driver_city and full_route_cities:
-        driver_norm = driver_city.lower()
-        split_idx = next(
-            (i for i, c in enumerate(full_route_cities) if c.lower() == driver_norm), -1
-        )
-        if split_idx >= 0:
-            completed_cities = full_route_cities[:split_idx]
-            remaining_cities = full_route_cities[split_idx + 1:]
-        else:
-            remaining_cities = full_route_cities
+    delay_risk = (
+        "high" if health_score < _THRESHOLD_SUGGEST
+        else "medium" if health_score < _THRESHOLD_MONITOR
+        else "low"
+    )
 
     return {
         "status": report.status,
-        # Phase 2 — rich health output
+        # Health
         "health_level": health_level,
         "shipment_health_score": health_score,
         "health_confidence": confidence,
         "health_component_scores": score_result["component_scores"],
-        # Phase 3 — recommendation
+        # Recommendation
         "recommended_action": recommended_action,
         "reoptimization_recommended": reopt_recommended,
         "reoptimization_reason": reopt_reason,
         "recommendation": recommendation,
-        # Progress
-        "progress_percentage": progress.progress_percentage,
-        "elapsed_minutes": progress.elapsed_minutes,
-        "remaining_minutes": progress.remaining_minutes,
+        # Requirement 3: dynamic progress (geometry-derived, never stored)
+        "progress_percentage": progress_pct,
+        "covered_distance_km": dynamic["covered_distance_km"],
+        "remaining_distance_km": remaining_km,
+        "total_route_km": dynamic["total_route_km"],
+        "progress_derived_from": dynamic["derived_from"],
+        # Requirement 4: dynamic remaining ETA
+        "remaining_eta_minutes": final_eta_minutes,
+        # Legacy time-based progress fields (for backward compat)
+        "elapsed_minutes": time_prog.elapsed_minutes,
+        "remaining_minutes": time_prog.remaining_minutes,
         "eta_variance_minutes": eta_variance_minutes,
         "delay_risk": delay_risk,
         # Locations
@@ -1181,12 +1432,12 @@ def evaluate_route_health(
         "deviation_km": deviation_km,
         "corridor_status": corridor_status,
         "corridor_matched_city": corridor_matched_city,
-        # Corridor display
+        # Requirement 5 & 6: full immutable route + derived split
         "route_cities": full_route_cities or None,
         "completed_cities": completed_cities,
         "remaining_cities": remaining_cities,
-        # Remaining journey metrics
-        "updated_eta_minutes": updated_eta,
+        # Pipeline-derived updated metrics
+        "updated_eta_minutes": pipeline_eta,
         "updated_cost": remaining_eval.get("updated_cost"),
         "updated_risk": updated_risk,
         "checked_at": now.isoformat(),

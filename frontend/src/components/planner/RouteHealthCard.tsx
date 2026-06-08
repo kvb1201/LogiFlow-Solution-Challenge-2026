@@ -578,18 +578,36 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       {/* ── Progress metrics ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {[
-          { label: 'Progress', value: `${routeHealth.progress_percentage}%` },
-          { label: 'Remaining', value: `${routeHealth.remaining_minutes}m` },
           {
-            label: 'Updated ETA',
-            value: routeHealth.updated_eta_minutes != null
+            label: 'Progress',
+            value: `${routeHealth.progress_percentage}%`,
+            sub: routeHealth.covered_distance_km
+              ? `${routeHealth.covered_distance_km} km covered`
+              : undefined,
+          },
+          {
+            label: 'Remaining',
+            value: routeHealth.remaining_distance_km
+              ? `${routeHealth.remaining_distance_km} km`
+              : `${routeHealth.remaining_minutes}m`,
+            sub: routeHealth.remaining_distance_km && routeHealth.total_route_km
+              ? `of ${routeHealth.total_route_km} km total`
+              : undefined,
+          },
+          {
+            label: 'Remaining ETA',
+            value: routeHealth.remaining_eta_minutes != null
+              ? `${routeHealth.remaining_eta_minutes}m`
+              : routeHealth.updated_eta_minutes != null
               ? `${routeHealth.updated_eta_minutes}m`
               : `${routeHealth.eta_variance_minutes}m`,
+            sub: routeHealth.progress_derived_from === 'geometry' ? 'distance-based' : undefined,
           },
         ].map(m => (
           <div key={m.label} className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
             <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">{m.label}</div>
             <div className="text-sm font-bold text-foreground mono">{m.value}</div>
+            {m.sub && <div className="text-[9px] text-outline mt-0.5">{m.sub}</div>}
           </div>
         ))}
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
@@ -687,7 +705,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
             Confirming current location as{' '}
             <span className="font-semibold text-foreground capitalize">{activeLocation()}</span>.
-            Backend will recompute ETA, cost, and risk. The remaining route will be trimmed.
+            Backend will record this location. Progress, ETA, and corridor will update automatically.
           </p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {routeHealth.updated_eta_minutes != null && (
