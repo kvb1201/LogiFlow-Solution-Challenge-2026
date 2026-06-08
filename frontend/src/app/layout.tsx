@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 import NavBar from '@/components/NavBar';
 import { BackendWarmup } from '@/components/BackendWarmup';
@@ -38,6 +40,8 @@ export default function RootLayout({
           <AmbientBackdrop variant="subtle" className="opacity-60" />
           <div className="relative z-10 w-full pointer-events-auto">{children}</div>
         </main>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
