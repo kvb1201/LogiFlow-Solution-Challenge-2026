@@ -120,6 +120,8 @@ export interface RankedOption {
   segments: RouteSegment[];
   geometry?: [number, number][];
   data_source: string;
+  llm_explanation?: string;
+  selection_reason?: string;
 }
 
 export interface RouteSegment {

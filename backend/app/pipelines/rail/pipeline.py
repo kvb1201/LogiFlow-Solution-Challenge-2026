@@ -14,8 +14,21 @@ from app.pipelines.rail.tariff import calc_parcel_cost
 from app.pipelines.rail.engine import decide
 from app.pipelines.rail.config import CITY_TO_STATION, STATION_TO_CITY
 
-_ENABLE_LLM_EXPLANATION = os.getenv("RAIL_ENABLE_LLM_EXPLANATION", "false").lower() == "true"
-_LLM_EXPLANATION_TIMEOUT_S = int(os.getenv("RAIL_LLM_EXPLANATION_TIMEOUT_S", "4"))
+def _llm_explanation_enabled() -> bool:
+    explicit = (os.getenv("RAIL_ENABLE_LLM_EXPLANATION") or "").strip().lower()
+    if explicit in ("false", "0", "no"):
+        return False
+    if explicit in ("true", "1", "yes"):
+        return True
+    return bool(
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GROQ_API_KEY")
+        or os.getenv("GROQ_API_KEY_RAIL")
+    )
+
+
+_ENABLE_LLM_EXPLANATION = _llm_explanation_enabled()
+_LLM_EXPLANATION_TIMEOUT_S = int(os.getenv("RAIL_LLM_EXPLANATION_TIMEOUT_S", "6"))
 _OPTIMIZE_RESPONSE_BUDGET_S = float(os.getenv("RAIL_OPTIMIZE_RESPONSE_BUDGET_S", "20"))
 
 
@@ -236,7 +249,7 @@ class RailCargoOptimizer:
             print("🎯 Running decision engine...")
             results = decide(enriched, payload)
 
-            # ── Optional LLM explainability (kept off by default for API latency) ─
+            # ── LLM explainability (on when GEMINI/GROQ keys set; disable with RAIL_ENABLE_LLM_EXPLANATION=false) ─
             if _ENABLE_LLM_EXPLANATION:
                 try:
                     elapsed = time.monotonic() - started_at
@@ -278,6 +291,10 @@ class RailCargoOptimizer:
                         )
                         if exp:
                             rec["llm_explanation"] = exp
+                            top_opts = results.get("all_options") or []
+                            if top_opts and isinstance(top_opts[0], dict):
+                                if str(top_opts[0].get("train_number")) == str(rec.get("train_number")):
+                                    top_opts[0]["llm_explanation"] = exp
                 except Exception:
                     pass
 

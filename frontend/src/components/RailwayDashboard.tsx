@@ -305,14 +305,43 @@ function DetailPanel({
   ranked,
   trainDelayDetail,
   selectedTrainLive,
+  origin,
+  destination,
+  priority,
   onSave,
 }: {
   rec: Recommendation | null;
   ranked: RankedOption | null;
   trainDelayDetail: import('@/services/api').TrainDelayData | null;
   selectedTrainLive: Record<string, unknown> | null;
+  origin: string;
+  destination: string;
+  priority: string;
   onSave?: () => void;
 }) {
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+
+  const trainKey = rec?.train_number || ranked?.train_number || '';
+
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [trainKey, rec?.llm_explanation]);
+
+  async function handleExplain() {
+    const base = rec ?? ranked;
+    if (!base) return;
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'rail',
+      priority,
+      route_data: base,
+      context: { origin, destination },
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  }
   const liveEntries = useMemo(() => {
     if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
     const preferred = ['currentStationName', 'currentStation', 'nextStationName', 'nextStation', 'delayMinutes', 'delay', 'status', 'position', 'speed'];
@@ -366,7 +395,7 @@ function DetailPanel({
   const delaySrc = isRec ? delay?.delay_data_source : ranked!.delay_source;
   const runningDays = isRec ? rec!.running_days : ranked!.running_days;
   const distanceKm = isRec ? rec!.distance_km : ranked!.distance_km;
-  const llmExplanation = isRec ? rec!.llm_explanation : undefined;
+  const llmExplanation = (isRec ? rec!.llm_explanation : undefined) || dynamicExplanation || undefined;
 
   const riskColor =
     riskScore < 0.2 ? '#10b981' : riskScore < 0.4 ? '#f59e0b' : '#ef4444';
@@ -498,16 +527,16 @@ function DetailPanel({
       </section>
 
       {/* Explanation */}
-      {llmExplanation && (
-        <section>
-          <SectionHeader icon="lightbulb" title="Why this recommendation" />
-          <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3">
+      <section>
+        <SectionHeader icon="lightbulb" title="Why this recommendation" />
+        <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3 space-y-2">
+          {llmExplanation ? (
             <ul className="space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed">
               {llmExplanation
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean)
-                .slice(0, 5)
+                .slice(0, 6)
                 .map((line, i) => (
                   <li key={`${line}-${i}`} className="flex gap-2">
                     <span className="text-primary/70 shrink-0">•</span>
@@ -515,9 +544,23 @@ function DetailPanel({
                   </li>
                 ))}
             </ul>
-          </div>
-        </section>
-      )}
+          ) : (
+            <p className="text-[10px] text-on-surface-variant leading-relaxed">
+              Get an AI summary of cost, delay risk, and why this train fits your corridor.
+            </p>
+          )}
+          {!llmExplanation && (
+            <button
+              type="button"
+              onClick={() => void handleExplain()}
+              disabled={isLoadingExplanation}
+              className="text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 disabled:opacity-60"
+            >
+              {isLoadingExplanation ? 'Generating…' : 'Generate AI explanation'}
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Station delays */}
       {trainDelayDetail?.route && trainDelayDetail.route.length > 0 && (
@@ -878,6 +921,9 @@ export default function RailwayDashboard() {
             ranked={activeOption}
             trainDelayDetail={trainDelayDetail}
             selectedTrainLive={selectedTrainLive as Record<string, unknown> | null}
+            origin={source}
+            destination={destination}
+            priority={priority}
             onSave={() => setSaveModalOpen(true)}
           />
         </aside>

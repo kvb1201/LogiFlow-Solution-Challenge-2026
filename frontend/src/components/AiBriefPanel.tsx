@@ -31,6 +31,9 @@ function IntentChips({ parsed }: { parsed: ParsedIntent }) {
   if (parsed.cargo_type) chips.push(parsed.cargo_type);
   if (parsed.budget_max_inr != null) chips.push(`Budget ₹${Math.round(parsed.budget_max_inr)}`);
   if (parsed.deadline_hours != null) chips.push(`Deadline ${parsed.deadline_hours}h`);
+  if (parsed.source_engine && parsed.source_engine !== 'heuristic') {
+    chips.push(`via ${parsed.source_engine}`);
+  }
   if (!chips.length) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3">
@@ -157,8 +160,8 @@ export default function AiBriefPanel({
         <div>
           <h3 className="text-sm font-bold text-on-surface">{title}</h3>
           <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
-            Write freely — AI turns it into origin, destination, budget, deadlines, and mode
-            preferences. You can still use the form below the traditional way.
+            Write in English, Hindi, or Hinglish — AI turns it into origin, destination, weight,
+            and mode. Works best when GEMINI_API_KEY is set on the backend.
           </p>
         </div>
       </div>
