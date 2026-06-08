@@ -192,7 +192,7 @@ export default function NavBar() {
                 className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">New scenario</span>
+                <span className="hidden sm:inline">Smart Shipment Planner</span>
               </Link>
             </div>
           )}
