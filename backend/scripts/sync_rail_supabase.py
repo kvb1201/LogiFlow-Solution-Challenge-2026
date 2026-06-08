@@ -8,6 +8,10 @@ Usage (from backend/ with .env containing SUPABASE_URL + SUPABASE_KEY):
   python scripts/sync_rail_supabase.py --geometry --pairs 50
   python scripts/sync_rail_supabase.py --full --verbose --log-file logs/geometry_sync.log
 
+  # Parallel workers (disjoint origin-city shards; safe with skip_existing + upsert):
+  python scripts/sync_rail_supabase.py --full --shard 0 --shards 4 --log-file logs/geometry_sync_s0.log
+  python scripts/sync_rail_supabase.py --full --shard 1 --shards 4 --log-file logs/geometry_sync_s1.log
+
 Requires tables:
   - station_coordinates (station_code PK)
   - train_route_geometry (train_number, from_code, to_code PK)
@@ -237,10 +241,31 @@ def sync_geometry_trains(target: int = 100, log: SyncLogger | None = None) -> in
     return uploaded
 
 
+def _shard_origin_cities(
+    cities: list[str],
+    *,
+    shard: int,
+    shards: int,
+) -> list[str]:
+    """Split origin cities into disjoint shards for parallel --full runs."""
+    if shards < 1:
+        raise ValueError("shards must be >= 1")
+    if shard < 0 or shard >= shards:
+        raise ValueError(f"shard must be 0..{shards - 1}, got {shard}")
+    if shards == 1:
+        return cities
+    chunk = (len(cities) + shards - 1) // shards
+    start = shard * chunk
+    end = min(start + chunk, len(cities))
+    return cities[start:end]
+
+
 def sync_geometry_full(
     *,
     max_trains_per_pair: int = 20,
     skip_existing: bool = True,
+    shard: int = 0,
+    shards: int = 1,
     log: SyncLogger | None = None,
 ) -> int:
     """Upload geometry for every city-pair × all direct trains (all-India)."""
@@ -260,7 +285,8 @@ def sync_geometry_full(
     log.info("FULL GEOMETRY SYNC → Supabase train_route_geometry")
     log.info(
         f"Config: max_trains_per_pair={max_trains_per_pair}, "
-        f"skip_existing={skip_existing}, verbose={log.verbose}"
+        f"skip_existing={skip_existing}, shard={shard}/{shards}, "
+        f"verbose={log.verbose}"
     )
     if log.log_file:
         log.info(f"Text log: {log.log_file}")
@@ -272,10 +298,11 @@ def sync_geometry_full(
     load_data()
     log.info(f"Schedule loaded in {time.perf_counter() - t_load:.1f}s")
 
-    cities = sorted(
+    all_cities = sorted(
         c for c in CITY_TO_STATION.keys() if not c.isupper() and " JN" not in c.upper()
     )
-    total_pairs = len(cities) * (len(cities) - 1)
+    origin_cities = _shard_origin_cities(all_cities, shard=shard, shards=shards)
+    total_pairs = len(origin_cities) * (len(all_cities) - 1)
 
     log.info("Fetching existing geometry keys from Supabase...")
     t_keys = time.perf_counter()
@@ -284,7 +311,11 @@ def sync_geometry_full(
         f"Supabase cache: {len(existing)} existing legs "
         f"(fetched in {time.perf_counter() - t_keys:.1f}s)"
     )
-    log.info(f"City universe: {len(cities)} cities → {total_pairs} directed pairs to scan")
+    log.info(
+        f"City universe: {len(all_cities)} cities; "
+        f"this worker covers {len(origin_cities)} origins "
+        f"({origin_cities[0]} … {origin_cities[-1]}) → {total_pairs} directed pairs"
+    )
 
     uploaded = 0
     skipped = 0
@@ -296,8 +327,8 @@ def sync_geometry_full(
     by_source: dict[str, int] = {}
     pair_idx = 0
 
-    for src_city in cities:
-        for dst_city in cities:
+    for src_city in origin_cities:
+        for dst_city in all_cities:
             if src_city == dst_city:
                 continue
             pair_idx += 1
@@ -543,6 +574,18 @@ def main() -> None:
         default="",
         help="Append JSONL audit events (default: logs/geometry_sync_<ts>.jsonl with --full)",
     )
+    parser.add_argument(
+        "--shard",
+        type=int,
+        default=0,
+        help="Origin-city shard index for parallel --full (0-based, use with --shards)",
+    )
+    parser.add_argument(
+        "--shards",
+        type=int,
+        default=1,
+        help="Split origin cities into N disjoint shards for parallel --full workers",
+    )
     args = parser.parse_args()
 
     if not sb.is_configured():
@@ -553,9 +596,11 @@ def main() -> None:
     log_file = Path(args.log_file) if args.log_file else None
     jsonl_file = Path(args.jsonl) if args.jsonl else None
     if args.full and not log_file:
-        log_file = BACKEND / "logs" / f"geometry_sync_{stamp}.log"
+        suffix = f"_s{args.shard}" if args.shards > 1 else ""
+        log_file = BACKEND / "logs" / f"geometry_sync_{stamp}{suffix}.log"
     if args.full and not jsonl_file:
-        jsonl_file = BACKEND / "logs" / f"geometry_sync_{stamp}.jsonl"
+        suffix = f"_s{args.shard}" if args.shards > 1 else ""
+        jsonl_file = BACKEND / "logs" / f"geometry_sync_{stamp}{suffix}.jsonl"
 
     log = SyncLogger(
         verbose=args.verbose or args.full,
@@ -570,6 +615,8 @@ def main() -> None:
             sync_geometry_full(
                 max_trains_per_pair=args.max_trains,
                 skip_existing=not args.no_skip,
+                shard=args.shard,
+                shards=args.shards,
                 log=log,
             )
         elif args.trains:
