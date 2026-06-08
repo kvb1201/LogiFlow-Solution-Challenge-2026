@@ -25,6 +25,9 @@ jobs:
     timeout-minutes: 25
     # Only deploy for collaborator pushes. Owner pushes use Vercel Git deploy.
     if: github.event_name == 'workflow_dispatch' || github.actor != 'kvb1201'
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -81,23 +84,39 @@ jobs:
         run: npm install -g vercel@latest
 
       # Vercel project Root Directory is `frontend` — run CLI from repo root so paths are not doubled.
-      - name: Pull Vercel project settings
+      - name: Pull Vercel project settings and production env
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: |
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          # Ensure NEXT_PUBLIC_* vars reach the Next.js build (root directory = frontend).
+          vercel env pull frontend/.env.production.local --environment=production --yes --token="$VERCEL_TOKEN"
+
+      - name: Verify Supabase env present for client bundle
+        run: |
+          found=0
+          for f in frontend/.env.production.local .vercel/.env.production.local .env.production.local; do
+            if [ -f "$f" ] && grep -q '^NEXT_PUBLIC_SUPABASE_URL=' "$f"; then
+              echo "Found NEXT_PUBLIC_SUPABASE_URL in $f"
+              found=1
+              break
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL missing from pulled production env. Set it in Vercel → Settings → Environment Variables → Production, then redeploy."
+            exit 1
+          fi
+          if ! grep -q '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' frontend/.env.production.local 2>/dev/null; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY missing from frontend/.env.production.local"
+            exit 1
+          fi
 
       - name: Build for production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy prebuilt output to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
