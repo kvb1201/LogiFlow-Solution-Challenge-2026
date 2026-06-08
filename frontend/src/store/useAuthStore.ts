@@ -20,7 +20,6 @@ export interface AuthState {
   loading: boolean;
   error: string | null;
 
-  // Actions
   setUser: (user: AuthUser | null) => void;
   setToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -29,7 +28,8 @@ export interface AuthState {
   restore: () => Promise<void>;
 }
 
-// Prevent concurrent restore calls (e.g. AuthInitializer + ProtectedRoute both mounting)
+// Single in-flight guard — prevents concurrent restore() calls
+// from AuthInitializer and ProtectedRoute both mounting simultaneously.
 let _restoreInFlight = false;
 
 export const useAuthStore = create<AuthState>()(
@@ -41,6 +41,7 @@ export const useAuthStore = create<AuthState>()(
       error: null,
 
       setUser: (user) => set({ user }),
+
       setToken: (token) => {
         set({ token });
         if (typeof window !== 'undefined') {
@@ -51,39 +52,48 @@ export const useAuthStore = create<AuthState>()(
           }
         }
       },
+
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
 
       logout: () => {
-        set({ user: null, token: null, error: null });
+        set({ user: null, token: null, error: null, loading: false });
         if (typeof window !== 'undefined') {
           sessionStorage.removeItem('auth_token');
         }
+        _restoreInFlight = false;
       },
 
       restore: async () => {
         if (typeof window === 'undefined') return;
 
-        // Guard against double invocation
+        // Guard: don't restore if already in-flight
         if (_restoreInFlight) return;
 
-        const token =
-          sessionStorage.getItem('auth_token') ?? get().token ?? null;
+        // Read token from sessionStorage first (written immediately on login),
+        // then fall back to persisted Zustand state.
+        const storedToken = sessionStorage.getItem('auth_token');
+        const stateToken = get().token;
+        const token = storedToken ?? stateToken ?? null;
 
         if (!token) {
           set({ token: null, user: null, loading: false });
           return;
         }
 
-        // If we already have a user in state and the token matches, skip network call
-        const currentUser = get().user;
-        if (currentUser && get().token === token) return;
+        // If we already have a valid user + matching token in state, skip the network round-trip.
+        const existingUser = get().user;
+        if (existingUser && get().token === token) {
+          // Ensure sessionStorage is in sync
+          sessionStorage.setItem('auth_token', token);
+          set({ loading: false });
+          return;
+        }
 
         _restoreInFlight = true;
         set({ loading: true });
 
         try {
-          // /api/auth/me is proxied by Next.js to the FastAPI backend
           const response = await apiClient('/api/auth/me', {
             method: 'GET',
             requireAuth: true,
@@ -91,18 +101,28 @@ export const useAuthStore = create<AuthState>()(
 
           if (response.ok) {
             const user: AuthUser = await response.json();
-            // Keep token in sync with sessionStorage
             sessionStorage.setItem('auth_token', token);
-            set({ user, token, error: null });
+            set({ user, token, error: null, loading: false });
           } else {
-            // Token invalid or expired — clear everything
+            // Token invalid — clear state completely
             sessionStorage.removeItem('auth_token');
-            set({ token: null, user: null, error: null });
+            set({ token: null, user: null, error: null, loading: false });
           }
         } catch (err) {
           console.error('[useAuthStore] Session restore failed:', err);
-          sessionStorage.removeItem('auth_token');
-          set({ token: null, user: null, error: null });
+          // Network error during restore — keep token if it was freshly set (within 10s)
+          // This prevents clearing a valid token on a transient network failure.
+          const now = Date.now();
+          const tokenAge = typeof window !== 'undefined'
+            ? parseInt(sessionStorage.getItem('auth_token_ts') || '0', 10)
+            : 0;
+          const isFresh = now - tokenAge < 10_000;
+          if (!isFresh) {
+            sessionStorage.removeItem('auth_token');
+            set({ token: null, user: null, error: null, loading: false });
+          } else {
+            set({ loading: false });
+          }
         } finally {
           set({ loading: false });
           _restoreInFlight = false;
@@ -112,6 +132,7 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => sessionStorage),
+      // Only persist user + token — loading/error are transient
       partialize: (state) => ({
         user: state.user,
         token: state.token,

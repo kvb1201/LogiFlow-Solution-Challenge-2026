@@ -15,19 +15,28 @@ from app.utils.coordinates import get_coords
 # Maps satellite / nearby towns → canonical route city
 # ---------------------------------------------------------------------------
 _NEAR_CITY_MAP: dict[str, str] = {
-    # Gujarat corridor
+    # Gujarat corridor (Surat↔Ahmedabad)
     "bharuch": "bharuch",
-    "ankleshwar": "bharuch",
+    "ankleshwar": "bharuch",       # Ankleshwar is ~5km from Bharuch
+    "jhagadia": "bharuch",
     "karjan": "vadodara",
     "padra": "vadodara",
+    "dabhoi": "vadodara",
     "petlad": "anand",
     "kheda": "anand",
+    "borsad": "anand",
     "nadiad": "nadiad",
     "mahemdabad": "nadiad",
     "matar": "nadiad",
     "sanand": "ahmedabad",
     "bavla": "ahmedabad",
     "dholka": "ahmedabad",
+    "kosamba": "surat",
+    "olpad": "surat",
+    "kamrej": "surat",
+    "bardoli": "surat",
+    "navsari": "surat",
+    "vapi": "surat",
     # Mumbai corridor
     "thane": "thane",
     "kalyan": "kalyan",
@@ -49,8 +58,6 @@ _NEAR_CITY_MAP: dict[str, str] = {
     "bahadurgarh": "delhi",
     # Pune–Mumbai
     "lonavala": "pune",
-    "khopoli": "pune",
-    "panvel": "pune",
     # Bangalore corridor
     "electronic city": "bengaluru",
     "whitefield": "bengaluru",
@@ -163,58 +170,56 @@ def _intermediate_cities_between(city_a: str, city_b: str) -> list[str]:
     Return known Indian cities that lie roughly on the road corridor
     between city_a and city_b, based on static heuristics.
 
-    This covers major road corridors and is fast (no API call).
+    Each corridor entry is (endpoint_pair, ordered_intermediate_cities).
+    The match is bidirectional — order of a/b doesn't matter.
+    When a/b are an exact corridor pair, return just those intermediates.
+    No partial matching to avoid spurious cities being added.
     """
-    CORRIDORS: list[tuple[list[str], list[str]]] = [
-        # Gujarat corridor
-        (["surat", "ahmedabad"], ["bharuch", "vadodara", "anand", "nadiad"]),
-        (["surat", "vadodara"], ["bharuch", "ankleshwar"]),
-        (["vadodara", "ahmedabad"], ["anand", "nadiad"]),
-        # Mumbai–Pune–Hyderabad
-        (["mumbai", "pune"], ["thane", "panvel", "lonavala", "khopoli"]),
-        (["pune", "hyderabad"], ["solapur", "gulbarga", "kalaburagi"]),
-        (["mumbai", "nashik"], ["thane", "kalyan", "igatpuri"]),
-        (["mumbai", "surat"], ["thane", "vapi", "navsari"]),
-        # Delhi–Mumbai
-        (["delhi", "mumbai"], ["kota", "ratlam", "indore", "vadodara", "surat"]),
-        # Delhi–Kolkata
-        (["delhi", "kolkata"], ["kanpur", "varanasi", "patna", "dhanbad"]),
-        (["agra", "varanasi"], ["prayagraj", "allahabad"]),
-        # Delhi–Chennai
-        (["delhi", "chennai"], ["agra", "bhopal", "nagpur", "hyderabad"]),
-        # Mumbai–Bangalore
-        (["mumbai", "bengaluru"], ["pune", "solapur", "bidar", "gulbarga"]),
-        # Bangalore–Chennai
-        (["bengaluru", "chennai"], ["hosur", "krishnagiri", "vellore"]),
-        # Chennai–Kolkata
-        (["chennai", "kolkata"], ["vijayawada", "visakhapatnam", "bhubaneswar"]),
-        # Kolkata–Guwahati
-        (["kolkata", "guwahati"], ["siliguri", "jalpaiguri", "bongaigaon"]),
-        # Other north India
-        (["delhi", "jaipur"], ["alwar", "behror"]),
-        (["delhi", "amritsar"], ["ambala", "ludhiana", "jalandhar"]),
-        (["delhi", "lucknow"], ["aligarh", "etah", "kannauj", "kanpur"]),
+    # Each entry: ([ep_a, ep_b], [intermediate cities in order ep_a→ep_b])
+    CORRIDORS: list[tuple[tuple[str, str], list[str]]] = [
+        # ── Gujarat ─────────────────────────────────────────────────────
+        (("surat", "ahmedabad"),    ["bharuch", "ankleshwar", "vadodara", "anand", "nadiad"]),
+        (("surat", "vadodara"),     ["bharuch", "ankleshwar", "karjan"]),
+        (("vadodara", "ahmedabad"), ["anand", "nadiad"]),
+        (("bharuch", "ahmedabad"),  ["vadodara", "anand", "nadiad"]),
+        (("bharuch", "vadodara"),   ["ankleshwar", "karjan"]),
+        (("surat", "bharuch"),      ["ankleshwar"]),
+        # ── Mumbai region ───────────────────────────────────────────────
+        (("mumbai", "pune"),        ["thane", "panvel", "lonavala"]),
+        (("mumbai", "nashik"),      ["thane", "kalyan", "igatpuri"]),
+        (("mumbai", "surat"),       ["thane", "vapi", "navsari"]),
+        (("mumbai", "vadodara"),    ["thane", "vapi", "surat", "bharuch", "ankleshwar"]),
+        (("pune", "hyderabad"),     ["solapur", "gulbarga"]),
+        # ── Delhi–Mumbai ────────────────────────────────────────────────
+        (("delhi", "mumbai"),       ["kota", "ratlam", "indore", "vadodara", "surat"]),
+        (("delhi", "surat"),        ["kota", "ratlam", "indore", "vadodara"]),
+        (("delhi", "vadodara"),     ["kota", "ratlam", "indore"]),
+        # ── Delhi–North ─────────────────────────────────────────────────
+        (("delhi", "jaipur"),       ["alwar", "behror"]),
+        (("delhi", "amritsar"),     ["ambala", "ludhiana", "jalandhar"]),
+        (("delhi", "lucknow"),      ["aligarh", "kannauj", "kanpur"]),
+        (("delhi", "kolkata"),      ["kanpur", "varanasi", "patna", "dhanbad"]),
+        (("delhi", "chennai"),      ["agra", "bhopal", "nagpur", "hyderabad"]),
+        (("agra", "varanasi"),      ["prayagraj"]),
+        # ── South ───────────────────────────────────────────────────────
+        (("mumbai", "bengaluru"),   ["pune", "solapur", "gulbarga"]),
+        (("bengaluru", "chennai"),  ["hosur", "krishnagiri", "vellore"]),
+        (("chennai", "kolkata"),    ["vijayawada", "visakhapatnam", "bhubaneswar"]),
+        (("kolkata", "guwahati"),   ["siliguri", "jalpaiguri"]),
+        (("hyderabad", "bengaluru"),["kurnool", "anantapur"]),
+        (("hyderabad", "mumbai"),   ["solapur", "pune"]),
+        (("chennai", "hyderabad"),  ["nellore", "ongole"]),
     ]
 
     a_key = _normalize_city(city_a)
     b_key = _normalize_city(city_b)
 
-    for endpoints, cities in CORRIDORS:
-        ep_a, ep_b = endpoints[0], endpoints[1]
-        if (
-            (a_key == ep_a and b_key == ep_b)
-            or (a_key == ep_b and b_key == ep_a)
-        ):
+    for (ep_a, ep_b), cities in CORRIDORS:
+        # Exact bidirectional match only — no partial matching
+        if (a_key == ep_a and b_key == ep_b):
             return cities
-
-        # Partial match — one endpoint is on a known corridor
-        if a_key in (ep_a, ep_b) or b_key in (ep_a, ep_b):
-            matching = []
-            for c in cities:
-                if c not in (a_key, b_key):
-                    matching.append(c)
-            if matching:
-                return matching
+        if (a_key == ep_b and b_key == ep_a):
+            return list(reversed(cities))
 
     return []
 
@@ -335,9 +340,10 @@ def _estimate_city_from_progress(
     if clamped <= 0.0:
         return route_cities[0]
 
-    # Map progress to index in route_cities
+    # Map progress to index in route_cities using rounding for more accurate positioning
     n = len(route_cities)
-    idx = int((clamped / 100.0) * (n - 1))
+    raw_idx = (clamped / 100.0) * (n - 1)
+    idx = int(round(raw_idx))
     idx = max(0, min(n - 1, idx))
     return route_cities[idx]
 
@@ -807,6 +813,44 @@ def evaluate_route_health(
         corridor_status, remaining_eval, overdue_minutes, base_risk, report
     )
 
+    # ── Shipment Health Score 0-100 ──────────────────────────────────
+    # Weights: Route Adherence 40%, ETA Impact 25%, Risk 20%, Cost Impact 15%
+    # Higher score = healthier
+
+    # 1. Route adherence (40%)
+    adherence_score = {"ON_ROUTE": 1.0, "NEAR_ROUTE": 0.6, "OFF_ROUTE": 0.1}.get(corridor_status, 1.0)
+
+    # 2. ETA impact (25%) — penalise overdue and large eta gaps
+    updated_eta = remaining_eval.get("updated_eta_minutes") if remaining_eval else None
+    original_rem = 0
+    if report.started_at and report.expected_end_time:
+        original_rem = max(0, int((report.expected_end_time - datetime.utcnow()).total_seconds() // 60))
+    if updated_eta is not None and original_rem > 0:
+        eta_ratio = max(0.0, 1.0 - max(0, updated_eta - original_rem) / max(original_rem, 1))
+    elif overdue_minutes > 0:
+        eta_ratio = max(0.0, 1.0 - min(1.0, overdue_minutes / 120))
+    else:
+        eta_ratio = 1.0
+
+    # 3. Risk (20%)
+    updated_risk_val = float(remaining_eval.get("updated_risk") or base_risk) if remaining_eval else base_risk
+    risk_score_component = max(0.0, 1.0 - updated_risk_val)
+
+    # 4. Cost impact (15%) — always 1.0 unless updated cost exceeds original by >20%
+    original_cost = float(report.estimated_cost or 0)
+    updated_cost_val = float(remaining_eval.get("updated_cost") or 0) if remaining_eval else 0
+    if original_cost > 0 and updated_cost_val > original_cost:
+        cost_score = max(0.0, 1.0 - (updated_cost_val - original_cost) / original_cost)
+    else:
+        cost_score = 1.0
+
+    shipment_health_score = round(
+        (adherence_score * 40) +
+        (eta_ratio * 25) +
+        (risk_score_component * 20) +
+        (cost_score * 15)
+    )
+
     # ── Phase 6 — Smart Reoptimization Trigger ───────────────────────
     reopt_recommended = False
     reopt_reason = ""
@@ -829,6 +873,7 @@ def evaluate_route_health(
     response: dict[str, Any] = {
         "status": report.status,
         "health_level": health_level,
+        "shipment_health_score": shipment_health_score,
         "progress_percentage": progress.progress_percentage,
         "elapsed_minutes": progress.elapsed_minutes,
         "remaining_minutes": progress.remaining_minutes,
@@ -849,6 +894,8 @@ def evaluate_route_health(
         # Phase 3
         "corridor_status": corridor_status,
         "corridor_matched_city": corridor_matched_city,
+        # Route corridor for display (Phase 4 — Issue 4)
+        "route_cities": route_intelligence.get("route_cities") if route_intelligence else None,
         # Phase 4
         "updated_eta_minutes": remaining_eval.get("updated_eta_minutes"),
         "updated_cost": remaining_eval.get("updated_cost"),

@@ -1,183 +1,184 @@
-# Route Intelligence + Smart Route Health — Implementation
+# Shipment Tracking Architecture Refactor + Auth + Route Intelligence Fixes
 
-## Architecture Overview
+## Shipment Tracking Architecture
 
-All route intelligence is stored inside `optimization_result` (existing JSON column on `ShipmentReport`). No new tables, no new pipelines, no schema migration required. The upgrade enriches the existing `trip_progress.py` service and `planner_routes.py` endpoint, and updates the `RouteHealthCard.tsx` and `ReportDetailPage.tsx` frontend components.
+### Single Source of Truth
+`ShipmentReport` is the sole source of truth for all shipment state. It stores:
+- `source`, `destination`, `stops` — declared route
+- `estimated_cost`, `estimated_time`, `risk_score` — original plan metrics
+- `optimization_result` — full pipeline result, including `route_intelligence`
+- `status`, `started_at`, `expected_end_time` — trip lifecycle
+
+Route Health is a **decision engine only**. It reads `ShipmentReport` and returns a health assessment. It does not own or persist any state. Every route-health response is computed fresh and discarded after display.
+
+When a user updates their current location, the health endpoint re-evaluates the remaining journey using the existing optimization pipeline (ephemeral, not stored). The `ShipmentReport` itself is only mutated by explicit user actions (Execute Trip, Stop Trip, Save Revision).
+
+### Route Health Flow
+```
+ShipmentReport (source of truth)
+    ↓
+evaluate_route_health(report, current_location)
+    ↓
+  Phase 1: route_intelligence lookup
+  Phase 2: estimated city from progress
+  Phase 3: corridor status (ON/NEAR/OFF_ROUTE)
+  Phase 4: remaining journey pipeline re-evaluation
+  Phase 5: health scoring (0–100 + level)
+  Phase 6: reoptimization threshold check
+    ↓
+RouteHealthResponse (ephemeral — display only)
+```
 
 ---
 
-## Phase 1 — Route Intelligence Layer
+## Issue 1 — Login Page Branding
 
-### What was built
-`build_route_intelligence(source, destination, stops, optimization_result, estimated_time_hours)` in `trip_progress.py`.
+**Problem:** LogiFlow logo appeared in both NavBar and LoginPage content area.
 
-### Checkpoint Generation Logic
-- Collect declared waypoints (source → stops → destination)
-- For each consecutive pair, call `_intermediate_cities_between()` which looks up a static hardcoded corridor table covering major Indian road corridors (Gujarat, Mumbai–Pune–Hyderabad, Delhi–Mumbai, Delhi–Kolkata, Delhi–Chennai, etc.)
-- Deduplicate while preserving order
-- If `route_cities` still has < 4 entries, attempt geometry-based reverse geocoding from `optimization_result.best.geometry`
+**Fix:** Removed the `Link href="/"` logo block from `LoginPage.tsx`. The NavBar (rendered globally via `app/layout.tsx`) already shows the LogiFlow branding on every page including `/login`. The login card now shows only "Smart Shipment Planner" heading and the Google Sign-In button.
 
-### Checkpoint Density
-| Route distance | Target checkpoints |
+**File:** `frontend/src/components/auth/LoginPage.tsx`
+
+---
+
+## Issue 2 — OAuth Freeze / Redirect Loop
+
+**Root cause:** Three competing mechanisms ran simultaneously:
+1. `AuthInitializer` called `restore()` on app mount
+2. `PublicRoute` had a `useEffect` that redirected to `/dashboard` when `token && user` were set
+3. `restore()` could clear a freshly-set token if the `/api/auth/me` call failed or ran concurrently with `setToken()`
+
+The result: after Google credential → `setToken()` → `restore()` sees token → makes `/api/auth/me` → if token not yet propagated to `apiClient` → 401 → clears token → user stuck on `/login`.
+
+**Fixes:**
+
+### `useAuthStore.ts`
+- `restore()` now reads `sessionStorage.getItem('auth_token')` first (written immediately on login, before any network call)
+- If `user + token` already match in state, skips the `/api/auth/me` call entirely
+- Single `_restoreInFlight` guard prevents concurrent invocations
+- `logout()` resets `_restoreInFlight`
+
+### `LoginPage.tsx`
+- Shows `Authenticating…` spinner **immediately** after Google credential is received (before any fetch)
+- Writes token to `sessionStorage` synchronously before calling `setToken()` / `setUser()`
+- Uses `router.replace('/dashboard')` (not `push`) so back button doesn't return to login
+- Catches errors and hides spinner only on failure
+
+### `ProtectedRoute.tsx`
+- `PublicRoute` now respects `loading` state — shows nothing while restore is running, preventing premature redirects
+- `PublicRoute` uses a `hasRedirected` ref to fire redirect only once per mount
+- Both components use `router.replace()` instead of `router.push()` to prevent history loops
+
+---
+
+## Issue 3 — Estimated Location Still Incorrect
+
+**Problem:** `Vadodara → Surat` at 20.4% returned `"Between Vadodara and Surat"`.
+
+**Two root causes:**
+
+### 1. Missing corridor entry
+The corridor table had `surat → vadodara = [bharuch, ankleshwar]` but not `vadodara → surat`. The partial-match fallback was inserting wrong cities.
+
+**Fix:** Replaced all corridor entries with explicit bidirectional pairs. Each entry is now `((ep_a, ep_b), [ordered_cities])`. Reversed when matched in b→a direction. No partial matching — exact endpoint match only.
+
+New `vadodara → surat` entry: `['karjan', 'ankleshwar', 'bharuch']`
+
+### 2. `int()` truncation in progress mapping
+`_estimate_city_from_progress` used `int((pct/100) * (n-1))`. For 5 cities at 20.4%: `int(0.204 * 4) = int(0.816) = 0` → returned `route_cities[0]` (Vadodara).
+
+**Fix:** Changed to `int(round(raw_idx))`. Same example: `round(0.816) = 1` → returns `route_cities[1]` (karjan). ✅
+
+**Validation:** `Vadodara → Surat` at 20.4% now returns `karjan`.
+
+---
+
+## Route Corridor Detection Fixes
+
+Updated `_NEAR_CITY_MAP` with more Gujarat corridor entries:
+- `kosamba → surat`, `olpad → surat`, `kamrej → surat`, `bardoli → surat`
+- `dabhoi → vadodara`, `borsad → anand`
+- Removed duplicate `khopoli/panvel` entries that caused dict overwrite
+
+---
+
+## Issue 4 — Route Corridor Visibility
+
+Added `route_cities` to the route-health API response (`evaluate_route_health`). The backend now includes `route_intelligence.route_cities` in the response.
+
+**Frontend additions:**
+
+### `RouteHealthCard.tsx` — inline corridor display
+- Collapsible "Route Corridor" section at the bottom of the health card
+- Vertical list with connector dots: source (blue) → intermediate cities (grey) → destination (green)
+- Current location city is highlighted in amber with a "here" badge
+- Shows city count in the toggle button
+
+### `ReportDetailPage.tsx` — persistent corridor section
+- New "Route Corridor" section always visible on the report detail page (not just for active trips)
+- Reads from `report.optimization_result?.route_intelligence?.route_cities`
+- Uses same connector-dot vertical layout
+- Shown for all report statuses (planned, active, completed, cancelled)
+
+---
+
+## Issue 5 — Current Location Selection
+
+**Before:** Single text input for manual location entry.
+
+**After:** Three-mode selector:
+
+| Mode | Behavior |
 |---|---|
-| < 300 km | 3 |
-| 300–700 km | 4 |
-| 700–1200 km | 5 |
-| 1200–1800 km | 6 |
-| > 1800 km | 8 |
+| Use Estimated | Uses estimated location from route intelligence |
+| Route City | Dropdown populated from `routeHealth.route_cities` |
+| Enter Manually | Free text input |
 
-Checkpoints are evenly sampled from `route_cities` and always include source and destination.
-
-### Route City Generation Logic
-Corridor table `_intermediate_cities_between()` uses exact and partial endpoint matching. Example: `Surat → Ahmedabad` resolves to `['bharuch', 'vadodara', 'anand', 'nadiad']`. Corridors support both directions.
-
-### Storage
-`optimization_result.route_intelligence = { checkpoints, route_cities, source, destination, total_km_estimate }`
-
-Injected at report creation time via `enrich_optimization_result_with_intelligence()` called in `POST /planner/reports`.
-
-### Backward Compatibility
-Existing reports without `route_intelligence` fall back to the old `estimate_trip_location()` segment-interpolation logic.
+**Route City dropdown behavior:**
+- Cities come from `route_cities` in the health response
+- Selecting a city **immediately triggers re-evaluation** via `fetchRouteHealth(report.id, city)` — no separate "Evaluate" click needed
+- This implements the "single source of truth" update: current_location selection immediately feeds into remaining journey evaluation
 
 ---
 
-## Phase 2 — Estimated Location Upgrade
+## Shipment Health Score (0–100)
 
-### Logic
-`_estimate_city_from_progress(route_intelligence, progress_percentage)`:
-- Maps `0–100%` progress linearly across `route_cities` index
-- Returns the city at `int(progress / 100 * (len(route_cities) - 1))`
-- Never returns "Between A and B" when route intelligence exists
+**Formula:**
 
-### Fallback (old reports)
-Segment interpolation is preserved. To reduce "Between" labels even in fallback: if `segment_ratio >= 0.85` returns `end_name`, if `<= 0.15` returns `start_name`.
+| Component | Weight | Calculation |
+|---|---|---|
+| Route Adherence | 40% | ON_ROUTE=1.0, NEAR_ROUTE=0.6, OFF_ROUTE=0.1 |
+| ETA Impact | 25% | 1 - clamp(eta_gap / original_remaining, 0, 1) |
+| Risk | 20% | 1 - updated_risk |
+| Cost Impact | 15% | 1 - clamp((updated_cost - original_cost) / original_cost, 0, 1) |
 
-### Confidence
-- Route intelligence path: `"high"`
-- Coordinate interpolation path: `"medium"`
-- No coordinates: `"low"`
+**Health levels:**
+- 80–100 = Healthy
+- 60–79 = Moderate  
+- 0–59 = At Risk
 
----
-
-## Phase 3 — Route Corridor Detection
-
-### Detection Logic (`detect_corridor_status`)
-
-**Step 1 — Exact match:**  
-Normalize current city with `_normalize_city()` (lowercases, strips punctuation, applies aliases). Compare against each city in `route_intelligence.route_cities`. Match → `ON_ROUTE`.
-
-**Step 2 — Fuzzy/near match:**  
-`_normalize_city()` applies `_NEAR_CITY_MAP` which maps satellite towns to canonical cities (e.g. Karjan → vadodara, Petlad → anand, Noida → delhi). If the canonical form matches a route city → `NEAR_ROUTE`. Also checks substring containment (e.g. "New Delhi" ↔ "Delhi") → `NEAR_ROUTE`.
-
-**Step 3 — Off route:**  
-No match → `OFF_ROUTE`.
-
-### Deviation level mapping (for legacy display)
-- `ON_ROUTE` → `deviation_level: "none"`
-- `NEAR_ROUTE` → `deviation_level: "minor"`
-- `OFF_ROUTE` → `deviation_level: "major"`
+Score is returned in `RouteHealthResponse.shipment_health_score` and displayed next to the health level in `RouteHealthCard`.
 
 ---
 
-## Phase 4 — Remaining Journey Evaluation
+## Issue 11 — Navbar CTA Label
 
-`evaluate_remaining_journey(report, current_location, progress_percentage)`:
-1. Computes remaining waypoints from current progress index
-2. Calls `_run_remaining_pipeline()` → dispatches to the existing road/air/water/hybrid/rail pipeline from `current_location` to `destination`
-3. Falls back to `_fallback_result()` (haversine-based estimate) if pipeline fails
-4. Returns `{ updated_eta_minutes, updated_cost, updated_risk, remaining_stops }`
-
-This evaluation is **temporary** — used only for the health check response, not persisted.
-
----
-
-## Phase 5 — Health Scoring Engine
-
-`_compute_health_score(corridor_status, remaining_eval, overdue_minutes, base_risk, report)`:
-
-Deterministic rules (in priority order):
-
-| Corridor | Delay condition | Health level | Delay risk | Action |
-|---|---|---|---|---|
-| OFF_ROUTE | any significant delay OR high risk | `at_risk` | high | reoptimize |
-| OFF_ROUTE | no significant delay | `moderate` | medium | reoptimize |
-| NEAR_ROUTE | significant delay OR high risk | `at_risk` | high | reoptimize |
-| NEAR_ROUTE | no significant delay | `moderate` | medium | monitor |
-| ON_ROUTE | significant delay OR high risk | `moderate` | medium | monitor |
-| ON_ROUTE | overdue ≥ 60min | `at_risk` | high | reoptimize |
-| ON_ROUTE | no issues | `healthy` | low | continue |
-
-**"Significant delay"** = `updated_eta_minutes - original_remaining_minutes > 15` OR `overdue_minutes >= 30`  
-**"High risk"** = `updated_risk > 0.55` OR `base_risk > 0.65`
-
----
-
-## Phase 6 — Smarter Reoptimization Trigger
-
-`should_recommend_reoptimization(current_metrics, updated_metrics)`:
-
-Recommends reoptimization only if improvement exceeds **any** threshold:
-
-| Metric | Threshold |
-|---|---|
-| ETA improvement | > 15 minutes |
-| Risk reduction | > 5% relative |
-| Cost reduction | > 5% relative |
-
-If below thresholds, `recommended_action` is downgraded from `"reoptimize"` to `"monitor"`. Reason string is included in response for UI display.
-
----
-
-## Phase 7 — Route Health UI Upgrade
-
-`RouteHealthCard.tsx` updated to display:
-
-| Field | Source |
-|---|---|
-| Estimated Location | Phase 2 city (never "Between A and B") + confidence badge |
-| Current Location | User input or estimated |
-| Corridor Status | Phase 3 `ON_ROUTE / NEAR_ROUTE / OFF_ROUTE` with icon + color |
-| Updated ETA | Phase 4 `updated_eta_minutes` |
-| Updated Cost | Phase 4 `updated_cost` |
-| Updated Risk | Phase 4 `updated_risk` |
-| Reoptimization Reason | Phase 6 `reoptimization_reason` |
-| Regenerate Plan button | Phase 8 — prefills from current location |
-
-Corridor status uses the same LogiFlow colour system: emerald for ON_ROUTE, amber for NEAR_ROUTE, red for OFF_ROUTE.
-
----
-
-## Phase 8 — Regenerate Plan Fix
-
-Both locations where "Regenerate Plan" was a static link are now dynamic:
-
-**`RouteHealthCard.tsx` — `handleRegeneratePlan()`:**
-- Determines `currentLoc` from actual input → corridor_matched_city → estimated label
-- Finds `currentLoc` index in full waypoint array
-- Sets `source = currentLoc`, `stops = remaining intermediate stops`, `destination = report.destination`
-- Navigates to `/{mode}?source=...&destination=...&stops=...`
-
-**`ReportDetailPage.tsx` — General Actions "Regenerate Plan":**
-- For `active` trips: reads `routeHealth.actual_location.label || corridor_matched_city || estimated_location.label`
-- Slices waypoints array to compute remaining stops
-- For non-active trips: falls back to original source/destination
+Changed "New scenario" → "Smart Shipment Planner" in `NavBar.tsx`. The button still links to `/comparator`. Only the visible label changed.
 
 ---
 
 ## Files Modified
 
-### Backend
-| File | Change |
+| File | Changes |
 |---|---|
-| `backend/app/services/trip_progress.py` | Complete rewrite — added Phases 1–6 |
-| `backend/app/routes/planner_routes.py` | Import new functions, inject `route_intelligence` on report creation, expose new fields from health endpoint |
-
-### Frontend
-| File | Change |
-|---|---|
-| `frontend/src/services/plannerApi.ts` | Extended `RouteHealthResponse` type with Phase 3–6 fields |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | Phases 7 + 8 — full UI upgrade + smart Regenerate Plan |
-| `frontend/src/components/planner/ReportDetailPage.tsx` | Phase 8 — smart Regenerate Plan in General Actions + added `routeHealth` to store destructure |
+| `backend/app/services/trip_progress.py` | Fixed corridor table (exact bidirectional match), fixed `round()` in progress mapping, added health score computation, added `route_cities` and `shipment_health_score` to response, expanded `_NEAR_CITY_MAP` |
+| `frontend/src/components/auth/LoginPage.tsx` | Removed duplicate branding, added immediate Authenticating… state, fixed token persistence order, uses `router.replace` |
+| `frontend/src/store/useAuthStore.ts` | Fixed restore() to read sessionStorage first, skip network call if user+token already valid, reset in-flight guard on logout |
+| `frontend/src/components/auth/ProtectedRoute.tsx` | PublicRoute respects loading state, uses `hasRedirected` ref, uses `router.replace` |
+| `frontend/src/services/plannerApi.ts` | Added `shipment_health_score` and `route_cities` to `RouteHealthResponse` |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Added health score display, three-mode location selector (dropdown/manual/estimated), route corridor collapsible section, immediate re-eval on city select |
+| `frontend/src/components/planner/ReportDetailPage.tsx` | Added persistent Route Corridor section for all report statuses |
+| `frontend/src/components/NavBar.tsx` | Changed CTA label to "Smart Shipment Planner" |
 
 ---
 
@@ -186,30 +187,25 @@ Both locations where "Regenerate Plan" was a static link are now dynamic:
 | Check | Result |
 |---|---|
 | `npx tsc --noEmit` | ✅ 0 errors |
-| `npm run build` | ✅ 16/16 pages generated |
-| Python syntax check (`py_compile`) | ✅ All files OK |
-| Phase 1 — route intelligence generation | ✅ `['Surat', 'bharuch', 'vadodara', 'anand', 'nadiad', 'Ahmedabad']` |
-| Phase 2 — estimated location (20%) | ✅ `bharuch` (not "Between Surat and Bharuch") |
-| Phase 2 — estimated location (45%) | ✅ `vadodara` |
-| Phase 2 — estimated location (85%) | ✅ `nadiad` |
-| Phase 3 — ON_ROUTE (Vadodara) | ✅ |
-| Phase 3 — ON_ROUTE (Karjan via near-map → vadodara) | ✅ |
-| Phase 3 — ON_ROUTE (Petlad via near-map → anand) | ✅ |
-| Phase 3 — OFF_ROUTE (Indore) | ✅ |
-| Phase 6 — recommend when ETA +30m, risk -33%, cost -10% | ✅ |
-| Phase 6 — no recommend when below thresholds | ✅ |
-| Existing reports load (no route_intelligence) | ✅ Fallback path preserved |
+| `npm run build` | ✅ 16/16 pages |
+| Backend `py_compile` | ✅ All files OK |
+| Issue 1 — branding once | ✅ Only in NavBar |
+| Issue 2 — no freeze | ✅ Authenticating… shown immediately, token persisted before network call |
+| Issue 3 — `Vadodara→Surat` 20.4% → `karjan` | ✅ |
+| Issue 3 — no "Between A and B" | ✅ Confirmed for all test cases |
+| Issue 4 — route corridor visible | ✅ In RouteHealthCard + ReportDetailPage |
+| Issue 5 — dropdown from route cities | ✅ Populated from route_intelligence |
+| Issue 5 — immediate re-eval on select | ✅ Calls fetchRouteHealth immediately |
+| Health score 80–100 for healthy trip | ✅ Score 96 |
+| Health score 0–59 for at_risk trip | ✅ Score 36 |
+| Issue 11 — Navbar CTA updated | ✅ "Smart Shipment Planner" |
+| Existing reports backward compatible | ✅ Falls back gracefully when route_intelligence absent |
+| Corridor detection — ON/NEAR/OFF | ✅ All test cases pass |
 
 ---
 
 ## Known Limitations
 
-1. **Corridor table is static** — covers major Indian routes. Niche corridors (e.g. Gangtok, Leh) won't have intermediate cities and will fall back to declared waypoints only. The geometry-based enrichment can fill some gaps for road routes with geometry data.
-
-2. **Phase 4 pipeline call is synchronous** — adds latency to the route-health endpoint (~1–3s for road, longer for hybrid). For trips with no `started_at`/`expected_end_time`, progress is 0% and the evaluation is skipped.
-
-3. **Near-city map is curated** — covers common satellite towns. Unknown towns adjacent to route cities will fall through to OFF_ROUTE even if physically close. Can be extended by adding entries to `_NEAR_CITY_MAP`.
-
-4. **Corridor detection is text-based, not geographic** — it does not compute actual road distance to determine ON vs NEAR. A city 30km off-route could be ON_ROUTE if it shares a name with a route city. Geographic distance validation can be added as a future enhancement.
-
-5. **Reverse geocoding for geometry enrichment** — the `_extract_route_cities_from_geometry()` function calls Nominatim and is rate-limited (2s between calls). It only activates when route has fewer than 4 known cities and geometry is available. For most routes the corridor table is sufficient.
+1. **sessionStorage auth persistence** — tokens survive page refresh but not browser close. This is intentional for security. Long-lived sessions require a refresh token flow (not implemented).
+2. **Route cities are lowercase** from corridor table — displayed with CSS `capitalize`. Source/destination cities retain original casing from the report.
+3. **Health score re-runs the pipeline** on every route-health check (Phase 4), which adds ~1–3s latency on road mode. For air/hybrid it may be longer. This is acceptable for an on-demand check but would not scale to polling.

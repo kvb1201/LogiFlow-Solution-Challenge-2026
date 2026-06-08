@@ -67,6 +67,8 @@ export interface RouteHealthResponse {
   report_id: string;
   status: string;
   health_level: 'healthy' | 'moderate' | 'at_risk';
+  /** 0–100 composite health score */
+  shipment_health_score: number;
   progress_percentage: number;
   elapsed_minutes: number;
   remaining_minutes: number;
@@ -92,6 +94,8 @@ export interface RouteHealthResponse {
   // Phase 3 — Corridor Detection
   corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
   corridor_matched_city: string;
+  /** All route cities from route_intelligence — for corridor display and location selector */
+  route_cities: string[] | null;
   // Phase 4 — Remaining Journey
   updated_eta_minutes: number | null;
   updated_cost: number | null;

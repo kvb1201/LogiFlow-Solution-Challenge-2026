@@ -325,6 +325,49 @@ export function ReportDetailPage({ reportId }: Props) {
           </section>
         )}
 
+        {/* Issue 4 — Route Corridor (always visible when route intelligence exists) */}
+        {(() => {
+          const routeCities: string[] = (
+            report.optimization_result?.route_intelligence as Record<string, unknown> | null | undefined
+          )?.route_cities as string[] ?? [];
+          if (!routeCities.length) return null;
+          return (
+            <section className="mb-6">
+              <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">
+                Route Corridor
+              </h2>
+              <div className="rounded-2xl border border-border/40 bg-surface/30 p-4">
+                <div className="flex flex-col gap-1">
+                  {routeCities.map((city, i) => {
+                    const isFirst = i === 0;
+                    const isLast = i === routeCities.length - 1;
+                    return (
+                      <div key={`${city}-${i}`} className="flex items-center gap-3">
+                        <div className="flex flex-col items-center" style={{ width: '16px' }}>
+                          {!isFirst && <div className="w-px bg-outline-variant/30" style={{ height: '8px' }} />}
+                          <div className={[
+                            'h-2 w-2 rounded-full shrink-0',
+                            isFirst ? 'bg-primary' : isLast ? 'bg-emerald-400' : 'bg-outline/40',
+                          ].join(' ')} />
+                          {!isLast && <div className="w-px bg-outline-variant/30" style={{ height: '8px' }} />}
+                        </div>
+                        <span className={[
+                          'text-[12px] font-medium capitalize',
+                          isFirst ? 'text-primary' : isLast ? 'text-emerald-300' : 'text-muted-foreground',
+                        ].join(' ')}>
+                          {city}
+                          {isFirst && <span className="ml-2 text-[9px] text-outline">origin</span>}
+                          {isLast && <span className="ml-2 text-[9px] text-outline">destination</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          );
+        })()}
+
         {(parentReport || revisionHistory.length > 0) && (
           <section className="mb-6">
             <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">Revision History</h2>
