@@ -120,6 +120,8 @@ export interface RankedOption {
   segments: RouteSegment[];
   geometry?: [number, number][];
   data_source: string;
+  llm_explanation?: string;
+  selection_reason?: string;
 }
 
 export interface RouteSegment {
@@ -935,7 +937,8 @@ export interface TrainRouteGeometryResult {
 const GEOMETRY_FETCH_TIMEOUT_MS = 120_000;
 const GEOMETRY_SUPABASE_TIMEOUT_MS = 4_000;
 
-const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct', 'corridor_reference']);
+/** Only reject known-bad single-point stubs; corridor_reference is fine for map display. */
+const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct']);
 
 function combineSignals(...signals: AbortSignal[]): AbortSignal {
   const active = signals.filter(Boolean);
@@ -975,15 +978,9 @@ function isTrustedSupabaseGeometry(
   const pointCount = Number(row.point_count) || geometry.length;
   const source = String(row.source || '').toLowerCase();
 
-  if (geometry.length < 2 || stops.length < 2 || pointCount < 2) return false;
+  if (geometry.length < 2 || pointCount < 2) return false;
   if (UNTRUSTED_GEOMETRY_SOURCES.has(source)) return false;
-
-  const fromU = fromCode.trim().toUpperCase();
-  const toU = toCode.trim().toUpperCase();
-  const first = stops[0]?.code?.toUpperCase();
-  const last = stops[stops.length - 1]?.code?.toUpperCase();
-  if (first && last && (first !== fromU || last !== toU)) return false;
-
+  // Row is keyed by (train_number, from_code, to_code); hub aliases may differ in stops[].
   return true;
 }
 
@@ -1038,6 +1035,89 @@ async function fetchTrainRouteGeometryFromSupabase(
     };
   } catch {
     return null;
+  }
+}
+
+/** Compute missing leg on backend and upsert into Supabase (dedupe-safe). */
+async function ensureTrainRouteGeometryInSupabase(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult | null> {
+  const trainNo = trainNumber.trim();
+  const fromU = fromCode.trim().toUpperCase();
+  const toU = toCode.trim().toUpperCase();
+  if (!trainNo || !fromU || !toU) return null;
+
+  try {
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
+    const res = await fetch(`${BACKEND_BASE}/railway/geometry/ensure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        legs: [{ train_number: trainNo, from_code: fromU, to_code: toU }],
+      }),
+      signal: combined,
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      results?: Array<{
+        ok?: boolean;
+        geometry?: [number, number][];
+        stops?: RouteGeometryStop[];
+        source?: string;
+      }>;
+    };
+    const row = data.results?.[0];
+    if (!row?.ok || !row.geometry || row.geometry.length < 2) return null;
+
+    return {
+      geometry: row.geometry,
+      stops: normalizeGeometryStops(row.stops),
+      source: `backfill:${row.source || 'computed'}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureTrainCorridorGeometriesInSupabase(
+  segments: RouteSegment[],
+  trainNumber: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const legs = segments
+    .map((seg) => ({
+      train_number: (seg.train_no || trainNumber || '').trim(),
+      from_code: (seg.from || '').trim().toUpperCase(),
+      to_code: (seg.to || '').trim().toUpperCase(),
+    }))
+    .filter((leg) => leg.train_number && leg.from_code && leg.to_code);
+
+  if (!legs.length) return;
+
+  const unique = Array.from(
+    new Map(legs.map((leg) => [`${leg.train_number}|${leg.from_code}|${leg.to_code}`, leg] as const)).values()
+  ).slice(0, 20);
+
+  try {
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
+    await fetch(`${BACKEND_BASE}/railway/geometry/ensure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ legs: unique }),
+      signal: combined,
+    });
+  } catch {
+    // Corridor draw still falls back per-leg
   }
 }
 
@@ -1150,7 +1230,7 @@ async function fetchStationCoordFromSupabase(
   }
 }
 
-/** Fetch map polyline + labelled stops for one train leg (Supabase → Render → chord). */
+/** Fetch map polyline + labelled stops for one train leg (Supabase → backfill → chord). */
 export async function getTrainRouteGeometry(
   trainNumber: string,
   fromCode: string,
@@ -1160,13 +1240,39 @@ export async function getTrainRouteGeometry(
   const cached = await fetchTrainRouteGeometryFromSupabase(trainNumber, fromCode, toCode, signal);
   if (cached && cached.geometry.length >= 2) return cached;
 
+  const backfilled = await ensureTrainRouteGeometryInSupabase(
+    trainNumber,
+    fromCode,
+    toCode,
+    signal
+  );
+  if (backfilled && backfilled.geometry.length >= 2) {
+    const refreshed = await fetchTrainRouteGeometryFromSupabase(
+      trainNumber,
+      fromCode,
+      toCode,
+      signal
+    );
+    if (refreshed && refreshed.geometry.length >= 2) return refreshed;
+    return backfilled;
+  }
+
   const rendered = await fetchTrainRouteGeometryFromRender(
     trainNumber,
     fromCode,
     toCode,
     signal
   );
-  if (rendered.geometry.length >= 2) return rendered;
+  if (rendered.geometry.length >= 2) {
+    const refreshed = await fetchTrainRouteGeometryFromSupabase(
+      trainNumber,
+      fromCode,
+      toCode,
+      signal
+    );
+    if (refreshed && refreshed.geometry.length >= 2) return refreshed;
+    return rendered;
+  }
 
   return fallbackLegGeometry(fromCode, toCode, undefined, undefined, signal);
 }
@@ -1233,6 +1339,8 @@ export async function buildTrainCorridorGeometry(
   signal?: AbortSignal
 ): Promise<TrainRouteGeometryResult> {
   if (!segments.length) return { geometry: [], stops: [] };
+
+  await ensureTrainCorridorGeometriesInSupabase(segments, trainNumber, signal);
 
   const legs = await Promise.all(
     segments.map(async (seg) => {
