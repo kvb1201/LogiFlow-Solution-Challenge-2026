@@ -935,7 +935,8 @@ export interface TrainRouteGeometryResult {
 const GEOMETRY_FETCH_TIMEOUT_MS = 120_000;
 const GEOMETRY_SUPABASE_TIMEOUT_MS = 4_000;
 
-const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct', 'corridor_reference']);
+/** Only reject known-bad single-point stubs; corridor_reference is fine for map display. */
+const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct']);
 
 function combineSignals(...signals: AbortSignal[]): AbortSignal {
   const active = signals.filter(Boolean);
@@ -975,15 +976,9 @@ function isTrustedSupabaseGeometry(
   const pointCount = Number(row.point_count) || geometry.length;
   const source = String(row.source || '').toLowerCase();
 
-  if (geometry.length < 2 || stops.length < 2 || pointCount < 2) return false;
+  if (geometry.length < 2 || pointCount < 2) return false;
   if (UNTRUSTED_GEOMETRY_SOURCES.has(source)) return false;
-
-  const fromU = fromCode.trim().toUpperCase();
-  const toU = toCode.trim().toUpperCase();
-  const first = stops[0]?.code?.toUpperCase();
-  const last = stops[stops.length - 1]?.code?.toUpperCase();
-  if (first && last && (first !== fromU || last !== toU)) return false;
-
+  // Row is keyed by (train_number, from_code, to_code); hub aliases may differ in stops[].
   return true;
 }
 

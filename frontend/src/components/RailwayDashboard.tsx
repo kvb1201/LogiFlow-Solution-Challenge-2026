@@ -20,7 +20,6 @@ import {
 
 const NO_SEGMENTS: RouteSegment[] = [];
 const NO_STOPS: RouteGeometryStop[] = [];
-import { ensureBackendReachable } from '@/lib/backendWarmup';
 import {
   formatRailDataSource,
   formatRailDelaySource,
@@ -659,8 +658,8 @@ export default function RailwayDashboard() {
 
     setGeometryLoading(true);
 
-    void ensureBackendReachable()
-      .then(() => buildTrainCorridorGeometry(activeTrainNumber, activeSegments, controller.signal))
+    // Supabase-first — do not wait for Render cold start before drawing the map
+    void buildTrainCorridorGeometry(activeTrainNumber, activeSegments, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         setRouteGeometry(result.geometry.length >= 2 ? result.geometry : null);
