@@ -1,8 +1,10 @@
 'use client';
 
+import { ArrowRight, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
+import { ModeIcon } from './ModeIcon';
 
 export function PipelineResultsChrome({
   mode,
@@ -16,33 +18,50 @@ export function PipelineResultsChrome({
   const accent = `var(--${mode})`;
 
   return (
-    <div className="relative z-20 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-surface/50 px-4 backdrop-blur-sm">
-      <div className="flex min-w-0 max-w-[min(100%,420px)] items-center gap-2 rounded-full border border-border bg-background/50 px-3 py-1 text-[11px]">
+    <div
+      className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-border/60 bg-background/60 px-4 backdrop-blur-md"
+      style={{
+        background: `linear-gradient(90deg, color-mix(in oklab, ${accent} 5%, var(--background)), var(--background))`,
+      }}
+    >
+      {/* Mode icon */}
+      <span
+        className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border sm:flex"
+        style={{ color: accent }}
+      >
+        <ModeIcon mode={mode} className="h-3.5 w-3.5" strokeWidth={1.8} />
+      </span>
+
+      {/* Corridor pill */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         <span
-          className="material-symbols-outlined shrink-0"
-          style={{ fontSize: '12px', color: accent, fontVariationSettings: "'FILL' 1" }}
-        >
-          trip_origin
+          className="shrink-0 h-1.5 w-1.5 rounded-full"
+          style={{ background: accent }}
+        />
+        <span className="truncate text-[12px] font-semibold text-foreground">
+          {source}
         </span>
-        <span className="truncate font-medium text-foreground">{source}</span>
-        <span className="material-symbols-outlined shrink-0 text-muted-foreground" style={{ fontSize: '11px' }}>
-          arrow_forward
+        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+        <span className="truncate text-[12px] font-semibold text-foreground">
+          {destination}
         </span>
-        <span className="truncate font-medium text-foreground">{destination}</span>
-        <button
-          type="button"
-          onClick={resetSearch}
-          className="ml-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          title="Edit search"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
-            edit
-          </span>
-        </button>
       </div>
-      <div className="hidden shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground sm:block">
+
+      {/* Analytics label */}
+      <span className="hidden shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/60 sm:block">
         {config.analyticsLabel}
-      </div>
+      </span>
+
+      {/* Reset button */}
+      <button
+        type="button"
+        onClick={resetSearch}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+        title="Edit search"
+      >
+        <RotateCcw className="h-3 w-3" />
+        <span className="hidden sm:inline">Edit</span>
+      </button>
     </div>
   );
 }

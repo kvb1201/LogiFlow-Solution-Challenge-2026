@@ -6,10 +6,10 @@ import { ModeIcon } from '@/components/cockpit/ModeIcon';
 import type { ReactNode } from 'react';
 
 export const formInputClass =
-  'h-11 w-full rounded-lg border border-border bg-background/60 px-3 text-sm text-foreground outline-none transition-all duration-200 placeholder:text-muted-foreground/50 focus:border-ring focus:bg-surface/80 focus:ring-2 focus:ring-ring/15';
+  'h-10 w-full rounded-xl border border-border bg-surface/60 px-3 text-[13px] text-foreground outline-none transition-all duration-200 placeholder:text-muted-foreground/40 focus:border-border-strong focus:bg-surface focus:ring-2 focus:ring-ring/12';
 
 export const formLabelClass =
-  'text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground';
+  'text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground';
 
 export function FormField({
   label,
@@ -50,35 +50,46 @@ export function FormShell({
 
   return (
     <div
-      className="panel-hard scanline overflow-hidden rounded-2xl"
-      style={{ boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 18%, transparent)` }}
+      className="relative overflow-hidden rounded-2xl border border-border bg-surface/70 backdrop-blur-sm"
+      style={{
+        boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 14%, transparent), 0 4px 32px -12px color-mix(in oklab, black 60%, transparent)`,
+      }}
     >
+      {/* Top accent line */}
       <div
         aria-hidden
-        className="h-px w-full"
-        style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+        className="h-px w-full shrink-0"
+        style={{
+          background: `linear-gradient(90deg, transparent, color-mix(in oklab, ${accent} 70%, transparent), transparent)`,
+        }}
       />
+
       <div className="p-4 sm:p-5 md:p-6">
-        <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
+        {/* Form header */}
+        <div className="mb-5 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <span
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background/50"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-background/50"
               style={{ color: accent }}
             >
-              <ModeIcon mode={mode} className="h-5 w-5" />
+              <ModeIcon mode={mode} className="h-[18px] w-[18px]" strokeWidth={1.8} />
             </span>
             <div className="min-w-0">
-              <h2 className="font-display text-lg font-bold tracking-tight text-foreground">{title}</h2>
+              <h2 className="font-display text-base font-bold tracking-tight text-foreground sm:text-[17px]">
+                {title}
+              </h2>
               {subtitle ? (
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
               ) : null}
             </div>
           </div>
           {advancedToggle}
         </div>
+
         {children}
+
         {footer ? (
-          <div className="pointer-events-auto relative z-20 mt-6 border-t border-border/60 pt-5">
+          <div className="pointer-events-auto relative z-20 mt-5 border-t border-border/50 pt-5">
             {footer}
           </div>
         ) : null}
@@ -127,7 +138,7 @@ export function ChoicePills<T extends string>({
   accentVar?: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {options.map((opt) => {
         const active = value === opt.value;
         return (
@@ -135,25 +146,29 @@ export function ChoicePills<T extends string>({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all duration-200 ${
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-[12.5px] font-medium transition-all duration-200 ${
               active
-                ? 'text-foreground shadow-[0_0_24px_-10px_var(--accent)]'
-                : 'border-border bg-background/35 text-muted-foreground hover:border-border-strong hover:bg-surface/50 hover:text-foreground'
+                ? 'text-foreground'
+                : 'border-border bg-surface/40 text-muted-foreground hover:border-border-strong hover:bg-surface/70 hover:text-foreground'
             }`}
             style={
               active
                 ? ({
                     ['--accent' as string]: `var(${accentVar})`,
-                    borderColor: `color-mix(in oklab, var(${accentVar}) 42%, transparent)`,
-                    background: `color-mix(in oklab, var(${accentVar}) 12%, transparent)`,
+                    borderColor: `color-mix(in oklab, var(${accentVar}) 40%, transparent)`,
+                    background: `color-mix(in oklab, var(${accentVar}) 10%, var(--surface))`,
+                    boxShadow: `0 0 18px -8px var(${accentVar})`,
                   } as React.CSSProperties)
                 : undefined
             }
           >
             {opt.icon ? (
               <span
-                className="material-symbols-outlined text-base leading-none"
-                style={{ fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0" }}
+                className="material-symbols-outlined text-[15px] leading-none"
+                style={{
+                  fontVariationSettings: active ? "'FILL' 1" : "'FILL' 0",
+                  color: active ? `var(${accentVar})` : undefined,
+                }}
               >
                 {opt.icon}
               </span>
@@ -207,10 +222,10 @@ export function FormSubmit({
           onAction();
         }
       }}
-      className="flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-background transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 pointer-events-auto"
+      className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-background transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-105 hover:-translate-y-px pointer-events-auto"
       style={{
-        background: `linear-gradient(135deg, var(${accentVar}), color-mix(in oklab, var(${accentVar}) 55%, var(--foreground)))`,
-        boxShadow: `0 8px 32px -10px var(${accentVar})`,
+        background: `linear-gradient(135deg, var(${accentVar}), color-mix(in oklab, var(${accentVar}) 60%, var(--foreground)))`,
+        boxShadow: `0 6px 28px -10px color-mix(in oklab, var(${accentVar}) 70%, transparent), inset 0 1px 0 rgba(255,255,255,0.08)`,
       }}
     >
       <span

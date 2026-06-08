@@ -2,20 +2,36 @@
 
 import dynamic from 'next/dynamic';
 import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  DollarSign,
+  MapPin,
+  Navigation,
+  Route,
+  Shield,
+  Sparkles,
+  TrendingDown,
+  Zap,
+} from 'lucide-react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
-// ── Formatting helpers ────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────
 
-function formatCurrency(val: unknown) {
+function fmt(val: unknown) {
   const n = typeof val === 'number' ? val : Number(val);
   if (!Number.isFinite(n)) return '0';
   return new Intl.NumberFormat('en-IN').format(Math.round(n));
 }
 
-function formatCostCompact(n: number): string {
+function fmtCompact(n: number): string {
   if (!Number.isFinite(n)) return '₹0';
   const a = Math.abs(n);
   if (a >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
@@ -25,10 +41,10 @@ function formatCostCompact(n: number): string {
 
 function highwayHint(route: RoadRoute): string {
   const h = route.highway_ratio;
-  if (h == null || Number.isNaN(h)) return 'Mix n/a';
+  if (h == null || Number.isNaN(h)) return 'Mixed roads';
   if (h >= 0.72) return 'Mostly highways';
   if (h <= 0.42) return 'Local roads mix';
-  return 'Highways + mixed';
+  return 'Highways + local mix';
 }
 
 function delayHrs(route: RoadRoute): number {
@@ -39,12 +55,11 @@ function delayHrs(route: RoadRoute): number {
   return 0;
 }
 
-// Priority weights: [cost, time, risk]
 function priorityWeights(priority: string): [number, number, number] {
   if (priority === 'cost') return [0.6, 0.25, 0.15];
   if (priority === 'time') return [0.2, 0.6, 0.2];
   if (priority === 'safe') return [0.15, 0.2, 0.65];
-  return [1 / 3, 1 / 3, 1 / 3]; // balanced
+  return [1 / 3, 1 / 3, 1 / 3];
 }
 
 function computeConfidence(
@@ -55,9 +70,9 @@ function computeConfidence(
 ): number {
   if (!allRoutes.length) return 68;
   const best = allRoutes[0];
-  const costs = allRoutes.map(r => Number(r.cost));
-  const times = allRoutes.map(r => Number(r.time));
-  const risks = allRoutes.map(r => Number(r.risk));
+  const costs = allRoutes.map((r) => Number(r.cost));
+  const times = allRoutes.map((r) => Number(r.time));
+  const risks = allRoutes.map((r) => Number(r.risk));
   const spanC = Math.max(Math.max(...costs) - Math.min(...costs), 1);
   const spanT = Math.max(Math.max(...times) - Math.min(...times), 1e-6);
   const spanR = Math.max(Math.max(...risks) - Math.min(...risks), 1e-6);
@@ -65,14 +80,13 @@ function computeConfidence(
   const timeDiff = Math.max(0, Number(route.time) - Number(best.time)) / spanT;
   const riskDiff = Math.max(0, Number(route.risk) - Number(best.risk)) / spanR;
   const [wC, wT, wR] = priorityWeights(priority);
-  // Weighted deviation from best — lower is better
   const weightedDev = wC * costDiff + wT * timeDiff + wR * riskDiff;
-  let confidence = 1 - weightedDev * 1.5; // scale so spread is meaningful
+  let conf = 1 - weightedDev * 1.5;
   const delay = delayHrs(route);
-  if (delay > 4) confidence -= 0.18;
-  else if (delay > 2) confidence -= 0.08;
-  confidence -= routeIndex * 0.015; // rank penalty
-  return Math.round(Math.max(0.3, Math.min(0.95, confidence)) * 100);
+  if (delay > 4) conf -= 0.18;
+  else if (delay > 2) conf -= 0.08;
+  conf -= routeIndex * 0.015;
+  return Math.round(Math.max(0.3, Math.min(0.95, conf)) * 100);
 }
 
 function sanitizeInsights(reason: string | undefined, factors: string[]): string[] {
@@ -89,96 +103,91 @@ function sanitizeInsights(reason: string | undefined, factors: string[]): string
       /^optimized for\b/i.test(t) ||
       /selected among/i.test(t) ||
       /within budget/i.test(t)
-    ) continue;
+    )
+      continue;
     seen.add(low);
     out.push(t.length > 118 ? `${t.slice(0, 115)}…` : t);
   }
   return out;
 }
 
-function whyNotThisRoute(best: RoadRoute, alt: RoadRoute): string[] {
+function whyNot(best: RoadRoute, alt: RoadRoute): string[] {
   const lines: string[] = [];
   const dt = Number(alt.time) - Number(best.time);
   const dc = Number(alt.cost) - Number(best.cost);
   const dr = (Number(alt.risk) - Number(best.risk)) * 100;
-  if (dt > 0.05) lines.push(`Takes ${dt.toFixed(1)} hrs longer than best route`);
-  if (dc > 0) lines.push(`Costs ₹${formatCurrency(dc)} more than best route`);
-  if (dr > 1) lines.push(`Higher risk by ${Math.round(dr)}% compared to best route`);
+  if (dt > 0.05) lines.push(`${dt.toFixed(1)} hrs slower than best route`);
+  if (dc > 0) lines.push(`₹${fmt(dc)} more expensive than best route`);
+  if (dr > 1) lines.push(`Risk higher by ${Math.round(dr)}% vs best route`);
   return lines;
 }
 
-function explainConfidence(
-  confidence: number,
-  route: RoadRoute,
-  allRoutes: RoadRoute[],
-  priority: string
-): string {
-  const delay = delayHrs(route);
-  const reasons: string[] = [];
+// ── Risk pill ─────────────────────────────────────────────────────────
 
-  if (allRoutes.length > 0) {
-    const best = allRoutes[0];
-    const dt = Number(route.time) - Number(best.time);
-    const dc = Number(route.cost) - Number(best.cost);
-    const dr = Number(route.risk) - Number(best.risk);
-
-    // Priority-first reason
-    if (priority === 'cost') {
-      if (dc <= 0) reasons.push('cheapest option');
-      else reasons.push(`₹${formatCurrency(dc)} more than cheapest`);
-    } else if (priority === 'time') {
-      if (dt <= 0.1) reasons.push('fastest option');
-      else reasons.push(`${dt.toFixed(1)} hrs slower than fastest`);
-    } else if (priority === 'safe') {
-      if (dr <= 0.01) reasons.push('lowest risk profile');
-      else reasons.push(`higher risk (+${Math.round(dr * 100)}%)`);
-    } else {
-      // Balanced — report all three
-      if (dt <= 0.1) reasons.push('competitive travel time');
-      else reasons.push(`${dt.toFixed(1)} hrs slower`);
-      if (dc <= 0) reasons.push('cost efficient');
-      else reasons.push(`₹${formatCurrency(dc)} higher cost`);
-      if (dr <= 0.01) reasons.push('low risk');
-      else reasons.push(`moderate risk (+${Math.round(dr * 100)}%)`);
-    }
-  }
-
-  // Delay note — only flag if it actually hurts
-  if (delay > 4) reasons.push('high delay expected');
-  else if (delay > 2) reasons.push('moderate expected delay');
-
-  return `Recommendation strength ${confidence}% — based on ${reasons.join(', ')}.`;
+function RiskPill({ risk }: { risk: number }) {
+  const pct = Math.round(risk * 100);
+  const color =
+    pct >= 60
+      ? 'bg-risk/15 text-risk border-risk/20'
+      : pct >= 35
+      ? 'bg-warn/15 text-warn border-warn/20'
+      : 'bg-live/15 text-live border-live/20';
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold mono ${color}`}
+    >
+      {pct}%
+    </span>
+  );
 }
 
-function explainDataSource(route: RoadRoute): string {
-  const raw = route as Record<string, unknown>;
-  const ds = raw.data_source;
-  if (typeof ds === 'string' && ds.trim()) return `Source: ${ds}.`;
-  return 'Derived from the road optimization pipeline (geometry, traffic factors, and cost model).';
+// ── Confidence bar ────────────────────────────────────────────────────
+
+function ConfidenceBar({ value }: { value: number }) {
+  const color =
+    value >= 75 ? 'var(--live)' : value >= 55 ? 'var(--warn)' : 'var(--risk)';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1 flex-1 rounded-full bg-surface-3 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{ width: `${value}%`, background: color }}
+        />
+      </div>
+      <span
+        className="shrink-0 font-mono text-[11px] font-bold tabular-nums"
+        style={{ color }}
+      >
+        {value}%
+      </span>
+    </div>
+  );
 }
 
-// ── Metric tile ───────────────────────────────────────────────────────
+// ── ML tag ────────────────────────────────────────────────────────────
 
-function MetricTile({
-  emoji,
+function MlTag({
   label,
   value,
-  unit,
+  level,
 }: {
-  emoji: string;
   label: string;
-  value: React.ReactNode;
-  unit?: string;
+  value: string;
+  level: 'good' | 'moderate' | 'bad';
 }) {
+  const cls = {
+    good: 'bg-live/10 text-live border-live/20',
+    moderate: 'bg-warn/10 text-warn border-warn/20',
+    bad: 'bg-risk/10 text-risk border-risk/20',
+  }[level];
   return (
-    <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-      <div className="text-[10px] text-outline mb-1 flex items-center gap-1 font-medium">
-        <span aria-hidden>{emoji}</span> {label}
-      </div>
-      <div className="text-sm font-bold text-on-surface mono tabular-nums">
-        <span className="text-primary">{value}</span>
-        {unit && <span className="text-outline text-xs ml-0.5">{unit}</span>}
-      </div>
+    <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface/50 px-3 py-2">
+      <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <span className={`self-start rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${cls}`}>
+        {value.toUpperCase()}
+      </span>
     </div>
   );
 }
@@ -195,7 +204,6 @@ function RouteCard({
   isSafest,
   source,
   destination,
-  cargoKg,
   routes,
   confidence,
 }: {
@@ -212,22 +220,20 @@ function RouteCard({
   routes: RoadRoute[];
   confidence: number;
 }) {
-  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
-  
-  const priority = useLogiFlowStore(s => s.priority);
+  const priority = useLogiFlowStore((s) => s.priority);
+
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
   const isBest = index === 0;
   const breakdown = route.cost_breakdown;
   const best = routes[0];
   const insights = sanitizeInsights(route.reason, factors);
-  const notReasons = index > 0 && best ? whyNotThisRoute(best, route) : [];
-  const confidenceNote = explainConfidence(confidence, route, routes, priority);
-  const dataSourceNote = explainDataSource(route);
+  const notReasons = index > 0 && best ? whyNot(best, route) : [];
+  const delay = delayHrs(route);
 
-  // Reset explanation when route changes
   useEffect(() => {
     setDynamicExplanation(null);
     setIsLoadingExplanation(false);
@@ -240,11 +246,18 @@ function RouteCard({
       pipeline: 'road',
       priority,
       route_data: route,
-      context: { best_route: best }
+      context: { best_route: best },
     });
     if (expl) setDynamicExplanation(expl);
     setIsLoadingExplanation(false);
   };
+
+  const badges: { label: string; className: string }[] = [];
+  if (isBest) badges.push({ label: 'Top pick', className: 'bg-live/12 text-live border-live/20' });
+  if (isCheapest) badges.push({ label: '₹ Lowest', className: 'bg-live/12 text-live border-live/20' });
+  if (isFastest) badges.push({ label: '⚡ Fastest', className: 'bg-warn/12 text-warn border-warn/20' });
+  if (isSafest) badges.push({ label: '🛡 Safest', className: 'bg-air/12 text-air border-air/20' });
+  if (isSelected) badges.push({ label: 'On map', className: 'bg-road/12 text-road border-road/20' });
 
   return (
     <div
@@ -253,257 +266,231 @@ function RouteCard({
       aria-label={`Select route ${index + 1}`}
       aria-pressed={isSelected}
       onClick={onSelect}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
       }}
       className={[
         'w-full text-left rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden',
         isSelected
-          ? 'border-primary/60 bg-surface-container/60 shadow-[0_0_0_2px_rgba(172,199,255,0.18),0_0_24px_rgba(172,199,255,0.10)] sm:scale-[1.01]'
-          : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:bg-surface-container/30 hover:border-outline-variant/25',
+          ? 'border-road/50 bg-surface shadow-[0_0_0_1px_color-mix(in_oklab,var(--road)_14%,transparent),0_8px_40px_-20px_color-mix(in_oklab,var(--road)_25%,transparent)]'
+          : 'border-border bg-surface/60 hover:bg-surface/90 hover:border-border-strong',
       ].join(' ')}
     >
-      {/* Summary bar */}
-      <div className="px-4 py-2.5 bg-surface-container/25 border-b border-outline-variant/8">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] leading-relaxed text-on-surface-variant mono truncate">
-            {source || 'Origin'} → {destination || 'Destination'} ·{' '}
-            {Number(route.distance_km ?? 0).toFixed(0)} km · {Number(route.time).toFixed(1)}h ·{' '}
-            {highwayHint(route)}
-          </p>
-          <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-surface-container/60 text-on-surface-variant mono border border-outline-variant/12 whitespace-nowrap">
-            {confidence}% conf.
+      {/* Top bar */}
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border/50"
+        style={{
+          background: isSelected
+            ? 'color-mix(in oklab, var(--road) 5%, var(--surface))'
+            : undefined,
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className={[
+              'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-bold font-mono border',
+              isSelected
+                ? 'border-road/40 bg-road/15 text-road'
+                : 'border-border bg-surface-2 text-muted-foreground',
+            ].join(' ')}
+          >
+            {index + 1}
           </span>
+          <p className="truncate font-mono text-[10px] text-muted-foreground">
+            {source} → {destination} · {Number(route.distance_km ?? 0).toFixed(0)} km · {highwayHint(route)}
+          </p>
         </div>
+        <ConfidenceBar value={confidence} />
       </div>
 
       <div className="p-4">
-        {/* Header row */}
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span
-              className={[
-                'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold mono shrink-0',
-                isSelected ? 'bg-primary text-on-primary' : 'bg-surface-container text-outline',
-              ].join(' ')}
-            >
-              {index + 1}
-            </span>
-            <div className="min-w-0">
-              <div className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-on-surface-variant mb-1">
-                Route {index + 1}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {isBest && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-300 mono border border-emerald-500/20">
-                    Top pick
-                  </span>
-                )}
-                {isCheapest && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-300 mono">
-                    ₹ Lowest
-                  </span>
-                )}
-                {isFastest && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/12 text-amber-200 mono">
-                    Fastest
-                  </span>
-                )}
-                {isSafest && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-blue-500/12 text-blue-200 mono">
-                    Safest
-                  </span>
-                )}
-                {isSelected && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/12 text-primary mono">
-                    On map
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right shrink-0">
-            <div className="text-[15px] font-black mono text-primary leading-tight">
-              ₹{formatCurrency(route.cost)}
-            </div>
-            {route.cost_range && (
-              <div className="text-[10px] text-outline mono mt-0.5">
-                ₹{formatCurrency(route.cost_range.low)}–₹{formatCurrency(route.cost_range.high)}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-          <MetricTile emoji="⏱" label="Time" value={Number(route.time).toFixed(1)} unit="hrs" />
-          <MetricTile emoji="💰" label="Cost" value={`₹${formatCurrency(route.cost)}`} />
-          <MetricTile emoji="⚠️" label="Risk" value={`${Math.round(Number(route.risk) * 100)}`} unit="%" />
-          <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)} unit="km" />
-        </div>
-
-        {/* ML summary */}
-        {ml && (
-          <div className="grid grid-cols-3 gap-1.5 mb-4 text-[10px] mono">
-            {[
-              {
-                label: 'TRAFFIC',
-                val: ml.traffic,
-                colorClass:
-                  ml.traffic === 'high'
-                    ? 'bg-red-500/15 text-red-300'
-                    : ml.traffic === 'moderate'
-                    ? 'bg-amber-500/15 text-amber-300'
-                    : 'bg-emerald-500/15 text-emerald-300',
-              },
-              {
-                label: 'WEATHER',
-                val: ml.weather,
-                colorClass:
-                  ml.weather === 'bad'
-                    ? 'bg-red-500/15 text-red-300'
-                    : ml.weather === 'moderate'
-                    ? 'bg-amber-500/15 text-amber-300'
-                    : 'bg-emerald-500/15 text-emerald-300',
-              },
-              {
-                label: 'DELAY',
-                val: ml.delay_hours > 0.05 ? `+${ml.delay_hours.toFixed(1)}h` : 'On time',
-                colorClass: ml.delay_hours > 0.05 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300',
-              },
-            ].map(item => (
-              <div key={item.label} className="px-2 py-1.5 rounded-lg bg-surface-container-low/40 border border-outline-variant/10">
-                <div className="text-outline/60 mb-1 text-[9px] uppercase tracking-widest">{item.label}</div>
-                <span className={`inline-block px-1.5 py-0.5 rounded font-semibold ${item.colorClass}`}>
-                  {typeof item.val === 'string' ? item.val.toUpperCase() : item.val}
-                </span>
-              </div>
+        {/* Badges */}
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {badges.map((b) => (
+              <span
+                key={b.label}
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${b.className}`}
+              >
+                {b.label}
+              </span>
             ))}
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
-            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Confidence</div>
-            <p className="text-[11px] text-on-surface-variant leading-relaxed">{confidenceNote}</p>
+        {/* Key metrics row */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {/* Cost */}
+          <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface/50 px-3 py-2.5">
+            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <DollarSign className="h-2.5 w-2.5" /> Cost
+            </span>
+            <span className="font-mono text-[15px] font-black text-foreground tabular-nums leading-none">
+              {fmtCompact(Number(route.cost))}
+            </span>
+            {route.cost_range && (
+              <span className="font-mono text-[9px] text-muted-foreground">
+                {fmtCompact(route.cost_range.low)}–{fmtCompact(route.cost_range.high)}
+              </span>
+            )}
           </div>
-          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-3">
-            <div className="text-[10px] uppercase tracking-widest text-outline font-label font-bold mb-2">Data source</div>
-            <p className="text-[11px] text-on-surface-variant leading-relaxed">{dataSourceNote}</p>
+          {/* Time */}
+          <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface/50 px-3 py-2.5">
+            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <Clock className="h-2.5 w-2.5" /> Time
+            </span>
+            <span className="font-mono text-[15px] font-black text-foreground tabular-nums leading-none">
+              {Number(route.time).toFixed(1)}
+              <span className="text-[11px] font-normal text-muted-foreground ml-0.5">h</span>
+            </span>
+            {delay > 0.05 && (
+              <span className="font-mono text-[9px] text-warn">+{delay.toFixed(1)}h delay</span>
+            )}
           </div>
-        </div>
-
-        {/* Cost breakdown */}
-        <div className="pt-3 border-t border-outline-variant/8">
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); setShowBreakdown(v => !v); }}
-            className="flex items-center justify-between w-full text-left text-[10px] font-label font-bold uppercase tracking-[0.12em] text-on-surface-variant hover:text-on-surface transition-colors"
-          >
-            <span>Cost breakdown</span>
-            <span className="mono text-primary">{showBreakdown ? '−' : '+'}</span>
-          </button>
-
-          {showBreakdown && (
-            <div className="mt-2.5 rounded-xl border border-outline-variant/10 overflow-hidden">
-              <table className="w-full text-[11px]">
-                <tbody className="divide-y divide-outline-variant/8">
-                  {[
-                    ['Freight', breakdown?.freight],
-                    ['Toll', breakdown?.toll],
-                    ['Handling', breakdown?.handling],
-                    ['GST (5%)', breakdown?.gst],
-                    ['Documentation', breakdown?.documentation],
-                  ].map(([label, val]) => (
-                    <tr key={String(label)} className="bg-surface-container-lowest/15">
-                      <td className="py-2 pl-3 text-on-surface-variant">{label}</td>
-                      <td className="py-2 pr-3 text-right mono font-medium text-on-surface tabular-nums">
-                        ₹{formatCurrency(val)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Risk */}
+          <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface/50 px-3 py-2.5">
+            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <Shield className="h-2.5 w-2.5" /> Risk
+            </span>
+            <div className="flex items-center gap-1.5">
+              <RiskPill risk={Number(route.risk)} />
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Why not */}
+        {/* ML summary */}
+        {ml && (
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <MlTag
+              label="Traffic"
+              value={ml.traffic}
+              level={ml.traffic === 'high' ? 'bad' : ml.traffic === 'moderate' ? 'moderate' : 'good'}
+            />
+            <MlTag
+              label="Weather"
+              value={ml.weather}
+              level={ml.weather === 'bad' ? 'bad' : ml.weather === 'moderate' ? 'moderate' : 'good'}
+            />
+            <MlTag
+              label="Delay"
+              value={ml.delay_hours > 0.05 ? `+${ml.delay_hours.toFixed(1)}h` : 'On time'}
+              level={ml.delay_hours > 0.05 ? 'moderate' : 'good'}
+            />
+          </div>
+        )}
+
+        {/* Why not this route */}
         {notReasons.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5">
-              Why not this route?
+          <div className="mb-4 rounded-xl border border-warn/20 bg-warn/5 px-3 py-2.5">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-warn/70">
+              <AlertTriangle className="h-2.5 w-2.5" />
+              Why not this route
             </div>
-            <ul className="text-[11px] text-on-surface-variant space-y-1 mono">
-              {notReasons.map(line => (
-                <li key={line} className="flex gap-2">
-                  <span className="text-amber-400/80 shrink-0">▸</span>
-                  <span>{line}</span>
+            <ul className="space-y-1 font-mono text-[11px] text-muted-foreground">
+              {notReasons.map((line) => (
+                <li key={line} className="flex items-start gap-2">
+                  <span className="mt-0.5 shrink-0 text-warn/60">▸</span>
+                  {line}
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        {/* Insights */}
-        {(dynamicExplanation || route.reason || insights.length > 0) ? (
-          <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold mb-1.5 flex justify-between items-center">
-              <span>Route insight</span>
-              {!dynamicExplanation && (
-                <button 
-                  onClick={handleExplain} 
-                  disabled={isLoadingExplanation} 
-                  className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
-                >
-                  {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
-                </button>
-              )}
-            </div>
-            
-            {dynamicExplanation && (
-              <ul className="mb-2 space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed bg-surface-container-low/40 p-2 rounded border border-outline-variant/10">
-                {dynamicExplanation
-                  .split('\n')
-                  .map(line => line.trim())
-                  .filter(Boolean)
-                  .map((line, i) => (
-                    <li key={`${line}-${i}`} className="flex gap-2">
-                      <span className="text-primary/70 shrink-0">•</span>
-                      <span>{line.replace(/^[-*]\s*/, '')}</span>
-                    </li>
-                  ))}
-              </ul>
+        {/* Expandable details */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+          className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+        >
+          <span>Cost breakdown &amp; insights</span>
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+
+        {expanded && (
+          <div className="mt-3 space-y-3">
+            {/* Cost breakdown table */}
+            {breakdown && (
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="px-3 py-2 bg-surface-2 border-b border-border">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Cost breakdown
+                  </span>
+                </div>
+                <table className="w-full text-[11.5px]">
+                  <tbody>
+                    {[
+                      ['Freight', breakdown.freight],
+                      ['Toll', breakdown.toll],
+                      ['Handling', breakdown.handling],
+                      ['GST (5%)', breakdown.gst],
+                      ['Documentation', breakdown.documentation],
+                    ].map(([label, val]) => (
+                      <tr key={String(label)} className="border-t border-border/50">
+                        <td className="py-2 pl-3 text-muted-foreground">{label}</td>
+                        <td className="py-2 pr-3 text-right font-mono font-semibold text-foreground tabular-nums">
+                          ₹{fmt(val)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
-            {!dynamicExplanation && route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
-              <p className="text-[11px] text-on-surface font-medium mb-1.5 leading-relaxed">
-                {route.reason}
-              </p>
-            )}
-            {!dynamicExplanation && insights.length > 0 && (
-              <ul className="text-[11px] text-on-surface-variant space-y-1">
-                {insights.map((factor, idx) => (
-                  <li key={`${factor}-${idx}`} className="flex items-start gap-2">
-                    <span className="text-primary/60 leading-4 shrink-0">•</span>
-                    <span>{factor}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <div className="mt-3 pt-3 border-t border-outline-variant/8">
-            <div className="flex justify-between items-center">
-              <div className="text-[9px] uppercase tracking-[0.12em] text-outline font-label font-bold">Route insight</div>
-              <button 
-                onClick={handleExplain} 
-                disabled={isLoadingExplanation} 
-                className="px-2 py-0.5 bg-primary/10 text-primary text-[9px] rounded hover:bg-primary/20 transition disabled:opacity-50"
-              >
-                {isLoadingExplanation ? 'Analyzing...' : 'AI Explain'}
-              </button>
+            {/* Route insights */}
+            <div className="rounded-xl border border-border bg-surface/50 px-3 py-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  Route insight
+                </span>
+                {!dynamicExplanation && (
+                  <button
+                    onClick={handleExplain}
+                    disabled={isLoadingExplanation}
+                    className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-hybrid/40 hover:text-hybrid disabled:opacity-50"
+                  >
+                    <Sparkles className="h-2.5 w-2.5" />
+                    {isLoadingExplanation ? 'Analysing…' : 'AI Explain'}
+                  </button>
+                )}
+              </div>
+
+              {dynamicExplanation ? (
+                <ul className="space-y-1.5 text-[11.5px] text-muted-foreground leading-relaxed">
+                  {dynamicExplanation
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line, i) => (
+                      <li key={`${line}-${i}`} className="flex gap-2">
+                        <span className="mt-0.5 shrink-0 text-hybrid/60">•</span>
+                        {line.replace(/^[-*]\s*/, '')}
+                      </li>
+                    ))}
+                </ul>
+              ) : (
+                <>
+                  {route.reason && !/^optimized for\b/i.test(route.reason.trim()) && (
+                    <p className="mb-2 text-[11.5px] font-medium text-foreground leading-relaxed">
+                      {route.reason}
+                    </p>
+                  )}
+                  {insights.length > 0 && (
+                    <ul className="space-y-1 text-[11.5px] text-muted-foreground">
+                      {insights.map((f, i) => (
+                        <li key={`${f}-${i}`} className="flex items-start gap-2">
+                          <span className="mt-0.5 shrink-0 text-road/50">•</span>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -512,9 +499,9 @@ function RouteCard({
   );
 }
 
-// ── Recommendation Panel ──────────────────────────────────────────────
+// ── Recommendation Banner ─────────────────────────────────────────────
 
-function RecommendationPanel({
+function RecommendationBanner({
   routes,
   minCost,
   minTime,
@@ -525,45 +512,43 @@ function RecommendationPanel({
   minTime: number;
   minRisk: number;
 }) {
-  const priority = useLogiFlowStore(s => s.priority);
+  const priority = useLogiFlowStore((s) => s.priority);
 
   const lines = useMemo(() => {
     if (!routes.length) return [];
     const out: string[] = [];
-    const fastestIdx = routes.findIndex(r => Number(r.time) === minTime);
-    const cheapestIdx = routes.findIndex(r => Number(r.cost) === minCost);
-    const safestIdx = routes.findIndex(r => Number(r.risk) === minRisk);
-    const fr = fastestIdx >= 0 ? fastestIdx + 1 : 1;
-    const ch = cheapestIdx >= 0 ? cheapestIdx + 1 : 1;
-    const sf = safestIdx >= 0 ? safestIdx + 1 : 1;
+    const fi = routes.findIndex((r) => Number(r.time) === minTime);
+    const ci = routes.findIndex((r) => Number(r.cost) === minCost);
+    const si = routes.findIndex((r) => Number(r.risk) === minRisk);
 
-    if (priority === 'time') out.push(`Fastest option → Route ${fr} (${Number(routes[fastestIdx]?.time).toFixed(1)} hrs).`);
-    else if (priority === 'cost') out.push(`Most cost-efficient → Route ${ch} (₹${formatCurrency(routes[cheapestIdx]?.cost)}).`);
-    else if (priority === 'safe') out.push(`Safest route → Route ${sf} (lowest risk exposure).`);
-    else out.push(`Route 1 offers the best overall balance across cost, time, and risk.`);
+    if (priority === 'time')
+      out.push(`Fastest: Route ${fi + 1} at ${Number(routes[fi]?.time).toFixed(1)} hrs`);
+    else if (priority === 'cost')
+      out.push(`Cheapest: Route ${ci + 1} at ${fmtCompact(Number(routes[ci]?.cost))}`);
+    else if (priority === 'safe')
+      out.push(`Safest: Route ${si + 1} with lowest risk exposure`);
+    else out.push('Route 1 offers the best balance across cost, time, and risk');
 
     if (routes.length > 1) {
-      if (fr === ch) out.push(`Route ${fr} leads on both time and cost.`);
-      else out.push(`Speed → Route ${fr}; lowest spend → Route ${ch}.`);
+      if (fi === ci) out.push(`Route ${fi + 1} leads on both time and cost`);
+      else out.push(`Speed → Route ${fi + 1}; cheapest → Route ${ci + 1}`);
     }
-    if (routes.length > 1 && priority !== 'safe' && sf !== fr && sf !== ch) {
-      out.push(`Lowest risk → Route ${sf}.`);
-    }
-    return [...new Set(out)].slice(0, 4);
+    return [...new Set(out)].slice(0, 3);
   }, [routes, minTime, minCost, minRisk, priority]);
 
   if (!routes.length) return null;
 
   return (
-    <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4 shrink-0">
-      <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-2">
+    <div className="rounded-2xl border border-border bg-surface/50 px-4 py-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+        <BarChart3 className="h-3 w-3" />
         Recommendation
       </div>
-      <ul className="space-y-2 text-[12px] text-on-surface-variant leading-relaxed">
-        {lines.map(line => (
-          <li key={line} className="flex gap-2">
-            <span className="text-primary shrink-0 mt-px">→</span>
-            <span>{line}</span>
+      <ul className="space-y-1.5 text-[12px] text-muted-foreground">
+        {lines.map((line) => (
+          <li key={line} className="flex items-start gap-2">
+            <ArrowRight className="mt-0.5 h-3 w-3 shrink-0 text-road/60" />
+            {line}
           </li>
         ))}
       </ul>
@@ -574,27 +559,26 @@ function RecommendationPanel({
 // ── Route Results ─────────────────────────────────────────────────────
 
 export default function RouteResults() {
-  const routes = useLogiFlowStore(s => s.routes);
-  const selectedRoute = useLogiFlowStore(s => s.selectedRoute);
-  const setSelectedRoute = useLogiFlowStore(s => s.setSelectedRoute);
-  const priority = useLogiFlowStore(s => s.priority);
-  const source = useLogiFlowStore(s => s.source);
-  const destination = useLogiFlowStore(s => s.destination);
-  const cargoWeight = useLogiFlowStore(s => s.cargoWeight);
+  const routes = useLogiFlowStore((s) => s.routes);
+  const selectedRoute = useLogiFlowStore((s) => s.selectedRoute);
+  const setSelectedRoute = useLogiFlowStore((s) => s.setSelectedRoute);
+  const priority = useLogiFlowStore((s) => s.priority);
+  const source = useLogiFlowStore((s) => s.source);
+  const destination = useLogiFlowStore((s) => s.destination);
+  const cargoWeight = useLogiFlowStore((s) => s.cargoWeight);
 
-  // Auto-select best route whenever routes or priority changes
   useEffect(() => {
     if (!routes.length) return;
     let bestIndex = 0;
     if (priority === 'cost') {
-      const minCostVal = Math.min(...routes.map(r => Number(r.cost)));
-      bestIndex = routes.findIndex(r => Number(r.cost) === minCostVal);
+      const min = Math.min(...routes.map((r) => Number(r.cost)));
+      bestIndex = routes.findIndex((r) => Number(r.cost) === min);
     } else if (priority === 'time') {
-      const minTimeVal = Math.min(...routes.map(r => Number(r.time)));
-      bestIndex = routes.findIndex(r => Number(r.time) === minTimeVal);
+      const min = Math.min(...routes.map((r) => Number(r.time)));
+      bestIndex = routes.findIndex((r) => Number(r.time) === min);
     } else if (priority === 'safe') {
-      const minRiskVal = Math.min(...routes.map(r => Number(r.risk)));
-      bestIndex = routes.findIndex(r => Number(r.risk) === minRiskVal);
+      const min = Math.min(...routes.map((r) => Number(r.risk)));
+      bestIndex = routes.findIndex((r) => Number(r.risk) === min);
     }
     setSelectedRoute(Math.max(0, bestIndex));
   }, [routes, priority, setSelectedRoute]);
@@ -609,24 +593,36 @@ export default function RouteResults() {
   return (
     <section>
       {/* Header */}
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline">
-            Analysis
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-road/30 bg-road/10"
+          >
+            <Route className="h-3.5 w-3.5 text-road" />
           </div>
-          <div className="text-sm font-semibold text-on-surface mt-0.5">
-            {routes.length} route{routes.length !== 1 ? 's' : ''} found
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              Road analysis
+            </div>
+            <div className="text-sm font-semibold text-foreground">
+              {routes.length} route{routes.length !== 1 ? 's' : ''} found
+            </div>
           </div>
         </div>
-        <div className="text-[10px] mono text-on-surface-variant break-words sm:text-right">
-          {source} → {destination}
+        <div className="hidden font-mono text-[10px] text-muted-foreground sm:block">
+          {source} <ArrowRight className="inline h-2.5 w-2.5" /> {destination}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Cards column */}
-        <div className="lg:col-span-1 max-h-none space-y-4 pr-0 sm:pr-1 lg:max-h-[80vh] lg:overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
-          <RecommendationPanel routes={routes} minCost={minCost} minTime={minTime} minRisk={minRisk} />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 items-start">
+        {/* Cards */}
+        <div className="lg:col-span-1 space-y-3 lg:max-h-[80vh] lg:overflow-y-auto lg:pr-1 overscroll-y-contain [scrollbar-gutter:stable]">
+          <RecommendationBanner
+            routes={routes}
+            minCost={minCost}
+            minTime={minTime}
+            minRisk={minRisk}
+          />
           {routes.map((r, i) => (
             <RouteCard
               key={`${i}-${r.cost}-${r.time}-${r.risk}`}
@@ -646,25 +642,25 @@ export default function RouteResults() {
           ))}
         </div>
 
-        {/* Map column */}
-        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[240px] h-[min(55vh,420px)] sm:min-h-[300px] sm:h-[min(60vh,480px)] lg:h-[80vh] lg:min-h-[320px]">
-          <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/25 border border-outline-variant/10 rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2 shrink-0 pb-3 border-b border-outline-variant/8">
-              <span className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline flex items-center gap-2">
+        {/* Map */}
+        <div className="lg:col-span-2 lg:sticky lg:top-4 w-full">
+          <div className="flex flex-col rounded-2xl border border-border bg-surface/40 overflow-hidden h-[min(55vh,420px)] sm:h-[min(60vh,480px)] lg:h-[80vh]">
+            {/* Map header */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-surface/80 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Navigation className="h-3.5 w-3.5 text-road" />
+                <span className="text-[11px] font-semibold text-foreground">Route map</span>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
                 <span
-                  className="material-symbols-outlined text-primary"
-                  style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}
-                >
-                  map
-                </span>
-                Live Map
-              </span>
-              <span className="text-[10px] mono text-on-surface-variant text-right truncate">
-                R{safeIndex + 1} · {formatCostCompact(routes[safeIndex]?.cost ?? 0)} ·{' '}
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: 'var(--road)' }}
+                />
+                R{safeIndex + 1} · {fmtCompact(routes[safeIndex]?.cost ?? 0)} ·{' '}
                 {Number(routes[safeIndex]?.time ?? 0).toFixed(1)}h
-              </span>
+              </div>
             </div>
-            <div className="flex-1 min-h-0 pt-3">
+            <div className="flex-1 min-h-0">
               <MapView
                 key={`map-${selectedRoute}-${routes.length}-${Math.round(routes[0]?.cost ?? 0)}`}
                 routes={routes}
