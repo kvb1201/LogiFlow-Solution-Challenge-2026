@@ -114,11 +114,11 @@ Data appears after the next production deploy and real traffic. View under **Ana
 
 Vercel **blocks** production deploys on private repos when the commit author is not the Vercel team owner. The workflow `.github/workflows/deploy-vercel-production.yml` fixes this:
 
-- **On push to `main`:** waits **10 minutes** (debounces rapid pushes), rewrites the commit author, builds, deploys via Vercel CLI.
-- **Every 10 minutes (cron):** redeploys latest `main` as a backup.
-- **Manual:** Actions → “Deploy frontend to Vercel” → Run workflow.
+- **Collaborator pushes to `main`** (`github.actor` is not `kvb1201`) → deploy **immediately** as Kaveh (rewrite commit author + Vercel CLI).
+- **Kaveh pushes to `main` himself** → workflow **skipped**; Vercel’s normal Git deploy handles it.
+- **Manual test:** Actions → “Deploy frontend to Vercel” → Run workflow.
 
-#### One-time setup — **Kavya only** (~10 minutes)
+#### One-time setup — **Kaveh only** (~10 minutes)
 
 **Step 1 — Vercel access token**
 
@@ -131,7 +131,7 @@ Vercel **blocks** production deploys on private repos when the commit author is 
 
 1. Open project **logi-flow-solution-challenge-2026**
 2. **Settings → General** → copy **Project ID** → `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu`
-3. **Team Settings → General** → copy **Team ID** → `team_QNI9cRl0sS1VVLoJhfHRq3sD` (verify yours matches)
+3. **Team Settings → General** → copy **Team ID** → `team_QNI9cRl0sS1VVLoJhfHRq3sD` (verify it matches)
 
 **Step 3 — GitHub repo secrets**
 
@@ -142,8 +142,8 @@ GitHub repo → **Settings** → **Secrets and variables** → **Actions** → *
 | `VERCEL_TOKEN` | Token from Step 1 |
 | `VERCEL_ORG_ID` | Team ID from Step 2 |
 | `VERCEL_PROJECT_ID` | `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu` |
-| `VERCEL_GIT_EMAIL` | `kavyabhatiya44@gmail.com` (must match her GitHub verified email) |
-| `VERCEL_GIT_NAME` | `Bhatiya Kavya Vishnukumar` (or her GitHub display name) |
+| `VERCEL_GIT_EMAIL` | `kavyabhatiya44@gmail.com` (must match his GitHub verified email) |
+| `VERCEL_GIT_NAME` | `Bhatiya Kavya Vishnukumar` (his GitHub display / git name) |
 
 **Step 4 — Confirm Vercel env vars are set**
 
@@ -157,10 +157,10 @@ In Vercel project → **Settings → Environment Variables** (Production):
 **Step 5 — Test**
 
 1. GitHub → **Actions** → **Deploy frontend to Vercel** → **Run workflow**
-2. Wait for green check (~3–5 min; push-triggered runs wait an extra 10 min first)
+2. Wait for green check (~3–5 min)
 3. Open https://logi-flow-solution-challenge-2026.vercel.app
 
-Optional: ignore red **BLOCKED** deployments from Vercel’s native Git integration — the GitHub Action deployment is the real production deploy.
+After setup, any collaborator push to `main` triggers an immediate production deploy under Kaveh’s Vercel identity. Ignore red **BLOCKED** rows from Vercel’s native Git hook on collaborator commits — the Action deploy is the one that matters.
 
 ### Supabase sync (after deploy or retrain)
 
