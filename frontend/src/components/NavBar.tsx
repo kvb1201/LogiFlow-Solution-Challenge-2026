@@ -183,12 +183,6 @@ export default function NavBar() {
             <div className="flex items-center gap-2">
               <Link
                 href="/login"
-                className="text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors hidden sm:inline"
-              >
-                Login
-              </Link>
-              <Link
-                href="/comparator"
                 className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
               >
                 <Plus className="h-3.5 w-3.5" />
