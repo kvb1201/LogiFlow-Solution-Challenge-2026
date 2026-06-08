@@ -1,19 +1,22 @@
 import csv
 import math
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
 
-from app.services.geocoding_service import geocode_city
+from app.services.air_store import find_nearest_airport, get_airport
+from app.services.geocoding_service import geocode_city, geocode_city_global
 
 load_dotenv()
 
 DEFAULT_OURAIRPORTS_CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "airports.csv"
 OURAIRPORTS_CSV_PATH = os.getenv("OURAIRPORTS_CSV_PATH", str(DEFAULT_OURAIRPORTS_CSV_PATH))
 AIRPORT_MATCH_THRESHOLD_KM = 100.0
+GLOBAL_AIRPORT_MATCH_THRESHOLD_KM = 150.0
 
 CITY_TO_AIRPORT = {
     "Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
@@ -24,6 +27,22 @@ CITY_TO_AIRPORT = {
     "Hyderabad": {"code": "HYD", "name": "Rajiv Gandhi International Airport"},
     "Kolkata": {"code": "CCU", "name": "Netaji Subhas Chandra Bose International Airport"},
     "Tirupati": {"code": "TIR", "name": "Tirupati Airport"},
+    "Dubai": {"code": "DXB", "name": "Dubai International Airport"},
+    "Singapore": {"code": "SIN", "name": "Singapore Changi Airport"},
+    "Frankfurt": {"code": "FRA", "name": "Frankfurt Airport"},
+    "London": {"code": "LHR", "name": "London Heathrow Airport"},
+    "New York": {"code": "JFK", "name": "John F. Kennedy International Airport"},
+    "Amsterdam": {"code": "AMS", "name": "Amsterdam Airport Schiphol"},
+    "Paris": {"code": "CDG", "name": "Charles de Gaulle Airport"},
+    "Hong Kong": {"code": "HKG", "name": "Hong Kong International Airport"},
+    "Tokyo": {"code": "NRT", "name": "Narita International Airport"},
+    "Seoul": {"code": "ICN", "name": "Incheon International Airport"},
+    "Chicago": {"code": "ORD", "name": "O'Hare International Airport"},
+    "Los Angeles": {"code": "LAX", "name": "Los Angeles International Airport"},
+    "Doha": {"code": "DOH", "name": "Hamad International Airport"},
+    "Istanbul": {"code": "IST", "name": "Istanbul Airport"},
+    "Sydney": {"code": "SYD", "name": "Sydney Kingsford Smith Airport"},
+    "Toronto": {"code": "YYZ", "name": "Toronto Pearson International Airport"},
 }
 
 CITY_ALIASES = {
@@ -37,7 +56,27 @@ CITY_ALIASES = {
     "mumbai": "Mumbai",
     "hyderabad": "Hyderabad",
     "kolkata": "Kolkata",
+    "dubai": "Dubai",
+    "singapore": "Singapore",
+    "frankfurt": "Frankfurt",
+    "london": "London",
+    "new york": "New York",
+    "nyc": "New York",
+    "amsterdam": "Amsterdam",
+    "paris": "Paris",
+    "hong kong": "Hong Kong",
+    "tokyo": "Tokyo",
+    "seoul": "Seoul",
+    "chicago": "Chicago",
+    "los angeles": "Los Angeles",
+    "la": "Los Angeles",
+    "doha": "Doha",
+    "istanbul": "Istanbul",
+    "sydney": "Sydney",
+    "toronto": "Toronto",
 }
+
+_IATA_PATTERN = re.compile(r"^[A-Z]{3}$")
 
 
 def normalize_city(city: str) -> str:
@@ -46,8 +85,19 @@ def normalize_city(city: str) -> str:
     return canonical
 
 
+def _looks_like_iata(value: str) -> bool:
+    token = (value or "").strip().upper()
+    return bool(_IATA_PATTERN.match(token))
+
+
 def resolve_city_to_airport(city: str) -> dict:
-    canonical = normalize_city(city)
+    raw = (city or "").strip()
+    if _looks_like_iata(raw):
+        iata_match = get_airport_by_iata(raw.upper())
+        if iata_match:
+            return iata_match
+
+    canonical = normalize_city(raw)
     static = CITY_TO_AIRPORT.get(canonical)
     if static:
         details = get_airport_by_iata(static["code"])
@@ -66,15 +116,34 @@ def get_airport_by_iata(iata_code: str) -> Optional[dict]:
     if not iata_code:
         return None
 
-    return _load_ourairports_by_iata().get(iata_code.strip().upper())
+    code = iata_code.strip().upper()
+    from_store = get_airport(code)
+    if from_store:
+        return from_store
+
+    return _load_ourairports_by_iata().get(code)
 
 
 def find_nearest_airport_for_city(city: str) -> Optional[dict]:
     coords = geocode_city(city)
+    use_global = False
+    if not coords:
+        coords = geocode_city_global(city)
+        use_global = bool(coords)
+
     if not coords:
         return None
 
     airports = _load_ourairports()
+    threshold = AIRPORT_MATCH_THRESHOLD_KM
+    if use_global or not airports:
+        global_match = find_nearest_airport(
+            coords["lat"], coords["lng"], max_km=GLOBAL_AIRPORT_MATCH_THRESHOLD_KM
+        )
+        if global_match:
+            return global_match
+        threshold = GLOBAL_AIRPORT_MATCH_THRESHOLD_KM
+
     if not airports:
         return None
 
@@ -93,8 +162,11 @@ def find_nearest_airport_for_city(city: str) -> Optional[dict]:
             best_distance = distance
             best = airport
 
-    if not best or best_distance > AIRPORT_MATCH_THRESHOLD_KM:
-        print(f"[AirportLocatorService] Nearest airport {best.get('iata_code') if best else 'N/A'} is too far ({best_distance:.1f}km) for city {city}")
+    if not best or best_distance > threshold:
+        print(
+            f"[AirportLocatorService] Nearest airport {best.get('iata_code') if best else 'N/A'} "
+            f"is too far ({best_distance:.1f}km) for city {city}"
+        )
         return None
 
     return {
@@ -158,6 +230,7 @@ def _load_ourairports_by_iata() -> dict:
                 "city_name": airport.get("municipality") or "",
                 "lat": airport.get("lat"),
                 "lng": airport.get("lng"),
+                "timezone": "Asia/Kolkata",
             }
     return by_code
 

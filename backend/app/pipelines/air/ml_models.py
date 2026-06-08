@@ -1,5 +1,7 @@
 from app.pipelines.air.config import AIRLINE_RELIABILITY
+from app.services.air_timezone_service import parse_departure_utc, resolve_timezone
 from app.services.otp_scoring_service import get_otp_scoring_service
+from zoneinfo import ZoneInfo
 
 
 def _source_weather_payload(weather_context: dict | None) -> dict:
@@ -21,10 +23,14 @@ def score_route_otp(
     inbound_delay_minutes: float | int = 0,
 ) -> dict:
     """Run OTP congestion scoring for a route's departure airport."""
-    source_airport = (route.get("source_airport") or {}).get("code", "")
+    source_airport = route.get("source_airport") or {}
+    departure_utc = parse_departure_utc(departure_date, source_airport)
+    local_tz = ZoneInfo(resolve_timezone(source_airport))
+    local_departure = departure_utc.astimezone(local_tz).replace(tzinfo=None)
+
     return get_otp_scoring_service().score(
-        departure_airport=source_airport,
-        departure_time=departure_date,
+        departure_airport=source_airport.get("code", ""),
+        departure_time=local_departure,
         weather_data=_source_weather_payload(weather_context),
         inbound_delay_minutes=inbound_delay_minutes,
     )

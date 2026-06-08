@@ -47,6 +47,7 @@ A lightweight key-value store shared across all pipelines within a single HTTP r
 L1: RequestContext     → per-request (ms lifetime)
 L2: In-memory dict     → application lifetime (TTL-based)
 L3: Redis              → persistent across restarts (production)
+L4: Supabase           → rail geometry, ML metrics, air reference data
 ```
 
 ### Reduced Gemini Usage
@@ -56,7 +57,7 @@ L3: Redis              → persistent across restarts (production)
 - Timeout reduced from 12s to 5s
 
 ### Parallel Pipeline Execution
-All pipelines run in `ThreadPoolExecutor(max_workers=3)` — total latency ≈ slowest pipeline, not sum of all.
+All four mode pipelines run in `ThreadPoolExecutor(max_workers=4)` — total latency ≈ slowest pipeline, not sum of all.
 
 ---
 

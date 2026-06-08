@@ -1,144 +1,122 @@
 # Architecture
 
-## System Overview
+## System overview
 
-LogiFlow is a **multi-modal cargo logistics optimizer** built on a modular pipeline architecture. Each transport mode (road, rail, air, water) operates as an independent pipeline with its own data sources, feature engineering, and scoring logic. A centralized **Hybrid Engine** executes all pipelines in parallel, normalizes outputs into a common schema, and selects the optimal mode using priority-weighted scoring.
+LogiFlow is a **multi-modal cargo logistics optimizer**. Each transport mode (road, rail, air, water) is an independent pipeline. A **hybrid comparator** and **composer** layer normalize outputs, score across modes, and build chained itineraries.
 
 ```
-Client Request
+Client (Next.js / Capacitor)
       │
       ▼
-┌──────────┐
-│  FastAPI  │─────────── /api/optimize ──────────┐
-│  Router   │                                     │
-└──────────┘                                     ▼
-                                         ┌───────────────┐
-                                         │ HybridPipeline │
-                                         │   .generate()  │
-                                         └───────┬───────┘
-                              ┌──────────────────┼──────────────────┐
-                              ▼                  ▼                  ▼
-                     ThreadPoolExecutor (max_workers=3)
-                     ┌──────────┐ ┌──────────┐ ┌──────────┐
-                     │   Road   │ │   Rail   │ │   Air    │
-                     │ Pipeline │ │ Pipeline │ │ Pipeline │
-                     └────┬─────┘ └────┬─────┘ └────┬─────┘
-                          │            │             │
-                          ▼            ▼             ▼
-                     ┌──────────────────────────────────┐
-                     │         Normalizer               │
-                     │  (road → {mode, time, cost,      │
-                     │   risk, confidence, meta})        │
-                     └───────────────┬──────────────────┘
-                                     ▼
-                     ┌──────────────────────────────────┐
-                     │    Scorer (priority-weighted)     │
-                     │  dominance check → penalty →     │
-                     │  weighted sum → rank              │
-                     └───────────────┬──────────────────┘
-                                     ▼
-                     ┌──────────────────────────────────┐
-                     │   Explainer (template / Gemini)   │
-                     └───────────────┬──────────────────┘
-                                     ▼
-                              JSON Response
+Vercel /api/* proxy + warm-backend
+      │
+      ▼
+FastAPI (Render)
+      │
+      ├─ /road/optimize
+      ├─ /railway/optimize
+      ├─ /air/optimize
+      ├─ /water/optimize
+      ├─ /comparator/routes
+      ├─ /compose
+      ├─ /intent/parse
+      └─ /locations/resolve
+      │
+      ▼
+Pipelines (road · rail · air · water · hybrid)
+      │
+      ▼
+Services (Gemini · weather · geocoder · location funnel · Supabase caches)
 ```
 
----
+## Request lifecycle (comparator)
 
-## Request Lifecycle
+1. Client sends `POST /comparator/routes` with source, destination, priority
+2. `HybridPipeline.generate()` creates a per-request `RequestContext`
+3. `ThreadPoolExecutor(max_workers=4)` runs road, rail, air, and water in parallel (**30s timeout** each)
+4. Modes returning `{status: "no_routes"}` or timing out are marked unavailable
+5. **Normalizer** maps each result to `{mode, time_hr, cost_inr, risk, confidence}`
+6. **Scorer** applies Pareto checks and priority-weighted ranking
+7. **Explainer** returns template text (default) or Gemini detail (`explanation_mode: "detailed"`)
+8. JSON response with `recommended_mode`, `comparison`, `tradeoffs`, `available_modes`
 
-1. **Client** sends `POST /api/optimize` with `{source, destination, priority}`
-2. **FastAPI router** delegates to `HybridPipeline.generate()`
-3. **RequestContext** is created — a shared in-memory store for cross-pipeline caching (weather, geocoding)
-4. **ThreadPoolExecutor** runs Road, Rail, and Air pipelines in parallel with a **30-second timeout** per pipeline
-5. Each pipeline returns its best route(s) or `{status: "no_routes"}`
-6. **Normalizer** converts each mode's output to a common schema: `{mode, time_hr, cost_inr, risk, confidence}`
-7. **Scorer** applies priority weights and ranks candidates
-8. **Explainer** generates human-readable tradeoff analysis (template-based by default; Gemini AI if `explanation_mode: "detailed"`)
-9. Response is returned with `recommended_mode`, `comparison`, `tradeoffs`, and `available_modes`
-
----
-
-## Component Breakdown
+## Component breakdown
 
 ### Pipelines (`app/pipelines/`)
 
-| Pipeline | Data Sources | Key Logic |
+| Pipeline | Data sources | Key logic |
 |----------|-------------|-----------|
-| **Road** | TomTom API, weather service | Route generation → ML delay prediction → risk scoring |
-| **Rail** | RailYatri scrape, ConfirmTkt scrape, CSV fallback | Station resolution → scraping (Tier 1/2) → tariff calculation |
-| **Air** | OpenFlights dataset | Airport resolution → route matching → confidence filtering |
-| **Water** | Static port/route dataset | Port mapping → BFS pathfinding → risk modeling |
-| **Hybrid** | All of the above | Parallel execution → normalization → scoring → explanation |
+| **Road** | TomTom, OpenWeather | Routing → ML delay → toll/GST cost |
+| **Rail** | CSV, delay scrape, ConfirmTkt scrape | Location funnel → route finder → tariff → delay ML |
+| **Air** | OpenFlights + Supabase airports/routes (intl) | Airport resolution → lane ranking → OTP scoring |
+| **Water** | 13-port sea-lane graph | Port mapping → BFS → risk breakdown |
+| **Hybrid** | All four modes | Parallel run → normalize → score → explain |
 
-### Shared Services (`app/services/`)
+### Shared services (`app/services/`)
 
 | Service | Purpose |
 |---------|---------|
-| `weather_service.py` | Fetches weather data for origin/destination cities |
-| `gemini_explainer.py` | Gemini AI explanation generation with caching |
-| `gemini_service.py` | General Gemini API wrapper |
-| `ml_service.py` | ML model loading and inference |
-| `geocoding_service.py` | City → coordinates resolution |
-| `pipeline_registry.py` | Dynamic pipeline discovery and instantiation |
-| `air_data_service.py` | OpenFlights data loading and route lookup |
-| `airport_locator_service.py` | City → nearest airport resolution |
+| `location_funnel.py` | Canonical city + station cluster resolution (PDF + IATA) |
+| `route_geometry_store.py` | Supabase read/write for `train_route_geometry` |
+| `rail_ml_metrics_store.py` | Supabase snapshot of rail ML quantifiers |
+| `station_pdf_index.py` | Parser/index for `station_name.pdf` |
+| `geometry_audit.py` | Per-train schedule vs map geometry audit |
+| `gemini_explainer.py` / `gemini_service.py` | AI explanations |
+| `weather_service.py` | Origin/destination weather |
+| `geocoding_service.py` | City → coordinates |
+| `supabase_client.py` | REST client for Supabase tables |
 
-### Utilities (`app/utils/`)
+### Routes (`app/routes/`)
 
-| Utility | Purpose |
-|---------|---------|
-| `request_context.py` | Per-request key-value cache shared across pipelines |
-| `coordinates.py` | Coordinate lookups and distance calculations |
+| Router | Prefix | Notes |
+|--------|--------|-------|
+| `rail_routes` | `/railway` | Optimize, geometry, model-info, station search |
+| `road_routes` | `/road` | TomTom optimization |
+| `air_routes` | `/air` | Domestic + international lanes |
+| `water_routes` | `/water` | Port routing |
+| `comparator` | `/comparator` | Cross-mode compare |
+| `compose` | `/compose` | Chained multimodal legs |
+| `intent_routes` | `/intent` | NL shipment brief parsing |
+| `location_routes` | `/locations` | Funnel debug / resolve-pair |
+| `planner_routes` | `/planner` | Saved reports, trip monitoring |
 
----
+## Supabase (read caches)
 
-## Parallel Execution
+| Table | Purpose | Frontend access |
+|-------|---------|-----------------|
+| `station_coordinates` | Rail map station lat/lng | Backend only |
+| `train_route_geometry` | Per-train corridor polylines | Backend → API |
+| `rail_ml_metrics` | Delay ML quantifiers (`id=current`) | **Direct from Vercel** |
+| `airports` / `air_routes` / `otp_baselines` | Air pipeline data | Backend |
 
-The Hybrid Engine uses Python's `concurrent.futures.ThreadPoolExecutor` with `max_workers=3` to run road, rail, and air pipelines simultaneously. Each future has a **30-second timeout**:
+Rail ML metrics bypass Render cold start: the railway page reads `rail_ml_metrics` via `NEXT_PUBLIC_SUPABASE_URL` + anon key.
+
+## Parallel execution
 
 ```python
-with ThreadPoolExecutor(max_workers=3) as executor:
+with ThreadPoolExecutor(max_workers=4) as executor:
     futures = {
         "road": executor.submit(safe_call, road_pipeline, "road"),
         "rail": executor.submit(safe_call, rail_pipeline, "rail"),
         "air":  executor.submit(safe_call, air_pipeline, "air"),
+        "water": executor.submit(safe_call, water_pipeline, "water"),
     }
     for name, future in futures.items():
         results[name] = future.result(timeout=30)
 ```
 
-If a pipeline times out or throws an exception:
-- It is treated as **unavailable**
-- The remaining modes proceed normally
-- The response includes `unavailable_modes` with an explanation
+## Caching tiers
 
----
-
-## RequestContext Caching
-
-To avoid redundant API calls when multiple pipelines need the same external data (e.g., weather for the same city), a `RequestContext` object is shared:
-
-```python
-context = RequestContext()
-
-# In road pipeline:
-weather = context.get("weather:Mumbai")  # cache hit if rail already fetched it
-
-# In rail pipeline:
-context.set("weather:Mumbai", weather_data)  # stored for other pipelines
+```
+L1: RequestContext     → per-request (weather, geocode)
+L2: In-memory dict     → application lifetime
+L3: Redis              → optional shared cache (REDIS_URL)
+L4: Supabase           → rail geometry + ML metrics (persistent)
+L5: Static JSON        → frontend/public fallbacks
 ```
 
-This eliminates duplicate weather, geocoding, and incident API calls within a single request.
+## Reliability
 
----
-
-## Caching Strategy
-
-| Layer | Scope | TTL | Purpose |
-|-------|-------|-----|---------|
-| **RequestContext** | Single HTTP request | Request lifetime | Cross-pipeline dedup |
-| **In-memory cache** | Application lifetime | 1 day (trains), 30 days (stations) | Avoid redundant scraping |
-| **Redis** | Persistent (production) | Configurable per endpoint | Shared cache across workers |
-| **Gemini cache** | Application lifetime | 1 hour | Avoid duplicate AI calls |
+- Frontend warms Render via `/api/warm-backend` on load, tab focus, and every 3 minutes
+- GitHub Actions pings `/health` every 5 minutes when `BACKEND_URL` secret is set
+- Rail schedule preload is off by default on 512MB Render instances

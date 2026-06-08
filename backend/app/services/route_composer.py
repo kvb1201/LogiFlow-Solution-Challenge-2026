@@ -108,6 +108,11 @@ class RouteComposer:
     ) -> dict[str, Any]:
         payload = payload or {}
         context = context or RequestContext()
+        from app.services.location_funnel import normalize_corridor
+
+        src_r, dst_r = normalize_corridor(source, destination, context=context)
+        origin = src_r.canonical_city
+        dest = dst_r.canonical_city
         priority = (payload.get("priority") or "balanced").lower().strip()
         opts = payload.get("compose_options") or {}
         max_hubs = min(3, int(opts.get("max_hubs", 2)))
@@ -120,8 +125,6 @@ class RouteComposer:
             for m in (payload.get("constraints") or {}).get("excluded_modes", [])
         )
 
-        origin = canonical_city(source)
-        dest = canonical_city(destination)
         corridor_km = _corridor_distance_km(origin, dest, context)
         short_corridor = corridor_km is not None and corridor_km < _SHORT_CORRIDOR_KM
 
@@ -356,6 +359,8 @@ class RouteComposer:
                 "partial": False,
                 "short_corridor": short_corridor,
                 "corridor_distance_km": corridor_km,
+                "resolved_source": src_r.to_dict(),
+                "resolved_destination": dst_r.to_dict(),
             }
             if short_corridor and corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
@@ -373,6 +378,8 @@ class RouteComposer:
                 "partial": False,
                 "short_corridor": True,
                 "corridor_distance_km": corridor_km,
+                "resolved_source": src_r.to_dict(),
+                "resolved_destination": dst_r.to_dict(),
             }
             if corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
@@ -425,6 +432,8 @@ class RouteComposer:
             "cold_corridor": not warm_corridor,
             "short_corridor": short_corridor,
             "corridor_distance_km": corridor_km,
+            "resolved_source": src_r.to_dict(),
+            "resolved_destination": dst_r.to_dict(),
         }
         if short_corridor and corridor_km is not None:
             out["compose_note"] = _short_corridor_note(corridor_km)
