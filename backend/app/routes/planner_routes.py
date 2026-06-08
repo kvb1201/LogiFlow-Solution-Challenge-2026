@@ -12,6 +12,7 @@ from app.models.report import (
     NotificationResponse,
     ReoptimizeRequest,
     ReoptimizationSaveRequest,
+    ShipmentLocationUpdateRequest,
     MAX_REPORTS_PER_USER,
 )
 from app.config.database import get_db
@@ -453,6 +454,150 @@ async def get_route_health(
         "destination": report.destination,
         **health,
     }
+
+
+# ── Update Shipment Location (Single Source of Truth) ────────────────
+
+@router.post("/reports/{report_id}/update-location", response_model=ReportResponse)
+async def update_shipment_location(
+    report_id: str,
+    body: ShipmentLocationUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mutate the live shipment in-place from the confirmed current_location.
+
+    The backend recomputes all metrics (ETA, cost, risk) using the existing
+    optimization pipeline. Client-submitted metric values are NOT accepted —
+    only current_location is trusted from the request.
+
+    What changes on the report:
+      - optimization_result.current_location  — confirmed location
+      - stops                                 — trimmed to remaining route only
+      - estimated_cost / estimated_time / risk_score — recomputed from pipeline
+      - expected_end_time                     — recalculated from recomputed time
+    """
+    from app.services.trip_progress import evaluate_remaining_journey
+    from app.services.reoptimization_service import extract_plan_metrics
+
+    report = await _get_owned_report(report_id, db, current_user)
+    now = datetime.utcnow()
+
+    current_location = body.current_location
+
+    # ── Step 1: compute remaining route ─────────────────────────────
+    # Full original waypoint chain
+    all_waypoints = [report.source, *(report.stops or []), report.destination]
+    current_norm = current_location.lower()
+
+    # Find current_location in the waypoint list (case-insensitive).
+    # If not found, also check route_intelligence.route_cities so that
+    # intermediate corridor cities (e.g. Karjan) work correctly.
+    idx_in_waypoints: int = -1
+    for i, wp in enumerate(all_waypoints):
+        if wp.lower() == current_norm:
+            idx_in_waypoints = i
+            break
+
+    if idx_in_waypoints < 0:
+        # current_location is an intermediate corridor city — find which
+        # declared-waypoint leg it belongs to and split there.
+        opt_result = report.optimization_result or {}
+        route_intelligence = opt_result.get("route_intelligence") or {}
+        route_cities: list[str] = route_intelligence.get("route_cities") or []
+        # Find the city in route_cities and map it back to a waypoint segment
+        rc_lower = [rc.lower() for rc in route_cities]
+        city_rc_idx = next((i for i, c in enumerate(rc_lower) if c == current_norm), -1)
+        if city_rc_idx >= 0:
+            # Find which declared-waypoint leg this route city falls in
+            for i in range(len(all_waypoints) - 1):
+                wp_a = all_waypoints[i].lower()
+                wp_b = all_waypoints[i + 1].lower()
+                # Get indices of wp_a and wp_b in route_cities
+                wp_a_rc = next((j for j, c in enumerate(rc_lower) if c == wp_a), -1)
+                wp_b_rc = next((j for j, c in enumerate(rc_lower) if c == wp_b), -1)
+                if wp_a_rc >= 0 and wp_b_rc >= 0 and wp_a_rc <= city_rc_idx < wp_b_rc:
+                    # current_location is between waypoint[i] and waypoint[i+1]
+                    # Remaining route starts from waypoint[i+1]
+                    idx_in_waypoints = i  # split after this waypoint
+                    break
+        # If still not found, treat as being at the very start
+        if idx_in_waypoints < 0:
+            idx_in_waypoints = 0
+
+    # Remaining stops: waypoints strictly AFTER the current position, excluding destination
+    remaining_stops: list[str] = [
+        wp for wp in all_waypoints[idx_in_waypoints + 1:]
+        if wp != report.destination
+    ]
+
+    # ── Step 2: recompute metrics from pipeline ──────────────────────
+    # Uses the existing optimization pipeline — same path as reoptimization.
+    # progress_percentage is approximated from idx_in_waypoints.
+    approx_progress = (idx_in_waypoints / max(len(all_waypoints) - 1, 1)) * 100.0
+    try:
+        remaining_eval = evaluate_remaining_journey(
+            report, current_location, approx_progress
+        )
+        metrics = remaining_eval.get("metrics") or {}
+    except Exception:
+        metrics = {}
+
+    # Fallback: if pipeline produced nothing useful, keep existing values
+    new_cost: float | None = metrics.get("cost")
+    new_time: float | None = metrics.get("time")
+    new_risk: float | None = metrics.get("risk")
+
+    # ── Step 3: mutate the report ────────────────────────────────────
+    # Persist confirmed current_location inside optimization_result
+    existing_result: dict = dict(report.optimization_result or {})
+    existing_result["current_location"] = current_location
+    existing_result["current_location_updated_at"] = now.isoformat()
+
+    # Also update route_intelligence.route_cities to the remaining corridor
+    route_intelligence = existing_result.get("route_intelligence") or {}
+    if route_intelligence:
+        full_rc: list[str] = route_intelligence.get("route_cities") or []
+        rc_lower = [c.lower() for c in full_rc]
+        # Trim route_cities: keep from current_location onward
+        split_idx = next((i for i, c in enumerate(rc_lower) if c == current_norm), -1)
+        if split_idx >= 0:
+            route_intelligence = dict(route_intelligence)
+            route_intelligence["route_cities"] = full_rc[split_idx:]
+            route_intelligence["completed_cities"] = full_rc[:split_idx]
+            existing_result["route_intelligence"] = route_intelligence
+
+    report.optimization_result = existing_result
+
+    # Trim stops to remaining route
+    report.stops = remaining_stops
+
+    # Update metrics if pipeline produced valid values
+    if new_cost is not None:
+        report.estimated_cost = round(new_cost, 2)
+    if new_time is not None:
+        report.estimated_time = round(new_time, 4)
+        buffer = report.buffer_minutes or 30
+        report.expected_end_time = now + timedelta(hours=new_time, minutes=buffer)
+    if new_risk is not None:
+        report.risk_score = round(max(0.0, min(1.0, new_risk)), 4)
+
+    report.updated_at = now
+
+    await _create_notification(
+        db,
+        current_user.id,
+        report.id,
+        "shipment_location_updated",
+        f"Shipment '{report.name}' updated — now at {current_location}. "
+        f"Remaining stops: {len(remaining_stops)}.",
+    )
+
+    await db.commit()
+    await db.refresh(report)
+    return _report_to_response(report)
+
 
 @router.post("/reports/{report_id}/reoptimize")
 async def reoptimize_trip(

@@ -321,7 +321,10 @@ export function ReportDetailPage({ reportId }: Props) {
         {report.status === 'active' && (
           <section id="route-health" className="mb-6">
             <h2 className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-3">Route Health</h2>
-            <RouteHealthCard report={report} />
+            <RouteHealthCard
+              report={report}
+              onShipmentUpdated={updated => setReport(updated)}
+            />
           </section>
         )}
 

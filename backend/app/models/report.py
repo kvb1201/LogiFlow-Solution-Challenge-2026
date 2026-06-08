@@ -183,3 +183,20 @@ class ReoptimizationSaveRequest(BaseModel):
         if not v.strip():
             raise ValueError("Destination is required")
         return v.strip()
+
+
+class ShipmentLocationUpdateRequest(BaseModel):
+    """
+    Update Shipment: only the current_location is accepted from the client.
+    The backend recomputes all metrics (ETA, cost, risk) itself using the
+    existing optimization pipeline. Client-submitted metric values are
+    intentionally not accepted to enforce the Single Source of Truth.
+    """
+    current_location: str
+
+    @field_validator("current_location")
+    @classmethod
+    def location_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("current_location is required")
+        return v.strip()
