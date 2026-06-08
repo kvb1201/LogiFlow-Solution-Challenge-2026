@@ -88,10 +88,16 @@ The built-in warmup reduces 503s for users but the **first visitor after a long 
 |----------|----------|-------------|
 | `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup |
 | `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set |
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | Supabase URL — railway ML panel reads `rail_ml_metrics` directly |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase anon key (read-only public tables) |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | `https://mwvohdvtxwltzkyuboaz.supabase.co` — **map geometry** + ML metrics (browser → Supabase direct) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase **anon** key (same as `SUPABASE_KEY` in backend `.env`) |
 
-The railway delay-model panel fetches **Supabase first**, then `public/data/rail-ml-metrics.json`, then Render `/railway/model-info`. This avoids waiting for Render cold start on Vercel.
+**Critical:** `NEXT_PUBLIC_*` vars are baked in at **build time**. After adding or changing them in Vercel → **Redeploy** (Deployments → ⋯ → Redeploy).
+
+Without these two vars, the train map never loads geometry from Supabase (it falls back to Render, which can cold-start for 30–90s).
+
+Verify after deploy: open the site → DevTools → Network → filter `train_route_geometry` — you should see requests to `*.supabase.co`, not only `onrender.com`.
+
+The railway delay-model panel and **route map** both fetch **Supabase first**, then fall back to Render.
 
 ### Supabase sync (after deploy or retrain)
 
