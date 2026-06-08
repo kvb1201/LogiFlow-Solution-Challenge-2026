@@ -19,6 +19,7 @@ import {
 } from '@/services/api';
 
 const NO_SEGMENTS: RouteSegment[] = [];
+const NO_STOPS: RouteGeometryStop[] = [];
 import { ensureBackendReachable } from '@/lib/backendWarmup';
 import {
   formatRailDataSource,
@@ -651,7 +652,7 @@ export default function RailwayDashboard() {
     if (!corridorFetchKey) {
       // Use stable NO_SEGMENTS + functional updates — setRouteStops([]) was a new [] every run → infinite loop
       setRouteGeometry((prev) => (prev === null ? prev : null));
-      setRouteStops((prev) => (prev.length === 0 ? prev : NO_SEGMENTS));
+      setRouteStops((prev) => (prev.length === 0 ? prev : NO_STOPS));
       setGeometryLoading((prev) => (prev === false ? prev : false));
       return () => controller.abort();
     }
@@ -669,7 +670,7 @@ export default function RailwayDashboard() {
         if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setRouteGeometry((prev) => (prev === null ? prev : null));
-        setRouteStops((prev) => (prev.length === 0 ? prev : NO_SEGMENTS));
+        setRouteStops((prev) => (prev.length === 0 ? prev : NO_STOPS));
       })
       .finally(() => {
         if (!controller.signal.aborted) setGeometryLoading(false);
