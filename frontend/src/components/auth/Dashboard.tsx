@@ -305,7 +305,7 @@ export function Dashboard() {
             </Link>
 
             <Link
-              href="/rail"
+              href="/railway"
               className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-sky-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
             >
               <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
