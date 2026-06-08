@@ -65,6 +65,29 @@ dev-frontend:
 sync-rail-geometry-trains:
 	cd backend && ./venv/bin/python scripts/sync_rail_supabase.py --trains $(or $(TRAINS),100)
 
+# Full all-India geometry sync (single worker)
+sync-rail-geometry-full:
+	cd backend && ./venv/bin/python scripts/sync_rail_supabase.py --full --verbose
+
+# Tail all active geometry sync shard logs (verbose, live)
+tail-geometry-sync:
+	cd backend && ./scripts/tail_geometry_sync.sh
+
+status-geometry-sync:
+	cd backend && ./scripts/tail_geometry_sync.sh --status
+
+# Launch N parallel geometry sync workers (disjoint origin-city shards)
+# Example: make sync-rail-geometry-parallel SHARDS=4
+sync-rail-geometry-parallel:
+	@shards=$(or $(SHARDS),4); \
+	echo "Starting $$shards parallel geometry sync workers..."; \
+	for i in $$(seq 0 $$((shards - 1))); do \
+	  (cd backend && ./venv/bin/python scripts/sync_rail_supabase.py --full --verbose --shard $$i --shards $$shards \
+	    2>&1 | tee logs/geometry_full_sync_s$$i.log) & \
+	done; \
+	wait; \
+	echo "All $$shards workers finished."
+
 # Audit map geometry: reads train_route_geometry from Supabase only
 audit-rail-geometry:
 	cd backend && ./venv/bin/python scripts/audit_rail_geometry.py --limit $(or $(TRAINS),100)
