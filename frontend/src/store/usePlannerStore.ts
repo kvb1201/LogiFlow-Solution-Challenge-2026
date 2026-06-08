@@ -13,6 +13,7 @@ import {
   getRouteHealth,
   reoptimizeTrip,
   saveRevision,
+  updateShipmentLocation,
   listNotifications,
   getUnreadCount,
   markNotificationRead,
@@ -66,6 +67,9 @@ interface PlannerState {
     remaining_stops: string[];
     destination: string;
     recommendation: ReoptimizationRecommendation;
+  }) => Promise<ShipmentReport>;
+  updateShipmentLocation: (id: string, payload: {
+    current_location: string;
   }) => Promise<ShipmentReport>;
 
   // Notifications
@@ -250,6 +254,24 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
       return report;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save revision';
+      set({ saving: false, error: msg });
+      throw new Error(msg);
+    }
+  },
+
+  updateShipmentLocation: async (id, payload) => {
+    set({ saving: true, error: null });
+    try {
+      const updated = await updateShipmentLocation(id, payload);
+      // Update the report in the list (single source of truth)
+      set(state => ({
+        reports: state.reports.map(r => (r.id === id ? updated : r)),
+        saving: false,
+      }));
+      void get().fetchUnreadCount();
+      return updated;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update shipment location';
       set({ saving: false, error: msg });
       throw new Error(msg);
     }

@@ -89,18 +89,21 @@ export interface RouteHealthResponse {
     longitude: number | null;
     confidence: string;
   } | null;
+  /** Location confirmed by a prior Update Shipment action — used directly instead of estimating */
+  confirmed_current_location: string | null;
   deviation_level: 'none' | 'minor' | 'major';
   deviation_km: number | null;
-  // Phase 3 — Corridor Detection
   corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
   corridor_matched_city: string;
-  /** All route cities from route_intelligence — for corridor display and location selector */
+  /** All route cities (trimmed to remaining route after an update) */
   route_cities: string[] | null;
-  // Phase 4 — Remaining Journey
+  /** Cities already passed — for split corridor display */
+  completed_cities: string[];
+  /** Cities still ahead — for split corridor display */
+  remaining_cities: string[];
   updated_eta_minutes: number | null;
   updated_cost: number | null;
   updated_risk: number | null;
-  // Phase 6 — Reoptimization trigger
   reoptimization_recommended: boolean;
   reoptimization_reason: string;
   mode: string;
@@ -276,6 +279,18 @@ export async function reoptimizeTrip(
     requireAuth: true,
   });
   return parseJson<ReoptimizationResponse>(res);
+}
+
+export async function updateShipmentLocation(
+  id: string,
+  payload: { current_location: string }
+): Promise<ShipmentReport> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/update-location`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    requireAuth: true,
+  });
+  return parseJson<ShipmentReport>(res);
 }
 
 export async function saveRevision(

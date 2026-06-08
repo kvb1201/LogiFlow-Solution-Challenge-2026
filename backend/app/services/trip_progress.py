@@ -232,42 +232,136 @@ def build_route_intelligence(
     estimated_time_hours: Optional[float] = None,
 ) -> dict[str, Any]:
     """
-    Phase 1: Generate route_intelligence for a newly created report.
+    Generate route_intelligence for a newly created report.
 
-    Returns a dict with:
-      - route_cities: all cities on the route (including source, stops, destination)
-      - checkpoints: evenly-spaced subset used for progress reporting
+    Route city pipeline:
+      1. Walk declared waypoints, insert intermediate corridor cities after each leg.
+      2. Deduplicate by lowercase canonical key — keep first occurrence.
+      3. Sort all cities (excluding source/destination anchors) by cumulative
+         haversine distance from source so the list always reflects actual
+         path traversal order.
+      4. Sample checkpoints evenly from the ordered list.
+
+    Returns:
+      route_cities  — full ordered, deduplicated city list
+      checkpoints   — evenly-spaced subset ordered by distance_from_start
     """
     waypoints = [source, *(stops or []), destination]
 
-    # Build route_cities: start with declared waypoints, then enrich with intermediate cities
-    route_cities: list[str] = []
+    # ── Step 1: collect cities in discovery order ────────────────────
+    raw: list[str] = []
     seen: set[str] = set()
 
+    def _add(city: str) -> None:
+        # Use plain lowercase for deduplication — NOT _normalize_city.
+        # _normalize_city maps nearby towns to their canonical route city
+        # (e.g. karjan → vadodara), which is correct for corridor detection
+        # but wrong here: we want both Vadodara AND Karjan in the city list.
+        key = city.strip().lower()
+        if key not in seen:
+            seen.add(key)
+            raw.append(city)
+
     for i, wp in enumerate(waypoints):
-        if wp.lower() not in seen:
-            route_cities.append(wp)
-            seen.add(wp.lower())
-
+        _add(wp)
         if i < len(waypoints) - 1:
-            intermediate = _intermediate_cities_between(wp, waypoints[i + 1])
-            for ic in intermediate:
-                if ic.lower() not in seen:
-                    route_cities.append(ic)
-                    seen.add(ic.lower())
+            for ic in _intermediate_cities_between(wp, waypoints[i + 1]):
+                _add(ic)
 
-    # Try to enrich from geometry if available and route is not too long
-    if optimization_result and len(route_cities) < 4:
-        geo_cities = _extract_route_cities_from_geometry(optimization_result)
-        for gc in geo_cities:
-            if gc.lower() not in seen:
-                route_cities.append(gc)
-                seen.add(gc.lower())
+    # Geometry enrichment if corridor table produced too few cities
+    if optimization_result and len(raw) < 4:
+        for gc in _extract_route_cities_from_geometry(optimization_result):
+            _add(gc)
 
-    # Checkpoint density: more checkpoints for longer routes
+    if len(raw) < 2:
+        raw = list(dict.fromkeys([source, destination]))  # fallback
+
+    # ── Step 2: build distance_from_start for every city ────────────
+    # Anchor: source = 0 km, destination = total_km.
+    # For interior cities: compute cumulative distance along the waypoint
+    # chain by finding which leg each city belongs to and interpolating.
+
+    src_coords = get_coords(source)
+    dst_coords = get_coords(destination)
+    total_km = (
+        _haversine_distance_km(source, destination)
+        or (float(estimated_time_hours or 0) * 55)
+        or 1.0
+    )
+
+    # Build cumulative distances for declared waypoints (for leg assignment)
+    wp_coords = [get_coords(w) for w in waypoints]
+    wp_cumulative: list[float] = [0.0]
+    for i in range(1, len(waypoints)):
+        a, b = wp_coords[i - 1], wp_coords[i]
+        if a and b:
+            lat1, lon1 = a; lat2, lon2 = b
+            dlat = radians(lat2 - lat1); dlon = radians(lon2 - lon1)
+            x = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+            seg_km = 2 * 6371.0 * asin(sqrt(max(0.0, x)))
+        else:
+            seg_km = total_km / max(len(waypoints) - 1, 1)
+        wp_cumulative.append(wp_cumulative[-1] + seg_km)
+
+    route_total_km = wp_cumulative[-1] or total_km
+
+    def _dist_from_start(city: str) -> float:
+        """Return estimated km from source along the route for a given city."""
+        city_lower = city.lower()
+        # Direct waypoint match
+        for i, wp in enumerate(waypoints):
+            if wp.lower() == city_lower:
+                return wp_cumulative[i]
+        # Coordinate-based: project onto nearest leg
+        coords = get_coords(city)
+        if not coords:
+            # Fall back to straight-line fraction from source
+            straight = _haversine_distance_km(source, city)
+            return min(straight, route_total_km)
+        c_lat, c_lng = coords
+        best_dist: float = float("inf")
+        best_d_from_start: float = 0.0
+        for i in range(len(waypoints) - 1):
+            a, b = wp_coords[i], wp_coords[i + 1]
+            if not a or not b:
+                continue
+            # Find the t∈[0,1] that minimises distance from city to point on segment a→b
+            ax, ay = a[1], a[0]  # lng, lat
+            bx, by = b[1], b[0]
+            cx, cy = c_lng, c_lat
+            dx, dy = bx - ax, by - ay
+            seg_len_sq = dx * dx + dy * dy
+            if seg_len_sq < 1e-12:
+                t = 0.0
+            else:
+                t = max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / seg_len_sq))
+            proj_lat = a[0] + t * (b[0] - a[0])
+            proj_lng = a[1] + t * (b[1] - a[1])
+            dlat = radians(c_lat - proj_lat); dlon = radians(c_lng - proj_lng)
+            x = sin(dlat/2)**2 + cos(radians(c_lat)) * cos(radians(proj_lat)) * sin(dlon/2)**2
+            d = 2 * 6371.0 * asin(sqrt(max(0.0, x)))
+            if d < best_dist:
+                best_dist = d
+                seg_km_full = wp_cumulative[i + 1] - wp_cumulative[i]
+                best_d_from_start = wp_cumulative[i] + t * seg_km_full
+        return best_d_from_start
+
+    # ── Step 3: sort by distance_from_start ─────────────────────────
+    city_distances: list[tuple[str, float]] = []
+    for city in raw:
+        city_distances.append((city, _dist_from_start(city)))
+
+    city_distances.sort(key=lambda x: x[1])
+    route_cities = [c for c, _ in city_distances]
+
+    # Ensure source is first and destination is last
+    src_lower = source.lower()
+    dst_lower = destination.lower()
+    route_cities = [c for c in route_cities if c.lower() != src_lower and c.lower() != dst_lower]
+    route_cities = [source] + route_cities + [destination]
+
+    # ── Step 4: checkpoint selection ────────────────────────────────
     hours = float(estimated_time_hours or 0)
-    total_km = _haversine_distance_km(source, destination) or (hours * 55)
-
     if total_km < 300:
         target_checkpoints = 3
     elif total_km < 700:
@@ -279,9 +373,8 @@ def build_route_intelligence(
     else:
         target_checkpoints = 8
 
-    # Checkpoints are evenly sampled from route_cities (always include source + destination)
     if len(route_cities) <= target_checkpoints:
-        checkpoints = route_cities
+        checkpoints = route_cities[:]
     else:
         step = max(1, (len(route_cities) - 1) // (target_checkpoints - 1))
         indices = list(range(0, len(route_cities), step))
@@ -294,7 +387,7 @@ def build_route_intelligence(
         "route_cities": route_cities,
         "source": source,
         "destination": destination,
-        "total_km_estimate": round(total_km, 1),
+        "total_km_estimate": round(route_total_km, 1),
     }
 
 
@@ -326,26 +419,34 @@ def _estimate_city_from_progress(
     progress_percentage: float,
 ) -> str:
     """
-    Use route_intelligence.route_cities to return a meaningful city name
-    based on progress %.  Never returns generic "Between A and B" when
-    route intelligence exists.
+    Map progress % to the nearest city along the route.
+
+    Uses route_intelligence.route_cities (full ordered list) for granular
+    positioning. Checkpoints are used as a fallback when route_cities is absent.
+    Never returns "Between A and B".
     """
-    route_cities: list[str] = route_intelligence.get("route_cities") or []
-    if not route_cities:
+    # Use the full ordered route_cities for smooth city-level resolution.
+    # Checkpoints are a sparse sample — they skip intermediate cities and cause
+    # coarse jumps (e.g. 0–49% all mapping to the source city on short routes).
+    cities: list[str] = (
+        route_intelligence.get("route_cities")
+        or route_intelligence.get("checkpoints")
+        or []
+    )
+    if not cities:
         return ""
 
     clamped = min(100.0, max(0.0, progress_percentage))
     if clamped >= 100.0:
-        return route_cities[-1]
+        return cities[-1]
     if clamped <= 0.0:
-        return route_cities[0]
+        return cities[0]
 
-    # Map progress to index in route_cities using rounding for more accurate positioning
-    n = len(route_cities)
+    n = len(cities)
     raw_idx = (clamped / 100.0) * (n - 1)
     idx = int(round(raw_idx))
     idx = max(0, min(n - 1, idx))
-    return route_cities[idx]
+    return cities[idx]
 
 
 # ---------------------------------------------------------------------------
@@ -725,28 +826,57 @@ def evaluate_route_health(
     current_time: Optional[datetime] = None,
 ) -> dict[str, Any]:
     now = current_time or datetime.utcnow()
-    progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
-    estimated = estimate_trip_location(report, progress.progress_percentage)
 
     # ── Route Intelligence ───────────────────────────────────────────
     opt_result = report.optimization_result or {}
     route_intelligence: Optional[dict[str, Any]] = opt_result.get("route_intelligence")
 
-    # ── Actual / Current Location ────────────────────────────────────
+    # ── Requirement 3: use confirmed current_location when available ─
+    # After an Update Shipment action the confirmed location is stored in
+    # optimization_result.current_location — use it directly instead of
+    # estimating from progress %.
+    confirmed_location: str = (opt_result.get("current_location") or "").strip()
+
+    # The "driver city" for this evaluation:
+    #   1. Explicit query param (actual_location_name) — a fresh override
+    #   2. Confirmed location stored in shipment details
+    #   3. Nothing — fall back to progress-based estimate below
+    driver_city: str = (actual_location_name or "").strip() or confirmed_location
+
+    # ── Progress ─────────────────────────────────────────────────────
+    progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
+
+    # ── Estimated location (only used when no confirmed location) ────
+    if driver_city:
+        # We have a confirmed or freshly-supplied location — use it.
+        # Skip progress-based estimation entirely.
+        coords = get_coords(driver_city)
+        estimated = LocationEstimate(
+            label=driver_city,
+            latitude=round(coords[0], 5) if coords else None,
+            longitude=round(coords[1], 5) if coords else None,
+            segment_start=driver_city,
+            segment_end=report.destination,
+            confidence="confirmed" if driver_city == confirmed_location else "medium",
+        )
+    else:
+        estimated = estimate_trip_location(report, progress.progress_percentage)
+
+    # ── Actual / Current Location ─────────────────────────────────────
     actual_location = None
     deviation_km: Optional[float] = None
     corridor_status = "ON_ROUTE"
     corridor_matched_city = ""
 
-    # Phase 3 — Corridor detection using actual_location_name
-    driver_city = (actual_location_name or "").strip()
     if driver_city:
         actual_coords = get_coords(driver_city)
         actual_location = {
             "label": driver_city,
             "latitude": round(actual_coords[0], 5) if actual_coords else None,
             "longitude": round(actual_coords[1], 5) if actual_coords else None,
-            "confidence": "medium" if actual_coords else "low",
+            "confidence": "confirmed" if driver_city == confirmed_location else (
+                "medium" if actual_coords else "low"
+            ),
         }
 
         if route_intelligence:
@@ -754,7 +884,6 @@ def evaluate_route_health(
             corridor_status = corridor_result["status"]
             corridor_matched_city = corridor_result["matched_city"]
         else:
-            # Legacy: km-based deviation
             if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
                 deviation_km = round(
                     _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
@@ -764,13 +893,12 @@ def evaluate_route_health(
                 elif deviation_km >= 50:
                     corridor_status = "NEAR_ROUTE"
 
-        # Compute km distance between actual and estimated for display
         if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
             deviation_km = round(
                 _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
             )
 
-    # ── Phase 4 — Remaining Journey Evaluation ───────────────────────
+    # ── Remaining Journey Evaluation ─────────────────────────────────
     current_location_for_eval = driver_city or estimated.label
     remaining_eval: dict[str, Any] = {}
 
@@ -782,7 +910,7 @@ def evaluate_route_health(
         except Exception:
             remaining_eval = {}
 
-    # ── Overdue calculation ──────────────────────────────────────────
+    # ── Overdue calculation ───────────────────────────────────────────
     overdue_minutes = 0
     if report.expected_end_time and now > report.expected_end_time:
         overdue_minutes = int((now - report.expected_end_time).total_seconds() // 60)
@@ -793,8 +921,6 @@ def evaluate_route_health(
     if report.started_at and report.expected_end_time:
         total_minutes = max(1, int((report.expected_end_time - report.started_at).total_seconds() // 60))
 
-    # ── Legacy eta_variance for progress display ─────────────────────
-    # Map corridor_status back to legacy deviation_level for display
     if corridor_status == "OFF_ROUTE":
         deviation_level = "major"
     elif corridor_status == "NEAR_ROUTE":
@@ -808,23 +934,17 @@ def evaluate_route_health(
     elif deviation_level == "major":
         eta_variance_minutes += max(60, int(total_minutes * 0.15))
 
-    # ── Phase 5 — Health Scoring ─────────────────────────────────────
+    # ── Health Scoring ────────────────────────────────────────────────
     health_level, delay_risk, recommended_action = _compute_health_score(
         corridor_status, remaining_eval, overdue_minutes, base_risk, report
     )
 
-    # ── Shipment Health Score 0-100 ──────────────────────────────────
-    # Weights: Route Adherence 40%, ETA Impact 25%, Risk 20%, Cost Impact 15%
-    # Higher score = healthier
-
-    # 1. Route adherence (40%)
     adherence_score = {"ON_ROUTE": 1.0, "NEAR_ROUTE": 0.6, "OFF_ROUTE": 0.1}.get(corridor_status, 1.0)
 
-    # 2. ETA impact (25%) — penalise overdue and large eta gaps
     updated_eta = remaining_eval.get("updated_eta_minutes") if remaining_eval else None
     original_rem = 0
     if report.started_at and report.expected_end_time:
-        original_rem = max(0, int((report.expected_end_time - datetime.utcnow()).total_seconds() // 60))
+        original_rem = max(0, int((report.expected_end_time - now).total_seconds() // 60))
     if updated_eta is not None and original_rem > 0:
         eta_ratio = max(0.0, 1.0 - max(0, updated_eta - original_rem) / max(original_rem, 1))
     elif overdue_minutes > 0:
@@ -832,11 +952,9 @@ def evaluate_route_health(
     else:
         eta_ratio = 1.0
 
-    # 3. Risk (20%)
     updated_risk_val = float(remaining_eval.get("updated_risk") or base_risk) if remaining_eval else base_risk
     risk_score_component = max(0.0, 1.0 - updated_risk_val)
 
-    # 4. Cost impact (15%) — always 1.0 unless updated cost exceeds original by >20%
     original_cost = float(report.estimated_cost or 0)
     updated_cost_val = float(remaining_eval.get("updated_cost") or 0) if remaining_eval else 0
     if original_cost > 0 and updated_cost_val > original_cost:
@@ -851,7 +969,7 @@ def evaluate_route_health(
         (cost_score * 15)
     )
 
-    # ── Phase 6 — Smart Reoptimization Trigger ───────────────────────
+    # ── Reoptimization Trigger ────────────────────────────────────────
     reopt_recommended = False
     reopt_reason = ""
     if recommended_action == "reoptimize" or (driver_city and corridor_status != "ON_ROUTE"):
@@ -864,13 +982,33 @@ def evaluate_route_health(
         reopt_recommended, reopt_reason = should_recommend_reoptimization(
             current_metrics, updated_metrics
         )
-        # Downgrade action if improvement is below threshold
         if not reopt_recommended and recommended_action == "reoptimize":
             recommended_action = "monitor"
             reopt_reason = "Improvement below threshold — continue monitoring"
 
-    # ── Build response ───────────────────────────────────────────────
-    response: dict[str, Any] = {
+    # ── Requirement 4: split route_cities into sections ──────────────
+    # completed_cities / current_city / remaining_cities for corridor display
+    full_route_cities: list[str] = (
+        route_intelligence.get("route_cities") if route_intelligence else None
+    ) or []
+
+    completed_cities: list[str] = []
+    remaining_cities: list[str] = []
+
+    if driver_city and full_route_cities:
+        driver_norm = driver_city.lower()
+        split_idx = next(
+            (i for i, c in enumerate(full_route_cities) if c.lower() == driver_norm), -1
+        )
+        if split_idx >= 0:
+            completed_cities = full_route_cities[:split_idx]
+            remaining_cities = full_route_cities[split_idx + 1:]
+        else:
+            # driver_city not in list — treat everything as remaining
+            remaining_cities = full_route_cities
+
+    # ── Build response ────────────────────────────────────────────────
+    return {
         "status": report.status,
         "health_level": health_level,
         "shipment_health_score": shipment_health_score,
@@ -889,21 +1027,20 @@ def evaluate_route_health(
             "confidence": estimated.confidence,
         },
         "actual_location": actual_location,
+        "confirmed_current_location": confirmed_location or None,
         "deviation_level": deviation_level,
         "deviation_km": deviation_km,
-        # Phase 3
         "corridor_status": corridor_status,
         "corridor_matched_city": corridor_matched_city,
-        # Route corridor for display (Phase 4 — Issue 4)
-        "route_cities": route_intelligence.get("route_cities") if route_intelligence else None,
-        # Phase 4
+        # Full route cities from route_intelligence (may be trimmed after update)
+        "route_cities": full_route_cities or None,
+        # Split sections for corridor display (Requirement 4)
+        "completed_cities": completed_cities,
+        "remaining_cities": remaining_cities,
         "updated_eta_minutes": remaining_eval.get("updated_eta_minutes"),
         "updated_cost": remaining_eval.get("updated_cost"),
         "updated_risk": remaining_eval.get("updated_risk"),
-        # Phase 6
         "reoptimization_recommended": reopt_recommended,
         "reoptimization_reason": reopt_reason,
         "checked_at": now.isoformat(),
     }
-
-    return response
