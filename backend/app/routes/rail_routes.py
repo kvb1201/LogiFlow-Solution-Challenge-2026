@@ -181,6 +181,42 @@ def train_schedule(train_number: str):
     return data
 
 
+class GeometryLegPayload(BaseModel):
+    train_number: str
+    from_code: str
+    to_code: str
+
+
+class GeometryEnsureRequest(BaseModel):
+    legs: List[GeometryLegPayload]
+
+
+@router.post("/geometry/ensure")
+async def ensure_train_route_geometry(body: GeometryEnsureRequest):
+    """
+    Compute missing corridor geometry and upsert into Supabase (dedupe-safe).
+
+    Use when the browser Supabase read misses a leg — same builder as bulk sync scripts.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services.geometry_backfill import ensure_geometry_legs
+
+    if not body.legs:
+        raise HTTPException(status_code=400, detail="legs must be a non-empty list")
+
+    payload = [
+        {
+            "train_number": leg.train_number,
+            "from_code": leg.from_code,
+            "to_code": leg.to_code,
+        }
+        for leg in body.legs[:20]
+    ]
+    results = await run_in_threadpool(ensure_geometry_legs, payload)
+    return {"results": results, "count": len(results)}
+
+
 @router.get("/trains/{train_number}/geometry")
 async def train_route_geometry(train_number: str, from_code: str, to_code: str):
     """
