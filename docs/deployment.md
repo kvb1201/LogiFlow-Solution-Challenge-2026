@@ -30,6 +30,7 @@
 | `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
 | `SUPABASE_URL` | ❌ | Supabase project URL (geometry + ML metrics sync) |
 | `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
+| *(geometry backfill)* | — | `POST /railway/geometry/ensure` computes missing `(train, from, to)` legs and upserts into `train_route_geometry` (no duplicates; PK is train+from+to) |
 | `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
 | `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |
 | `CONFIRMTKT_READ_TIMEOUT_S` | ❌ | ConfirmTkt read timeout (default: `4`) |
