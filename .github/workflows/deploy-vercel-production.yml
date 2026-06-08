@@ -1,22 +1,18 @@
-# Deploy frontend to Vercel as the project owner (Hobby private-repo workaround).
+# Deploy frontend to Vercel when a collaborator pushes to main (Hobby private-repo workaround).
 #
-# Why: Vercel blocks deployments when the Git commit author is not the Vercel
-# team owner. This workflow rewrites the checked-out commit author, then
-# deploys via the Vercel CLI using Kavya's token.
+# Vercel blocks deploys when the commit author is not the team owner. When someone
+# other than Kaveh (kvb1201) pushes to main, this workflow rewrites the commit
+# author to Kaveh's Git identity and deploys immediately via his Vercel token.
 #
-# Kavya must add GitHub repo secrets (one-time) — see docs/deployment.md
+# When Kaveh pushes to main himself, this workflow does NOT run — Vercel's normal
+# Git integration handles his commits.
 #
-# Triggers:
-#   - push to main → wait 10 min (debounce) → deploy
-#   - every 10 min cron → deploy latest main (backup if a push deploy was skipped)
-#   - manual workflow_dispatch
+# One-time setup: Kaveh adds GitHub repo secrets — see docs/deployment.md
 name: Deploy frontend to Vercel
 
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -26,12 +22,20 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
+    # Only deploy for collaborator pushes. Owner pushes use Vercel Git deploy.
+    if: github.event_name == 'workflow_dispatch' || github.actor != 'kvb1201'
     defaults:
       run:
         working-directory: frontend
 
     steps:
+      - name: Log trigger
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor (who pushed): ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
+
       - name: Check required secrets
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -48,7 +52,7 @@ jobs:
             fi
           done
           if [ "$missing" -eq 1 ]; then
-            echo "Add secrets under GitHub → Settings → Secrets and variables → Actions"
+            echo "Kaveh: add secrets under GitHub → Settings → Secrets and variables → Actions"
             exit 1
           fi
 
@@ -56,13 +60,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Wait 10 minutes after push (debounce rapid commits)
-        if: github.event_name == 'push'
-        run: |
-          echo "Waiting 10 minutes so multiple quick pushes only trigger one deploy..."
-          sleep 600
-
-      - name: Rewrite commit author for Vercel Hobby plan
+      - name: Rewrite commit author to Kaveh (Vercel Hobby owner)
         env:
           VERCEL_GIT_EMAIL: ${{ secrets.VERCEL_GIT_EMAIL }}
           VERCEL_GIT_NAME: ${{ secrets.VERCEL_GIT_NAME }}
@@ -70,7 +68,7 @@ jobs:
           git config user.email "$VERCEL_GIT_EMAIL"
           git config user.name "$VERCEL_GIT_NAME"
           git commit --amend --no-edit --reset-author
-          echo "Author now: $(git log -1 --format='%an <%ae>')"
+          echo "Deploying as: $(git log -1 --format='%an <%ae>')"
 
       - uses: actions/setup-node@v4
         with:
