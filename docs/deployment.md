@@ -19,8 +19,11 @@
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key (intent parse, route explanations, hybrid compare) |
+| `GROQ_API_KEY` | ❌ | Groq fallback for intent parse + rail explanations if Gemini fails |
 | `TOMTOM_API_KEY` | ✅ | TomTom routing API key |
+| `RAIL_ENABLE_LLM_EXPLANATION` | ❌ | Default **on** when `GEMINI_API_KEY` or `GROQ_API_KEY` is set; set `false` to disable |
+| `RAIL_LLM_EXPLANATION_TIMEOUT_S` | ❌ | Seconds for rail LLM blurb during `/optimize` (default `6`) |
 | `REDIS_URL` | ❌ | Redis connection URL (omit for in-memory cache) |
 | `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
 | `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
