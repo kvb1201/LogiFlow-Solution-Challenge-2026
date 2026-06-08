@@ -67,11 +67,8 @@ export interface RouteHealthResponse {
   report_id: string;
   status: string;
   health_level: 'healthy' | 'moderate' | 'at_risk';
-  /** 0–100 composite health score — Phase 2 deterministic engine */
   shipment_health_score: number;
-  /** 0–100 confidence in the score based on data quality */
   health_confidence: number;
-  /** Breakdown of five scoring components */
   health_component_scores: {
     adherence: number;
     eta: number;
@@ -79,7 +76,6 @@ export interface RouteHealthResponse {
     weather: number;
     risk: number;
   };
-  /** Phase 3 recommendation object */
   recommendation: {
     action: string;
     label: string;
@@ -88,7 +84,15 @@ export interface RouteHealthResponse {
     improvement_reasons: string[];
     health_score: number;
   };
+  // Requirement 3: dynamic progress derived from route geometry
   progress_percentage: number;
+  covered_distance_km: number;
+  remaining_distance_km: number;
+  total_route_km: number;
+  progress_derived_from: 'geometry' | 'time_ratio' | 'unavailable';
+  // Requirement 4: dynamic remaining ETA
+  remaining_eta_minutes: number;
+  // Legacy time-based fields (backward compat)
   elapsed_minutes: number;
   remaining_minutes: number;
   eta_variance_minutes: number;
@@ -113,6 +117,7 @@ export interface RouteHealthResponse {
   deviation_km: number | null;
   corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
   corridor_matched_city: string;
+  // Requirement 5 & 6: full immutable route + derived split
   route_cities: string[] | null;
   completed_cities: string[];
   remaining_cities: string[];
