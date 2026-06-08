@@ -162,6 +162,8 @@ In Vercel project → **Settings → Environment Variables** (Production):
 
 After setup, any collaborator push to `main` triggers an immediate production deploy under Kaveh’s Vercel identity. Ignore red **BLOCKED** rows from Vercel’s native Git hook on collaborator commits — the Action deploy is the one that matters.
 
+Verify: GitHub → **Actions** → latest **Deploy frontend to Vercel** run should be green; Vercel should show a new **READY** production deployment (via CLI, not blocked).
+
 ### Supabase sync (after deploy or retrain)
 
 From `backend/` with `SUPABASE_URL` + `SUPABASE_KEY` in `.env`:
