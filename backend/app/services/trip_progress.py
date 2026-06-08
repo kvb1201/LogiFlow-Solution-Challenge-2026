@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+import time
+import threading
+from dataclasses import dataclass, field
 from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
 from typing import Any, Optional
@@ -9,220 +11,339 @@ from typing import Any, Optional
 from app.models.domain import ShipmentReport
 from app.utils.coordinates import get_coords
 
-
 # ---------------------------------------------------------------------------
-# Fuzzy city adjacency map — for NEAR_ROUTE detection (Phase 3)
-# Maps satellite / nearby towns → canonical route city
+# Nominatim rate-limit guard (max 1 request/second, shared across threads)
 # ---------------------------------------------------------------------------
-_NEAR_CITY_MAP: dict[str, str] = {
-    # Gujarat corridor (Surat↔Ahmedabad)
-    "bharuch": "bharuch",
-    "ankleshwar": "bharuch",       # Ankleshwar is ~5km from Bharuch
-    "jhagadia": "bharuch",
-    "karjan": "vadodara",
-    "padra": "vadodara",
-    "dabhoi": "vadodara",
-    "petlad": "anand",
-    "kheda": "anand",
-    "borsad": "anand",
-    "nadiad": "nadiad",
-    "mahemdabad": "nadiad",
-    "matar": "nadiad",
-    "sanand": "ahmedabad",
-    "bavla": "ahmedabad",
-    "dholka": "ahmedabad",
-    "kosamba": "surat",
-    "olpad": "surat",
-    "kamrej": "surat",
-    "bardoli": "surat",
-    "navsari": "surat",
-    "vapi": "surat",
-    # Mumbai corridor
-    "thane": "thane",
-    "kalyan": "kalyan",
-    "ulhasnagar": "kalyan",
-    "ambarnath": "kalyan",
-    "badlapur": "kalyan",
-    "panvel": "panvel",
-    "navi mumbai": "panvel",
-    "nerul": "panvel",
-    "khopoli": "panvel",
-    # Delhi corridor
-    "new delhi": "delhi",
-    "gurgaon": "delhi",
-    "gurugram": "delhi",
-    "faridabad": "delhi",
-    "noida": "delhi",
-    "ghaziabad": "delhi",
-    "sonipat": "delhi",
-    "bahadurgarh": "delhi",
-    # Pune–Mumbai
-    "lonavala": "pune",
-    # Bangalore corridor
-    "electronic city": "bengaluru",
-    "whitefield": "bengaluru",
-    "hosur": "bengaluru",
-    "tumkur": "bengaluru",
-    "tumkuru": "bengaluru",
-    # Hyderabad
-    "secunderabad": "hyderabad",
-    "cyberabad": "hyderabad",
-    "bhongir": "hyderabad",
-    # Chennai corridor
-    "tambaram": "chennai",
-    "kanchipuram": "chennai",
-    "chengalpattu": "chennai",
-    "avadi": "chennai",
-    # Kolkata
-    "howrah": "kolkata",
-    "durgapur": "kolkata",
-    "asansol": "kolkata",
-    # Generic aliases
-    "bombay": "mumbai",
-    "bangalore": "bengaluru",
-    "calcutta": "kolkata",
-    "madras": "chennai",
-    "allahabad": "prayagraj",
-    "nasik": "nashik",
-}
+_nominatim_lock = threading.Lock()
+_last_nominatim_call: float = 0.0
+_NOMINATIM_MIN_INTERVAL = 1.1  # seconds
 
 
-def _normalize_city(name: str) -> str:
-    """Lowercase, strip punctuation, handle common aliases."""
-    n = name.strip().lower()
-    n = re.sub(r"\s+", " ", n)
-    return _NEAR_CITY_MAP.get(n, n)
+def _nominatim_reverse(lat: float, lng: float, zoom: int = 10) -> dict[str, Any]:
+    """Rate-limited Nominatim reverse geocode. Returns parsed JSON or {}."""
+    global _last_nominatim_call
+    import json, urllib.request
+
+    with _nominatim_lock:
+        gap = time.monotonic() - _last_nominatim_call
+        if gap < _NOMINATIM_MIN_INTERVAL:
+            time.sleep(_NOMINATIM_MIN_INTERVAL - gap)
+        _last_nominatim_call = time.monotonic()
+
+    url = (
+        f"https://nominatim.openstreetmap.org/reverse?"
+        f"format=json&lat={lat}&lon={lng}&zoom={zoom}&addressdetails=1"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "LogiFlow-RouteIntel/3.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=4) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return {}
 
 
 # ---------------------------------------------------------------------------
-# Phase 1 — Route Intelligence generation
+# Haversine helpers
 # ---------------------------------------------------------------------------
 
-def _extract_route_cities_from_geometry(opt_result: dict[str, Any]) -> list[str]:
-    """
-    Try to pull intermediate city waypoints from road geometry using reverse-geocode
-    of evenly-spaced coordinates. Falls back gracefully.
-    """
-    best = opt_result.get("best") or {}
-    geometry = best.get("geometry") or []
-    if len(geometry) < 4:
-        return []
-
-    # Sample ~10 evenly-spaced points from geometry
-    step = max(1, len(geometry) // 10)
-    sample_coords = geometry[::step]
-
-    cities = []
-    for pt in sample_coords:
-        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
-            continue
-        lng, lat = float(pt[0]), float(pt[1])
-        # Reverse geocode via Nominatim (best-effort, may be slow)
-        try:
-            import json, urllib.request
-            url = (
-                f"https://nominatim.openstreetmap.org/reverse?"
-                f"format=json&lat={lat}&lon={lng}&zoom=10"
-            )
-            req = urllib.request.Request(url, headers={"User-Agent": "LogiFlow-RouteIntel"})
-            with urllib.request.urlopen(req, timeout=3) as r:
-                data = json.loads(r.read().decode())
-            addr = data.get("address", {})
-            city = (
-                addr.get("city")
-                or addr.get("town")
-                or addr.get("village")
-                or addr.get("county")
-                or ""
-            )
-            if city:
-                cities.append(city)
-        except Exception:
-            pass
-
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for c in cities:
-        key = c.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(c)
-    return unique
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lon1 = a
+    lat2, lon2 = b
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    x = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * 6371.0 * asin(sqrt(max(0.0, x)))
 
 
 def _haversine_distance_km(city_a: str, city_b: str) -> float:
-    """Return straight-line distance between two cities in km (0 if unknown)."""
     ca = get_coords(city_a)
     cb = get_coords(city_b)
     if not ca or not cb:
         return 0.0
-    lat1, lon1 = ca
-    lat2, lon2 = cb
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    return round(2 * 6371.0 * asin(sqrt(max(0.0, a))), 1)
+    return round(_haversine_km(ca, cb), 1)
+
+
+# ---------------------------------------------------------------------------
+# Accepted place types from Nominatim address fields (in priority order)
+# Roads, industrial areas, suburbs and localities are intentionally excluded.
+# ---------------------------------------------------------------------------
+_ACCEPTED_TYPES = ("city", "town", "municipality", "village", "hamlet")
+_REJECTED_OSM_CATEGORIES = frozenset({"highway", "industrial", "suburb", "locality", "neighbourhood"})
+
+
+def _extract_place_name(data: dict[str, Any]) -> tuple[str, str]:
+    """
+    Return (name, type) from a Nominatim reverse-geocode response.
+    Returns ("", "") when the result is a road/industrial/suburb/locality.
+    """
+    if not data:
+        return "", ""
+
+    # Reject roads, industrial, suburb, locality at the category level
+    osm_type = (data.get("type") or "").lower()
+    osm_class = (data.get("class") or "").lower()
+    if osm_class in _REJECTED_OSM_CATEGORIES or osm_type in _REJECTED_OSM_CATEGORIES:
+        return "", ""
+
+    addr = data.get("address") or {}
+    for place_type in _ACCEPTED_TYPES:
+        name = addr.get(place_type, "").strip()
+        if name:
+            return name, place_type
+
+    return "", ""
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Geometry-Based Checkpoint Generation (PRIMARY path)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RouteCheckpoint:
+    name: str
+    place_type: str          # city | town | municipality | village | fallback
+    distance_from_start: float  # km along the route
+    latitude: float
+    longitude: float
+    source: str              # "geometry" | "corridor" | "waypoint"
+
+
+def _geometry_sampling_interval_km(total_km: float) -> float:
+    """Sampling interval based on route length — spec requirement."""
+    if total_km < 100:
+        return 10.0
+    if total_km < 300:
+        return 15.0
+    if total_km < 800:
+        return 25.0
+    return 40.0
+
+
+def _build_checkpoints_from_geometry(
+    geometry: list[list[float]],   # [[lng, lat], ...]
+    total_route_km: float,
+) -> list[RouteCheckpoint]:
+    """
+    Phase 1 primary path.
+
+    Walk the polyline by accumulating arc-length. Each time we cross a
+    sampling interval boundary, reverse-geocode that coordinate. Accepted
+    place types (city/town/village/municipality) become checkpoints.
+    Roads, industrial areas, suburbs, localities are ignored.
+
+    Returns a list of RouteCheckpoint sorted by distance_from_start.
+    Consecutive duplicates (same normalised name) are collapsed.
+    """
+    if len(geometry) < 2:
+        return []
+
+    interval = _geometry_sampling_interval_km(total_route_km)
+    checkpoints: list[RouteCheckpoint] = []
+    seen_names: set[str] = set()
+
+    accumulated_km = 0.0
+    next_sample_km = interval  # first sample after one interval
+
+    for i in range(1, len(geometry)):
+        prev_pt = geometry[i - 1]
+        curr_pt = geometry[i]
+        if len(prev_pt) < 2 or len(curr_pt) < 2:
+            continue
+
+        prev_lng, prev_lat = float(prev_pt[0]), float(prev_pt[1])
+        curr_lng, curr_lat = float(curr_pt[0]), float(curr_pt[1])
+        seg_km = _haversine_km((prev_lat, prev_lng), (curr_lat, curr_lng))
+
+        # Walk through all sampling boundaries this segment crosses
+        while accumulated_km + seg_km >= next_sample_km:
+            # Interpolate exact sample point
+            frac = (next_sample_km - accumulated_km) / max(seg_km, 1e-9)
+            s_lat = prev_lat + frac * (curr_lat - prev_lat)
+            s_lng = prev_lng + frac * (curr_lng - prev_lng)
+            sample_dist = next_sample_km
+
+            # Reverse geocode
+            rg = _nominatim_reverse(s_lat, s_lng, zoom=10)
+            name, ptype = _extract_place_name(rg)
+
+            if name:
+                norm = name.lower()
+                if norm not in seen_names:
+                    seen_names.add(norm)
+                    checkpoints.append(RouteCheckpoint(
+                        name=name,
+                        place_type=ptype,
+                        distance_from_start=round(sample_dist, 2),
+                        latitude=round(s_lat, 6),
+                        longitude=round(s_lng, 6),
+                        source="geometry",
+                    ))
+
+            next_sample_km += interval
+
+        accumulated_km += seg_km
+
+    # Sort by distance (should already be sorted, but guarantee it)
+    checkpoints.sort(key=lambda c: c.distance_from_start)
+    return checkpoints
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Corridor fallback (secondary path)
+# ---------------------------------------------------------------------------
+
+_NEAR_CITY_MAP: dict[str, str] = {
+    # Gujarat
+    "bharuch": "bharuch", "ankleshwar": "bharuch", "jhagadia": "bharuch",
+    "karjan": "vadodara", "padra": "vadodara", "dabhoi": "vadodara",
+    "petlad": "anand", "kheda": "anand", "borsad": "anand",
+    "nadiad": "nadiad", "mahemdabad": "nadiad", "matar": "nadiad",
+    "sanand": "ahmedabad", "bavla": "ahmedabad", "dholka": "ahmedabad",
+    "kosamba": "surat", "olpad": "surat", "kamrej": "surat",
+    "bardoli": "surat", "navsari": "surat", "vapi": "surat",
+    # Mumbai
+    "thane": "thane", "kalyan": "kalyan", "ulhasnagar": "kalyan",
+    "ambarnath": "kalyan", "badlapur": "kalyan",
+    "panvel": "panvel", "navi mumbai": "panvel", "nerul": "panvel",
+    "khopoli": "panvel",
+    # Delhi
+    "new delhi": "delhi", "gurgaon": "delhi", "gurugram": "delhi",
+    "faridabad": "delhi", "noida": "delhi", "ghaziabad": "delhi",
+    "sonipat": "delhi", "bahadurgarh": "delhi",
+    # Misc
+    "lonavala": "pune",
+    "electronic city": "bengaluru", "whitefield": "bengaluru",
+    "hosur": "bengaluru", "tumkur": "bengaluru", "tumkuru": "bengaluru",
+    "secunderabad": "hyderabad", "cyberabad": "hyderabad", "bhongir": "hyderabad",
+    "tambaram": "chennai", "kanchipuram": "chennai",
+    "chengalpattu": "chennai", "avadi": "chennai",
+    "howrah": "kolkata", "durgapur": "kolkata", "asansol": "kolkata",
+    "bombay": "mumbai", "bangalore": "bengaluru", "calcutta": "kolkata",
+    "madras": "chennai", "allahabad": "prayagraj", "nasik": "nashik",
+}
+
+_CORRIDORS: list[tuple[tuple[str, str], list[str]]] = [
+    (("surat", "ahmedabad"),    ["bharuch", "ankleshwar", "vadodara", "anand", "nadiad"]),
+    (("surat", "vadodara"),     ["bharuch", "ankleshwar", "karjan"]),
+    (("vadodara", "ahmedabad"), ["anand", "nadiad"]),
+    (("bharuch", "ahmedabad"),  ["vadodara", "anand", "nadiad"]),
+    (("bharuch", "vadodara"),   ["ankleshwar", "karjan"]),
+    (("surat", "bharuch"),      ["ankleshwar"]),
+    (("mumbai", "pune"),        ["thane", "panvel", "lonavala"]),
+    (("mumbai", "nashik"),      ["thane", "kalyan", "igatpuri"]),
+    (("mumbai", "surat"),       ["thane", "vapi", "navsari"]),
+    (("mumbai", "vadodara"),    ["thane", "vapi", "surat", "bharuch", "ankleshwar"]),
+    (("pune", "hyderabad"),     ["solapur", "gulbarga"]),
+    (("delhi", "mumbai"),       ["kota", "ratlam", "indore", "vadodara", "surat"]),
+    (("delhi", "surat"),        ["kota", "ratlam", "indore", "vadodara"]),
+    (("delhi", "vadodara"),     ["kota", "ratlam", "indore"]),
+    (("delhi", "jaipur"),       ["alwar", "behror"]),
+    (("delhi", "amritsar"),     ["ambala", "ludhiana", "jalandhar"]),
+    (("delhi", "lucknow"),      ["aligarh", "kannauj", "kanpur"]),
+    (("delhi", "kolkata"),      ["kanpur", "varanasi", "patna", "dhanbad"]),
+    (("delhi", "chennai"),      ["agra", "bhopal", "nagpur", "hyderabad"]),
+    (("agra", "varanasi"),      ["prayagraj"]),
+    (("mumbai", "bengaluru"),   ["pune", "solapur", "gulbarga"]),
+    (("bengaluru", "chennai"),  ["hosur", "krishnagiri", "vellore"]),
+    (("chennai", "kolkata"),    ["vijayawada", "visakhapatnam", "bhubaneswar"]),
+    (("kolkata", "guwahati"),   ["siliguri", "jalpaiguri"]),
+    (("hyderabad", "bengaluru"), ["kurnool", "anantapur"]),
+    (("hyderabad", "mumbai"),   ["solapur", "pune"]),
+    (("chennai", "hyderabad"),  ["nellore", "ongole"]),
+]
+
+
+def _normalize_city(name: str) -> str:
+    n = re.sub(r"\s+", " ", name.strip().lower())
+    return _NEAR_CITY_MAP.get(n, n)
 
 
 def _intermediate_cities_between(city_a: str, city_b: str) -> list[str]:
-    """
-    Return known Indian cities that lie roughly on the road corridor
-    between city_a and city_b, based on static heuristics.
-
-    Each corridor entry is (endpoint_pair, ordered_intermediate_cities).
-    The match is bidirectional — order of a/b doesn't matter.
-    When a/b are an exact corridor pair, return just those intermediates.
-    No partial matching to avoid spurious cities being added.
-    """
-    # Each entry: ([ep_a, ep_b], [intermediate cities in order ep_a→ep_b])
-    CORRIDORS: list[tuple[tuple[str, str], list[str]]] = [
-        # ── Gujarat ─────────────────────────────────────────────────────
-        (("surat", "ahmedabad"),    ["bharuch", "ankleshwar", "vadodara", "anand", "nadiad"]),
-        (("surat", "vadodara"),     ["bharuch", "ankleshwar", "karjan"]),
-        (("vadodara", "ahmedabad"), ["anand", "nadiad"]),
-        (("bharuch", "ahmedabad"),  ["vadodara", "anand", "nadiad"]),
-        (("bharuch", "vadodara"),   ["ankleshwar", "karjan"]),
-        (("surat", "bharuch"),      ["ankleshwar"]),
-        # ── Mumbai region ───────────────────────────────────────────────
-        (("mumbai", "pune"),        ["thane", "panvel", "lonavala"]),
-        (("mumbai", "nashik"),      ["thane", "kalyan", "igatpuri"]),
-        (("mumbai", "surat"),       ["thane", "vapi", "navsari"]),
-        (("mumbai", "vadodara"),    ["thane", "vapi", "surat", "bharuch", "ankleshwar"]),
-        (("pune", "hyderabad"),     ["solapur", "gulbarga"]),
-        # ── Delhi–Mumbai ────────────────────────────────────────────────
-        (("delhi", "mumbai"),       ["kota", "ratlam", "indore", "vadodara", "surat"]),
-        (("delhi", "surat"),        ["kota", "ratlam", "indore", "vadodara"]),
-        (("delhi", "vadodara"),     ["kota", "ratlam", "indore"]),
-        # ── Delhi–North ─────────────────────────────────────────────────
-        (("delhi", "jaipur"),       ["alwar", "behror"]),
-        (("delhi", "amritsar"),     ["ambala", "ludhiana", "jalandhar"]),
-        (("delhi", "lucknow"),      ["aligarh", "kannauj", "kanpur"]),
-        (("delhi", "kolkata"),      ["kanpur", "varanasi", "patna", "dhanbad"]),
-        (("delhi", "chennai"),      ["agra", "bhopal", "nagpur", "hyderabad"]),
-        (("agra", "varanasi"),      ["prayagraj"]),
-        # ── South ───────────────────────────────────────────────────────
-        (("mumbai", "bengaluru"),   ["pune", "solapur", "gulbarga"]),
-        (("bengaluru", "chennai"),  ["hosur", "krishnagiri", "vellore"]),
-        (("chennai", "kolkata"),    ["vijayawada", "visakhapatnam", "bhubaneswar"]),
-        (("kolkata", "guwahati"),   ["siliguri", "jalpaiguri"]),
-        (("hyderabad", "bengaluru"),["kurnool", "anantapur"]),
-        (("hyderabad", "mumbai"),   ["solapur", "pune"]),
-        (("chennai", "hyderabad"),  ["nellore", "ongole"]),
-    ]
-
     a_key = _normalize_city(city_a)
     b_key = _normalize_city(city_b)
-
-    for (ep_a, ep_b), cities in CORRIDORS:
-        # Exact bidirectional match only — no partial matching
-        if (a_key == ep_a and b_key == ep_b):
+    for (ep_a, ep_b), cities in _CORRIDORS:
+        if a_key == ep_a and b_key == ep_b:
             return cities
-        if (a_key == ep_b and b_key == ep_a):
+        if a_key == ep_b and b_key == ep_a:
             return list(reversed(cities))
-
     return []
 
+
+def _checkpoints_from_corridor(
+    source: str,
+    destination: str,
+    stops: list[str],
+    route_total_km: float,
+    wp_cumulative: list[float],
+    waypoints: list[str],
+) -> list[RouteCheckpoint]:
+    """
+    Corridor fallback: produce RouteCheckpoint objects from the static table.
+    Uses coordinate projection for distance_from_start.
+    """
+    checkpoints: list[RouteCheckpoint] = []
+    seen: set[str] = set()
+    wp_coords = [get_coords(w) for w in waypoints]
+
+    def _dist_for(city: str) -> float:
+        city_lower = city.lower()
+        for i, wp in enumerate(waypoints):
+            if wp.lower() == city_lower:
+                return wp_cumulative[i]
+        coords = get_coords(city)
+        if not coords:
+            straight = _haversine_distance_km(source, city)
+            return min(straight, route_total_km)
+        c_lat, c_lng = coords
+        best_dist = float("inf")
+        best_d = 0.0
+        for i in range(len(waypoints) - 1):
+            a, b = wp_coords[i], wp_coords[i + 1]
+            if not a or not b:
+                continue
+            ax, ay = a[1], a[0]
+            bx, by = b[1], b[0]
+            cx, cy = c_lng, c_lat
+            dx, dy = bx - ax, by - ay
+            seg_sq = dx * dx + dy * dy
+            t = 0.0 if seg_sq < 1e-12 else max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / seg_sq))
+            proj_lat = a[0] + t * (b[0] - a[0])
+            proj_lng = a[1] + t * (b[1] - a[1])
+            d = _haversine_km((c_lat, c_lng), (proj_lat, proj_lng))
+            if d < best_dist:
+                best_dist = d
+                best_d = wp_cumulative[i] + t * (wp_cumulative[i + 1] - wp_cumulative[i])
+        return best_d
+
+    raw_cities: list[str] = []
+    for i, wp in enumerate(waypoints):
+        raw_cities.append(wp)
+        if i < len(waypoints) - 1:
+            for ic in _intermediate_cities_between(wp, waypoints[i + 1]):
+                raw_cities.append(ic)
+
+    for city in raw_cities:
+        key = city.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        coords = get_coords(city)
+        checkpoints.append(RouteCheckpoint(
+            name=city,
+            place_type="city",
+            distance_from_start=_dist_for(city),
+            latitude=round(coords[0], 6) if coords else 0.0,
+            longitude=round(coords[1], 6) if coords else 0.0,
+            source="corridor",
+        ))
+
+    checkpoints.sort(key=lambda c: c.distance_from_start)
+    return checkpoints
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — build_route_intelligence (orchestrator)
+# ---------------------------------------------------------------------------
 
 def build_route_intelligence(
     source: str,
@@ -232,162 +353,133 @@ def build_route_intelligence(
     estimated_time_hours: Optional[float] = None,
 ) -> dict[str, Any]:
     """
-    Generate route_intelligence for a newly created report.
+    Build route_intelligence.
 
-    Route city pipeline:
-      1. Walk declared waypoints, insert intermediate corridor cities after each leg.
-      2. Deduplicate by lowercase canonical key — keep first occurrence.
-      3. Sort all cities (excluding source/destination anchors) by cumulative
-         haversine distance from source so the list always reflects actual
-         path traversal order.
-      4. Sample checkpoints evenly from the ordered list.
+    Pipeline:
+      PRIMARY  → geometry-based checkpoints (distance-sampled + reverse-geocoded)
+      FALLBACK → corridor table when geometry is absent or produces < 3 checkpoints
 
     Returns:
-      route_cities  — full ordered, deduplicated city list
-      checkpoints   — evenly-spaced subset ordered by distance_from_start
+      checkpoints  — list of {name, place_type, distance_from_start, lat, lng, source}
+      route_cities — ordered list of city names (for backward-compat display)
+      source       — "geometry" | "corridor"
+      total_km_estimate
     """
     waypoints = [source, *(stops or []), destination]
 
-    # ── Step 1: collect cities in discovery order ────────────────────
-    raw: list[str] = []
-    seen: set[str] = set()
-
-    def _add(city: str) -> None:
-        # Use plain lowercase for deduplication — NOT _normalize_city.
-        # _normalize_city maps nearby towns to their canonical route city
-        # (e.g. karjan → vadodara), which is correct for corridor detection
-        # but wrong here: we want both Vadodara AND Karjan in the city list.
-        key = city.strip().lower()
-        if key not in seen:
-            seen.add(key)
-            raw.append(city)
-
-    for i, wp in enumerate(waypoints):
-        _add(wp)
-        if i < len(waypoints) - 1:
-            for ic in _intermediate_cities_between(wp, waypoints[i + 1]):
-                _add(ic)
-
-    # Geometry enrichment if corridor table produced too few cities
-    if optimization_result and len(raw) < 4:
-        for gc in _extract_route_cities_from_geometry(optimization_result):
-            _add(gc)
-
-    if len(raw) < 2:
-        raw = list(dict.fromkeys([source, destination]))  # fallback
-
-    # ── Step 2: build distance_from_start for every city ────────────
-    # Anchor: source = 0 km, destination = total_km.
-    # For interior cities: compute cumulative distance along the waypoint
-    # chain by finding which leg each city belongs to and interpolating.
-
-    src_coords = get_coords(source)
-    dst_coords = get_coords(destination)
-    total_km = (
-        _haversine_distance_km(source, destination)
-        or (float(estimated_time_hours or 0) * 55)
-        or 1.0
-    )
-
-    # Build cumulative distances for declared waypoints (for leg assignment)
+    # ── Cumulative waypoint distances ────────────────────────────────
     wp_coords = [get_coords(w) for w in waypoints]
     wp_cumulative: list[float] = [0.0]
     for i in range(1, len(waypoints)):
         a, b = wp_coords[i - 1], wp_coords[i]
         if a and b:
-            lat1, lon1 = a; lat2, lon2 = b
-            dlat = radians(lat2 - lat1); dlon = radians(lon2 - lon1)
-            x = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-            seg_km = 2 * 6371.0 * asin(sqrt(max(0.0, x)))
+            seg_km = _haversine_km(a, b)
         else:
-            seg_km = total_km / max(len(waypoints) - 1, 1)
+            seg_km = 0.0
         wp_cumulative.append(wp_cumulative[-1] + seg_km)
 
-    route_total_km = wp_cumulative[-1] or total_km
+    total_km = (
+        wp_cumulative[-1]
+        or _haversine_distance_km(source, destination)
+        or (float(estimated_time_hours or 0) * 55)
+        or 1.0
+    )
 
-    def _dist_from_start(city: str) -> float:
-        """Return estimated km from source along the route for a given city."""
-        city_lower = city.lower()
-        # Direct waypoint match
-        for i, wp in enumerate(waypoints):
-            if wp.lower() == city_lower:
-                return wp_cumulative[i]
-        # Coordinate-based: project onto nearest leg
-        coords = get_coords(city)
-        if not coords:
-            # Fall back to straight-line fraction from source
-            straight = _haversine_distance_km(source, city)
-            return min(straight, route_total_km)
-        c_lat, c_lng = coords
-        best_dist: float = float("inf")
-        best_d_from_start: float = 0.0
-        for i in range(len(waypoints) - 1):
-            a, b = wp_coords[i], wp_coords[i + 1]
-            if not a or not b:
-                continue
-            # Find the t∈[0,1] that minimises distance from city to point on segment a→b
-            ax, ay = a[1], a[0]  # lng, lat
-            bx, by = b[1], b[0]
-            cx, cy = c_lng, c_lat
-            dx, dy = bx - ax, by - ay
-            seg_len_sq = dx * dx + dy * dy
-            if seg_len_sq < 1e-12:
-                t = 0.0
-            else:
-                t = max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / seg_len_sq))
-            proj_lat = a[0] + t * (b[0] - a[0])
-            proj_lng = a[1] + t * (b[1] - a[1])
-            dlat = radians(c_lat - proj_lat); dlon = radians(c_lng - proj_lng)
-            x = sin(dlat/2)**2 + cos(radians(c_lat)) * cos(radians(proj_lat)) * sin(dlon/2)**2
-            d = 2 * 6371.0 * asin(sqrt(max(0.0, x)))
-            if d < best_dist:
-                best_dist = d
-                seg_km_full = wp_cumulative[i + 1] - wp_cumulative[i]
-                best_d_from_start = wp_cumulative[i] + t * seg_km_full
-        return best_d_from_start
+    # ── Try geometry path ────────────────────────────────────────────
+    geometry: list[list[float]] = []
+    if optimization_result:
+        # road: result.best.geometry  or  result.all[0].geometry
+        best = optimization_result.get("best") or {}
+        geometry = best.get("geometry") or []
+        if not geometry:
+            all_routes = optimization_result.get("all") or []
+            if all_routes and isinstance(all_routes[0], dict):
+                geometry = all_routes[0].get("geometry") or []
 
-    # ── Step 3: sort by distance_from_start ─────────────────────────
-    city_distances: list[tuple[str, float]] = []
-    for city in raw:
-        city_distances.append((city, _dist_from_start(city)))
+    geometry_checkpoints: list[RouteCheckpoint] = []
+    intelligence_source = "corridor"
 
-    city_distances.sort(key=lambda x: x[1])
-    route_cities = [c for c, _ in city_distances]
+    if len(geometry) >= 4:
+        try:
+            geometry_checkpoints = _build_checkpoints_from_geometry(geometry, total_km)
+            intelligence_source = "geometry"
+        except Exception as exc:
+            print(f"[RouteIntel] Geometry path failed: {exc}")
+            geometry_checkpoints = []
 
-    # Ensure source is first and destination is last
-    src_lower = source.lower()
-    dst_lower = destination.lower()
-    route_cities = [c for c in route_cities if c.lower() != src_lower and c.lower() != dst_lower]
-    route_cities = [source] + route_cities + [destination]
+    # ── Add endpoint waypoints to the geometry checkpoint list ───────
+    # Always prepend source and append destination so the list is complete.
+    if geometry_checkpoints:
+        src_coords = wp_coords[0]
+        dst_coords = wp_coords[-1]
+        source_cp = RouteCheckpoint(
+            name=source,
+            place_type="waypoint",
+            distance_from_start=0.0,
+            latitude=round(src_coords[0], 6) if src_coords else 0.0,
+            longitude=round(src_coords[1], 6) if src_coords else 0.0,
+            source="waypoint",
+        )
+        dest_cp = RouteCheckpoint(
+            name=destination,
+            place_type="waypoint",
+            distance_from_start=round(total_km, 2),
+            latitude=round(dst_coords[0], 6) if dst_coords else 0.0,
+            longitude=round(dst_coords[1], 6) if dst_coords else 0.0,
+            source="waypoint",
+        )
+        # De-duplicate endpoint names if already present from geocoding
+        src_lower = source.lower()
+        dst_lower = destination.lower()
+        geometry_checkpoints = [
+            c for c in geometry_checkpoints
+            if c.name.lower() != src_lower and c.name.lower() != dst_lower
+        ]
+        geometry_checkpoints = sorted(
+            [source_cp] + geometry_checkpoints + [dest_cp],
+            key=lambda c: c.distance_from_start,
+        )
 
-    # ── Step 4: checkpoint selection ────────────────────────────────
-    hours = float(estimated_time_hours or 0)
-    if total_km < 300:
-        target_checkpoints = 3
-    elif total_km < 700:
-        target_checkpoints = 4
-    elif total_km < 1200:
-        target_checkpoints = 5
-    elif total_km < 1800:
-        target_checkpoints = 6
+    # ── Use corridor fallback when geometry produced < 3 checkpoints ─
+    use_geometry = len(geometry_checkpoints) >= 3
+    if not use_geometry:
+        print(f"[RouteIntel] Falling back to corridor table for {source}→{destination} "
+              f"(geometry gave {len(geometry_checkpoints)} checkpoints)")
+        corridor_checkpoints = _checkpoints_from_corridor(
+            source, destination, stops, total_km, wp_cumulative, waypoints
+        )
+        final_checkpoints = corridor_checkpoints
+        intelligence_source = "corridor"
     else:
-        target_checkpoints = 8
+        final_checkpoints = geometry_checkpoints
 
-    if len(route_cities) <= target_checkpoints:
-        checkpoints = route_cities[:]
-    else:
-        step = max(1, (len(route_cities) - 1) // (target_checkpoints - 1))
-        indices = list(range(0, len(route_cities), step))
-        if len(route_cities) - 1 not in indices:
-            indices.append(len(route_cities) - 1)
-        checkpoints = [route_cities[i] for i in indices]
+    # ── Build backward-compat route_cities list ──────────────────────
+    # De-duplicate by normalised name while preserving order
+    route_cities: list[str] = []
+    seen_rc: set[str] = set()
+    for cp in final_checkpoints:
+        key = cp.name.strip().lower()
+        if key not in seen_rc:
+            seen_rc.add(key)
+            route_cities.append(cp.name)
 
     return {
-        "checkpoints": checkpoints,
+        "checkpoints": [
+            {
+                "name": cp.name,
+                "place_type": cp.place_type,
+                "distance_from_start": cp.distance_from_start,
+                "latitude": cp.latitude,
+                "longitude": cp.longitude,
+                "source": cp.source,
+            }
+            for cp in final_checkpoints
+        ],
         "route_cities": route_cities,
         "source": source,
         "destination": destination,
-        "total_km_estimate": round(route_total_km, 1),
+        "total_km_estimate": round(total_km, 1),
+        "intelligence_source": intelligence_source,
     }
 
 
@@ -398,10 +490,6 @@ def enrich_optimization_result_with_intelligence(
     stops: list[str],
     estimated_time_hours: Optional[float] = None,
 ) -> dict[str, Any]:
-    """
-    Wrap the existing optimization_result with route_intelligence.
-    Backward-compatible: old results without this key are left untouched at query time.
-    """
     result = dict(optimization_result or {})
     if "route_intelligence" not in result:
         result["route_intelligence"] = build_route_intelligence(
@@ -411,7 +499,7 @@ def enrich_optimization_result_with_intelligence(
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 — Estimated location upgrade
+# Estimated location from progress %
 # ---------------------------------------------------------------------------
 
 def _estimate_city_from_progress(
@@ -419,19 +507,22 @@ def _estimate_city_from_progress(
     progress_percentage: float,
 ) -> str:
     """
-    Map progress % to the nearest city along the route.
-
-    Uses route_intelligence.route_cities (full ordered list) for granular
-    positioning. Checkpoints are used as a fallback when route_cities is absent.
-    Never returns "Between A and B".
+    Map progress % to the nearest city name.
+    Uses rich checkpoint objects when available (geometry path),
+    falls back to the plain route_cities list.
     """
-    # Use the full ordered route_cities for smooth city-level resolution.
-    # Checkpoints are a sparse sample — they skip intermediate cities and cause
-    # coarse jumps (e.g. 0–49% all mapping to the source city on short routes).
+    checkpoints_raw = route_intelligence.get("checkpoints") or []
+
+    if checkpoints_raw and isinstance(checkpoints_raw[0], dict):
+        # Rich checkpoints: use distance_from_start for accurate mapping
+        total_km = route_intelligence.get("total_km_estimate") or 1.0
+        target_km = (progress_percentage / 100.0) * total_km
+        best_cp = min(checkpoints_raw, key=lambda c: abs(c["distance_from_start"] - target_km))
+        return best_cp["name"]
+
+    # Fallback: plain list (old corridor-only path)
     cities: list[str] = (
-        route_intelligence.get("route_cities")
-        or route_intelligence.get("checkpoints")
-        or []
+        route_intelligence.get("route_cities") or checkpoints_raw or []
     )
     if not cities:
         return ""
@@ -443,14 +534,12 @@ def _estimate_city_from_progress(
         return cities[0]
 
     n = len(cities)
-    raw_idx = (clamped / 100.0) * (n - 1)
-    idx = int(round(raw_idx))
-    idx = max(0, min(n - 1, idx))
-    return cities[idx]
+    idx = int(round((clamped / 100.0) * (n - 1)))
+    return cities[max(0, min(n - 1, idx))]
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 — Route Corridor Detection
+# Corridor detection
 # ---------------------------------------------------------------------------
 
 def detect_corridor_status(
@@ -458,11 +547,10 @@ def detect_corridor_status(
     route_intelligence: dict[str, Any],
 ) -> dict[str, str]:
     """
-    Returns {status: ON_ROUTE | NEAR_ROUTE | OFF_ROUTE, matched_city: str}
+    ON_ROUTE / NEAR_ROUTE / OFF_ROUTE.
 
-    Step 1 — exact match in route_cities  → ON_ROUTE
-    Step 2 — fuzzy/near match             → NEAR_ROUTE
-    Step 3 — otherwise                    → OFF_ROUTE
+    For geometry-sourced route_intelligence, tolerance is based on the
+    distance to the nearest checkpoint on the route.
     """
     if not current_city or not current_city.strip():
         return {"status": "ON_ROUTE", "matched_city": ""}
@@ -470,30 +558,43 @@ def detect_corridor_status(
     route_cities: list[str] = route_intelligence.get("route_cities") or []
     current_norm = _normalize_city(current_city)
 
-    # Step 1: exact (normalised) match
+    # Step 1: exact normalised match
     for rc in route_cities:
         if _normalize_city(rc) == current_norm:
             return {"status": "ON_ROUTE", "matched_city": rc}
 
-    # Step 2: fuzzy — check if current_city normalizes to a known near-city
-    # that maps to a route city
+    # Step 2: near-city alias
     canonical = _NEAR_CITY_MAP.get(current_norm, current_norm)
     for rc in route_cities:
         if _normalize_city(rc) == canonical:
             return {"status": "NEAR_ROUTE", "matched_city": rc}
 
-    # Step 2b: substring match (e.g. "New Delhi" ↔ "Delhi")
+    # Step 2b: substring
     for rc in route_cities:
         rc_norm = _normalize_city(rc)
         if rc_norm in current_norm or current_norm in rc_norm:
             return {"status": "NEAR_ROUTE", "matched_city": rc}
 
-    # Step 3: off route
+    # Step 3: coordinate proximity for geometry-sourced checkpoints
+    checkpoints_raw = route_intelligence.get("checkpoints") or []
+    if checkpoints_raw and isinstance(checkpoints_raw[0], dict):
+        current_coords = get_coords(current_city)
+        if current_coords:
+            for cp in checkpoints_raw:
+                cp_lat = cp.get("latitude", 0)
+                cp_lng = cp.get("longitude", 0)
+                if cp_lat and cp_lng:
+                    d = _haversine_km(current_coords, (cp_lat, cp_lng))
+                    if d <= 15:   # within 15 km → ON_ROUTE
+                        return {"status": "ON_ROUTE", "matched_city": cp["name"]}
+                    if d <= 40:   # within 40 km → NEAR_ROUTE
+                        return {"status": "NEAR_ROUTE", "matched_city": cp["name"]}
+
     return {"status": "OFF_ROUTE", "matched_city": ""}
 
 
 # ---------------------------------------------------------------------------
-# Core trip-progress helpers
+# Trip progress helpers
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -520,70 +621,48 @@ def calculate_trip_progress(
 ) -> TripProgress:
     now = current_time or datetime.utcnow()
     if not started_at or not expected_end_time:
-        return TripProgress(progress_percentage=0.0, elapsed_minutes=0, remaining_minutes=0)
+        return TripProgress(0.0, 0, 0)
 
-    total_seconds = max((expected_end_time - started_at).total_seconds(), 1)
-    elapsed_seconds = (now - started_at).total_seconds()
+    total_s = max((expected_end_time - started_at).total_seconds(), 1)
+    elapsed_s = (now - started_at).total_seconds()
 
-    if elapsed_seconds <= 0:
-        progress = 0.0
+    if elapsed_s <= 0:
+        pct = 0.0
     elif now >= expected_end_time:
-        progress = 100.0
+        pct = 100.0
     else:
-        progress = (elapsed_seconds / total_seconds) * 100
+        pct = (elapsed_s / total_s) * 100
 
     return TripProgress(
-        progress_percentage=round(min(100.0, max(0.0, progress)), 1),
-        elapsed_minutes=max(0, int(elapsed_seconds // 60)),
+        progress_percentage=round(min(100.0, max(0.0, pct)), 1),
+        elapsed_minutes=max(0, int(elapsed_s // 60)),
         remaining_minutes=max(0, int((expected_end_time - now).total_seconds() // 60)),
     )
-
-
-def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
-    lat1, lon1 = a
-    lat2, lon2 = b
-    radius_km = 6371.0
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    x = (
-        sin(dlat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    )
-    return 2 * radius_km * asin(sqrt(max(0.0, x)))
 
 
 def estimate_trip_location(
     report: ShipmentReport, progress_percentage: float
 ) -> LocationEstimate:
-    """
-    Phase 2 upgrade: use route_intelligence when available.
-    Falls back to old segment interpolation for existing reports.
-    """
     waypoints = [report.source, *(report.stops or []), report.destination]
     if len(waypoints) < 2:
         return LocationEstimate(
-            label=report.source or report.destination or "Unknown",
-            latitude=None,
-            longitude=None,
-            segment_start=report.source or "Unknown",
-            segment_end=report.destination or "Unknown",
-            confidence="low",
+            report.source or report.destination or "Unknown",
+            None, None,
+            report.source or "Unknown",
+            report.destination or "Unknown",
+            "low",
         )
 
     clamped = min(100.0, max(0.0, progress_percentage))
-
-    # ── Phase 2: use route_intelligence if present ──────────────────
     opt_result = report.optimization_result or {}
-    route_intelligence = opt_result.get("route_intelligence")
+    ri = opt_result.get("route_intelligence")
 
-    if route_intelligence and route_intelligence.get("route_cities"):
-        city_label = _estimate_city_from_progress(route_intelligence, clamped)
+    if ri and (ri.get("route_cities") or ri.get("checkpoints")):
+        city_label = _estimate_city_from_progress(ri, clamped)
         if city_label:
             coords = get_coords(city_label)
-            # Determine segment_start / segment_end for context
-            segment_count = len(waypoints) - 1
-            scaled = (clamped / 100.0) * segment_count
-            seg_idx = min(segment_count - 1, int(scaled))
+            seg_count = len(waypoints) - 1
+            seg_idx = min(seg_count - 1, int((clamped / 100.0) * seg_count))
             return LocationEstimate(
                 label=city_label,
                 latitude=round(coords[0], 5) if coords else None,
@@ -593,61 +672,37 @@ def estimate_trip_location(
                 confidence="high",
             )
 
-    # ── Fallback: old segment interpolation ─────────────────────────
-    segment_count = len(waypoints) - 1
-    scaled = (clamped / 100.0) * segment_count
-    segment_index = min(segment_count - 1, int(scaled))
-    segment_ratio = 1.0 if clamped >= 100 else scaled - segment_index
+    # Old interpolation fallback
+    seg_count = len(waypoints) - 1
+    scaled = (clamped / 100.0) * seg_count
+    seg_idx = min(seg_count - 1, int(scaled))
+    seg_ratio = 1.0 if clamped >= 100 else scaled - seg_idx
 
-    start_name = waypoints[segment_index]
-    end_name = waypoints[segment_index + 1]
-    start_coords = get_coords(start_name)
-    end_coords = get_coords(end_name)
+    s_name = waypoints[seg_idx]
+    e_name = waypoints[seg_idx + 1]
+    s_coords = get_coords(s_name)
+    e_coords = get_coords(e_name)
 
-    # Avoid generic "Between A and B" — if we are >90% into a segment use end_name
-    if segment_ratio >= 0.85:
-        label = end_name
-    elif segment_ratio <= 0.15:
-        label = start_name
+    if seg_ratio >= 0.85:
+        label = e_name
+    elif seg_ratio <= 0.15:
+        label = s_name
     else:
-        label = f"Between {start_name} and {end_name}"
+        label = f"Between {s_name} and {e_name}"
 
-    if start_coords and end_coords:
-        lat = start_coords[0] + (end_coords[0] - start_coords[0]) * segment_ratio
-        lng = start_coords[1] + (end_coords[1] - start_coords[1]) * segment_ratio
-        return LocationEstimate(
-            label=label,
-            latitude=round(lat, 5),
-            longitude=round(lng, 5),
-            segment_start=start_name,
-            segment_end=end_name,
-            confidence="medium",
-        )
+    if s_coords and e_coords:
+        lat = s_coords[0] + (e_coords[0] - s_coords[0]) * seg_ratio
+        lng = s_coords[1] + (e_coords[1] - s_coords[1]) * seg_ratio
+        return LocationEstimate(label, round(lat, 5), round(lng, 5), s_name, e_name, "medium")
 
-    return LocationEstimate(
-        label=label,
-        latitude=None,
-        longitude=None,
-        segment_start=start_name,
-        segment_end=end_name,
-        confidence="low",
-    )
+    return LocationEstimate(label, None, None, s_name, e_name, "low")
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 — Remaining Journey Evaluation
+# Remaining Journey Evaluation
 # ---------------------------------------------------------------------------
 
-def _run_remaining_pipeline(
-    report: ShipmentReport,
-    current_location: str,
-    remaining_stops: list[str],
-    destination: str,
-) -> dict[str, Any]:
-    """
-    Re-run the existing optimization pipeline from current_location.
-    Does NOT modify the report. Result is used only for health scoring.
-    """
+def _run_remaining_pipeline(report, current_location, remaining_stops, destination):
     from app.services.reoptimization_service import _run_pipeline, _fallback_result
     try:
         return _run_pipeline(report, current_location, remaining_stops, destination)
@@ -660,25 +715,14 @@ def evaluate_remaining_journey(
     current_location: str,
     progress_percentage: float,
 ) -> dict[str, Any]:
-    """
-    Phase 4: evaluate the remaining journey from current_location.
-    Returns updated ETA, cost, risk, delay estimates.
-    """
-    # Build remaining stops: waypoints beyond progress index
     waypoints = [report.source, *(report.stops or []), report.destination]
     destination = report.destination
-
-    segment_count = max(1, len(waypoints) - 1)
-    scaled = (progress_percentage / 100.0) * segment_count
-    seg_idx = min(segment_count - 1, int(scaled))
-
-    # Remaining stops are waypoints strictly after current segment start
-    remaining_stops = [wp for wp in waypoints[seg_idx + 1 :] if wp != destination]
+    seg_count = max(1, len(waypoints) - 1)
+    seg_idx = min(seg_count - 1, int((progress_percentage / 100.0) * seg_count))
+    remaining_stops = [wp for wp in waypoints[seg_idx + 1:] if wp != destination]
 
     try:
-        pipeline_result = _run_remaining_pipeline(
-            report, current_location, remaining_stops, destination
-        )
+        pipeline_result = _run_remaining_pipeline(report, current_location, remaining_stops, destination)
     except Exception:
         pipeline_result = {}
 
@@ -702,122 +746,250 @@ def evaluate_remaining_journey(
 
 
 # ---------------------------------------------------------------------------
-# Phase 5 — Health Scoring Engine
+# Phase 2 — Deterministic Health Scoring Engine
 # ---------------------------------------------------------------------------
+#
+# Health score = weighted sum of five independent inputs.
+# Same inputs ALWAYS produce the same output — no random or time-sensitive
+# factors beyond what is in the inputs themselves.
+#
+# Weights:
+#   Route Adherence   40 pts   (corridor_status)
+#   ETA Impact        25 pts   (overdue + eta_gap vs original remaining)
+#   Traffic Impact     5 pts   (derived from pipeline metrics if available)
+#   Weather Impact     5 pts   (derived from pipeline metrics if available)
+#   Risk Impact       25 pts   (updated_risk vs base_risk)
+#
+# Total = 100 pts
+#
+# Confidence score (0–100):
+#   Reflects data quality — how much of the scoring was based on real
+#   pipeline output vs estimation/fallback.
 
-def _compute_health_score(
+_ADHERENCE_SCORES: dict[str, float] = {
+    "ON_ROUTE": 40.0,
+    "NEAR_ROUTE": 24.0,   # 60% of 40
+    "OFF_ROUTE": 4.0,     # 10% of 40
+}
+
+# Phase 3 thresholds
+_THRESHOLD_HEALTHY = 80
+_THRESHOLD_MONITOR = 60
+_THRESHOLD_SUGGEST = 40
+# 0–39 = STRONGLY_RECOMMEND
+
+
+def compute_health_score(
     corridor_status: str,
-    remaining_eval: dict[str, Any],
     overdue_minutes: int,
+    original_remaining_minutes: int,
+    updated_eta_minutes: Optional[int],
     base_risk: float,
-    report: ShipmentReport,
-) -> tuple[str, str, str]:
+    updated_risk: Optional[float],
+    pipeline_metrics: Optional[dict[str, Any]],
+) -> dict[str, Any]:
     """
-    Deterministic health scoring.
+    Phase 2 — Deterministic health scoring engine.
 
-    Returns (health_level, delay_risk, recommended_action).
-
-    Rules:
-    - OFF_ROUTE + any delay → at_risk
-    - OFF_ROUTE + no delay  → moderate
-    - NEAR_ROUTE + high delay → at_risk
-    - NEAR_ROUTE + low delay  → moderate
-    - ON_ROUTE + high delay   → moderate
-    - ON_ROUTE + low delay    → healthy
-
-    'High delay' = updated ETA > original ETA + 15min, or overdue > 30min
-    'Risk high'  = updated_risk > 0.55
+    Returns:
+      health_score   0–100
+      health_level   healthy | moderate | at_risk
+      confidence     0–100
+      component_scores  {adherence, eta, traffic, weather, risk}
+      inputs         (echo of what was used — for auditability)
     """
-    updated_risk: float = float(remaining_eval.get("updated_risk") or 0.0) if remaining_eval else 0.0
-    updated_eta_minutes: Optional[int] = remaining_eval.get("updated_eta_minutes") if remaining_eval else None
 
-    # Compute delay signal
-    original_remaining_minutes = 0
-    if report.started_at and report.expected_end_time:
-        now = datetime.utcnow()
-        original_remaining_minutes = max(0, int((report.expected_end_time - now).total_seconds() // 60))
+    # ── 1. Route Adherence (40 pts) ──────────────────────────────────
+    adherence_pts = _ADHERENCE_SCORES.get(corridor_status, 4.0)
 
-    eta_gap_minutes = 0
+    # ── 2. ETA Impact (25 pts) ───────────────────────────────────────
+    # Logic:
+    #   - no overdue, no eta_gap → 25 pts (perfect)
+    #   - overdue up to 120 min → linear decay to 0
+    #   - eta_gap > 0 (slower than expected) → proportional penalty
     if updated_eta_minutes is not None and original_remaining_minutes > 0:
-        eta_gap_minutes = updated_eta_minutes - original_remaining_minutes
+        eta_gap = updated_eta_minutes - original_remaining_minutes
+        # Normalise: gap as fraction of original remaining time
+        gap_ratio = max(0.0, eta_gap) / max(original_remaining_minutes, 1)
+        eta_pts = max(0.0, 25.0 * (1.0 - min(1.0, gap_ratio)))
+    elif overdue_minutes > 0:
+        eta_pts = max(0.0, 25.0 * (1.0 - min(1.0, overdue_minutes / 120)))
+    else:
+        eta_pts = 25.0
 
-    significant_delay = (eta_gap_minutes > 15) or (overdue_minutes >= 30)
-    high_risk = (updated_risk > 0.55) or (base_risk > 0.65)
+    # ── 3. Traffic Impact (5 pts) ────────────────────────────────────
+    traffic_pts = 5.0
+    traffic_confidence = 0
+    if pipeline_metrics:
+        tf = pipeline_metrics.get("traffic_factor") or pipeline_metrics.get("traffic_level")
+        if tf is not None:
+            traffic_factor = float(tf)
+            # traffic_factor > 1 means slowdown; traffic_level 0–1 maps to severity
+            if traffic_factor >= 1.0:          # it's a multiplier
+                traffic_pts = max(0.0, 5.0 * (1.0 - min(1.0, (traffic_factor - 1.0) / 1.0)))
+            else:                              # it's a 0–1 congestion level
+                traffic_pts = max(0.0, 5.0 * (1.0 - traffic_factor))
+            traffic_confidence = 100
 
-    if corridor_status == "OFF_ROUTE":
-        if significant_delay or high_risk:
-            return "at_risk", "high", "reoptimize"
-        return "moderate", "medium", "reoptimize"
+    # ── 4. Weather Impact (5 pts) ────────────────────────────────────
+    weather_pts = 5.0
+    weather_confidence = 0
+    if pipeline_metrics:
+        wf = pipeline_metrics.get("weather_factor") or pipeline_metrics.get("weather_level")
+        if wf is not None:
+            weather_factor = float(wf)
+            if weather_factor >= 1.0:
+                weather_pts = max(0.0, 5.0 * (1.0 - min(1.0, (weather_factor - 1.0) / 0.5)))
+            else:
+                weather_pts = max(0.0, 5.0 * (1.0 - weather_factor))
+            weather_confidence = 100
 
-    if corridor_status == "NEAR_ROUTE":
-        if significant_delay or high_risk:
-            return "at_risk", "high", "reoptimize"
-        return "moderate", "medium", "monitor"
+    # ── 5. Risk Impact (25 pts) ──────────────────────────────────────
+    effective_risk = float(updated_risk) if updated_risk is not None else base_risk
+    risk_pts = max(0.0, 25.0 * (1.0 - effective_risk))
 
-    # ON_ROUTE
-    if significant_delay or high_risk:
-        return "moderate", "medium", "monitor"
-    if overdue_minutes >= 60:
-        return "at_risk", "high", "reoptimize"
-    return "healthy", "low", "continue"
+    # ── Total ─────────────────────────────────────────────────────────
+    total = adherence_pts + eta_pts + traffic_pts + weather_pts + risk_pts
+    health_score = round(max(0, min(100, total)))
+
+    # ── Health level ─────────────────────────────────────────────────
+    if health_score >= _THRESHOLD_HEALTHY:
+        health_level = "healthy"
+    elif health_score >= _THRESHOLD_MONITOR:
+        health_level = "moderate"
+    else:
+        health_level = "at_risk"
+
+    # ── Confidence score ──────────────────────────────────────────────
+    # Base = 50 (corridor + progress always available)
+    # +25 for having real pipeline metrics (updated_eta, updated_risk)
+    # +12 for traffic data from pipeline
+    # +13 for weather data from pipeline
+    conf = 50
+    if updated_eta_minutes is not None:
+        conf += 15
+    if updated_risk is not None:
+        conf += 10
+    conf += (traffic_confidence * 12) // 100
+    conf += (weather_confidence * 13) // 100
+    confidence = min(100, conf)
+
+    return {
+        "health_score": health_score,
+        "health_level": health_level,
+        "confidence": confidence,
+        "component_scores": {
+            "adherence": round(adherence_pts, 1),
+            "eta": round(eta_pts, 1),
+            "traffic": round(traffic_pts, 1),
+            "weather": round(weather_pts, 1),
+            "risk": round(risk_pts, 1),
+        },
+        "inputs": {
+            "corridor_status": corridor_status,
+            "overdue_minutes": overdue_minutes,
+            "original_remaining_minutes": original_remaining_minutes,
+            "updated_eta_minutes": updated_eta_minutes,
+            "base_risk": round(base_risk, 4),
+            "updated_risk": round(effective_risk, 4),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
-# Phase 6 — Smarter Reoptimization Trigger
+# Phase 3 — Smart Reoptimization Recommendation (threshold-driven)
 # ---------------------------------------------------------------------------
 
-_ETA_IMPROVEMENT_THRESHOLD_MINUTES = 15
-_RISK_REDUCTION_THRESHOLD = 0.05       # 5%
-_COST_REDUCTION_THRESHOLD = 0.05       # 5%
+def get_reoptimization_recommendation(
+    health_score: int,
+    current_metrics: dict[str, Any],
+    updated_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Phase 3: threshold-driven recommendation.
+
+    80–100  → healthy      (continue)
+    60–79   → monitor      (monitor)
+    40–59   → suggest      (suggest_reoptimization)
+    0–39    → strongly     (strongly_recommend_reoptimization)
+
+    Also checks whether improvement meets thresholds before recommending.
+    Thresholds: ETA > 15 min OR risk > 5% OR cost > 5%.
+    Returns recommendation dict — never auto-reoptimizes.
+    """
+    # ── Score-based level ─────────────────────────────────────────────
+    if health_score >= _THRESHOLD_HEALTHY:
+        level = "continue"
+        label = "Continue on current route"
+        suggest = False
+    elif health_score >= _THRESHOLD_MONITOR:
+        level = "monitor"
+        label = "Monitor closely"
+        suggest = False
+    elif health_score >= _THRESHOLD_SUGGEST:
+        level = "suggest_reoptimization"
+        label = "Reoptimization suggested"
+        suggest = True
+    else:
+        level = "strongly_recommend_reoptimization"
+        label = "Reoptimization strongly recommended"
+        suggest = True
+
+    # ── Improvement check (only when reoptimization is on the table) ─
+    improvement_reasons: list[str] = []
+    improvement_meets_threshold = False
+
+    if suggest and updated_metrics:
+        cur_time = float(current_metrics.get("time") or 0)
+        upd_time = float(updated_metrics.get("time") or 0)
+        if cur_time > 0 and upd_time > 0:
+            eta_delta_min = int((cur_time - upd_time) * 60)
+            if eta_delta_min > 15:
+                improvement_reasons.append(f"ETA improves by {eta_delta_min}m")
+
+        cur_risk = float(current_metrics.get("risk") or 0)
+        upd_risk = float(updated_metrics.get("risk") or 0)
+        if cur_risk > 0 and upd_risk < cur_risk:
+            pct = int((cur_risk - upd_risk) / cur_risk * 100)
+            if pct > 5:
+                improvement_reasons.append(f"Risk reduces by {pct}%")
+
+        cur_cost = float(current_metrics.get("cost") or 0)
+        upd_cost = float(updated_metrics.get("cost") or 0)
+        if cur_cost > 0 and upd_cost < cur_cost:
+            pct = int((cur_cost - upd_cost) / cur_cost * 100)
+            if pct > 5:
+                improvement_reasons.append(f"Cost reduces by {pct}%")
+
+        improvement_meets_threshold = bool(improvement_reasons)
+
+        # If suggested but improvement below threshold, downgrade to monitor
+        if not improvement_meets_threshold and health_score >= _THRESHOLD_SUGGEST:
+            level = "monitor"
+            label = "Monitor — improvement below threshold"
+            suggest = False
+
+    return {
+        "action": level,
+        "label": label,
+        "suggest_reoptimization": suggest,
+        "improvement_meets_threshold": improvement_meets_threshold,
+        "improvement_reasons": improvement_reasons,
+        "health_score": health_score,
+    }
 
 
+# Keep backward-compat alias used elsewhere
 def should_recommend_reoptimization(
     current_metrics: dict[str, Any],
     updated_metrics: dict[str, Any],
 ) -> tuple[bool, str]:
-    """
-    Phase 6: recommend reoptimization only if improvement exceeds thresholds.
-
-    Returns (recommend: bool, reason: str)
-
-    Thresholds:
-      ETA improvement  > 15 minutes
-      Risk reduction   > 5%
-      Cost reduction   > 5%
-    """
-    reasons: list[str] = []
-
-    # ETA (time in hours → convert to minutes)
-    current_time = float(current_metrics.get("time") or 0)
-    updated_time = float(updated_metrics.get("time") or 0)
-    if current_time > 0 and updated_time > 0:
-        eta_improvement_min = int((current_time - updated_time) * 60)
-        if eta_improvement_min > _ETA_IMPROVEMENT_THRESHOLD_MINUTES:
-            reasons.append(f"ETA improves by {eta_improvement_min}m")
-
-    # Risk reduction
-    current_risk = float(current_metrics.get("risk") or 0)
-    updated_risk = float(updated_metrics.get("risk") or 0)
-    if current_risk > 0 and updated_risk < current_risk:
-        risk_reduction = (current_risk - updated_risk) / current_risk
-        if risk_reduction > _RISK_REDUCTION_THRESHOLD:
-            reasons.append(f"Risk reduces by {int(risk_reduction * 100)}%")
-
-    # Cost reduction
-    current_cost = float(current_metrics.get("cost") or 0)
-    updated_cost = float(updated_metrics.get("cost") or 0)
-    if current_cost > 0 and updated_cost < current_cost:
-        cost_reduction = (current_cost - updated_cost) / current_cost
-        if cost_reduction > _COST_REDUCTION_THRESHOLD:
-            reasons.append(f"Cost reduces by {int(cost_reduction * 100)}%")
-
-    if reasons:
-        return True, "; ".join(reasons)
-    return False, "Current route remains optimal"
+    rec = get_reoptimization_recommendation(50, current_metrics, updated_metrics)
+    return rec["improvement_meets_threshold"], "; ".join(rec["improvement_reasons"]) or "Current route remains optimal"
 
 
 # ---------------------------------------------------------------------------
-# Master evaluate_route_health — Phase 2–6 integration
+# Master evaluate_route_health
 # ---------------------------------------------------------------------------
 
 def evaluate_route_health(
@@ -827,29 +999,17 @@ def evaluate_route_health(
 ) -> dict[str, Any]:
     now = current_time or datetime.utcnow()
 
-    # ── Route Intelligence ───────────────────────────────────────────
     opt_result = report.optimization_result or {}
     route_intelligence: Optional[dict[str, Any]] = opt_result.get("route_intelligence")
-
-    # ── Requirement 3: use confirmed current_location when available ─
-    # After an Update Shipment action the confirmed location is stored in
-    # optimization_result.current_location — use it directly instead of
-    # estimating from progress %.
     confirmed_location: str = (opt_result.get("current_location") or "").strip()
 
-    # The "driver city" for this evaluation:
-    #   1. Explicit query param (actual_location_name) — a fresh override
-    #   2. Confirmed location stored in shipment details
-    #   3. Nothing — fall back to progress-based estimate below
+    # Driver city priority: explicit param > confirmed stored > nothing
     driver_city: str = (actual_location_name or "").strip() or confirmed_location
 
-    # ── Progress ─────────────────────────────────────────────────────
     progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
 
-    # ── Estimated location (only used when no confirmed location) ────
+    # ── Estimated location ────────────────────────────────────────────
     if driver_city:
-        # We have a confirmed or freshly-supplied location — use it.
-        # Skip progress-based estimation entirely.
         coords = get_coords(driver_city)
         estimated = LocationEstimate(
             label=driver_city,
@@ -862,7 +1022,7 @@ def evaluate_route_health(
     else:
         estimated = estimate_trip_location(report, progress.progress_percentage)
 
-    # ── Actual / Current Location ─────────────────────────────────────
+    # ── Corridor status ───────────────────────────────────────────────
     actual_location = None
     deviation_km: Optional[float] = None
     corridor_status = "ON_ROUTE"
@@ -878,49 +1038,83 @@ def evaluate_route_health(
                 "medium" if actual_coords else "low"
             ),
         }
-
         if route_intelligence:
-            corridor_result = detect_corridor_status(driver_city, route_intelligence)
-            corridor_status = corridor_result["status"]
-            corridor_matched_city = corridor_result["matched_city"]
+            res = detect_corridor_status(driver_city, route_intelligence)
+            corridor_status = res["status"]
+            corridor_matched_city = res["matched_city"]
         else:
             if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-                deviation_km = round(
-                    _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
-                )
+                deviation_km = round(_haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1)
                 if deviation_km >= 150:
                     corridor_status = "OFF_ROUTE"
                 elif deviation_km >= 50:
                     corridor_status = "NEAR_ROUTE"
 
         if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-            deviation_km = round(
-                _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
-            )
+            deviation_km = round(_haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1)
 
-    # ── Remaining Journey Evaluation ─────────────────────────────────
-    current_location_for_eval = driver_city or estimated.label
+    # ── Remaining journey ─────────────────────────────────────────────
+    current_for_eval = driver_city or estimated.label
     remaining_eval: dict[str, Any] = {}
-
-    if current_location_for_eval and progress.progress_percentage < 100:
+    if current_for_eval and progress.progress_percentage < 100:
         try:
-            remaining_eval = evaluate_remaining_journey(
-                report, current_location_for_eval, progress.progress_percentage
-            )
+            remaining_eval = evaluate_remaining_journey(report, current_for_eval, progress.progress_percentage)
         except Exception:
             remaining_eval = {}
 
-    # ── Overdue calculation ───────────────────────────────────────────
+    # ── Overdue / time ────────────────────────────────────────────────
     overdue_minutes = 0
     if report.expected_end_time and now > report.expected_end_time:
         overdue_minutes = int((now - report.expected_end_time).total_seconds() // 60)
 
-    base_risk = min(1.0, max(0.0, float(report.risk_score or 0.15)))
+    original_remaining = 0
+    if report.started_at and report.expected_end_time:
+        original_remaining = max(0, int((report.expected_end_time - now).total_seconds() // 60))
 
     total_minutes = 0
     if report.started_at and report.expected_end_time:
         total_minutes = max(1, int((report.expected_end_time - report.started_at).total_seconds() // 60))
 
+    base_risk = min(1.0, max(0.0, float(report.risk_score or 0.15)))
+    updated_risk = remaining_eval.get("updated_risk")
+    updated_eta = remaining_eval.get("updated_eta_minutes")
+
+    # Extract pipeline metrics for traffic/weather signals
+    pipeline_metrics: Optional[dict[str, Any]] = None
+    if remaining_eval.get("pipeline_result"):
+        best_route = remaining_eval["pipeline_result"].get("best") or {}
+        if best_route:
+            pipeline_metrics = best_route
+
+    # ── Phase 2 — health score ────────────────────────────────────────
+    score_result = compute_health_score(
+        corridor_status=corridor_status,
+        overdue_minutes=overdue_minutes,
+        original_remaining_minutes=original_remaining,
+        updated_eta_minutes=updated_eta,
+        base_risk=base_risk,
+        updated_risk=updated_risk,
+        pipeline_metrics=pipeline_metrics,
+    )
+
+    health_score = score_result["health_score"]
+    health_level = score_result["health_level"]
+    confidence = score_result["confidence"]
+
+    # ── Phase 3 — recommendation ──────────────────────────────────────
+    current_metrics = {
+        "cost": report.estimated_cost,
+        "time": report.estimated_time,
+        "risk": report.risk_score,
+    }
+    updated_metrics = remaining_eval.get("metrics") or {}
+    recommendation = get_reoptimization_recommendation(health_score, current_metrics, updated_metrics)
+
+    recommended_action = recommendation["action"]
+    reopt_recommended = recommendation["suggest_reoptimization"]
+    reopt_reason = "; ".join(recommendation["improvement_reasons"]) if recommendation["improvement_reasons"] else recommendation["label"]
+
+    # ── Legacy fields (backward compat) ──────────────────────────────
     if corridor_status == "OFF_ROUTE":
         deviation_level = "major"
     elif corridor_status == "NEAR_ROUTE":
@@ -934,64 +1128,12 @@ def evaluate_route_health(
     elif deviation_level == "major":
         eta_variance_minutes += max(60, int(total_minutes * 0.15))
 
-    # ── Health Scoring ────────────────────────────────────────────────
-    health_level, delay_risk, recommended_action = _compute_health_score(
-        corridor_status, remaining_eval, overdue_minutes, base_risk, report
-    )
+    delay_risk = "high" if health_score < _THRESHOLD_SUGGEST else "medium" if health_score < _THRESHOLD_MONITOR else "low"
 
-    adherence_score = {"ON_ROUTE": 1.0, "NEAR_ROUTE": 0.6, "OFF_ROUTE": 0.1}.get(corridor_status, 1.0)
-
-    updated_eta = remaining_eval.get("updated_eta_minutes") if remaining_eval else None
-    original_rem = 0
-    if report.started_at and report.expected_end_time:
-        original_rem = max(0, int((report.expected_end_time - now).total_seconds() // 60))
-    if updated_eta is not None and original_rem > 0:
-        eta_ratio = max(0.0, 1.0 - max(0, updated_eta - original_rem) / max(original_rem, 1))
-    elif overdue_minutes > 0:
-        eta_ratio = max(0.0, 1.0 - min(1.0, overdue_minutes / 120))
-    else:
-        eta_ratio = 1.0
-
-    updated_risk_val = float(remaining_eval.get("updated_risk") or base_risk) if remaining_eval else base_risk
-    risk_score_component = max(0.0, 1.0 - updated_risk_val)
-
-    original_cost = float(report.estimated_cost or 0)
-    updated_cost_val = float(remaining_eval.get("updated_cost") or 0) if remaining_eval else 0
-    if original_cost > 0 and updated_cost_val > original_cost:
-        cost_score = max(0.0, 1.0 - (updated_cost_val - original_cost) / original_cost)
-    else:
-        cost_score = 1.0
-
-    shipment_health_score = round(
-        (adherence_score * 40) +
-        (eta_ratio * 25) +
-        (risk_score_component * 20) +
-        (cost_score * 15)
-    )
-
-    # ── Reoptimization Trigger ────────────────────────────────────────
-    reopt_recommended = False
-    reopt_reason = ""
-    if recommended_action == "reoptimize" or (driver_city and corridor_status != "ON_ROUTE"):
-        current_metrics = {
-            "cost": report.estimated_cost,
-            "time": report.estimated_time,
-            "risk": report.risk_score,
-        }
-        updated_metrics = remaining_eval.get("metrics") or {}
-        reopt_recommended, reopt_reason = should_recommend_reoptimization(
-            current_metrics, updated_metrics
-        )
-        if not reopt_recommended and recommended_action == "reoptimize":
-            recommended_action = "monitor"
-            reopt_reason = "Improvement below threshold — continue monitoring"
-
-    # ── Requirement 4: split route_cities into sections ──────────────
-    # completed_cities / current_city / remaining_cities for corridor display
+    # ── Split corridor for display ────────────────────────────────────
     full_route_cities: list[str] = (
         route_intelligence.get("route_cities") if route_intelligence else None
     ) or []
-
     completed_cities: list[str] = []
     remaining_cities: list[str] = []
 
@@ -1004,20 +1146,27 @@ def evaluate_route_health(
             completed_cities = full_route_cities[:split_idx]
             remaining_cities = full_route_cities[split_idx + 1:]
         else:
-            # driver_city not in list — treat everything as remaining
             remaining_cities = full_route_cities
 
-    # ── Build response ────────────────────────────────────────────────
     return {
         "status": report.status,
+        # Phase 2 — rich health output
         "health_level": health_level,
-        "shipment_health_score": shipment_health_score,
+        "shipment_health_score": health_score,
+        "health_confidence": confidence,
+        "health_component_scores": score_result["component_scores"],
+        # Phase 3 — recommendation
+        "recommended_action": recommended_action,
+        "reoptimization_recommended": reopt_recommended,
+        "reoptimization_reason": reopt_reason,
+        "recommendation": recommendation,
+        # Progress
         "progress_percentage": progress.progress_percentage,
         "elapsed_minutes": progress.elapsed_minutes,
         "remaining_minutes": progress.remaining_minutes,
         "eta_variance_minutes": eta_variance_minutes,
         "delay_risk": delay_risk,
-        "recommended_action": recommended_action,
+        # Locations
         "estimated_location": {
             "label": estimated.label,
             "latitude": estimated.latitude,
@@ -1032,15 +1181,13 @@ def evaluate_route_health(
         "deviation_km": deviation_km,
         "corridor_status": corridor_status,
         "corridor_matched_city": corridor_matched_city,
-        # Full route cities from route_intelligence (may be trimmed after update)
+        # Corridor display
         "route_cities": full_route_cities or None,
-        # Split sections for corridor display (Requirement 4)
         "completed_cities": completed_cities,
         "remaining_cities": remaining_cities,
-        "updated_eta_minutes": remaining_eval.get("updated_eta_minutes"),
+        # Remaining journey metrics
+        "updated_eta_minutes": updated_eta,
         "updated_cost": remaining_eval.get("updated_cost"),
-        "updated_risk": remaining_eval.get("updated_risk"),
-        "reoptimization_recommended": reopt_recommended,
-        "reoptimization_reason": reopt_reason,
+        "updated_risk": updated_risk,
         "checked_at": now.isoformat(),
     }

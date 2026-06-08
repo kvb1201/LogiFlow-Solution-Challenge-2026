@@ -67,14 +67,33 @@ export interface RouteHealthResponse {
   report_id: string;
   status: string;
   health_level: 'healthy' | 'moderate' | 'at_risk';
-  /** 0–100 composite health score */
+  /** 0–100 composite health score — Phase 2 deterministic engine */
   shipment_health_score: number;
+  /** 0–100 confidence in the score based on data quality */
+  health_confidence: number;
+  /** Breakdown of five scoring components */
+  health_component_scores: {
+    adherence: number;
+    eta: number;
+    traffic: number;
+    weather: number;
+    risk: number;
+  };
+  /** Phase 3 recommendation object */
+  recommendation: {
+    action: string;
+    label: string;
+    suggest_reoptimization: boolean;
+    improvement_meets_threshold: boolean;
+    improvement_reasons: string[];
+    health_score: number;
+  };
   progress_percentage: number;
   elapsed_minutes: number;
   remaining_minutes: number;
   eta_variance_minutes: number;
   delay_risk: 'low' | 'medium' | 'high';
-  recommended_action: 'continue' | 'monitor' | 'reoptimize';
+  recommended_action: string;
   estimated_location: {
     label: string;
     latitude: number | null;
@@ -89,17 +108,13 @@ export interface RouteHealthResponse {
     longitude: number | null;
     confidence: string;
   } | null;
-  /** Location confirmed by a prior Update Shipment action — used directly instead of estimating */
   confirmed_current_location: string | null;
   deviation_level: 'none' | 'minor' | 'major';
   deviation_km: number | null;
   corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
   corridor_matched_city: string;
-  /** All route cities (trimmed to remaining route after an update) */
   route_cities: string[] | null;
-  /** Cities already passed — for split corridor display */
   completed_cities: string[];
-  /** Cities still ahead — for split corridor display */
   remaining_cities: string[];
   updated_eta_minutes: number | null;
   updated_cost: number | null;

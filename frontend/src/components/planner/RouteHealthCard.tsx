@@ -41,11 +41,13 @@ const HEALTH_CONFIG = {
   },
 } as const;
 
-const ACTION_LABELS = {
+const ACTION_LABELS: Record<string, string> = {
   continue: 'Continue on current route',
   monitor: 'Monitor closely',
   reoptimize: 'Reoptimization recommended',
-} as const;
+  suggest_reoptimization: 'Reoptimization suggested',
+  strongly_recommend_reoptimization: 'Reoptimization strongly recommended',
+};
 
 const CORRIDOR_CONFIG = {
   ON_ROUTE: { label: 'On Route', style: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20', icon: 'route' },
@@ -168,7 +170,6 @@ function CorridorLine() {
 function SplitCorridorView({ completed, current, remaining }: SplitCorridor) {
   const hasCompleted = completed.length > 0;
   const hasRemaining = remaining.length > 0;
-  const totalItems = completed.length + 1 + remaining.length;
 
   return (
     <div className="flex flex-col gap-0">
@@ -735,13 +736,31 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       <div className="rounded-xl bg-surface-container-low/20 border border-outline-variant/8 px-3 py-2.5">
         <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Recommended Action</div>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          {ACTION_LABELS[routeHealth.recommended_action]}
+          {routeHealth.recommendation?.label ||
+            ACTION_LABELS[routeHealth.recommended_action] ||
+            routeHealth.recommended_action}
         </p>
         {routeHealth.reoptimization_reason && (
           <p className="mt-1 text-[10px] text-outline italic">{routeHealth.reoptimization_reason}</p>
         )}
+        {/* Phase 2 — show confidence and component breakdown */}
+        {routeHealth.health_confidence != null && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[9px] text-outline uppercase font-bold">Confidence</span>
+            <span className="text-[10px] font-semibold text-foreground mono">{routeHealth.health_confidence}%</span>
+            {routeHealth.health_component_scores && (
+              <span className="text-[9px] text-outline ml-1">
+                ·{' '}
+                {Object.entries(routeHealth.health_component_scores)
+                  .map(([k, v]) => `${k[0].toUpperCase()}${k.slice(1)}: ${v}`)
+                  .join(' · ')}
+              </span>
+            )}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
-          {(routeHealth.recommended_action === 'reoptimize' || routeHealth.reoptimization_recommended) && (
+          {(routeHealth.reoptimization_recommended ||
+            routeHealth.recommendation?.suggest_reoptimization) && (
             <button type="button" onClick={handleReoptimize} disabled={reoptimizationLoading}
               className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50">
               {reoptimizationLoading ? 'Generating Updated Plan…' : 'Reoptimize Trip'}
