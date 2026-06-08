@@ -2,15 +2,28 @@ import type { LogisticsMode } from '@/lib/mode-meta';
 
 type AmbientVariant = 'home' | LogisticsMode | 'subtle';
 
-const accentBlob: Record<string, string> = {
-  home: 'bg-hybrid',
-  hybrid: 'bg-hybrid',
-  comparator: 'bg-comparator',
-  rail: 'bg-rail',
-  road: 'bg-road',
-  air: 'bg-air',
-  water: 'bg-water',
-  subtle: 'bg-rail',
+/** Per-variant primary accent blob colour */
+const primaryBlob: Record<string, string> = {
+  home: 'var(--hybrid)',
+  hybrid: 'var(--hybrid)',
+  comparator: 'var(--comparator)',
+  rail: 'var(--rail)',
+  road: 'var(--road)',
+  air: 'var(--air)',
+  water: 'var(--water)',
+  subtle: 'var(--rail)',
+};
+
+/** Per-variant secondary accent */
+const secondaryBlob: Record<string, string> = {
+  home: 'var(--rail)',
+  hybrid: 'var(--air)',
+  comparator: 'var(--rail)',
+  rail: 'var(--water)',
+  road: 'var(--warn)',
+  air: 'var(--hybrid)',
+  water: 'var(--air)',
+  subtle: 'var(--water)',
 };
 
 export function AmbientBackdrop({
@@ -20,27 +33,53 @@ export function AmbientBackdrop({
   variant?: AmbientVariant;
   className?: string;
 }) {
-  const accent = accentBlob[variant] ?? accentBlob.home;
+  const primary = primaryBlob[variant] ?? primaryBlob.home;
+  const secondary = secondaryBlob[variant] ?? secondaryBlob.home;
 
   return (
     <div
       className={`pointer-events-none absolute inset-0 z-0 overflow-hidden [&_*]:pointer-events-none ${className}`}
       aria-hidden
     >
+      {/* Primary blob — top-left */}
       <div
-        className={`absolute -left-[15%] -top-[25%] h-[min(100vw,720px)] w-[min(100vw,720px)] rounded-full opacity-[0.14] blur-[120px] animate-mesh-1 ${accent}`}
+        className="absolute -left-[18%] -top-[28%] h-[min(90vw,700px)] w-[min(90vw,700px)] rounded-full opacity-[0.12] blur-[130px] animate-mesh-1"
+        style={{ background: primary }}
       />
-      <div className="absolute -bottom-[20%] -right-[12%] h-[min(80vw,560px)] w-[min(80vw,560px)] rounded-full bg-rail opacity-[0.1] blur-[100px] animate-mesh-2" />
-      <div className="absolute left-[45%] top-[35%] h-[min(50vw,400px)] w-[min(50vw,400px)] rounded-full bg-water opacity-[0.07] blur-[90px] animate-mesh-3" />
+      {/* Secondary blob — bottom-right */}
       <div
-        className="absolute inset-0 opacity-[0.2] hero-dot-grid"
-        style={{ maskImage: 'radial-gradient(ellipse 75% 60% at 50% 20%, black, transparent)' }}
+        className="absolute -bottom-[22%] -right-[14%] h-[min(72vw,540px)] w-[min(72vw,540px)] rounded-full opacity-[0.09] blur-[110px] animate-mesh-2"
+        style={{ background: secondary }}
       />
+      {/* Tertiary blob — center */}
+      <div
+        className="absolute left-[40%] top-[30%] h-[min(55vw,380px)] w-[min(55vw,380px)] rounded-full opacity-[0.055] blur-[95px] animate-mesh-3"
+        style={{ background: 'var(--water)' }}
+      />
+
+      {/* Dot grid — masked to top half */}
+      <div
+        className="absolute inset-0 hero-dot-grid opacity-[0.18]"
+        style={{
+          maskImage:
+            'radial-gradient(ellipse 80% 65% at 50% 10%, black, transparent)',
+        }}
+      />
+
+      {/* Top-edge radial glow */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `radial-gradient(ellipse 90% 52% at 50% -8%, color-mix(in oklab, ${primary} 12%, transparent), transparent 52%)`,
+        }}
+      />
+
+      {/* Vignette — fade edges to background */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 80% 55% at 50% -10%, color-mix(in oklab, var(--rail) 10%, transparent), transparent 55%)',
+            'radial-gradient(ellipse 105% 105% at 50% 50%, transparent 40%, color-mix(in oklab, var(--background) 70%, transparent) 100%)',
         }}
       />
     </div>
