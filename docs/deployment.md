@@ -99,6 +99,17 @@ Verify after deploy: open the site → DevTools → Network → filter `train_ro
 
 The railway delay-model panel and **route map** both fetch **Supabase first**, then fall back to Render.
 
+### Vercel Web Analytics & Speed Insights
+
+The frontend includes `@vercel/analytics` and `@vercel/speed-insights` in `src/app/layout.tsx`.
+
+After deploy, enable in the Vercel dashboard (one-time per project):
+
+1. **Project → Analytics → Web Analytics → Enable**
+2. **Project → Speed Insights → Enable**
+
+Data appears after the next production deploy and real traffic. View under **Analytics** and **Speed Insights** tabs.
+
 ### Supabase sync (after deploy or retrain)
 
 From `backend/` with `SUPABASE_URL` + `SUPABASE_KEY` in `.env`:
