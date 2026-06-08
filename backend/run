@@ -9,4 +9,10 @@ if [ -f .env ]; then
   set +a
 fi
 
-uvicorn app.main:app --reload
+PY="${VIRTUAL_ENV}/bin/python3.13"
+if [ ! -x "$PY" ]; then
+  PY="${VIRTUAL_ENV}/bin/python"
+fi
+
+# Only watch app code — never venv/ (WatchFiles on site-packages causes endless reload + Redis reconnect)
+exec "$PY" -m uvicorn app.main:app --reload --reload-dir app --host 127.0.0.1 --port 8000

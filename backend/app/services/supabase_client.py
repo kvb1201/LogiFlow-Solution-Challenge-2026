@@ -23,7 +23,12 @@ def _headers() -> dict[str, str]:
     }
 
 
-def rest_get(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
+def rest_get(
+    table: str,
+    params: dict[str, str],
+    *,
+    timeout_s: float = 8,
+) -> list[dict[str, Any]]:
     if not is_configured():
         return []
     try:
@@ -31,7 +36,7 @@ def rest_get(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
             f"{_URL}/rest/v1/{table}",
             headers={**_headers(), "Accept": "application/json"},
             params=params,
-            timeout=8,
+            timeout=timeout_s,
         )
         if not res.ok:
             return []
@@ -42,19 +47,35 @@ def rest_get(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
 
 
 def rest_upsert(table: str, row: dict[str, Any], on_conflict: str) -> bool:
-    if not is_configured():
-        return False
-    try:
-        res = requests.post(
-            f"{_URL}/rest/v1/{table}",
-            headers={
-                **_headers(),
-                "Prefer": f"resolution=merge-duplicates,return=minimal",
-            },
-            params={"on_conflict": on_conflict},
-            json=row,
-            timeout=10,
-        )
-        return res.status_code in (200, 201, 204)
-    except Exception:
-        return False
+    return rest_upsert_many(table, [row], on_conflict=on_conflict) > 0
+
+
+def rest_upsert_many(
+    table: str,
+    rows: list[dict[str, Any]],
+    *,
+    on_conflict: str,
+    batch_size: int = 200,
+) -> int:
+    """Bulk upsert rows; returns count of batches accepted."""
+    if not is_configured() or not rows:
+        return 0
+    saved = 0
+    for i in range(0, len(rows), batch_size):
+        chunk = rows[i : i + batch_size]
+        try:
+            res = requests.post(
+                f"{_URL}/rest/v1/{table}",
+                headers={
+                    **_headers(),
+                    "Prefer": "resolution=merge-duplicates,return=minimal",
+                },
+                params={"on_conflict": on_conflict},
+                json=chunk,
+                timeout=60,
+            )
+            if res.status_code in (200, 201, 204):
+                saved += len(chunk)
+        except Exception:
+            continue
+    return saved

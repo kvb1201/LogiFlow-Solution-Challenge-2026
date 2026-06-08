@@ -33,6 +33,7 @@ ml/models/*.joblib
 # 🔹 Logs
 # =========================
 *.log
+backend/logs/
 
 # =========================
 # 🔹 OS Files

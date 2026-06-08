@@ -23,8 +23,11 @@
 | `TOMTOM_API_KEY` | ✅ | TomTom routing API key |
 | `REDIS_URL` | ❌ | Redis connection URL (omit for in-memory cache) |
 | `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
-| `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-1.5-flash-latest`) |
+| `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
 | `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
+| `SUPABASE_URL` | ❌ | Supabase project URL (geometry + ML metrics sync) |
+| `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
+| `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
 | `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |
 | `CONFIRMTKT_READ_TIMEOUT_S` | ❌ | ConfirmTkt read timeout (default: `4`) |
 
@@ -83,16 +86,21 @@ The built-in warmup reduces 503s for users but the **first visitor after a long 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup (e.g., `https://logiflow-api.onrender.com`) |
+| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup |
 | `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | Supabase URL — railway ML panel reads `rail_ml_metrics` directly |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase anon key (read-only public tables) |
 
-### Configuration
+The railway delay-model panel fetches **Supabase first**, then `public/data/rail-ml-metrics.json`, then Render `/railway/model-info`. This avoids waiting for Render cold start on Vercel.
 
-Ensure `next.config.js` has:
-```js
-module.exports = {
-  output: "export",  // Static site generation for Capacitor compatibility
-}
+### Supabase sync (after deploy or retrain)
+
+From `backend/` with `SUPABASE_URL` + `SUPABASE_KEY` in `.env`:
+
+```bash
+make sync-rail-ml-metrics          # ML quantifiers → rail_ml_metrics
+make sync-rail-geometry-trains TRAINS=100   # corridor geometry
+make audit-rail-geometry TRAINS=100         # schedule vs map audit
 ```
 
 ---

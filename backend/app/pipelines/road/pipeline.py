@@ -15,6 +15,9 @@ class RoadPipeline(BasePipeline):
         Supports single-leg (no stops) and multi-stop journeys.
         STRICT: Only uses real provider. No simulation fallback.
         """
+        from app.services.location_funnel import corridor_endpoints
+
+        source, destination = corridor_endpoints(source, destination, context=context)
         stops = [s for s in (payload.get("stops") or []) if s and s.strip()]
 
         if stops:

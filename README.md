@@ -69,7 +69,7 @@ flowchart TB
         ML_R["Road delay ML"]
         ML_RL["Rail scrape ML"]
         ML_W["Water risk ML"]
-        SUPA["Supabase · rail geometry"]
+        SUPA["Supabase · geometry + ML metrics"]
         REDIS["Redis · shared cache"]
         GEMINI["Gemini · intent + explain"]
     end
@@ -166,12 +166,12 @@ flowchart LR
 
 | | |
 |---|---|
-| **Schedules** | 2017 CSV (796k pairs) · `ir_train_delays.csv` scrape · runningstatus.in · JSON cache |
-| **ML** | Scraped-delay gradient boosting (355k+ rows) · duration factor |
+| **Schedules** | Delay-scrape JSON · ConfirmTkt scrape · 2017 CSV (796k pairs, lazy-loaded) |
+| **ML** | Gradient boosting on **15,650** scraped train-day rows · 59% ±15m / 81% ±30m CV |
 | **Tariffs** | Official Indian Railways parcel scales with GST & slab breakdown |
 | **Output** | `cheapest` · `fastest` · `safest` — each with segments, running days, booking ease |
-| **Map** | Multi-stop corridor via `GET /railway/trains/{n}/geometry` + Supabase cache |
-| **Live** | RailRadar delay/status overlay on selected train |
+| **Map** | Per-train corridor via `GET /railway/trains/{n}/geometry` · Supabase `train_route_geometry` |
+| **Audit** | 100-train schedule-vs-map check (`make audit-rail-geometry`) — 82/100 pass today |
 | **Docs** | [Rail pipeline](./docs/pipelines/rail.md) |
 
 ---
@@ -271,12 +271,13 @@ flowchart LR
 |-------|--------------|--------|
 | **Intent parsing** | All | NL brief → cities · weight · priority · mode (`/intent/parse`) |
 | **Road ML** | Road | GBM delay from TomTom distance + weather + time features |
-| **Rail delay ML** | Rail | GBM on 355k+ scraped `ir_train_delays.csv` rows |
+| **Rail delay ML** | Rail | GBM on scraped `ir_train_delays.csv` · metrics in Supabase `rail_ml_metrics` |
 | **Air confidence** | Air | Route reliability score — sub-60 lanes dropped |
 | **Water risk ML** | Water | ETA & congestion hooks on port-graph paths |
 | **Hybrid scorer** | Comparator | Pareto dominance + priority weights across normalized modes |
 | **Explainability** | Hybrid · per-mode | Template (~0 ms) or **Gemini 2.5 Flash** (~2–5 s) |
-| **Caching** | All | `RequestContext` · Redis · Supabase geometry (rail) |
+| **Location funnel** | All | `station_name.pdf` + IATA → canonical cities & station clusters |
+| **Caching** | All | `RequestContext` · Redis · Supabase (rail geometry + ML metrics) |
 
 ---
 
@@ -295,7 +296,7 @@ Frontend **warms Render on load** (`/api/warm-backend`), re-pings on tab focus, 
 <tr><td>ML</td><td>scikit-learn · custom feature engineering · scraped delay retrain pipeline</td></tr>
 <tr><td>AI</td><td>Google <strong>Gemini 2.5 Flash</strong> · Groq fallback</td></tr>
 <tr><td>Maps & routing</td><td>TomTom · OpenRouteService · Google Geocoding · RailRadar live API</td></tr>
-<tr><td>Storage</td><td>Supabase (geometry) · Redis Labs (cache) · local JSON fallbacks</td></tr>
+<tr><td>Storage</td><td>Supabase (rail geometry, ML metrics, air data) · Redis (cache) · static JSON fallbacks</td></tr>
 <tr><td>Deploy</td><td><strong>Vercel</strong> (frontend) · <strong>Render</strong> (backend) · GitHub Actions keep-alive</td></tr>
 <tr><td>Mobile</td><td>Capacitor → Android APK</td></tr>
 </table>
@@ -358,9 +359,11 @@ npm run dev
 | Variable | Purpose |
 |----------|---------|
 | `BACKEND_URL` | Render API for `/api/*` rewrites + warmup |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (rail ML metrics on `/railway`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (read `rail_ml_metrics`) |
 | `NEXT_PUBLIC_RAILRADAR_API_KEY` | Live train map (optional) |
 
-See [deployment guide](./docs/deployment.md) for Render, Vercel, and Android APK.
+See [deployment guide](./docs/deployment.md) for Render, Vercel, Supabase sync, and Android APK.
 
 ---
 
@@ -373,6 +376,8 @@ See [deployment guide](./docs/deployment.md) for Render, Vercel, and Android APK
 | `POST /road/optimize` | Road routing + ML delay |
 | `POST /railway/optimize` | Rail routes + tariffs + delay ML |
 | `GET /railway/trains/{n}/geometry` | Map corridor polyline + stops |
+| `GET /railway/model-info` | Rail delay ML metrics (also cached in Supabase) |
+| `GET /locations/resolve` | Location funnel debug (station code → city cluster) |
 | `POST /air/optimize` | Air cargo lanes |
 | `POST /water/optimize` | Port-to-port routes |
 | `POST /comparator/routes` | All modes, one request |

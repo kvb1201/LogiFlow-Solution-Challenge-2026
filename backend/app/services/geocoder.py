@@ -268,7 +268,20 @@ def _rail_station_lookup(name: str) -> Optional[tuple[float, float]]:
     City → primary IR station code → offline lat/lng.
     Uses station_coords_cache.json (8k+ stations, already in repo).
     """
+    token = (name or "").strip().upper()
+    if re.fullmatch(r"[A-Z0-9]{2,5}", token):
+        hit = _station_code_latlng(token)
+        if hit:
+            return hit
+
     city = _match_city(name)
+    if not city and token:
+        try:
+            from app.pipelines.rail.config import STATION_TO_CITY
+
+            city = STATION_TO_CITY.get(token)
+        except Exception:
+            city = None
     if not city:
         return None
     for code in _load_city_stations().get(city, []):
@@ -373,6 +386,16 @@ def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
     if not name or not str(name).strip():
         return None
 
+    raw = str(name).strip()
+    token = raw.upper()
+    if re.fullmatch(r"[A-Z0-9]{2,5}", token):
+        station_hit = _station_code_latlng(token)
+        if station_hit:
+            if context:
+                context.set(f"geocode:{_normalize_key(name)}", station_hit)
+            _COORD_CACHE[_normalize_key(name)] = station_hit
+            return station_hit
+
     cache_key = f"geocode:{_normalize_key(name)}"
     if context and context.has(cache_key):
         hit = context.get(cache_key)
@@ -450,3 +473,130 @@ def geocode_city_dict(name: str) -> Optional[dict]:
         return None
     lat, lng = hit
     return {"name": name, "lat": lat, "lng": lng}
+
+
+def geocode_city_global_dict(name: str) -> Optional[dict]:
+    """Global city geocoding for international air corridors (no India suffix)."""
+    hit = geocode_latlng_global(name)
+    if not hit:
+        return None
+    lat, lng = hit
+    return {"name": name, "lat": lat, "lng": lng}
+
+
+def geocode_latlng_global(name: str, *, context=None) -> Optional[tuple[float, float]]:
+    """Return (lat, lng) for a city/place name worldwide."""
+    if not name or not str(name).strip():
+        return None
+
+    cache_key = f"geocode:global:{_normalize_key(name)}"
+    if context and context.has(cache_key):
+        hit = context.get(cache_key)
+        return hit if hit else None
+
+    queries = [name.strip()]
+    if "," in name:
+        queries.append(name.split(",")[0].strip())
+
+    hit: Optional[tuple[float, float]] = None
+    provider: Optional[str] = None
+
+    api_providers: list[tuple[str, object]] = []
+    if GOOGLE_MAPS_API_KEY:
+        api_providers.append(("google_maps_global", _google_global))
+    if TOMTOM_API_KEY:
+        api_providers.append(("tomtom_global", _tomtom_global))
+    if ORS_API_KEY:
+        api_providers.append(("ors_global", _ors_global))
+    api_providers.append(("nominatim_global", _nominatim_global))
+
+    for q in queries:
+        for pname, fn in api_providers:
+            try:
+                hit = fn(q)
+                if hit:
+                    provider = pname
+                    break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429:
+                    print(f"[Geocoder] {pname} rate-limited for {q}")
+                continue
+            except Exception as exc:
+                print(f"[Geocoder] {pname} failed for {q}: {exc}")
+                continue
+        if hit:
+            break
+
+    if context:
+        context.set(cache_key, hit)
+    if hit and provider:
+        print(f"[Geocoder] {provider} → {name} ({hit[0]:.4f}, {hit[1]:.4f})")
+    elif not hit:
+        print(f"[Geocoder] no global coords for {name}")
+    return hit
+
+
+def _google_global(query: str) -> Optional[tuple[float, float]]:
+    if not GOOGLE_MAPS_API_KEY:
+        return None
+    params = {"address": query.strip(), "key": GOOGLE_MAPS_API_KEY}
+    res = requests.get(_GOOGLE_GEOCODE_URL, params=params, timeout=10)
+    res.raise_for_status()
+    body = res.json()
+    if body.get("status") == "OK" and body.get("results"):
+        loc = body["results"][0]["geometry"]["location"]
+        return float(loc["lat"]), float(loc["lng"])
+    return None
+
+
+def _tomtom_global(query: str) -> Optional[tuple[float, float]]:
+    if not TOMTOM_API_KEY:
+        return None
+    encoded = urllib.parse.quote(query.strip())
+    url = f"https://api.tomtom.com/search/2/geocode/{encoded}.json"
+    res = requests.get(url, params={"key": TOMTOM_API_KEY, "limit": 1}, timeout=6)
+    res.raise_for_status()
+    rows = res.json().get("results") or []
+    if not rows:
+        return None
+    pos = rows[0]["position"]
+    return float(pos["lat"]), float(pos["lon"])
+
+
+def _ors_global(query: str) -> Optional[tuple[float, float]]:
+    if not ORS_API_KEY:
+        return None
+    res = requests.get(
+        "https://api.openrouteservice.org/geocode/search",
+        params={"text": query.strip(), "size": 1},
+        headers={"Authorization": ORS_API_KEY},
+        timeout=8,
+    )
+    res.raise_for_status()
+    feats = res.json().get("features") or []
+    if not feats:
+        return None
+    lng, lat = feats[0]["geometry"]["coordinates"]
+    return float(lat), float(lng)
+
+
+def _nominatim_global(query: str) -> Optional[tuple[float, float]]:
+    global _LAST_NOMINATIM_AT
+    elapsed = time.monotonic() - _LAST_NOMINATIM_AT
+    if elapsed < _NOMINATIM_MIN_INTERVAL_S:
+        time.sleep(_NOMINATIM_MIN_INTERVAL_S - elapsed)
+    _LAST_NOMINATIM_AT = time.monotonic()
+
+    res = requests.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={"format": "jsonv2", "limit": 1, "q": query.strip()},
+        headers={"User-Agent": "LogiFlow-Geocoder/1.0"},
+        timeout=8,
+    )
+    if res.status_code == 429:
+        raise urllib.error.HTTPError("nominatim", 429, "Too many requests", None, None)
+    res.raise_for_status()
+    rows = res.json()
+    if not rows:
+        return None
+    return float(rows[0]["lat"]), float(rows[0]["lon"])

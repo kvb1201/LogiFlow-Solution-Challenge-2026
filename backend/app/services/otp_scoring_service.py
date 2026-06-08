@@ -144,9 +144,11 @@ class OTPScoringService:
     ) -> tuple[float, str]:
         """
         Lookup order:
-          1. Airport month OTP (byMonth)
-          2. Airport default OTP
-          3. Global default OTP
+          1. Airport month OTP (byMonth) — Indian airports in otp-baselines.json
+          2. Airport default OTP — otp-baselines.json
+          3. Airport baseline — Supabase / otp-regions.json
+          4. Region baseline — Supabase / otp-regions.json
+          5. Global default OTP
         """
         code = (departure_airport or "").strip().upper()
         baselines = _load_baselines()
@@ -165,6 +167,14 @@ class OTPScoringService:
 
         if code in (baselines.get("airports") or {}):
             return airport_default, "airport_default"
+
+        from app.services.air_store import lookup_otp_baseline_fallback
+
+        fallback_score, fallback_source = lookup_otp_baseline_fallback(code)
+        if fallback_source == "airport_baseline":
+            return fallback_score, "airport_baseline"
+        if fallback_source == "region_baseline":
+            return fallback_score, "region_baseline"
 
         return global_default, "global_default"
 

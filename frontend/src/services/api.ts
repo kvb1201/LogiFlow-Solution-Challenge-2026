@@ -790,11 +790,37 @@ export interface RailModelInfo {
 }
 
 const RAIL_ML_FALLBACK_URL = '/data/rail-ml-metrics.json';
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 function hasQuantifierValues(info: RailModelInfo | null): boolean {
   return Boolean(
     info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
   );
+}
+
+async function fetchRailModelInfoFromSupabase(): Promise<RailModelInfo | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/rail_ml_metrics?id=eq.current&select=payload`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(4_000),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ payload?: RailModelInfo }>;
+    const payload = rows[0]?.payload;
+    return payload && hasQuantifierValues(payload) ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
@@ -804,27 +830,41 @@ async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
 }
 
 export async function fetchRailModelInfo(): Promise<RailModelInfo> {
+  const staticPromise = fetchRailModelInfoFallback().catch(() => null);
+  const fromSupabase = await fetchRailModelInfoFromSupabase();
+  if (fromSupabase) return fromSupabase;
+
+  const fallback = await staticPromise;
+  if (fallback && hasQuantifierValues(fallback)) return fallback;
+
   try {
     const res = await fetch(`${BACKEND_BASE}/railway/model-info`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) throw new Error(`Model info failed (${res.status})`);
     const data = (await res.json()) as RailModelInfo;
     if (hasQuantifierValues(data)) return data;
-    const fallback = await fetchRailModelInfoFallback();
-    return { ...fallback, ...data, quantifiers: fallback.quantifiers ?? data.quantifiers };
   } catch {
-    return fetchRailModelInfoFallback();
+    /* static fallback last */
   }
+
+  return (await staticPromise) ?? fetchRailModelInfoFallback();
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
-  const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.stations || [];
+  try {
+    const res = await fetch(
+      `${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.stations || [];
+  } catch {
+    return [];
+  }
 }
 
 export async function searchCities(query: string): Promise<Array<{ name: string; lat?: number; lng?: number }>> {
@@ -893,9 +933,115 @@ export interface TrainRouteGeometryResult {
 }
 
 const GEOMETRY_FETCH_TIMEOUT_MS = 120_000;
+const GEOMETRY_SUPABASE_TIMEOUT_MS = 4_000;
 
-/** Fetch map polyline + labelled stops for one train leg. */
-export async function getTrainRouteGeometry(
+const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct', 'corridor_reference']);
+
+function combineSignals(...signals: AbortSignal[]): AbortSignal {
+  const active = signals.filter(Boolean);
+  if (active.length === 0) return AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS);
+  if (active.length === 1) return active[0];
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(active);
+  return active[0];
+}
+
+function normalizeGeometryStops(raw: unknown): RouteGeometryStop[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const lng = Number(row.lng);
+    const lat = Number(row.lat);
+    if (Number.isNaN(lng) || Number.isNaN(lat)) return [];
+    const code = String(row.code || row.station_code || '').trim().toUpperCase();
+    const name = String(row.name || row.station_name || code);
+    const city = String(row.city || name);
+    return [{ code, name, city, lng, lat }];
+  });
+}
+
+function isTrustedSupabaseGeometry(
+  row: {
+    geometry?: unknown;
+    stops?: unknown;
+    point_count?: number;
+    source?: string;
+  },
+  fromCode: string,
+  toCode: string
+): boolean {
+  const geometry = Array.isArray(row.geometry) ? (row.geometry as [number, number][]) : [];
+  const stops = normalizeGeometryStops(row.stops);
+  const pointCount = Number(row.point_count) || geometry.length;
+  const source = String(row.source || '').toLowerCase();
+
+  if (geometry.length < 2 || stops.length < 2 || pointCount < 2) return false;
+  if (UNTRUSTED_GEOMETRY_SOURCES.has(source)) return false;
+
+  const fromU = fromCode.trim().toUpperCase();
+  const toU = toCode.trim().toUpperCase();
+  const first = stops[0]?.code?.toUpperCase();
+  const last = stops[stops.length - 1]?.code?.toUpperCase();
+  if (first && last && (first !== fromU || last !== toU)) return false;
+
+  return true;
+}
+
+async function fetchTrainRouteGeometryFromSupabase(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  const trainNo = trainNumber.trim();
+  const fromU = fromCode.trim().toUpperCase();
+  const toU = toCode.trim().toUpperCase();
+  if (!trainNo || !fromU || !toU) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'geometry,stops,source,point_count',
+      train_number: `eq.${trainNo}`,
+      from_code: `eq.${fromU}`,
+      to_code: `eq.${toU}`,
+      limit: '1',
+    });
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/train_route_geometry?${params}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: combineSignals(
+        signal ?? AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS),
+        AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS)
+      ),
+    });
+    if (!res.ok) return null;
+
+    const rows = (await res.json()) as Array<{
+      geometry?: [number, number][];
+      stops?: RouteGeometryStop[];
+      source?: string;
+      point_count?: number;
+    }>;
+    const row = rows[0];
+    if (!row || !isTrustedSupabaseGeometry(row, fromU, toU)) return null;
+
+    return {
+      geometry: row.geometry ?? [],
+      stops: normalizeGeometryStops(row.stops),
+      source: `supabase:${row.source || 'cache'}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTrainRouteGeometryFromRender(
   trainNumber: string,
   fromCode: string,
   toCode: string,
@@ -907,11 +1053,10 @@ export async function getTrainRouteGeometry(
       from_code: fromCode.trim(),
       to_code: toCode.trim(),
     });
-    const timeoutSignal = AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS);
-    const combined =
-      signal && typeof AbortSignal.any === 'function'
-        ? AbortSignal.any([signal, timeoutSignal])
-        : timeoutSignal;
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
 
     const res = await fetch(
       `${BACKEND_BASE}/railway/trains/${encodeURIComponent(trainNumber)}/geometry?${params}`,
@@ -920,7 +1065,13 @@ export async function getTrainRouteGeometry(
     if (!res.ok) {
       if (attempt < 1) {
         await new Promise((r) => setTimeout(r, 2000));
-        return getTrainRouteGeometry(trainNumber, fromCode, toCode, signal, attempt + 1);
+        return fetchTrainRouteGeometryFromRender(
+          trainNumber,
+          fromCode,
+          toCode,
+          signal,
+          attempt + 1
+        );
       }
       return { geometry: [], stops: [] };
     }
@@ -937,23 +1088,104 @@ export async function getTrainRouteGeometry(
   } catch (err) {
     if (attempt < 1 && !(err instanceof DOMException && err.name === 'AbortError')) {
       await new Promise((r) => setTimeout(r, 2000));
-      return getTrainRouteGeometry(trainNumber, fromCode, toCode, signal, attempt + 1);
+      return fetchTrainRouteGeometryFromRender(
+        trainNumber,
+        fromCode,
+        toCode,
+        signal,
+        attempt + 1
+      );
     }
     return { geometry: [], stops: [] };
   }
 }
 
-/** Resolve station coords for segment endpoints when geometry API is unavailable. */
+async function fetchStationCoordFromSupabase(
+  stationCode: string,
+  signal?: AbortSignal
+): Promise<StationInfo | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  const code = stationCode.trim().toUpperCase();
+  if (!code) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'station_code,station_name,city,lat,lng',
+      station_code: `eq.${code}`,
+      limit: '1',
+    });
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/station_coordinates?${params}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: combineSignals(
+        signal ?? AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS),
+        AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS)
+      ),
+    });
+    if (!res.ok) return null;
+
+    const rows = (await res.json()) as Array<{
+      station_code?: string;
+      station_name?: string;
+      city?: string;
+      lat?: number;
+      lng?: number;
+    }>;
+    const row = rows[0];
+    if (!row || row.lat == null || row.lng == null) return null;
+
+    return {
+      code: String(row.station_code || code).toUpperCase(),
+      name: String(row.station_name || row.city || code),
+      lat: Number(row.lat),
+      lng: Number(row.lng),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch map polyline + labelled stops for one train leg (Supabase → Render → chord). */
+export async function getTrainRouteGeometry(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult> {
+  const cached = await fetchTrainRouteGeometryFromSupabase(trainNumber, fromCode, toCode, signal);
+  if (cached && cached.geometry.length >= 2) return cached;
+
+  const rendered = await fetchTrainRouteGeometryFromRender(
+    trainNumber,
+    fromCode,
+    toCode,
+    signal
+  );
+  if (rendered.geometry.length >= 2) return rendered;
+
+  return fallbackLegGeometry(fromCode, toCode, undefined, undefined, signal);
+}
+
+/** Two-point chord from Supabase station coords, then Render station API. */
 async function fallbackLegGeometry(
   fromCode: string,
   toCode: string,
   fromName?: string,
-  toName?: string
+  toName?: string,
+  signal?: AbortSignal
 ): Promise<TrainRouteGeometryResult> {
-  const [fromInfo, toInfo] = await Promise.all([
-    getStationInfo(fromCode),
-    getStationInfo(toCode),
+  const [fromSupa, toSupa] = await Promise.all([
+    fetchStationCoordFromSupabase(fromCode, signal),
+    fetchStationCoordFromSupabase(toCode, signal),
   ]);
+
+  const fromInfo = fromSupa ?? (await getStationInfo(fromCode));
+  const toInfo = toSupa ?? (await getStationInfo(toCode));
   if (!fromInfo?.lat || !toInfo?.lat) return { geometry: [], stops: [] };
 
   const fromCity = fromName || fromInfo.name || fromCode;
@@ -967,7 +1199,7 @@ async function fallbackLegGeometry(
       { code: fromCode, name: fromCity, city: fromCity, lng: fromInfo.lng, lat: fromInfo.lat },
       { code: toCode, name: toCity, city: toCity, lng: toInfo.lng, lat: toInfo.lat },
     ],
-    source: 'segment_fallback',
+    source: fromSupa && toSupa ? 'supabase:station_chord' : 'segment_fallback',
   };
 }
 
@@ -1011,7 +1243,7 @@ export async function buildTrainCorridorGeometry(
 
       const primary = await getTrainRouteGeometry(tno, from, to, signal);
       if (primary.geometry.length >= 2) return primary;
-      return fallbackLegGeometry(from, to, seg.from_name, seg.to_name);
+      return fallbackLegGeometry(from, to, seg.from_name, seg.to_name, signal);
     })
   );
 
@@ -1024,7 +1256,8 @@ export async function buildTrainCorridorGeometry(
           (seg.from || '').trim(),
           (seg.to || '').trim(),
           seg.from_name,
-          seg.to_name
+          seg.to_name,
+          signal
         )
       )
     )

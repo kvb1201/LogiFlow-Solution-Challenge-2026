@@ -4,6 +4,7 @@ import type {
   Recommendation,
   RouteSegment,
 } from '@/services/api';
+import { dedupeRailOptions } from '@/lib/dedupeRailOptions';
 
 export type RailSeason = 'normal' | 'monsoon' | 'fog' | 'festival' | 'summer' | 'winter';
 
@@ -235,7 +236,9 @@ export function railSimulateToOptimizeResult(
     cheapest: cheapest!,
     fastest: fastest!,
     safest: safest!,
-    all_options: (sim.all_results || []).map((row, i) => simRowToRankedOption(row, i + 1)),
+    all_options: dedupeRailOptions(
+      (sim.all_results || []).map((row, i) => simRowToRankedOption(row, i + 1))
+    ),
     constraints_applied: {
       budget_inr: null,
       deadline_hours: null,

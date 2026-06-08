@@ -11,29 +11,45 @@ from app.pipelines.rail.config import STATION_TO_CITY
 from app.pipelines.rail.station_resolver import resolve_station
 
 
-def _resolve_stations(city_name):
+def _resolve_stations(city_name, *, for_api: bool = False):
     """
-    Resolve a city name to its primary station code using local resolver.
-    Returns a list with a single station code.
+    Resolve a place to rail station codes.
+
+    for_api=True: hub stations only (fast scrape — avoids 50×50 pair explosions).
+    for_api=False: full funnel cluster (CSV / offline index).
     """
+    if for_api:
+        from app.services.location_funnel import api_station_codes_for_place
+
+        return api_station_codes_for_place(city_name)
+
+    from app.services.location_funnel import resolve_location
+
+    loc = resolve_location(city_name)
+    out: list[str] = []
+    seen: set[str] = set()
+    for code in loc.station_codes or []:
+        key = str(code).strip().upper()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    if loc.station_code:
+        key = str(loc.station_code).strip().upper()
+        if key and key not in seen:
+            out.insert(0, key)
+
+    if out:
+        return out
+
+    # Legacy fallback when funnel cannot cluster the place.
     raw_input = city_name.strip()
     city_key = raw_input.split(",")[0].strip()
     candidates = []
-
-    # Always try resolved station code first so downstream (ConfirmTkt) receives a code.
     code = resolve_station(city_name)
     if code:
         candidates.append(code)
-
-    # Keep the original input as a secondary fallback for providers that accept text queries.
     candidates.append(raw_input)
-
-    # Final fallback: assume already a station code form.
     candidates.append(city_key.upper())
-
-    # Deduplicate while preserving order.
-    out = []
-    seen = set()
     for c in candidates:
         normalized = (c or "").strip()
         if not normalized:
@@ -67,6 +83,29 @@ def _minutes_to_time_str(minutes):
     return f"{h:02d}:{m:02d}"
 
 
+def _dedupe_routes_by_train_no(routes: list) -> list:
+    """One direct route per train — multi-hub API queries (HWH/KOAA/SRC) reuse the same service."""
+    from app.pipelines.rail.station_coordinates import normalize_train_number
+
+    out: list = []
+    seen: set[str] = set()
+    for r in routes:
+        if r.get("has_transfer"):
+            out.append(r)
+            continue
+        trains = r.get("trains") or []
+        if not trains:
+            out.append(r)
+            continue
+        norm = normalize_train_number(trains[0].get("train_no", ""))
+        if norm and norm in seen:
+            continue
+        if norm:
+            seen.add(norm)
+        out.append(r)
+    return out
+
+
 def find_routes(
     source_city,
     dest_city,
@@ -92,8 +131,8 @@ def find_routes(
           - total_distance_km, total_duration_minutes
           - segments: structured segment list
     """
-    from_stations = _resolve_stations(source_city)
-    to_stations = _resolve_stations(dest_city)
+    from_stations = _resolve_stations(source_city, for_api=use_api)
+    to_stations = _resolve_stations(dest_city, for_api=use_api)
 
     if not from_stations:
         print(f"  [RouteFinder] Unknown source: {source_city}")
@@ -105,10 +144,20 @@ def find_routes(
     routes = []
     # ── PRIMARY: API-first (IRCTC Connect/RapidAPI through client) ────
     if use_api:
-        seen_trains = set()
-        # Query API for each station pair
+        import os
+        import time
+
+        api_budget_s = float(os.getenv("RAIL_API_PAIR_BUDGET_S", "22"))
+        api_started = time.monotonic()
+        seen_train_nos: set[str] = set()
+        # Query API for each station pair (hub codes only — see _resolve_stations)
         for fs in from_stations:
             for ts in to_stations:
+                if time.monotonic() - api_started > api_budget_s:
+                    print(f"  [RouteFinder] API budget ({api_budget_s}s) reached — using results so far")
+                    break
+                if len(routes) >= max_direct:
+                    break
                 api_data = railradar_client.get_trains_between(
                     fs,
                     ts,
@@ -129,11 +178,13 @@ def find_routes(
                     req_fs = fs.upper()
                     req_ts = ts.upper()
 
+                    from app.pipelines.rail.station_coordinates import normalize_train_number
+
                     train_no = train.get("trainNumber", "")
-                    train_key = (train_no, actual_fs or fs.upper(), actual_ts or ts.upper())
-                    if train_key in seen_trains:
+                    norm_no = normalize_train_number(train_no)
+                    if not norm_no or norm_no in seen_train_nos:
                         continue
-                    seen_trains.add(train_key)
+                    seen_train_nos.add(norm_no)
 
                     # Extract schedule for this segment
                     from_schedule = train.get("fromStationSchedule", {})
@@ -224,13 +275,20 @@ def find_routes(
                             "running_days": days_list,
                         }],
                     })
+            if len(routes) >= max_direct:
+                break
+            if time.monotonic() - api_started > api_budget_s:
+                break
 
     # ── FALLBACK: CSV/local schedule data (only when API yields nothing) ─
     if not routes:
         try:
             from app.pipelines.rail import data_loader
+
+            csv_from = _resolve_stations(source_city, for_api=False)
+            csv_to = _resolve_stations(dest_city, for_api=False)
             direct_trains = data_loader.get_trains_for_route(
-                from_stations, to_stations, max_results=max_direct
+                csv_from, csv_to, max_results=max_direct
             )
             for t in direct_trains:
                 routes.append({
@@ -259,6 +317,7 @@ def find_routes(
         except Exception as e:
             print(f"  [RouteFinder] CSV fallback load failed: {e}")
 
-    # Sort by duration
+    # Sort by duration, then collapse duplicate train numbers from hub-pair loops
     routes.sort(key=lambda x: x.get("total_duration_minutes", 9999))
+    routes = _dedupe_routes_by_train_no(routes)
     return routes[:max_direct]

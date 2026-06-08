@@ -2,81 +2,122 @@
 
 ## Overview
 
-The Rail pipeline finds train routes between Indian cities using a **tiered data fetching strategy**: lightweight web scraping as the primary source and CSV datasets as fallback. All session-based IRCTC scraping has been removed to avoid legal risk and improve stability.
+The rail pipeline finds parcel-feasible train routes between Indian cities, ranks them by cost/time/risk, predicts delay from scraped history, and renders corridor geometry on the map. It uses a **tiered schedule strategy** (online scrape → delay-scrape cache → 2017 CSV) plus a centralized **location funnel** for station resolution.
 
 ## Flow
 
 ```
-Input: source city, destination city, departure date
+Input: source, destination, cargo weight/type, departure date
   │
-  ├─ 1. Station Resolution → city name → station code(s)
-  ├─ 2. Data Fetching (tiered):
-  │     ├─ Tier 1: RailYatri HTML scrape (primary)
-  │     ├─ Tier 2: ConfirmTkt HTML scrape (fallback)
-  │     └─ Tier 3: CSV dataset (offline fallback)
-  ├─ 3. Validation → station codes, duration, distance checks
-  ├─ 4. Feature Engineering → speed, punctuality, risk factors
-  ├─ 5. Tariff Calculation → official parcel van rates
-  ├─ 6. ML Predictions → delay, duration factor
-  ├─ 7. Decision Engine → multi-objective ranking
+  ├─ 1. Location funnel → city / station code → canonical city + station cluster
+  ├─ 2. Schedule sources (per train, best available):
+  │     ├─ delay_scrape JSON (runningstatus.in corpus)
+  │     ├─ railways_online cache
+  │     └─ Train_details_22122017.csv (796k direct pairs, lazy-loaded)
+  ├─ 3. Route finder → direct + transfer routes between station clusters
+  ├─ 4. Feature engineering → tariff, punctuality, booking ease, risk
+  ├─ 5. Delay ML → GradientBoosting on scraped ir_train_delays.csv
+  ├─ 6. Decision engine → cheapest / fastest / safest
   │
   ▼
 Output: {cheapest, fastest, safest} OR {status: "no_routes"}
 ```
 
-## Key Features
+## Location resolution
 
-### Lightweight Scraping (No Session/Auth)
-- **RailYatri**: Simple GET request to public HTML page, JSON extraction
-- **ConfirmTkt**: Next.js `__NEXT_DATA__` payload extraction from public page
-- Both use strict timeouts: 3s connect, 4s read, 6s total budget
-- No cookies, no authorization headers, no browser spoofing
+All pipelines share `app/services/location_funnel.py`:
 
-### CSV Fallback
-- Offline Indian Railways schedule dataset
-- Used only when both scrapers fail
-- Tagged as `data_source: "csv_fallback"`
+- Parses `backend/data/station_name.pdf` (~7,400 stations) into district clusters
+- Merges curated `CITY_TO_STATION` clusters and IATA codes from `airports.csv`
+- Expands a single code like `PRYJ` to the full Prayagraj district station set for route search
 
-### Data Validation
-All scraped routes are validated before acceptance:
-- Station code: 2–5 uppercase letters (`^[A-Z]{2,5}$`)
-- Duration: > 0 and ≤ 4320 minutes (72 hours max)
-- Distance: > 0 km
+Debug endpoints:
 
-### Cost Calculation
-- Official Indian Railways **Parcel Van tariff** schedule
-- Scale-based pricing (S/L/P) by weight and distance
-- Weather and risk surcharges
+- `GET /locations/resolve?place=PRYJ`
+- `GET /locations/resolve-pair?source=PRYJ&destination=BSB`
 
-### Data Source Tagging
-Every route includes a `data_source` field:
-- `"scraped"` — from RailYatri or ConfirmTkt
-- `"csv_fallback"` — from offline CSV dataset
+## Schedule & data sources
 
-### Circuit Breaker
-- Trips after 5 consecutive scraping failures
-- Fast-fails for 60 seconds, then enters half-open recovery
-- Prevents cascading failures
+| Source | Role | Tag |
+|--------|------|-----|
+| ConfirmTkt / RailYatri scrape | Live trains-between-stations | `scraped` |
+| `ir_train_delays.csv` + delay_scrape JSON | Per-train halts for geometry & ML labels | `delay_scrape` / `schedule` |
+| `Train_details_22122017.csv` | Offline fallback (11,113 trains) | `csv_fallback` |
 
-## Output Structure
+The 2017 CSV is **lazy-loaded** on Render free tier (512MB RAM) unless `RAIL_PRELOAD_ON_STARTUP=true`.
+
+## Delay ML
+
+Trained via `make train-delay-ml` on scraped `ir_train_delays.csv`:
+
+- **15,650** labeled train-day rows (current corpus)
+- **5-fold GroupKFold** grouped by `train_number`
+- Leave-one-date-out backtests on held-out scrape dates
+- Model: GradientBoostingRegressor (`gbm`); HistGradientBoosting optional
+
+Current CV metrics (see `scraped_delay_metrics.json`):
+
+| Metric | Value |
+|--------|-------|
+| CV MAE | 22.7 min |
+| ±15 min hit rate | 59.3% |
+| ±30 min hit rate | 80.9% |
+| Backtest ±30 min (mean) | 80.1% |
+
+UI quantifiers are served from **Supabase** (`rail_ml_metrics`) so Vercel does not wait for Render cold start. Fallback: `frontend/public/data/rail-ml-metrics.json`, then `GET /railway/model-info`.
+
+Sync after training:
+
+```bash
+make train-delay-ml
+make sync-rail-ml-metrics
+```
+
+## Map geometry & Supabase
+
+Corridor polylines are built per train leg in `geometry_builder.py` and cached in Supabase `train_route_geometry`:
+
+```bash
+make sync-rail-geometry-trains TRAINS=100
+make audit-rail-geometry TRAINS=100
+```
+
+The audit compares **independent schedule halts** vs **map stops** per train (same count + order). Current result: **82/100 pass**, 18 fail (schedule gaps or legacy geometry mismatches).
+
+Station coordinates live in Supabase `station_coordinates` (~9,500 rows).
+
+## API endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/railway/optimize` | Full cargo optimization |
+| `GET` | `/railway/trains/{n}/geometry` | Map corridor + stops |
+| `GET` | `/railway/model-info` | ML metadata (JSON only, no pickle load) |
+| `GET` | `/railway/search/stations` | Station autocomplete |
+
+## Output structure
 
 **When routes found:**
+
 ```json
 {
-  "cheapest": { "type": "Rail", "mode": "rail", "time": 18.5, "cost": 850, "risk": 0.15, ... },
-  "fastest":  { "type": "Rail", "mode": "rail", "time": 12.0, "cost": 1200, "risk": 0.20, ... },
-  "safest":   { "type": "Rail", "mode": "rail", "time": 16.0, "cost": 950, "risk": 0.10, ... }
+  "cheapest": { "mode": "rail", "time": 18.5, "cost": 850, "risk": 0.15, "train_number": "12303", "segments": [...] },
+  "fastest": { ... },
+  "safest": { ... }
 }
 ```
 
-**When no routes found:**
+**When no routes:**
+
 ```json
 {
   "mode": "rail",
   "status": "no_routes",
-  "message": "No railway routes found between Delhi and Kochi",
-  "best": null,
-  "alternatives": [],
-  "all": []
+  "message": "No railway routes found between Delhi and Kochi"
 }
 ```
+
+## Related docs
+
+- [Indian Railways data ecosystem](../INDIAN_RAILWAYS_DATA.md)
+- [Rail ML pipeline PDF](../../frontend/public/docs/rail-ml-pipeline.pdf) (generated via `make rail-ml-doc`)

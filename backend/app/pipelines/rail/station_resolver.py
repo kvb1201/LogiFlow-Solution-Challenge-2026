@@ -157,10 +157,15 @@ if os.path.exists(STATION_DATA_PATH):
 else:
     STATIONS = []
 
-# If local stations.json is empty, hydrate from PDF-derived cache (or build it).
-_PDF_STATIONS = _load_pdf_station_cache()
-if not _PDF_STATIONS:
-    _PDF_STATIONS = _build_pdf_station_cache()
+# Hydrate from station_name.pdf via shared index (rebuilds cache when stale).
+try:
+    from app.services.station_pdf_index import build_pdf_index
+
+    _PDF_STATIONS = [r.to_dict() for r in build_pdf_index()]
+except Exception:
+    _PDF_STATIONS = _load_pdf_station_cache()
+    if not _PDF_STATIONS:
+        _PDF_STATIONS = _build_pdf_station_cache()
 
 # Merge local stations.json, PDF station corpus, with comprehensive fallback list (no city hardcoding).
 _ALL_STATIONS = []
