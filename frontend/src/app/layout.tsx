@@ -5,9 +5,9 @@ import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 
 export const metadata: Metadata = {
-  title: 'LogiFlow — Multimodal Logistics',
+  title: 'LogiFlow — Multimodal Freight Optimizer',
   description:
-    'Compare rail, road, air, water, and hybrid freight routes with live data, AI-assisted planning, and explainable recommendations.',
+    'Compare rail, road, air, water, and hybrid freight routes across India with live data, AI-assisted planning, and explainable recommendations.',
 };
 
 export default function RootLayout({
