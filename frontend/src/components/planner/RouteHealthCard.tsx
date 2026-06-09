@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
-import type { ReoptimizationRecommendation, ReoptimizationV1Response, ShipmentReport } from '@/services/plannerApi';
+import type { ReoptimizationRecommendation, ReoptimizationV1Response, RouteHealthResponse, ShipmentReport } from '@/services/plannerApi';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 
@@ -314,6 +314,200 @@ function RouteCorridor({
         />
       ) : (
         <PlainCorridorView cities={cities} currentLocation={currentLocation} />
+      )}
+    </div>
+  );
+}
+
+// ── Health Breakdown Panel (Phase 5 — Why this score?) ───────────────────
+
+function HealthBreakdownPanel({
+  breakdown,
+  conditionProfile,
+}: {
+  breakdown: RouteHealthResponse['health_breakdown'];
+  conditionProfile: RouteHealthResponse['condition_profile'];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!breakdown) return null;
+
+  const factors = [
+    { key: 'adherence', label: 'Route Adherence', icon: 'route', max: 40 },
+    { key: 'eta',       label: 'ETA',             icon: 'schedule', max: 25 },
+    { key: 'risk',      label: 'Risk',            icon: 'warning', max: 25 },
+    { key: 'traffic',   label: 'Traffic',         icon: 'traffic', max: 5 },
+    { key: 'weather',   label: 'Weather',         icon: 'cloud', max: 5 },
+  ] as const;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between rounded-xl border border-outline-variant/15 bg-surface-container-low/20 px-3 py-2.5 text-left transition hover:border-outline-variant/30"
+      >
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
+            info
+          </span>
+          <span className="text-[9px] uppercase tracking-widest text-outline font-bold">
+            Why this score?
+          </span>
+        </div>
+        <span
+          className="material-symbols-outlined text-outline"
+          style={{ fontSize: '14px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-outline-variant/15 bg-surface-container-low/20 p-3 space-y-2">
+          {/* Summary */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed pb-2 border-b border-border/15">
+            {breakdown.summary}
+          </p>
+
+          {/* Factor rows */}
+          {factors.map(f => {
+            const data = breakdown[f.key];
+            const pct = Math.round((data.points / f.max) * 100);
+            const isGood = data.delta >= -2;
+            return (
+              <div key={f.key}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="material-symbols-outlined text-outline"
+                      style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
+                    >
+                      {f.icon}
+                    </span>
+                    <span className="text-[10px] font-semibold text-foreground">{f.label}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-bold mono ${isGood ? 'text-emerald-300' : 'text-amber-300'}`}>
+                      {data.points}/{f.max}
+                    </span>
+                    {data.delta < 0 && (
+                      <span className="text-[9px] text-red-400 font-bold mono">{data.delta}</span>
+                    )}
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1 rounded-full bg-border/20 mb-1">
+                  <div
+                    className={`h-full rounded-full transition-all ${isGood ? 'bg-emerald-400/60' : 'bg-amber-400/60'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-outline leading-relaxed">{data.why}</p>
+              </div>
+            );
+          })}
+
+          {/* Condition profile delay estimates */}
+          {conditionProfile && (conditionProfile.traffic_delay_minutes > 0 || conditionProfile.weather_delay_minutes > 0) && (
+            <div className="pt-2 border-t border-border/15 flex gap-4">
+              {conditionProfile.traffic_delay_minutes > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Traffic delay</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">
+                    +{conditionProfile.traffic_delay_minutes}m
+                  </div>
+                </div>
+              )}
+              {conditionProfile.weather_delay_minutes > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Weather delay</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">
+                    +{conditionProfile.weather_delay_minutes}m
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Condition History Panel (Phase 6) ─────────────────────────────────────
+
+function ConditionHistoryPanel({
+  history,
+}: {
+  history: RouteHealthResponse['condition_history'];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!history || history.length === 0) return null;
+
+  const scoreColor = (s: number) =>
+    s >= 80 ? 'text-emerald-300' : s >= 60 ? 'text-amber-300' : 'text-red-400';
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between rounded-xl border border-outline-variant/15 bg-surface-container-low/20 px-3 py-2.5 text-left transition hover:border-outline-variant/30"
+      >
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
+            history
+          </span>
+          <span className="text-[9px] uppercase tracking-widest text-outline font-bold">
+            Recent Route Health ({history.length})
+          </span>
+        </div>
+        <span
+          className="material-symbols-outlined text-outline"
+          style={{ fontSize: '14px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-outline-variant/15 bg-surface-container-low/20 overflow-hidden">
+          <div className="divide-y divide-border/10">
+            {history.slice(0, 10).map((entry, i) => (
+              <div key={i} className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-sm font-bold mono shrink-0 ${scoreColor(entry.health_score)}`}>
+                    {entry.health_score}
+                  </span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold uppercase shrink-0 ${
+                    entry.health_level === 'healthy'
+                      ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20'
+                      : entry.health_level === 'moderate'
+                      ? 'bg-amber-500/12 text-amber-300 border-amber-500/20'
+                      : 'bg-red-500/12 text-red-400 border-red-500/20'
+                  }`}>
+                    {entry.health_level}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[9px] text-outline mono">
+                  {entry.traffic_score != null && (
+                    <span title="Traffic">T:{Math.round(entry.traffic_score)}</span>
+                  )}
+                  {entry.weather_score != null && (
+                    <span title="Weather">W:{Math.round(entry.weather_score)}</span>
+                  )}
+                  <span>
+                    {new Date(entry.evaluated_at).toLocaleTimeString('en-IN', {
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1070,6 +1264,15 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           savedReportId={savedRevisionId}
         />
       )}
+
+      {/* ── Health Breakdown — Why this score? (Phase 5) ── */}
+      <HealthBreakdownPanel
+        breakdown={routeHealth.health_breakdown ?? null}
+        conditionProfile={routeHealth.condition_profile ?? null}
+      />
+
+      {/* ── Condition History (Phase 6) ── */}
+      <ConditionHistoryPanel history={routeHealth.condition_history ?? []} />
 
       {/* ── Footer ── */}
       <div className="mt-3 flex items-center gap-2 text-[9px] text-outline">

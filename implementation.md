@@ -1,160 +1,214 @@
-# Reoptimization V1
+# Condition Intelligence V1
 
 ## Architecture
 
-Reoptimization V1 is a three-step, single-button workflow that operates on the **remaining journey only** (current_location → destination, not source → destination).
+Condition Intelligence is a pure computation layer — no new database tables, no new API endpoints. It enriches the existing `evaluate_route_health` response with five deterministic condition scores, a health breakdown, and a rolling history stored inside `optimization_result`.
 
 ```
-POST /reoptimize-v1
+evaluate_route_health(report, location)
   ↓
-reads current_location from optimization_result
+compute_health_score(...)               ← existing, unchanged
   ↓
-runs pipeline: current_location → destination
+build_condition_profile(...)            ← NEW: 5 deterministic scores
   ↓
-computes improvement vs current remaining metrics
+build_health_breakdown(...)             ← NEW: explains each factor
   ↓
-applies thresholds
+append_condition_history(...)           ← NEW: rolling history in optimization_result
   ↓
-returns comparison + recommendation
-
-POST /accept-reoptimization  (if user accepts)
-  ↓
-replaces route_intelligence in optimization_result
-  ↓
-preserves current_location + progression_base_* (immutable tracking)
-  ↓
-updates estimated_cost, estimated_time, risk_score
+RouteHealthResponse (extended)
 ```
 
 ---
 
-## Step 1 — Endpoint: `POST /planner/reports/{id}/reoptimize-v1`
-
-No request body. Reads everything it needs from the stored report:
-- `optimization_result.current_location` → reopt start point
-- `optimization_result.route_intelligence.route_cities` → remaining stops
-- `report.mode`, `report.cargo_type`, `report.optimization_input` → pipeline config
-- `report.estimated_time`, `report.estimated_cost`, `report.risk_score` → current metrics
-
-Falls back to `report.source` if no `current_location` is stored (trip not yet updated).
-
----
-
-## Step 2 — Remaining Journey Calculation
-
-Uses `split_route_at_location(route_cities, current_location)` to derive remaining stops. Runs `_run_pipeline(report, current_location, remaining_stops, destination)` — the same pipeline already used by the existing reoptimization service.
-
----
-
-## Step 3 — Current Route Metrics
-
-Rather than using the full original ETA (which includes the already-completed portion), the current route metrics are scaled to the **remaining distance**:
+## Phase 1 — ConditionProfile
 
 ```python
-remaining_ratio = remaining_km / total_km
-current_metrics = {
-    "time": original_estimated_time × remaining_ratio,
-    "cost": original_estimated_cost × remaining_ratio,
-    "risk": report.risk_score,
-}
+@dataclass
+class ConditionProfile:
+    traffic_score:          float   # 0–100
+    weather_score:          float   # 0–100
+    congestion_score:       float   # 0–100
+    route_adherence_score:  float   # 0–100
+    eta_variance_score:     float   # 0–100
+    traffic_delay_minutes:  int
+    weather_delay_minutes:  int
+    traffic_explanation:    str
+    weather_explanation:    str
+    congestion_explanation: str
+    adherence_explanation:  str
+    eta_explanation:        str
 ```
 
-This makes the comparison fair — both current and alternative represent the remaining journey.
+Serialised to dict via `.to_dict()` for the API response.
 
 ---
 
-## Step 4 — Comparison
+## Phase 2 — Traffic Intelligence (deterministic)
 
-```json
-{
-  "current_route":  { "metrics": { "eta_minutes": 76, "cost": 8200, "risk": 0.18 } },
-  "alternative_route": { "metrics": { "eta_minutes": 55, "cost": 7100, "risk": 0.14 } },
-  "improvement": {
-    "time_saved_minutes": 21,
-    "cost_pct_change": 13.4,
-    "risk_pct_change": 22.2
-  }
-}
-```
+**Function:** `build_traffic_condition(route_km, stop_count, mode, source, destination)`
 
----
+**Inputs and weights:**
 
-## Step 5 — Recommendation Engine
-
-**Thresholds (any one must be exceeded):**
-
-| Metric | Threshold |
+| Input | Contribution |
 |---|---|
-| Time saved | > 15 minutes |
-| Cost reduction | > 5% |
-| Risk reduction | > 5% |
+| Mode baseline (`road=25%, air=2%`) | Fixed per mode |
+| Route length | `min(km, 1000) / 100 × per_km_rate` |
+| Stop count | `min(stops, 10) × 4%` per stop |
+| City density hash | `_city_density_factor(src, dst) × 15%` |
 
-```python
-def _should_recommend_switch(improvement) -> (bool, str):
-    reasons = []
-    if time_saved > 15:  reasons.append(f"Saves {time_saved}m")
-    if cost_pct > 5:     reasons.append(f"Reduces cost by {cost_pct}%")
-    if risk_pct > 5:     reasons.append(f"Reduces risk by {risk_pct}%")
-    return bool(reasons), "; ".join(reasons) or "Does not meet thresholds"
+**City density factor** — deterministic proxy using `sum(ord(c) for c in combined) % 97 / 96`. Same city pair always produces the same value.
+
+**Output:** `traffic_score = 100 × (1 − total_congestion)`, `traffic_delay_minutes` estimated from baseline travel time × congestion × 0.3.
+
+---
+
+## Phase 3 — Weather Intelligence (deterministic)
+
+**Function:** `build_weather_condition(route_km, mode, source, destination)`
+
+**Inputs:**
+- Mode susceptibility (`road=0.30`, `air=0.20`, etc.)
+- Geographic keyword detection: mountain/hill station cities → +0.30, monsoon/coastal cities → +0.15
+- Latitude hash: `sum(ord(c) for c in source) % 50 / 50 × 0.10`
+
+**Output:** `weather_score = 100 × (1 − weather_impact)`, delay estimated from `route_km / speed × weather_impact × 0.2`.
+
+---
+
+## Phase 4 — Route Adherence Score
+
+**Function:** `build_adherence_score(corridor_status, deviation_km)`
+
+| Status | Score | Notes |
+|---|---|---|
+| ON_ROUTE | 100 | No deviation |
+| NEAR_ROUTE | 70 − deviation_km/2 | Floor at 40 |
+| OFF_ROUTE | 20 − deviation_km/10 | Floor at 0 |
+
+Smooth continuous penalty — not a binary step.
+
+---
+
+## Phase 5 — ETA Variance Score
+
+**Function:** `build_eta_variance_score(overdue_minutes, eta_gap_minutes)`
+
+```
+total_gap = max(0, overdue_minutes) + max(0, eta_gap_minutes)
+score     = max(0, 100 - total_gap / 2)
 ```
 
-Returns `recommend_switch: true/false` and `recommendation_reason` string.
+Perfect on-time = 100. Each minute of gap costs 0.5 points.
 
 ---
 
-## Step 6 — UI: ReoptimizeV1Panel
+## Phase 5 — Health Breakdown (Explainable)
 
-Added to `RouteHealthCard.tsx` as a standalone sub-component (no props except `reportId`). It manages its own loading/accepted state and reads from the store.
+**Function:** `build_health_breakdown(adherence_pts, eta_pts, traffic_pts, weather_pts, risk_pts, condition_profile)`
 
-**States:**
-1. **Button** — "Reoptimize Route" (default, before running)
-2. **Loading** — spinner while pipeline runs
-3. **Results** — two-column comparison (Current Route / Alternative Route), improvement deltas, recommendation badge, action buttons
-4. **Accepted** — success message
-
-The panel appears below the Recommended Action section and above the Route Corridor section.
-
----
-
-## Step 7 — Accept: `POST /planner/reports/{id}/accept-reoptimization`
-
-Body:
+Returns a dict with one entry per scoring factor:
 ```json
 {
-  "optimization_result": { ... },  // alternative route's pipeline result
-  "estimated_cost": 7100,
-  "estimated_time": 0.9167,
-  "risk_score": 0.14
+  "adherence": { "points": 40.0, "max": 40, "delta": 0, "why": "On route — no deviation detected." },
+  "eta":       { "points": 20.0, "max": 25, "delta": -5, "why": "Minor variance. Projected 10m behind schedule." },
+  "traffic":   { "points": 4.0,  "max": 5,  "delta": -1, "why": "Moderate traffic on this corridor." },
+  "weather":   { "points": 5.0,  "max": 5,  "delta": 0,  "why": "Favourable weather conditions." },
+  "risk":      { "points": 18.0, "max": 25, "delta": -7, "why": "Risk score 28%." },
+  "summary":   "Biggest drag: risk (−7 pts). ..."
 }
 ```
 
-`apply_reoptimization_v1` merges the new result while preserving:
-- `current_location`
-- `current_location_updated_at`
-- `progression_base_location`
-- `progression_base_time`
-- adds `reoptimized_at` timestamp
-
-These keys are copied from the existing `optimization_result` into the new one before persisting. This ensures automatic progression continues correctly from the current location with the new route intelligence.
+The `summary` string identifies the largest single point loss and explains it.
 
 ---
 
-## Progress Tracking After Accept
+## Phase 6 — Condition History
 
-Because `current_location`, `progression_base_location`, and `progression_base_time` are preserved, automatic progression (`resolve_current_location`) continues without interruption. The driver is still at the same city. The new `route_intelligence.route_cities` replaces the old remaining route, so future ETA/distance calculations use the optimized corridor.
+**Storage:** `optimization_result.condition_history` — a rolling list of up to 20 entries.
+
+```json
+{
+  "evaluated_at": "2026-06-09T12:30:00",
+  "health_score": 84,
+  "health_level": "healthy",
+  "traffic_score": 54,
+  "weather_score": 96,
+  "congestion_score": 63,
+  "route_adherence_score": 100,
+  "eta_variance_score": 92
+}
+```
+
+**No new table** — fits within the existing `optimization_result` JSON column.
+
+History is appended on every non-preview `GET /route-health` call. The `planner_routes.py` `get_route_health` handler now calls `db.commit()` + `db.refresh(report)` after `evaluate_route_health` to persist the appended history entry.
+
+History is **not** written for preview evaluations (`actual_location_name` supplied) to avoid flooding with ephemeral location selections.
 
 ---
 
-## Files Modified
+## Determinism Guarantee
+
+All five condition scores are pure functions of their inputs:
+
+- Traffic: uses city name character ordinal sum modulo a prime — same city pair, same result, always
+- Weather: uses keyword detection + same hash function
+- Adherence: direct formula from corridor_status + deviation_km
+- ETA variance: direct formula from overdue + gap
+- No `random`, `datetime.now()`, or any stochastic element in the scoring path
+
+---
+
+## API Response Extensions
+
+`RouteHealthResponse` extended with three new fields:
+
+```ts
+condition_profile: {
+  traffic_score, weather_score, congestion_score,
+  route_adherence_score, eta_variance_score,
+  traffic_delay_minutes, weather_delay_minutes,
+  explanations: { traffic, weather, congestion, adherence, eta }
+} | null
+
+health_breakdown: {
+  adherence: { points, max, delta, why },
+  eta:       { points, max, delta, why },
+  traffic:   { points, max, delta, why },
+  weather:   { points, max, delta, why },
+  risk:      { points, max, delta, why },
+  summary: string
+} | null
+
+condition_history: Array<{
+  evaluated_at, health_score, health_level,
+  traffic_score, weather_score, congestion_score,
+  route_adherence_score, eta_variance_score
+}>
+```
+
+---
+
+## UI Components
+
+**`HealthBreakdownPanel`** — collapsible "Why this score?" section. Shows a horizontal progress bar and explanation for each factor. Highlights the factor with the biggest point loss. Displays traffic and weather delay estimates.
+
+**`ConditionHistoryPanel`** — collapsible "Recent Route Health" section. Shows score, level badge, and T:/W: abbreviations for the last 10 entries. Newest first.
+
+Both panels are inserted between the Reoptimization results and the footer in `RouteHealthCard.tsx`.
+
+---
+
+## Files Modified / Created
 
 | File | Change |
 |---|---|
-| `backend/app/services/reoptimization_service.py` | Added `build_reoptimization_v1`, `apply_reoptimization_v1`, `_compute_improvement`, `_should_recommend_switch`, `_resolve_current_location_for_reopt`, threshold constants |
-| `backend/app/models/report.py` | Added `AcceptReoptimizationRequest` Pydantic model |
-| `backend/app/routes/planner_routes.py` | Added `POST /reoptimize-v1` and `POST /accept-reoptimization` endpoints |
-| `frontend/src/services/plannerApi.ts` | Added `ReoptimizationV1Response`, `ReoptimizationV1RouteMetrics` types; `reoptimizeTripV1`, `acceptReoptimization` functions; restored missing `id` field on `ShipmentNotification` |
-| `frontend/src/store/usePlannerStore.ts` | Added `reoptimizationV1`, `reoptimizationV1Loading` state; `runReoptimizationV1`, `acceptReoptimizationV1`, `dismissReoptimizationV1` actions |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `ReoptimizeV1Panel` sub-component; wired into render |
+| `backend/app/services/condition_intelligence.py` | **New** — `ConditionProfile`, all 5 scoring functions, `build_condition_profile`, `build_health_breakdown` |
+| `backend/app/services/condition_history.py` | **New** — `append_condition_history`, `get_condition_history` |
+| `backend/app/services/trip_progress.py` | Extended `evaluate_route_health` to build condition profile, breakdown, history |
+| `backend/app/routes/planner_routes.py` | Added `db.commit()` + `db.refresh()` after health evaluation |
+| `frontend/src/services/plannerApi.ts` | Extended `RouteHealthResponse` with `condition_profile`, `health_breakdown`, `condition_history` |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `HealthBreakdownPanel`, `ConditionHistoryPanel`, imported `RouteHealthResponse` type |
 
 ---
 
@@ -165,12 +219,12 @@ Because `current_location`, `progression_base_location`, and `progression_base_t
 | `npx tsc --noEmit` | ✅ 0 errors |
 | `npm run build` | ✅ 16/16 pages |
 | Backend `py_compile` | ✅ All files OK |
-| Improvement exceeds all thresholds → recommend_switch=True | ✅ (30m / 20% / 33%) |
-| Improvement below all thresholds → recommend_switch=False | ✅ (1m / 0.5% / 0.7%) |
-| Only time threshold met → recommend_switch=True | ✅ (24m alone) |
-| current_location used as start point | ✅ bharuch, not Surat |
-| No current_location → fallback to source | ✅ |
-| Reoptimization starts from current_location, not source | ✅ |
-| Comparison metrics use remaining journey, not full journey | ✅ |
-| Accept preserves current_location + progression_base | ✅ |
-| Progress tracking continues after accept | ✅ |
+| Determinism: 3 identical calls → identical scores | ✅ |
+| All scores in 0–100 | ✅ traffic=54, weather=96, adherence=100, eta=92.5 |
+| ON_ROUTE=100, NEAR_ROUTE<ON, OFF_ROUTE<NEAR | ✅ 100 / 57.5 / 12.0 |
+| ETA: on-time=100, 20m delay=90, 60m overdue=70 | ✅ |
+| Health breakdown has `points`, `max`, `delta`, `why` per factor | ✅ |
+| History capped at 20 entries (rolling) | ✅ 25 insertions → 20 stored |
+| History stored newest-first | ✅ |
+| Preview evaluations do not write history | ✅ gated on `actual_location_name` |
+| Different routes produce different scores | ✅ Surat→Vadodara=62 vs Delhi→Mumbai=54 |

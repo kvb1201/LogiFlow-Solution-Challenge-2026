@@ -1486,6 +1486,44 @@ def evaluate_route_health(
     health_score = score_result["health_score"]
     health_level = score_result["health_level"]
     confidence   = score_result["confidence"]
+    component_scores = score_result["component_scores"]
+
+    # ── Condition Intelligence V1 ────────────────────────────────────
+    from app.services.condition_intelligence import (
+        build_condition_profile, build_health_breakdown,
+    )
+    from app.services.condition_history import (
+        append_condition_history, get_condition_history,
+    )
+
+    # ETA gap for condition profile
+    _eta_gap_for_profile = 0
+    if final_eta_min is not None and original_remaining > 0:
+        _eta_gap_for_profile = max(0, final_eta_min - original_remaining)
+
+    condition_profile = build_condition_profile(
+        corridor_status=corridor_status,
+        deviation_km=deviation_km,
+        overdue_minutes=overdue_minutes,
+        eta_gap_minutes=_eta_gap_for_profile,
+        route_km=total_route_km if total_route_km else (
+            float(opt_result.get("route_intelligence", {}).get("total_km_estimate") or 0)
+        ),
+        stop_count=len(report.stops or []),
+        mode=report.mode or "road",
+        source=report.source,
+        destination=report.destination,
+    )
+    condition_profile_dict = condition_profile.to_dict()
+
+    health_breakdown = build_health_breakdown(
+        adherence_pts=component_scores["adherence"],
+        eta_pts=component_scores["eta"],
+        traffic_pts=component_scores["traffic"],
+        weather_pts=component_scores["weather"],
+        risk_pts=component_scores["risk"],
+        condition_profile=condition_profile,
+    )
 
     # ── Recommendation ────────────────────────────────────────────────
     current_metrics = {
@@ -1525,13 +1563,43 @@ def evaluate_route_health(
         else "low"
     )
 
+    # ── Condition History (Phase 6) — only persist for real evaluations ─
+    # Skip for preview mode (actual_location_name supplied) to avoid
+    # flooding history with ephemeral location selections.
+    condition_history: list[dict[str, Any]] = get_condition_history(opt_result)
+    if not actual_location_name:
+        try:
+            from sqlalchemy.orm.session import object_session
+            sess = object_session(report)
+            if sess is not None:
+                new_opt = append_condition_history(
+                    opt_result,
+                    health_score,
+                    health_level,
+                    condition_profile_dict,
+                    now,
+                )
+                report.optimization_result = new_opt
+                # Note: caller (planner_routes) commits the session.
+                # We mark it as modified so SQLAlchemy picks up the change.
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(report, "optimization_result")
+                # Refresh local copy of history
+                condition_history = get_condition_history(new_opt)
+        except Exception:
+            pass  # History is non-critical — never fail a health check for it
+
     return {
         "status": report.status,
         # Health
         "health_level": health_level,
         "shipment_health_score": health_score,
         "health_confidence": confidence,
-        "health_component_scores": score_result["component_scores"],
+        "health_component_scores": component_scores,
+        # Condition Intelligence V1
+        "condition_profile": condition_profile_dict,
+        "health_breakdown": health_breakdown,
+        "condition_history": condition_history,
         # Recommendation
         "recommended_action": recommended_action,
         "reoptimization_recommended": reopt_recommended,
@@ -1539,15 +1607,15 @@ def evaluate_route_health(
         "recommendation": recommendation,
         # Resolved current location + origin
         "current_location": driver_city,
-        "location_source": location_source,       # "manual"|"automatic"|"preview"|"fallback"
+        "location_source": location_source,
         "confirmed_current_location": confirmed_location or None,
-        # Elapsed: Source → Current Location (Req 5)
+        # Elapsed: Source → Current Location
         "progress_percentage": progress_pct,
         "covered_distance_km": covered_km,
         "total_route_km": total_route_km,
         "progress_derived_from": progress_derived_from,
         "elapsed_minutes": time_prog.elapsed_minutes,
-        # Projected: Current Location → Destination (Req 6)
+        # Projected: Current Location → Destination
         "remaining_distance_km": remaining_km,
         "remaining_eta_minutes": final_eta_min,
         "remaining_minutes": time_prog.remaining_minutes,

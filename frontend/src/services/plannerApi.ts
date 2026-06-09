@@ -76,6 +76,41 @@ export interface RouteHealthResponse {
     weather: number;
     risk: number;
   };
+  // Condition Intelligence V1
+  condition_profile: {
+    traffic_score: number;
+    weather_score: number;
+    congestion_score: number;
+    route_adherence_score: number;
+    eta_variance_score: number;
+    traffic_delay_minutes: number;
+    weather_delay_minutes: number;
+    explanations: {
+      traffic: string;
+      weather: string;
+      congestion: string;
+      adherence: string;
+      eta: string;
+    };
+  } | null;
+  health_breakdown: {
+    adherence: { points: number; max: number; delta: number; why: string };
+    eta:       { points: number; max: number; delta: number; why: string };
+    traffic:   { points: number; max: number; delta: number; why: string };
+    weather:   { points: number; max: number; delta: number; why: string };
+    risk:      { points: number; max: number; delta: number; why: string };
+    summary:   string;
+  } | null;
+  condition_history: Array<{
+    evaluated_at: string;
+    health_score: number;
+    health_level: string;
+    traffic_score: number | null;
+    weather_score: number | null;
+    congestion_score: number | null;
+    route_adherence_score: number | null;
+    eta_variance_score: number | null;
+  }>;
   recommendation: {
     action: string;
     label: string;

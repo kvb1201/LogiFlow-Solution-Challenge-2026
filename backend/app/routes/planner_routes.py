@@ -429,6 +429,11 @@ async def get_route_health(
     driver_location = actual_location or current_location
     health = evaluate_route_health(report, driver_location)
 
+    # Commit any optimization_result changes (e.g. condition_history) written
+    # inside evaluate_route_health
+    await db.commit()
+    await db.refresh(report)
+
     if health["health_level"] in {"moderate", "at_risk"}:
         existing_result = await db.execute(
             select(ShipmentNotification).where(
