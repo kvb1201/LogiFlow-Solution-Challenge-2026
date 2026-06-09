@@ -319,6 +319,7 @@ function RouteCorridor({
   );
 }
 
+
 // ── Main component ────────────────────────────────────────────────────────
 
 interface Props {
@@ -347,10 +348,24 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
   const [showCorridor, setShowCorridor] = useState(false);
   const [updatingShipment, setUpdatingShipment] = useState(false);
   const [shipmentUpdated, setShipmentUpdated] = useState(false);
+  // Track whether user has evaluated a preview city (separate from routeHealth state
+  // to avoid the hasPreviewCity === resolvedLocation comparison bug)
+  const [evaluatedPreviewCity, setEvaluatedPreviewCity] = useState<string>('');
 
   useEffect(() => {
     fetchRouteHealth(report.id);
   }, [report.id, fetchRouteHealth]);
+
+  // Reset preview/update state whenever the user changes the selector mode
+  const handleModeChange = (mode: 'estimated' | 'dropdown' | 'manual') => {
+    setLocationMode(mode);
+    setShipmentUpdated(false);
+    setEvaluatedPreviewCity('');
+    if (mode === 'estimated') {
+      setSelectedCity('');
+      setManualLocation('');
+    }
+  };
 
   // ── Location helpers ──────────────────────────────────────────────
   const activeLocation = (): string => {
@@ -360,40 +375,43 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
   };
 
   const runCheck = () => {
-    fetchRouteHealth(report.id, activeLocation() || undefined);
+    const loc = activeLocation();
+    if (!loc) {
+      fetchRouteHealth(report.id);
+      return;
+    }
+    setShipmentUpdated(false);
+    setEvaluatedPreviewCity(loc);
+    fetchRouteHealth(report.id, loc);
   };
 
   const handleCitySelect = (city: string) => {
     setSelectedCity(city);
     setLocationMode('dropdown');
-    fetchRouteHealth(report.id, city);
+    setShipmentUpdated(false);
+    // Do NOT auto-evaluate — user must click Evaluate explicitly
+    // so the preview panel appears only after an intentional action
+    setEvaluatedPreviewCity('');
   };
 
-  // The effective "current location" for all actions.
-  // Priority: manual/dropdown input → confirmed stored location → estimated label
-  const currentLocationForAction = (): string => {
-    const loc = activeLocation();
-    if (loc) return loc;
-    if (routeHealth?.confirmed_current_location) return routeHealth.confirmed_current_location;
-    if (routeHealth?.actual_location?.label) return routeHealth.actual_location.label;
-    if (routeHealth?.corridor_matched_city) return routeHealth.corridor_matched_city;
-    return (
-      routeHealth?.estimated_location?.label ||
-      routeHealth?.estimated_location?.segment_end ||
-      report.source
-    );
+  // The location to commit when Update Shipment is clicked
+  const commitLocation = (): string => {
+    // Use the explicitly evaluated preview city, or fall back to active selection
+    return evaluatedPreviewCity || activeLocation() || routeHealth?.current_location || report.source;
   };
 
-  // ── Update Shipment ───────────────────────────────────────────────
-  // Only submits current_location — backend recomputes all metrics.
+  // ── Update Shipment (Req 3) ───────────────────────────────────────
   const handleUpdateShipment = async () => {
-    const currentLocation = currentLocationForAction();
-    if (!currentLocation) return;
+    const location = commitLocation();
+    if (!location) return;
     setUpdatingShipment(true);
     try {
-      const updated = await updateShipmentLocation(report.id, { current_location: currentLocation });
+      const updated = await updateShipmentLocation(report.id, { current_location: location });
       setShipmentUpdated(true);
-      // Re-fetch health so route corridor reflects the updated state
+      setEvaluatedPreviewCity('');
+      setLocationMode('estimated');
+      setSelectedCity('');
+      setManualLocation('');
       fetchRouteHealth(report.id);
       onShipmentUpdated?.(updated);
     } finally {
@@ -403,7 +421,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
 
   // ── Reoptimize / Regenerate ───────────────────────────────────────
   const handleReoptimize = async () => {
-    const currentLocation = currentLocationForAction();
+    const currentLocation = commitLocation();
     const waypoints = [report.source, ...report.stops, report.destination];
     const clNorm = currentLocation.toLowerCase();
     const clIdx = waypoints.findIndex(w => w.toLowerCase() === clNorm);
@@ -430,7 +448,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
   };
 
   const handleRegeneratePlan = () => {
-    const currentLoc = currentLocationForAction();
+    const currentLoc = commitLocation();
     const waypoints = [report.source, ...report.stops, report.destination];
     const clNorm = currentLoc.toLowerCase();
     const clIdx = waypoints.findIndex(w => w.toLowerCase() === clNorm);
@@ -459,26 +477,30 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
   const corridorCfg =
     CORRIDOR_CONFIG[routeHealth.corridor_status as keyof typeof CORRIDOR_CONFIG] ??
     CORRIDOR_CONFIG.ON_ROUTE;
-  const routeCities = routeHealth.route_cities ?? [];
+  const routeCities    = routeHealth.route_cities ?? [];
   const completedCities = routeHealth.completed_cities ?? [];
   const remainingCities = routeHealth.remaining_cities ?? [];
 
-  // Active location for display — prefer confirmed stored location when no manual input
-  const displayLocation =
-    activeLocation() ||
-    routeHealth.confirmed_current_location ||
-    routeHealth.actual_location?.label ||
-    '';
+  // Backend-resolved current location (single source of truth)
+  const resolvedLocation = routeHealth.current_location;
+  const locationSource   = routeHealth.location_source;
 
-  // Show "Update Shipment" when:
-  // - user has explicitly selected/entered a location (not just using estimated)
-  // - there are updated metrics from the pipeline evaluation
-  const hasExplicitLocation = locationMode !== 'estimated' && !!activeLocation();
-  const hasUpdatedMetrics =
-    routeHealth.updated_eta_minutes != null ||
-    routeHealth.updated_cost != null ||
-    routeHealth.updated_risk != null;
-  const canUpdateShipment = hasExplicitLocation && hasUpdatedMetrics && !shipmentUpdated;
+  // City the user is currently previewing (not yet committed)
+  const previewCity = activeLocation();
+  // City the user has explicitly evaluated via Evaluate button (tracks separate from resolvedLocation)
+  // canUpdateShipment is true when the user has evaluated a preview city that differs
+  // from the current stored location, and hasn't yet committed it.
+  const canUpdateShipment =
+    !!evaluatedPreviewCity &&
+    evaluatedPreviewCity.toLowerCase() !== (routeHealth?.confirmed_current_location || '').toLowerCase() &&
+    !shipmentUpdated;
+
+  const SOURCE_BADGE: Record<string, string> = {
+    automatic: 'bg-primary/10 text-primary border-primary/20',
+    manual:    'bg-emerald-500/12 text-emerald-300 border-emerald-500/20',
+    preview:   'bg-amber-500/12 text-amber-300 border-amber-500/20',
+    fallback:  'bg-surface-container/30 text-outline border-border/20',
+  };
 
   return (
     <div
@@ -510,52 +532,28 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         </div>
       </div>
 
-      {/* ── Confirmed location banner (when a prior Update Shipment exists) ── */}
-      {routeHealth.confirmed_current_location && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/8 px-3 py-2">
-          <span className="material-symbols-outlined text-primary shrink-0"
-            style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
-            location_on
-          </span>
-          <div className="min-w-0 flex-1">
-            <span className="text-[9px] uppercase text-outline font-bold">Confirmed Location</span>
-            <span className="ml-2 text-[11px] font-semibold text-foreground capitalize">
-              {routeHealth.confirmed_current_location}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── Location cards ── */}
+      {/* ── Current Location row ── */}
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-3">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">
-            {routeHealth.confirmed_current_location ? 'Location (confirmed)' : 'Estimated Location'}
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-bold">Current Location</div>
+            <span className={`text-[8px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide ${SOURCE_BADGE[locationSource] ?? SOURCE_BADGE.fallback}`}>
+              {locationSource}
+            </span>
           </div>
           <div className="text-sm font-bold text-foreground leading-snug capitalize">
-            {routeHealth.confirmed_current_location ||
-              routeHealth.estimated_location?.label ||
-              'Not available'}
+            {previewCity ? (
+              <>
+                <span className="text-amber-300">{previewCity}</span>
+                <span className="ml-1.5 text-[9px] text-outline normal-case">(preview)</span>
+              </>
+            ) : resolvedLocation}
           </div>
-          <div className="mt-1 text-[10px] text-muted-foreground mono">
-            {routeHealth.confirmed_current_location
-              ? 'Updated from shipment'
-              : routeHealth.estimated_location?.confidence === 'high'
-              ? 'Route intelligence'
-              : 'Progress estimate'}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-outline-variant/15 bg-surface-container-low/45 px-3 py-3">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Current Location</div>
-          <div className="text-sm font-bold text-foreground leading-snug capitalize">
-            {routeHealth.actual_location?.label ?? 'Using estimated'}
-          </div>
-          <div className="mt-1 text-[10px] text-muted-foreground mono">
-            {routeHealth.deviation_km != null
-              ? `${routeHealth.deviation_km} km from estimate`
-              : 'No location input'}
-          </div>
+          {previewCity && (
+            <div className="mt-0.5 text-[10px] text-outline mono capitalize">
+              Current: {resolvedLocation}
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-outline-variant/15 bg-surface-container-low/45 px-3 py-3">
@@ -573,88 +571,102 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
             </div>
           )}
         </div>
-      </div>
 
-      {/* ── Progress metrics ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        {[
-          {
-            label: 'Progress',
-            value: `${routeHealth.progress_percentage}%`,
-            sub: routeHealth.covered_distance_km
-              ? `${routeHealth.covered_distance_km} km covered`
-              : undefined,
-          },
-          {
-            label: 'Remaining',
-            value: routeHealth.remaining_distance_km
-              ? `${routeHealth.remaining_distance_km} km`
-              : `${routeHealth.remaining_minutes}m`,
-            sub: routeHealth.remaining_distance_km && routeHealth.total_route_km
-              ? `of ${routeHealth.total_route_km} km total`
-              : undefined,
-          },
-          {
-            label: 'Remaining ETA',
-            value: routeHealth.remaining_eta_minutes != null
-              ? `${routeHealth.remaining_eta_minutes}m`
-              : routeHealth.updated_eta_minutes != null
-              ? `${routeHealth.updated_eta_minutes}m`
-              : `${routeHealth.eta_variance_minutes}m`,
-            sub: routeHealth.progress_derived_from === 'geometry' ? 'distance-based' : undefined,
-          },
-        ].map(m => (
-          <div key={m.label} className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">{m.label}</div>
-            <div className="text-sm font-bold text-foreground mono">{m.value}</div>
-            {m.sub && <div className="text-[9px] text-outline mt-0.5">{m.sub}</div>}
-          </div>
-        ))}
-        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+        <div className="rounded-xl border border-outline-variant/15 bg-surface-container-low/45 px-3 py-3">
           <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Deviation</div>
-          <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase ${DEVIATION_CONFIG[routeHealth.deviation_level]}`}>
+          <span className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-bold uppercase ${DEVIATION_CONFIG[routeHealth.deviation_level]}`}>
             {routeHealth.deviation_level}
           </span>
+          {routeHealth.deviation_km != null && (
+            <div className="mt-1 text-[10px] text-muted-foreground mono">{routeHealth.deviation_km} km</div>
+          )}
         </div>
       </div>
 
-      {/* ── Updated Cost + Risk ── */}
-      {(routeHealth.updated_cost != null || routeHealth.updated_risk != null) && (
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          {routeHealth.updated_cost != null && (
-            <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-              <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Updated Cost</div>
-              <div className="text-sm font-bold text-foreground mono">
-                ₹{Math.round(routeHealth.updated_cost).toLocaleString('en-IN')}
-              </div>
-            </div>
-          )}
-          {routeHealth.updated_risk != null && (
-            <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-              <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Updated Risk</div>
-              <div className="text-sm font-bold text-foreground mono">
-                {Math.round(routeHealth.updated_risk * 100)}%
-              </div>
-            </div>
+      {/* ── Elapsed: Source → Current Location (Req 5) ── */}
+      <div className="mb-1 text-[9px] uppercase tracking-widest text-outline/70 font-bold px-0.5">
+        Elapsed · {report.source} → {previewCity || resolvedLocation}
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Progress</div>
+          <div className="text-sm font-bold text-foreground mono">{routeHealth.progress_percentage}%</div>
+          {routeHealth.covered_distance_km > 0 && (
+            <div className="text-[9px] text-outline mt-0.5">{routeHealth.covered_distance_km} km</div>
           )}
         </div>
-      )}
+        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Elapsed Time</div>
+          <div className="text-sm font-bold text-foreground mono">{routeHealth.elapsed_minutes}m</div>
+        </div>
+        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Distance</div>
+          <div className="text-sm font-bold text-foreground mono">
+            {routeHealth.covered_distance_km > 0 ? `${routeHealth.covered_distance_km} km` : `${routeHealth.progress_percentage}%`}
+          </div>
+          {routeHealth.total_route_km > 0 && (
+            <div className="text-[9px] text-outline mt-0.5">of {routeHealth.total_route_km} km</div>
+          )}
+        </div>
+      </div>
 
-      {/* ── Location selector ── */}
+      {/* ── Projected: Current Location → Destination (Req 6) ── */}
+      <div className="mb-1 text-[9px] uppercase tracking-widest text-outline/70 font-bold px-0.5">
+        Projected · {previewCity || resolvedLocation} → {report.destination}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Remaining ETA</div>
+          <div className="text-sm font-bold text-foreground mono">
+            {routeHealth.remaining_eta_minutes != null
+              ? `${routeHealth.remaining_eta_minutes}m`
+              : `${routeHealth.eta_variance_minutes}m`}
+          </div>
+          {routeHealth.progress_derived_from === 'geometry' && (
+            <div className="text-[9px] text-outline mt-0.5">distance-based</div>
+          )}
+        </div>
+        <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Remaining</div>
+          <div className="text-sm font-bold text-foreground mono">
+            {routeHealth.remaining_distance_km > 0
+              ? `${routeHealth.remaining_distance_km} km`
+              : `${routeHealth.remaining_minutes}m`}
+          </div>
+        </div>
+        {routeHealth.updated_cost != null && (
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Proj. Cost</div>
+            <div className="text-sm font-bold text-foreground mono">
+              ₹{Math.round(routeHealth.updated_cost).toLocaleString('en-IN')}
+            </div>
+          </div>
+        )}
+        {routeHealth.updated_risk != null && (
+          <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Proj. Risk</div>
+            <div className="text-sm font-bold text-foreground mono">
+              {Math.round(routeHealth.updated_risk * 100)}%
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Location selector (Req 7: preview before committing) ── */}
       <div className="mb-4 rounded-xl bg-surface-container-low/20 border border-outline-variant/8 px-3 py-3">
         <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-2">
           Select Current Location
         </div>
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {(['estimated', 'dropdown', 'manual'] as const).map(mode => (
-            <button key={mode} type="button" onClick={() => setLocationMode(mode)}
+            <button key={mode} type="button" onClick={() => handleModeChange(mode)}
               className={[
                 'rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition',
                 locationMode === mode
                   ? 'border-primary/40 bg-primary/15 text-primary'
                   : 'border-border/30 bg-surface/30 text-muted-foreground hover:text-foreground',
               ].join(' ')}>
-              {mode === 'estimated' ? 'Use Estimated' : mode === 'dropdown' ? 'Route City' : 'Enter Manually'}
+              {mode === 'estimated' ? 'Use Automatic' : mode === 'dropdown' ? 'Route City' : 'Enter Manually'}
             </button>
           ))}
         </div>
@@ -679,7 +691,8 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         )}
         {locationMode === 'manual' && (
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input value={manualLocation} onChange={e => setManualLocation(e.target.value)}
+            <input value={manualLocation}
+              onChange={e => { setManualLocation(e.target.value); setShipmentUpdated(false); }}
               placeholder="e.g. Bharuch"
               className="min-w-0 flex-1 rounded-lg border border-border/40 bg-surface-container-lowest/50 px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary/40" />
             <button type="button" onClick={runCheck} disabled={!manualLocation.trim()}
@@ -691,37 +704,38 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         {locationMode === 'estimated' && (
           <button type="button" onClick={runCheck}
             className="rounded-lg border border-primary/35 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
-            Refresh Health
+            Refresh
           </button>
         )}
       </div>
 
-      {/* ── Update Shipment panel ── */}
+      {/* ── Update Shipment panel (Req 3) ── */}
       {canUpdateShipment && (
         <div className="mb-4 rounded-xl border border-primary/25 bg-primary/8 px-4 py-3">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">
-            Ready to Update
-          </div>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Preview — Evaluated</div>
           <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-            Confirming current location as{' '}
-            <span className="font-semibold text-foreground capitalize">{activeLocation()}</span>.
-            We will record this location. Progress, ETA, and corridor will update automatically.
+            Metrics projected from{' '}
+            <span className="font-semibold text-foreground capitalize">{evaluatedPreviewCity}</span>.
+            Click <span className="font-semibold text-primary">Update Shipment</span> to confirm this
+            as your current location. Progression will continue forward from here.
           </p>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {routeHealth.updated_eta_minutes != null && (
-              <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-                <div className="text-[9px] text-outline uppercase mb-0.5">ETA</div>
-                <div className="text-[12px] font-bold text-foreground mono">{routeHealth.updated_eta_minutes}m</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
+              <div className="text-[9px] text-outline uppercase mb-0.5">Progress</div>
+              <div className="text-[12px] font-bold text-foreground mono">{routeHealth.progress_percentage}%</div>
+            </div>
+            <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
+              <div className="text-[9px] text-outline uppercase mb-0.5">Rem. ETA</div>
+              <div className="text-[12px] font-bold text-foreground mono">
+                {routeHealth.remaining_eta_minutes != null ? `${routeHealth.remaining_eta_minutes}m` : '—'}
               </div>
-            )}
-            {routeHealth.updated_cost != null && (
-              <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-                <div className="text-[9px] text-outline uppercase mb-0.5">Cost</div>
-                <div className="text-[12px] font-bold text-foreground mono">
-                  ₹{Math.round(routeHealth.updated_cost).toLocaleString('en-IN')}
-                </div>
+            </div>
+            <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
+              <div className="text-[9px] text-outline uppercase mb-0.5">Remaining</div>
+              <div className="text-[12px] font-bold text-foreground mono">
+                {routeHealth.remaining_distance_km > 0 ? `${routeHealth.remaining_distance_km} km` : '—'}
               </div>
-            )}
+            </div>
             {routeHealth.updated_risk != null && (
               <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
                 <div className="text-[9px] text-outline uppercase mb-0.5">Risk</div>
@@ -731,10 +745,17 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
               </div>
             )}
           </div>
-          <button type="button" onClick={handleUpdateShipment} disabled={updatingShipment || saving}
-            className="w-full rounded-lg border border-primary/40 bg-primary/15 py-2 text-sm font-bold text-primary transition hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50">
-            {updatingShipment ? 'Updating Shipment…' : 'Update Shipment'}
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={handleUpdateShipment} disabled={updatingShipment || saving}
+              className="flex-1 rounded-lg border border-primary/40 bg-primary/15 py-2 text-sm font-bold text-primary transition hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50">
+              {updatingShipment ? 'Updating Shipment…' : 'Update Shipment'}
+            </button>
+            <button type="button"
+              onClick={() => { setEvaluatedPreviewCity(''); setShipmentUpdated(false); }}
+              className="rounded-lg border border-border/30 px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground">
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -745,7 +766,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
             check_circle
           </span>
           <p className="text-[11px] text-emerald-300 font-semibold">
-            Shipment updated. Route and metrics recalculated.
+            Location confirmed. Automatic progression continues from here.
           </p>
         </div>
       )}
@@ -761,19 +782,10 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         {routeHealth.reoptimization_reason && (
           <p className="mt-1 text-[10px] text-outline italic">{routeHealth.reoptimization_reason}</p>
         )}
-        {/* Phase 2 — show confidence and component breakdown */}
         {routeHealth.health_confidence != null && (
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-1.5">
             <span className="text-[9px] text-outline uppercase font-bold">Confidence</span>
             <span className="text-[10px] font-semibold text-foreground mono">{routeHealth.health_confidence}%</span>
-            {routeHealth.health_component_scores && (
-              <span className="text-[9px] text-outline ml-1">
-                ·{' '}
-                {Object.entries(routeHealth.health_component_scores)
-                  .map(([k, v]) => `${k[0].toUpperCase()}${k.slice(1)}: ${v}`)
-                  .join(' · ')}
-              </span>
-            )}
           </div>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
@@ -792,13 +804,12 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       </div>
 
       {/* ── Route Corridor (collapsible) ── */}
-      {(routeCities.length > 0 || displayLocation) && (
+      {routeCities.length > 0 && (
         <div className="mt-4">
           <button type="button" onClick={() => setShowCorridor(v => !v)}
             className="flex w-full items-center justify-between rounded-xl border border-outline-variant/15 bg-surface-container-low/20 px-3 py-2.5 text-left transition hover:border-outline-variant/30">
             <span className="text-[9px] uppercase tracking-widest text-outline font-bold">
-              Route Corridor
-              {routeCities.length > 0 && ` (${routeCities.length} cities)`}
+              Route Corridor ({routeCities.length} cities)
             </span>
             <span className="material-symbols-outlined text-outline"
               style={{ fontSize: '14px', transform: showCorridor ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
@@ -810,7 +821,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
               cities={routeCities}
               completedCities={completedCities}
               remainingCities={remainingCities}
-              currentLocation={displayLocation}
+              currentLocation={previewCity || resolvedLocation}
             />
           )}
         </div>

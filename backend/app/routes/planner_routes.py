@@ -487,10 +487,15 @@ async def update_shipment_location(
 
     current_location = body.current_location
 
-    # Write only current_location into optimization_result — everything else is immutable
+    # Write only current_location + rebasing metadata into optimization_result
+    # Route intelligence is immutable — never touched here.
     existing_result: dict = dict(report.optimization_result or {})
     existing_result["current_location"] = current_location
     existing_result["current_location_updated_at"] = now.isoformat()
+    # Requirement 4: store progression rebase anchor so automatic progression
+    # continues forward from this city/time, not from the original start.
+    existing_result["progression_base_location"] = current_location
+    existing_result["progression_base_time"] = now.isoformat()
     report.optimization_result = existing_result
 
     report.updated_at = now
