@@ -1,20 +1,19 @@
 """
-Water pipeline engineer — Phase 2.
+Water pipeline engineer — Phase 3.
 
-Changes from Phase 1:
-  - weather_risk: replaced calendar monsoon hack with Marine API + Forecast API
-  - congestion_risk: replaced static base_congestion with PORT_CONGESTION_INDEX
-  - eta / transit time: uses Spillover observed transit days when available
-  - chokepoint_risk: new 5th risk component from CHOKEPOINT_STRESS
-  - New output fields: transit_days_source, chokepoints_transited,
-                       marine_conditions, active_disruptions (Phase 3 stub)
-  - risk_breakdown: now 5 components (Phase 3 will add disruption as 6th)
+Changes from Phase 2:
+  - disruption_risk: 6th risk component from DISRUPTIONS_BY_PORT
+    weighted by severity (RED/ORANGE/GREEN) and recency (< 1 year × 1.5)
+    across all ports on the path
+  - risk_breakdown: now all 6 components (matches config.py RISK_WEIGHTS)
+  - active_disruptions: populated from DISRUPTIONS_BY_PORT (no longer a stub)
+  - New helper: _disruption_risk_score(port_ids) → float
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.pipelines.water.config import (
     CHOKEPOINTS,
@@ -60,6 +59,61 @@ def _port_meta(port_id: str) -> dict:
         if str(p.get("id")) == str(port_id):
             return p
     return {}
+
+
+def _disruption_risk_score(port_ids: list[str]) -> tuple[float, list[dict]]:
+    """
+    Compute a disruption risk score across all ports on the path.
+
+    Severity weights:
+      RED    → 0.15 per event
+      ORANGE → 0.08 per event
+      GREEN  → 0.03 per event
+
+    Recency multiplier: events within the last 12 months get × 1.5.
+    Lookback window: 5 years.
+
+    Returns (score 0.0–1.0, list of active disruption summary dicts).
+    """
+    try:
+        from app.pipelines.water.data_loader import DISRUPTIONS_BY_PORT
+    except Exception:
+        return 0.0, []
+
+    severity_weights = {"RED": 0.15, "ORANGE": 0.08, "GREEN": 0.03}
+    recency_mult  = 1.5
+    lookback_years = 5
+    current_year  = datetime.now(timezone.utc).year
+
+    score = 0.0
+    active: list[dict] = []
+    seen_event_ids: set[str] = set()
+
+    for port_id in port_ids:
+        events = DISRUPTIONS_BY_PORT.get(port_id, [])
+        for ev in events:
+            if ev.year < current_year - lookback_years:
+                continue
+            w = severity_weights.get(ev.alertlevel, 0.03)
+            if ev.year >= current_year - 1:
+                w = w * recency_mult
+            score += w
+
+            # Collect unique active events for the route output
+            if ev.eventid not in seen_event_ids and ev.alertlevel in {"RED", "ORANGE"}:
+                seen_event_ids.add(ev.eventid)
+                active.append({
+                    "event_id":   ev.eventid,
+                    "event_type": ev.eventtype,
+                    "event_name": ev.eventname,
+                    "alert":      ev.alertlevel,
+                    "country":    ev.country,
+                    "year":       ev.year,
+                })
+
+    n = max(len(port_ids), 1)
+    normalised = round(min(1.0, score / n), 3)
+    return normalised, active
 
 
 def _road_leg(
@@ -250,13 +304,17 @@ def engineer_routes(
         # ── Phase 2: Chokepoint risk ──────────────────────────────────────
         chokepoint_risk = _clamp01(predict_chokepoint_stress(chokepoint_ids))
 
-        # ── Composite risk (5 components — Phase 3 adds disruption) ──────
+        # ── Phase 3: Disruption risk ──────────────────────────────────────
+        disruption_risk, active_disruptions = _disruption_risk_score(list(set(path)))
+
+        # ── Composite risk (6 components) ─────────────────────────────────
         risk_breakdown = {
             "weather":       round(weather_risk, 3),
             "congestion":    round(congestion_risk, 3),
             "security":      round(security_risk, 3),
             "transshipment": round(trans_risk, 3),
             "chokepoint":    round(chokepoint_risk, 3),
+            "disruption":    round(disruption_risk, 3),
         }
         risk = _clamp01(
             RISK_WEIGHTS.get("weather",       0.25) * weather_risk
@@ -264,7 +322,7 @@ def engineer_routes(
             + RISK_WEIGHTS.get("security",    0.20) * security_risk
             + RISK_WEIGHTS.get("transshipment", 0.10) * trans_risk
             + RISK_WEIGHTS.get("chokepoint",  0.15) * chokepoint_risk
-            # disruption: 0.10 weight allocated in Phase 3
+            + RISK_WEIGHTS.get("disruption",  0.10) * disruption_risk
         )
 
         # ── Derived stats ─────────────────────────────────────────────────
@@ -320,6 +378,17 @@ def engineer_routes(
             key_factors.append(
                 f"Transit time based on real satellite-observed shipping data"
             )
+        if active_disruptions:
+            red_count    = sum(1 for d in active_disruptions if d["alert"] == "RED")
+            orange_count = sum(1 for d in active_disruptions if d["alert"] == "ORANGE")
+            if red_count:
+                key_factors.append(
+                    f"{red_count} RED-alert disruption event(s) affecting ports on this route"
+                )
+            elif orange_count:
+                key_factors.append(
+                    f"{orange_count} ORANGE-alert disruption event(s) on route ports"
+                )
         if reliability > 0.80:
             key_factors.append(f"Strong reliability score ({reliability:.0%})")
         elif reliability < 0.55:
@@ -366,6 +435,7 @@ def engineer_routes(
             # Phase 2: new fields
             "transit_days_source":   transit_source,
             "chokepoints_transited": chokepoint_names,
+            "active_disruptions":    active_disruptions,   # Phase 3: real data
             "marine_conditions": {
                 "wave_height_max_m":   weather_data.get("wave_height_max_m"),
                 "wind_speed_mean_kn":  weather_data.get("wind_speed_mean_kn"),
