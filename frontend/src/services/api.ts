@@ -610,6 +610,12 @@ export interface ComposeResult {
     cost_delta_inr?: number;
   } | null;
   hubs_considered?: Array<{ city: string; display_name: string; rail_stations: string[]; airport_code?: string | null }>;
+  hub_pairs_considered?: Array<{
+    origin_hub: { city: string; display_name: string; distance_km?: number };
+    dest_hub: { city: string; display_name: string; distance_km?: number };
+    label?: string;
+  }>;
+  rural_corridor?: boolean;
   unavailable_templates?: Record<string, string>;
   total_candidates?: number;
   multimodal_count?: number;
