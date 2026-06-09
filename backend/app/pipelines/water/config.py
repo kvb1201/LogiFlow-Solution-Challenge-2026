@@ -648,21 +648,23 @@ SEA_LANES: dict[str, list[str]] = {
     "port207":   ["port442", "port1201"],                         # Kolkata
 
     # ── Sri Lanka ───────────────────────────────────────────────────────────
-    "colombo":   ["port583", "port235", "port1201", "port648"],   # Colombo
+    "colombo":   ["port583", "port235", "port1201", "port648",    # Colombo
+                  "port411", "port1161"],                         # + ME hubs
 
     # ── Middle East ─────────────────────────────────────────────────────────
     "port411":   ["port777", "port776", "port1161", "port566",    # Jebel Ali
-                  "port909"],
+                  "port909", "port1201", "colombo"],              # + SG, Colombo
     "port566":   ["port411", "port1161", "port909"],              # Jeddah
-    "port1161":  ["port411", "port566"],                          # Salalah
+    "port1161":  ["port411", "port566", "port1201", "colombo"],   # Salalah + SG
     "port909":   ["port566", "port23", "port1114", "port57",      # Port Said
-                  "port446"],
+                  "port446", "port411"],                          # + Jebel Ali back
     "port23":    ["port909"],                                      # Alexandria
 
     # ── Southeast Asia ──────────────────────────────────────────────────────
     "port1201":  ["port583", "port235", "port442", "port207",     # Singapore
                   "port648", "port1074", "port572", "port171",
-                  "port568", "port1188", "port474", "port824"],
+                  "port568", "port1188", "port474", "port824",
+                  "port1161", "port411"],                         # + Salalah, Jebel Ali (IOD shortcut)
     "port648":   ["port1201", "port1074", "colombo"],             # Port Klang
     "port1074":  ["port648", "port1201"],                         # Tanjung Pelepas
     "port572":   ["port1201", "port171"],                         # Laem Chabang
@@ -685,12 +687,12 @@ SEA_LANES: dict[str, list[str]] = {
     "port504":   ["port909", "port23"],                           # Istanbul
 
     # ── Africa ──────────────────────────────────────────────────────────────
-    "port311":   ["port1265", "port1201"],                        # Durban
+    "port311":   ["port1265", "port1201", "port1114", "port57"],  # Durban → Europe via Cape
     "port1265":  ["port909", "port1114", "port311"],              # Tanger Med
 
     # ── Americas ─────────────────────────────────────────────────────────────
-    "port481":   ["port1160"],                                     # Houston
-    "port1160":  ["port481"],                                      # Santos
+    "port481":   ["port1160", "port1114", "port57"],              # Houston → Europe
+    "port1160":  ["port481", "port1114"],                         # Santos → Europe
 }
 
 # ── Chokepoint transit map ────────────────────────────────────────────────────
