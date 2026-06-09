@@ -4,7 +4,22 @@
 
 The Hybrid pipeline is the central orchestrator that executes all transport mode pipelines in parallel, normalizes their outputs into a common schema, scores and ranks them using priority-weighted multi-objective optimization, and generates human-readable explanations.
 
-## Flow
+## Rural / village corridors (`/compose`)
+
+The **Hybrid** page uses `POST /compose` (`RouteComposer`), not the legacy `HybridPipeline`.
+
+For places that are not mapped metros (remote villages, small towns):
+
+1. **Geocode** the village name (offline station DB → static cities → TomTom/Google/Nominatim).
+2. Find **nearest major hub cities** by latitude/longitude (Delhi, Mumbai, Kanpur, etc.).
+3. Build itineraries:
+   - **Direct** road (and air when available)
+   - **Village → hub (road) → hub (rail or air) → destination**
+   - **On-path rail hubs** when CSV schedules connect the metros
+
+Compose runs **road and air first** (fast), then geo-hub chains, then direct rail — so rural users see truck options without waiting for a full rail scrape.
+
+## Flow (legacy mode comparison API)
 
 ```
 Input: source, destination, priority, explanation_mode

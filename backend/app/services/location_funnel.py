@@ -228,6 +228,21 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
         canonical_city,
         context=context,
     )
+    if lat is None or lng is None:
+        try:
+            from app.services.geocoder import geocode_latlng
+
+            for label in (original, canonical_city, district or ""):
+                if not label:
+                    continue
+                hit = geocode_latlng(label, context=context)
+                if hit:
+                    lat, lng = float(hit[0]), float(hit[1])
+                    if resolution.startswith("pdf_"):
+                        resolution = f"{resolution}_geocoded"
+                    break
+        except Exception:
+            pass
 
     display = canonical_city
     if primary_code and primary_code.upper() != (canonical_city or "").upper():
