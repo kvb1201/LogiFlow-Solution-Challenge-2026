@@ -14,6 +14,8 @@ import {
   reoptimizeTrip,
   saveRevision,
   updateShipmentLocation,
+  reoptimizeTripV1,
+  acceptReoptimization,
   listNotifications,
   getUnreadCount,
   markNotificationRead,
@@ -24,6 +26,7 @@ import {
   type RouteHealthResponse,
   type ReoptimizationRecommendation,
   type ReoptimizationResponse,
+  type ReoptimizationV1Response,
   type ShipmentNotification,
 } from '@/services/plannerApi';
 
@@ -38,6 +41,9 @@ interface PlannerState {
   routeHealthLoading: boolean;
   reoptimization: ReoptimizationResponse | null;
   reoptimizationLoading: boolean;
+  // Reoptimization V1
+  reoptimizationV1: ReoptimizationV1Response | null;
+  reoptimizationV1Loading: boolean;
 
   // Notifications
   notifications: ShipmentNotification[];
@@ -68,9 +74,11 @@ interface PlannerState {
     destination: string;
     recommendation: ReoptimizationRecommendation;
   }) => Promise<ShipmentReport>;
-  updateShipmentLocation: (id: string, payload: {
-    current_location: string;
-  }) => Promise<ShipmentReport>;
+  updateShipmentLocation: (id: string, payload: { current_location: string }) => Promise<ShipmentReport>;
+  // Reoptimization V1
+  runReoptimizationV1: (id: string) => Promise<ReoptimizationV1Response>;
+  acceptReoptimizationV1: (id: string, result: ReoptimizationV1Response) => Promise<ShipmentReport>;
+  dismissReoptimizationV1: () => void;
 
   // Notifications
   fetchNotifications: () => Promise<void>;
@@ -89,6 +97,8 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
   routeHealthLoading: false,
   reoptimization: null,
   reoptimizationLoading: false,
+  reoptimizationV1: null,
+  reoptimizationV1Loading: false,
 
   notifications: [],
   unreadCount: 0,
@@ -276,6 +286,48 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
       throw new Error(msg);
     }
   },
+
+  runReoptimizationV1: async (id) => {
+    set({ reoptimizationV1Loading: true, error: null });
+    try {
+      const result = await reoptimizeTripV1(id);
+      set({ reoptimizationV1: result, reoptimizationV1Loading: false });
+      void get().fetchUnreadCount();
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to run reoptimization';
+      set({ reoptimizationV1Loading: false, error: msg });
+      throw new Error(msg);
+    }
+  },
+
+  acceptReoptimizationV1: async (id, result) => {
+    set({ saving: true, error: null });
+    try {
+      const altRoute = result.alternative_route;
+      const updated = await acceptReoptimization(id, {
+        optimization_result: altRoute.optimization_result,
+        estimated_cost: altRoute.metrics.cost ?? undefined,
+        estimated_time: altRoute.metrics.eta_minutes != null
+          ? altRoute.metrics.eta_minutes / 60
+          : undefined,
+        risk_score: altRoute.metrics.risk ?? undefined,
+      });
+      set(state => ({
+        reports: state.reports.map(r => (r.id === id ? updated : r)),
+        reoptimizationV1: null,
+        saving: false,
+      }));
+      void get().fetchUnreadCount();
+      return updated;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to accept reoptimization';
+      set({ saving: false, error: msg });
+      throw new Error(msg);
+    }
+  },
+
+  dismissReoptimizationV1: () => set({ reoptimizationV1: null }),
 
   // ── Notifications ───────────────────────────────────────────────────
 

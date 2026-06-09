@@ -200,3 +200,15 @@ class ShipmentLocationUpdateRequest(BaseModel):
         if not v.strip():
             raise ValueError("current_location is required")
         return v.strip()
+
+
+class AcceptReoptimizationRequest(BaseModel):
+    """
+    Accept a reoptimization result — replaces the remaining route
+    in optimization_result with the alternative route, while preserving
+    current_location, progression_base_*, and completed route history.
+    """
+    optimization_result: dict[str, Any]
+    estimated_cost: Optional[float] = None
+    estimated_time: Optional[float] = None
+    risk_score: Optional[float] = None

@@ -1,184 +1,147 @@
-# Fix Shipment Location Update Workflow
+# Reoptimization V1
 
-## Root Cause
+## Architecture
 
-The workflow broke at one specific point: `canUpdateShipment` compared `previewCity` against `resolvedLocation`, but `resolvedLocation` comes from `routeHealth.current_location` — which the backend already resolves to the preview city after `fetchRouteHealth(id, city)` is called.
+Reoptimization V1 is a three-step, single-button workflow that operates on the **remaining journey only** (current_location → destination, not source → destination).
 
-**Before (broken):**
 ```
-User selects "Ankleshwar"
-handleCitySelect("Ankleshwar")
-  → fetchRouteHealth(id, "Ankleshwar")        ← backend returns current_location = "ankleshwar"
-  
-resolvedLocation = routeHealth.current_location = "ankleshwar"
-previewCity      = activeLocation()            = "ankleshwar"  (from selectedCity)
+POST /reoptimize-v1
+  ↓
+reads current_location from optimization_result
+  ↓
+runs pipeline: current_location → destination
+  ↓
+computes improvement vs current remaining metrics
+  ↓
+applies thresholds
+  ↓
+returns comparison + recommendation
 
-hasPreviewCity = previewCity !== resolvedLocation = "ankleshwar" !== "ankleshwar" = FALSE
-canUpdateShipment = FALSE
-→ Update Shipment panel never appears
-```
-
-**After (fixed):**
-```
-User selects "Ankleshwar"
-handleCitySelect("Ankleshwar")
-  → setSelectedCity("Ankleshwar")             ← NO auto-fetch
-  → setEvaluatedPreviewCity("")               ← reset
-
-User clicks "Evaluate"
-runCheck()
-  → setEvaluatedPreviewCity("Ankleshwar")     ← record what was evaluated
-  → fetchRouteHealth(id, "Ankleshwar")
-
-canUpdateShipment = !!evaluatedPreviewCity     = "Ankleshwar" ≠ "" = TRUE
-→ Update Shipment panel appears
+POST /accept-reoptimization  (if user accepts)
+  ↓
+replaces route_intelligence in optimization_result
+  ↓
+preserves current_location + progression_base_* (immutable tracking)
+  ↓
+updates estimated_cost, estimated_time, risk_score
 ```
 
 ---
 
-## What Changed
+## Step 1 — Endpoint: `POST /planner/reports/{id}/reoptimize-v1`
 
-### New state: `evaluatedPreviewCity`
+No request body. Reads everything it needs from the stored report:
+- `optimization_result.current_location` → reopt start point
+- `optimization_result.route_intelligence.route_cities` → remaining stops
+- `report.mode`, `report.cargo_type`, `report.optimization_input` → pipeline config
+- `report.estimated_time`, `report.estimated_cost`, `report.risk_score` → current metrics
 
-Tracks the city that was explicitly submitted via the **Evaluate** button. Separate from `activeLocation()` (selector value) and `routeHealth.current_location` (backend response). This is the authoritative "what the user wants to commit".
-
-```ts
-const [evaluatedPreviewCity, setEvaluatedPreviewCity] = useState<string>('');
-```
-
-### `handleCitySelect` — no longer auto-evaluates
-
-Previously called `fetchRouteHealth(id, city)` immediately on dropdown selection, which put the card in a state where `previewCity === resolvedLocation`. Now it only updates local selector state. The user must explicitly click **Evaluate**.
-
-```ts
-const handleCitySelect = (city: string) => {
-  setSelectedCity(city);
-  setLocationMode('dropdown');
-  setShipmentUpdated(false);
-  setEvaluatedPreviewCity('');  // not yet evaluated
-  // No fetchRouteHealth here
-};
-```
-
-### `runCheck` — sets `evaluatedPreviewCity`
-
-```ts
-const runCheck = () => {
-  const loc = activeLocation();
-  if (!loc) { fetchRouteHealth(report.id); return; }
-  setEvaluatedPreviewCity(loc);          // record what was evaluated
-  fetchRouteHealth(report.id, loc);      // backend returns preview metrics
-};
-```
-
-### `canUpdateShipment` — uses `evaluatedPreviewCity`
-
-```ts
-const canUpdateShipment =
-  !!evaluatedPreviewCity &&
-  evaluatedPreviewCity.toLowerCase() !== (routeHealth?.confirmed_current_location || '').toLowerCase() &&
-  !shipmentUpdated;
-```
-
-Compares against `confirmed_current_location` (the last stored location), not against the backend-resolved preview. Backtracking to Bharuch from Karjan works correctly because Bharuch ≠ the stored Karjan.
-
-### `commitLocation` — prefers `evaluatedPreviewCity`
-
-```ts
-const commitLocation = (): string =>
-  evaluatedPreviewCity || activeLocation() || routeHealth?.current_location || report.source;
-```
-
-### `handleUpdateShipment` — clears `evaluatedPreviewCity` after commit
-
-```ts
-setShipmentUpdated(true);
-setEvaluatedPreviewCity('');   // ← new
-setLocationMode('estimated');
-setSelectedCity('');
-setManualLocation('');
-fetchRouteHealth(report.id);
-onShipmentUpdated?.(updated);
-```
-
-### `handleModeChange` — clears `evaluatedPreviewCity` on tab switch
-
-```ts
-const handleModeChange = (mode) => {
-  setLocationMode(mode);
-  setShipmentUpdated(false);
-  setEvaluatedPreviewCity('');   // ← reset preview when user switches tabs
-  if (mode === 'estimated') { setSelectedCity(''); setManualLocation(''); }
-};
-```
-
-### Preview panel — shows `evaluatedPreviewCity` + Cancel button
-
-The panel now shows the evaluated city name (not `previewCity` which was the same as `resolvedLocation`). A **Cancel** button dismisses the panel without committing.
+Falls back to `report.source` if no `current_location` is stored (trip not yet updated).
 
 ---
 
-## Scenario Walkthrough
+## Step 2 — Remaining Journey Calculation
 
-### Scenario A — Select → Evaluate → Update
+Uses `split_route_at_location(route_cities, current_location)` to derive remaining stops. Runs `_run_pipeline(report, current_location, remaining_stops, destination)` — the same pipeline already used by the existing reoptimization service.
 
-```
-1. User opens dropdown, selects "Ankleshwar"
-   → selectedCity = "Ankleshwar", evaluatedPreviewCity = ""
-   → canUpdateShipment = false (not yet evaluated)
+---
 
-2. User clicks "Evaluate"
-   → evaluatedPreviewCity = "Ankleshwar"
-   → fetchRouteHealth(id, "Ankleshwar") called
-   → backend returns preview metrics for Ankleshwar
-   → canUpdateShipment = true → panel appears
+## Step 3 — Current Route Metrics
 
-3. User clicks "Update Shipment"
-   → updateShipmentLocation({current_location: "Ankleshwar"})
-   → evaluatedPreviewCity = "", locationMode = "estimated"
-   → fetchRouteHealth(id) called → shows Ankleshwar as confirmed
-   → onShipmentUpdated(updated) called
+Rather than using the full original ETA (which includes the already-completed portion), the current route metrics are scaled to the **remaining distance**:
+
+```python
+remaining_ratio = remaining_km / total_km
+current_metrics = {
+    "time": original_estimated_time × remaining_ratio,
+    "cost": original_estimated_cost × remaining_ratio,
+    "risk": report.risk_score,
+}
 ```
 
-### Scenario B — Select → Evaluate → Do NOT update
+This makes the comparison fair — both current and alternative represent the remaining journey.
 
-```
-1. User selects "Ankleshwar" + clicks Evaluate
-   → Preview panel appears
+---
 
-2. User closes the panel via Cancel (or navigates away)
-   → evaluatedPreviewCity = ""
-   → Backend current_location unchanged
-   → shipment persists with original location
-```
+## Step 4 — Comparison
 
-### Scenario C — Persist after refresh
-
-```
-1. User updates to Ankleshwar
-   → backend writes current_location = "Ankleshwar" + rebase metadata
-
-2. Page refresh
-   → report.optimization_result.current_location = "Ankleshwar" (persisted)
-   → fetchRouteHealth(id) → resolve_current_location finds rebase anchor
-   → confirmed_current_location = "Ankleshwar" shown correctly
+```json
+{
+  "current_route":  { "metrics": { "eta_minutes": 76, "cost": 8200, "risk": 0.18 } },
+  "alternative_route": { "metrics": { "eta_minutes": 55, "cost": 7100, "risk": 0.14 } },
+  "improvement": {
+    "time_saved_minutes": 21,
+    "cost_pct_change": 13.4,
+    "risk_pct_change": 22.2
+  }
+}
 ```
 
-### Scenario D — Backtrack Karjan → Bharuch
+---
 
+## Step 5 — Recommendation Engine
+
+**Thresholds (any one must be exceeded):**
+
+| Metric | Threshold |
+|---|---|
+| Time saved | > 15 minutes |
+| Cost reduction | > 5% |
+| Risk reduction | > 5% |
+
+```python
+def _should_recommend_switch(improvement) -> (bool, str):
+    reasons = []
+    if time_saved > 15:  reasons.append(f"Saves {time_saved}m")
+    if cost_pct > 5:     reasons.append(f"Reduces cost by {cost_pct}%")
+    if risk_pct > 5:     reasons.append(f"Reduces risk by {risk_pct}%")
+    return bool(reasons), "; ".join(reasons) or "Does not meet thresholds"
 ```
-1. Current: Karjan (confirmed)
-   → confirmed_current_location = "Karjan"
 
-2. User selects "Bharuch" + Evaluate
-   → evaluatedPreviewCity = "Bharuch"
-   → canUpdateShipment: "Bharuch" !== "Karjan" = true → panel appears
-   → metrics show higher ETA, longer remaining distance
+Returns `recommend_switch: true/false` and `recommendation_reason` string.
 
-3. Update Shipment
-   → current_location = "Bharuch", rebase at Bharuch
-   → progression continues forward from Bharuch
+---
+
+## Step 6 — UI: ReoptimizeV1Panel
+
+Added to `RouteHealthCard.tsx` as a standalone sub-component (no props except `reportId`). It manages its own loading/accepted state and reads from the store.
+
+**States:**
+1. **Button** — "Reoptimize Route" (default, before running)
+2. **Loading** — spinner while pipeline runs
+3. **Results** — two-column comparison (Current Route / Alternative Route), improvement deltas, recommendation badge, action buttons
+4. **Accepted** — success message
+
+The panel appears below the Recommended Action section and above the Route Corridor section.
+
+---
+
+## Step 7 — Accept: `POST /planner/reports/{id}/accept-reoptimization`
+
+Body:
+```json
+{
+  "optimization_result": { ... },  // alternative route's pipeline result
+  "estimated_cost": 7100,
+  "estimated_time": 0.9167,
+  "risk_score": 0.14
+}
 ```
+
+`apply_reoptimization_v1` merges the new result while preserving:
+- `current_location`
+- `current_location_updated_at`
+- `progression_base_location`
+- `progression_base_time`
+- adds `reoptimized_at` timestamp
+
+These keys are copied from the existing `optimization_result` into the new one before persisting. This ensures automatic progression continues correctly from the current location with the new route intelligence.
+
+---
+
+## Progress Tracking After Accept
+
+Because `current_location`, `progression_base_location`, and `progression_base_time` are preserved, automatic progression (`resolve_current_location`) continues without interruption. The driver is still at the same city. The new `route_intelligence.route_cities` replaces the old remaining route, so future ETA/distance calculations use the optimized corridor.
 
 ---
 
@@ -186,19 +149,28 @@ The panel now shows the evaluated city name (not `previewCity` which was the sam
 
 | File | Change |
 |---|---|
-| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `evaluatedPreviewCity` state; `handleCitySelect` no longer auto-evaluates; `runCheck` sets evaluated city; `canUpdateShipment` uses `evaluatedPreviewCity`; preview panel shows evaluated city + Cancel button |
+| `backend/app/services/reoptimization_service.py` | Added `build_reoptimization_v1`, `apply_reoptimization_v1`, `_compute_improvement`, `_should_recommend_switch`, `_resolve_current_location_for_reopt`, threshold constants |
+| `backend/app/models/report.py` | Added `AcceptReoptimizationRequest` Pydantic model |
+| `backend/app/routes/planner_routes.py` | Added `POST /reoptimize-v1` and `POST /accept-reoptimization` endpoints |
+| `frontend/src/services/plannerApi.ts` | Added `ReoptimizationV1Response`, `ReoptimizationV1RouteMetrics` types; `reoptimizeTripV1`, `acceptReoptimization` functions; restored missing `id` field on `ShipmentNotification` |
+| `frontend/src/store/usePlannerStore.ts` | Added `reoptimizationV1`, `reoptimizationV1Loading` state; `runReoptimizationV1`, `acceptReoptimizationV1`, `dismissReoptimizationV1` actions |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `ReoptimizeV1Panel` sub-component; wired into render |
 
 ---
 
-## Validation
+## Validation Results
 
 | Check | Result |
 |---|---|
 | `npx tsc --noEmit` | ✅ 0 errors |
 | `npm run build` | ✅ 16/16 pages |
-| Scenario A — Select + Evaluate + Update → location changes | ✅ |
-| Scenario B — Select + Evaluate + no click → unchanged | ✅ evaluatedPreviewCity not committed |
-| Scenario C — Update + refresh → persists | ✅ backend stores current_location |
-| Scenario D — Backtrack Karjan → Bharuch → works | ✅ confirmed_current_location comparison |
-| Cancel button dismisses panel without commit | ✅ |
-| Switching location tabs resets preview | ✅ handleModeChange clears evaluatedPreviewCity |
+| Backend `py_compile` | ✅ All files OK |
+| Improvement exceeds all thresholds → recommend_switch=True | ✅ (30m / 20% / 33%) |
+| Improvement below all thresholds → recommend_switch=False | ✅ (1m / 0.5% / 0.7%) |
+| Only time threshold met → recommend_switch=True | ✅ (24m alone) |
+| current_location used as start point | ✅ bharuch, not Surat |
+| No current_location → fallback to source | ✅ |
+| Reoptimization starts from current_location, not source | ✅ |
+| Comparison metrics use remaining journey, not full journey | ✅ |
+| Accept preserves current_location + progression_base | ✅ |
+| Progress tracking continues after accept | ✅ |

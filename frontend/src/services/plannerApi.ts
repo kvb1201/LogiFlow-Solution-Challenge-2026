@@ -172,6 +172,48 @@ export interface ReoptimizationResponse {
   recommendation: ReoptimizationRecommendation;
 }
 
+// ── Reoptimization V1 ────────────────────────────────────────────────
+
+export interface ReoptimizationV1RouteMetrics {
+  eta_minutes: number;
+  cost: number | null;
+  risk: number | null;
+}
+
+export interface ReoptimizationV1Response {
+  generated_at: string;
+  report_id: string;
+  mode: string;
+  current_location: string;
+  remaining_stops: string[];
+  destination: string;
+  current_route: {
+    source: string;
+    destination: string;
+    metrics: ReoptimizationV1RouteMetrics;
+  };
+  alternative_route: {
+    source: string;
+    destination: string;
+    metrics: ReoptimizationV1RouteMetrics;
+    optimization_result: Record<string, unknown>;
+  };
+  improvement: {
+    time_saved_minutes: number | null;
+    cost_difference: number | null;
+    cost_pct_change: number | null;
+    risk_difference: number | null;
+    risk_pct_change: number | null;
+  };
+  recommend_switch: boolean;
+  recommendation_reason: string;
+  thresholds: {
+    time_minutes: number;
+    cost_pct: number;
+    risk_pct: number;
+  };
+}
+
 export interface ShipmentNotification {
   id: string;
   user_id: string;
@@ -336,6 +378,31 @@ export async function saveRevision(
 }
 
 // ── Notifications ─────────────────────────────────────────────────────
+
+export async function reoptimizeTripV1(id: string): Promise<ReoptimizationV1Response> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/reoptimize-v1`, {
+    method: 'POST',
+    requireAuth: true,
+  });
+  return parseJson<ReoptimizationV1Response>(res);
+}
+
+export async function acceptReoptimization(
+  id: string,
+  payload: {
+    optimization_result: Record<string, unknown>;
+    estimated_cost?: number | null;
+    estimated_time?: number | null;
+    risk_score?: number | null;
+  }
+): Promise<ShipmentReport> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/accept-reoptimization`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    requireAuth: true,
+  });
+  return parseJson<ShipmentReport>(res);
+}
 
 export async function listNotifications(): Promise<ShipmentNotification[]> {
   const res = await apiClient('/api/planner/notifications', {

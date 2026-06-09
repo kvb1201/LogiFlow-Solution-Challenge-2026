@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
-import type { ReoptimizationRecommendation, ShipmentReport } from '@/services/plannerApi';
+import type { ReoptimizationRecommendation, ReoptimizationV1Response, ShipmentReport } from '@/services/plannerApi';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 
@@ -319,6 +319,232 @@ function RouteCorridor({
   );
 }
 
+// ── Reoptimization V1 Panel ───────────────────────────────────────────────
+
+function ReoptimizeV1Panel({
+  reportId,
+  onAccepted,
+}: {
+  reportId: string;
+  onAccepted: (updated: ShipmentReport) => void;
+}) {
+  const {
+    reoptimizationV1,
+    reoptimizationV1Loading,
+    saving,
+    runReoptimizationV1,
+    acceptReoptimizationV1,
+    dismissReoptimizationV1,
+  } = usePlannerStore();
+
+  const [accepting, setAccepting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  const handleRun = () => {
+    void runReoptimizationV1(reportId);
+  };
+
+  const handleAccept = async () => {
+    if (!reoptimizationV1) return;
+    setAccepting(true);
+    try {
+      const updated = await acceptReoptimizationV1(reportId, reoptimizationV1);
+      setAccepted(true);
+      onAccepted(updated);
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  const handleDismiss = () => {
+    dismissReoptimizationV1();
+    setAccepted(false);
+  };
+
+  if (accepted) {
+    return (
+      <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 flex items-center gap-2">
+        <span className="material-symbols-outlined text-emerald-300 shrink-0"
+          style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}>
+          check_circle
+        </span>
+        <p className="text-[11px] text-emerald-300 font-semibold flex-1">
+          Switched to optimized route. Progression continues from current location.
+        </p>
+      </div>
+    );
+  }
+
+  if (!reoptimizationV1) {
+    return (
+      <button
+        type="button"
+        onClick={handleRun}
+        disabled={reoptimizationV1Loading}
+        className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 px-4 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {reoptimizationV1Loading ? (
+          <>
+            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            Generating alternative…
+          </>
+        ) : (
+          <>
+            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>alt_route</span>
+            Reoptimize Route
+          </>
+        )}
+      </button>
+    );
+  }
+
+  const r = reoptimizationV1;
+  const imp = r.improvement;
+
+  // Colour helpers
+  const improvementColor = (val: number | null, higherIsBetter = false): string => {
+    if (val == null) return 'text-foreground';
+    const positive = higherIsBetter ? val > 0 : val < 0;
+    return positive ? 'text-emerald-300' : val === 0 ? 'text-foreground' : 'text-red-400';
+  };
+
+  const fmtDelta = (val: number | null, unit: string, higherIsBetter = false): string => {
+    if (val == null || val === 0) return '—';
+    const sign = val > 0 ? '+' : '';
+    return `${sign}${Math.round(val)}${unit}`;
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold">Route Reoptimization</div>
+          <div className="text-sm font-bold text-foreground">
+            {r.current_location} → {r.destination}
+          </div>
+        </div>
+        <button type="button" onClick={handleDismiss}
+          className="text-outline hover:text-foreground transition">
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+        </button>
+      </div>
+
+      {/* Comparison table */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {/* Current route */}
+        <div className="rounded-xl border border-border/30 bg-surface/40 p-3">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-2">Current Route</div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-outline">ETA</span>
+              <span className="font-semibold text-foreground mono">{r.current_route.metrics.eta_minutes}m</span>
+            </div>
+            {r.current_route.metrics.cost != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Cost</span>
+                <span className="font-semibold text-foreground mono">
+                  ₹{Math.round(r.current_route.metrics.cost).toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+            {r.current_route.metrics.risk != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Risk</span>
+                <span className="font-semibold text-foreground mono">
+                  {Math.round(r.current_route.metrics.risk * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Alternative route */}
+        <div className={`rounded-xl border p-3 ${r.recommend_switch ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/30 bg-surface/40'}`}>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-2">Alternative Route</div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-outline">ETA</span>
+              <span className={`font-semibold mono ${imp.time_saved_minutes != null && imp.time_saved_minutes > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                {r.alternative_route.metrics.eta_minutes}m
+              </span>
+            </div>
+            {r.alternative_route.metrics.cost != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Cost</span>
+                <span className={`font-semibold mono ${imp.cost_pct_change != null && imp.cost_pct_change > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                  ₹{Math.round(r.alternative_route.metrics.cost).toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+            {r.alternative_route.metrics.risk != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Risk</span>
+                <span className={`font-semibold mono ${imp.risk_pct_change != null && imp.risk_pct_change > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                  {Math.round(r.alternative_route.metrics.risk * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Improvement summary */}
+      <div className="mb-3 rounded-lg bg-surface/30 border border-border/20 px-3 py-2">
+        <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1.5">Improvement</div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {imp.time_saved_minutes != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.time_saved_minutes)}`}>
+              ETA {fmtDelta(imp.time_saved_minutes, 'm')}
+            </span>
+          )}
+          {imp.cost_pct_change != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.cost_pct_change)}`}>
+              Cost {fmtDelta(imp.cost_pct_change, '%')}
+            </span>
+          )}
+          {imp.risk_pct_change != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.risk_pct_change)}`}>
+              Risk {fmtDelta(imp.risk_pct_change, '%')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Recommendation */}
+      <div className={`mb-3 rounded-lg border px-3 py-2 ${r.recommend_switch ? 'border-emerald-500/25 bg-emerald-500/8' : 'border-border/20 bg-surface/30'}`}>
+        <div className="flex items-start gap-2">
+          <span className={`material-symbols-outlined shrink-0 mt-0.5 ${r.recommend_switch ? 'text-emerald-300' : 'text-outline'}`}
+            style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+            {r.recommend_switch ? 'recommend' : 'info'}
+          </span>
+          <p className={`text-[11px] leading-relaxed ${r.recommend_switch ? 'text-emerald-300' : 'text-muted-foreground'}`}>
+            {r.recommendation_reason}
+          </p>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        {r.recommend_switch && (
+          <button type="button" onClick={handleAccept} disabled={accepting || saving}
+            className="flex-1 rounded-lg border border-emerald-500/35 bg-emerald-500/12 py-2 text-sm font-bold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+            {accepting ? 'Switching…' : 'Switch To Optimized Route'}
+          </button>
+        )}
+        {!r.recommend_switch && (
+          <button type="button" onClick={handleAccept} disabled={accepting || saving}
+            className="flex-1 rounded-lg border border-border/30 py-2 text-sm font-semibold text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+            {accepting ? 'Switching…' : 'Switch Anyway'}
+          </button>
+        )}
+        <button type="button" onClick={handleRun} disabled={reoptimizationV1Loading}
+          className="rounded-lg border border-border/30 px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground">
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────
 
@@ -340,7 +566,6 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
     saveRevision,
     updateShipmentLocation,
   } = usePlannerStore();
-
   const [locationMode, setLocationMode] = useState<'estimated' | 'dropdown' | 'manual'>('estimated');
   const [selectedCity, setSelectedCity] = useState('');
   const [manualLocation, setManualLocation] = useState('');
@@ -802,6 +1027,15 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           </button>
         </div>
       </div>
+
+      {/* ── Reoptimization V1 ── */}
+      <ReoptimizeV1Panel
+        reportId={report.id}
+        onAccepted={updated => {
+          onShipmentUpdated?.(updated);
+          fetchRouteHealth(report.id);
+        }}
+      />
 
       {/* ── Route Corridor (collapsible) ── */}
       {routeCities.length > 0 && (
