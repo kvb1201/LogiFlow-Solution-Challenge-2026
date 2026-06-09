@@ -704,11 +704,18 @@ ROUTE_CHOKEPOINTS: dict[tuple[str, str], list[str]] = {
     ("port777", "port411"):   ["chokepoint6"],   # Mundra → Jebel Ali
     ("port540", "port411"):   ["chokepoint6"],   # Kandla → Jebel Ali
     ("port583", "port411"):   ["chokepoint6"],   # Kochi → Jebel Ali
-    ("port1161", "port776"):  ["chokepoint6"],   # Salalah → JNPT
-    ("port1161", "port777"):  ["chokepoint6"],   # Salalah → Mundra
+    ("port776", "port1161"):  ["chokepoint6"],   # JNPT → Salalah
+    ("port583", "port1161"):  ["chokepoint6"],   # Kochi → Salalah
+    ("colombo", "port411"):   ["chokepoint6"],   # Colombo → Jebel Ali
+    ("colombo", "port1161"):  ["chokepoint6"],   # Colombo → Salalah
+    ("port1161", "port776"):  ["chokepoint6"],
+    ("port1161", "port777"):  ["chokepoint6"],
     ("port411", "port776"):   ["chokepoint6"],
     ("port411", "port777"):   ["chokepoint6"],
     ("port411", "port540"):   ["chokepoint6"],
+    ("port411", "port583"):   ["chokepoint6"],
+    ("port411", "colombo"):   ["chokepoint6"],
+    ("port1161", "colombo"):  ["chokepoint6"],
 
     # ── Middle East ↔ Europe (Bab-el-Mandeb + Suez Canal + Gibraltar) ────
     ("port411", "port909"):   ["chokepoint4", "chokepoint1"],
