@@ -89,8 +89,12 @@ def is_remote_location(
     station_codes: list[str],
     lat: float | None,
     lng: float | None,
+    raw: str | None = None,
+    resolution: str = "",
 ) -> bool:
     """True when the place is not a mapped metro in our rail hub catalog."""
+    if resolution in ("village_geocoded",):
+        return True
     if _match_city_key(canonical_city or ""):
         return False
     if station_codes and _match_city_key(canonical_city or ""):
@@ -200,12 +204,16 @@ def discover_rural_hub_pairs(
         station_codes=src_r.station_codes or [],
         lat=src_r.lat,
         lng=src_r.lng,
+        raw=getattr(src_r, "raw", None),
+        resolution=getattr(src_r, "resolution", ""),
     )
     dst_remote = is_remote_location(
         canonical_city=dst_r.canonical_city,
         station_codes=dst_r.station_codes or [],
         lat=dst_r.lat,
         lng=dst_r.lng,
+        raw=getattr(dst_r, "raw", None),
+        resolution=getattr(dst_r, "resolution", ""),
     )
 
     src_metro = _match_city_key(src_r.canonical_city or src_r.raw)

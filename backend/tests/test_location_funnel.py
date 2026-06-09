@@ -6,7 +6,11 @@ import math
 import pytest
 
 from app.pipelines.rail.route_finder import _resolve_stations
-from app.services.location_funnel import normalize_corridor, resolve_location
+from app.services.location_funnel import (
+    _pdf_match_too_broad,
+    normalize_corridor,
+    resolve_location,
+)
 from app.services.geocoder import geocode_latlng
 from app.services.station_pdf_index import build_pdf_index, get_pdf_index
 
@@ -63,6 +67,12 @@ def test_normalize_corridor_pryj_bsb():
     src, dst = normalize_corridor("PRYJ", "BSB")
     assert src.canonical_city == "Prayagraj"
     assert dst.canonical_city == "Varanasi"
+
+
+def test_pdf_match_too_broad_detects_village_suffix():
+    assert _pdf_match_too_broad("Rampur Bekal", "Rampur", "Rampur", "Rampur") is True
+    assert _pdf_match_too_broad("Delhi", "Delhi", "Delhi", "Delhi") is False
+    assert _pdf_match_too_broad("New Delhi", "Delhi", "Delhi", "Delhi") is True
 
 
 def test_geocoder_accepts_station_codes():

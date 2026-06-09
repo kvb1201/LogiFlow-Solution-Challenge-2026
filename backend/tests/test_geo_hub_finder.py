@@ -42,3 +42,16 @@ def test_unknown_village_is_remote():
         )
         is True
     )
+
+
+def test_village_geocoded_resolution_is_remote():
+    assert (
+        is_remote_location(
+            canonical_city="Rampur",
+            station_codes=["RMU"],
+            lat=28.8,
+            lng=79.0,
+            resolution="village_geocoded",
+        )
+        is True
+    )

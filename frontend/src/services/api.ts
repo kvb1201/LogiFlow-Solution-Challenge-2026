@@ -628,12 +628,16 @@ export interface ComposeResult {
 }
 
 export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
-  const budgetMs = ((payload.compose_options?.budget_seconds ?? 42) + 50) * 1000;
+  const budgetSec = payload.compose_options?.budget_seconds ?? 55;
+  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
+  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
+  const composeUrl =
+    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), budgetMs);
   let res: Response;
   try {
-    res = await fetch(`${BACKEND_BASE}/compose`, {
+    res = await fetch(composeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

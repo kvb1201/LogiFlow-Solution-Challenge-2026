@@ -147,6 +147,29 @@ def _iata_overrides_pdf(token: str, pdf_primary: str | None) -> bool:
         return False
 
 
+def _norm_place_label(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _pdf_match_too_broad(raw: str, station_name: str, district: str, canonical_city: str) -> bool:
+    """
+    True when the user typed a longer village label but PDF fuzzy-matched a shorter city.
+    E.g. "Rampur Bekal" → Rampur (RMU) instead of the actual village.
+    """
+    raw_n = _norm_place_label(raw)
+    if " " not in raw_n:
+        return False
+    for label in (station_name, district, canonical_city):
+        if not label:
+            continue
+        ln = _norm_place_label(label)
+        if not ln or raw_n == ln:
+            continue
+        if raw_n.startswith(f"{ln} ") or ln in raw_n.split():
+            return True
+    return False
+
+
 def _coords_for_codes(codes: list[str], label: str, *, context=None) -> tuple[float | None, float | None]:
     try:
         from app.pipelines.rail.station_coordinates import get_station_latlng
@@ -196,6 +219,8 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
             primary_code = iata_codes[0]
             resolution = "iata_airport"
 
+    pdf_station_name: str | None = None
+
     # ── 2) PDF index (station_name.pdf) ─────────────────────────────
     if not station_codes:
         pdf_district, pdf_primary, pdf_codes, pdf_res = pdf_station_codes_for_place(original)
@@ -205,6 +230,10 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
             station_codes = list(pdf_codes)
             resolution = pdf_res
             city_key = _city_key_for_station(primary_code) if primary_code else None
+            if primary_code:
+                rec = get_pdf_index().lookup_code(primary_code)
+                if rec:
+                    pdf_station_name = rec.name
 
     # ── 4) Merge curated CITY_TO_STATION cluster ────────────────────
     if not city_key and primary_code:
@@ -241,6 +270,21 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
                     if resolution.startswith("pdf_"):
                         resolution = f"{resolution}_geocoded"
                     break
+        except Exception:
+            pass
+
+    # Village names like "Rampur Bekal" must not collapse to the parent rail city "Rampur".
+    if pdf_station_name and _pdf_match_too_broad(
+        original, pdf_station_name, district or "", canonical_city
+    ):
+        try:
+            from app.services.geocoder import geocode_latlng
+
+            hit = geocode_latlng(original, context=context)
+            if hit:
+                lat, lng = float(hit[0]), float(hit[1])
+                canonical_city = original.title() if original.islower() else original
+                resolution = "village_geocoded"
         except Exception:
             pass
 
