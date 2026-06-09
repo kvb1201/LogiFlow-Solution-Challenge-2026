@@ -84,17 +84,26 @@ export interface RouteHealthResponse {
     improvement_reasons: string[];
     health_score: number;
   };
-  // Requirement 3: dynamic progress derived from route geometry
+  /** Resolved current location used for all calculations */
+  current_location: string;
+  /** How the current location was resolved */
+  location_source: 'manual' | 'automatic' | 'preview' | 'fallback';
+  /** Last manually confirmed location (from Update Shipment) */
+  confirmed_current_location: string | null;
+  // Elapsed: Source → Current Location
   progress_percentage: number;
   covered_distance_km: number;
-  remaining_distance_km: number;
   total_route_km: number;
   progress_derived_from: 'geometry' | 'time_ratio' | 'unavailable';
-  // Requirement 4: dynamic remaining ETA
-  remaining_eta_minutes: number;
-  // Legacy time-based fields (backward compat)
   elapsed_minutes: number;
+  // Projected: Current Location → Destination
+  remaining_distance_km: number;
+  remaining_eta_minutes: number;
   remaining_minutes: number;
+  updated_eta_minutes: number | null;
+  updated_cost: number | null;
+  updated_risk: number | null;
+  // Legacy
   eta_variance_minutes: number;
   delay_risk: 'low' | 'medium' | 'high';
   recommended_action: string;
@@ -112,18 +121,13 @@ export interface RouteHealthResponse {
     longitude: number | null;
     confidence: string;
   } | null;
-  confirmed_current_location: string | null;
   deviation_level: 'none' | 'minor' | 'major';
   deviation_km: number | null;
   corridor_status: 'ON_ROUTE' | 'NEAR_ROUTE' | 'OFF_ROUTE';
   corridor_matched_city: string;
-  // Requirement 5 & 6: full immutable route + derived split
   route_cities: string[] | null;
   completed_cities: string[];
   remaining_cities: string[];
-  updated_eta_minutes: number | null;
-  updated_cost: number | null;
-  updated_risk: number | null;
   reoptimization_recommended: boolean;
   reoptimization_reason: string;
   mode: string;
