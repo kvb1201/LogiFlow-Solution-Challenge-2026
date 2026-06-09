@@ -417,7 +417,7 @@ export interface HybridAssistantResponse {
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export const BACKEND_UNAVAILABLE_MSG =
-  'Backend is still waking up. Wait ~30 seconds and try again — Render free tier sleeps after ~15 min idle.';
+  'LogiFlow is starting up. Please wait about 30 seconds and try again.';
 
 async function fetchBackend(
   path: string,
@@ -1565,9 +1565,7 @@ export async function parseShipmentIntent(
     parsed = raw ? JSON.parse(raw) : {};
   } catch {
     throw new Error(
-      res.ok
-        ? 'Intent parse returned invalid JSON'
-        : `Backend unavailable — start the API server (got: ${raw.slice(0, 80)})`
+      res.ok ? 'Could not read the planning response. Please try again.' : BACKEND_UNAVAILABLE_MSG
     );
   }
   if (!res.ok) {

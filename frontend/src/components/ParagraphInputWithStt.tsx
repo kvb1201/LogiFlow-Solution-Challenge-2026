@@ -75,7 +75,7 @@ export default function ParagraphInputWithStt({
       )}
       {mounted && !supported && (
         <p className="text-[10px] text-outline">
-          Voice input works best in Chrome or Edge (browser speech recognition).
+          Voice input is supported in Chrome and Edge.
         </p>
       )}
       {error && (

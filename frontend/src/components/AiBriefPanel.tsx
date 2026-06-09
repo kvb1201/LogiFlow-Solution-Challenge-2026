@@ -12,6 +12,7 @@ import { setShipmentAutorun } from '@/lib/shipmentAutorun';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import IntentConfirmModal from '@/components/IntentConfirmModal';
+import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 
 type AiBriefPanelProps = {
   contextMode: IntentContextMode;
@@ -31,9 +32,6 @@ function IntentChips({ parsed }: { parsed: ParsedIntent }) {
   if (parsed.cargo_type) chips.push(parsed.cargo_type);
   if (parsed.budget_max_inr != null) chips.push(`Budget ₹${Math.round(parsed.budget_max_inr)}`);
   if (parsed.deadline_hours != null) chips.push(`Deadline ${parsed.deadline_hours}h`);
-  if (parsed.source_engine && parsed.source_engine !== 'heuristic') {
-    chips.push(`via ${parsed.source_engine}`);
-  }
   if (!chips.length) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3">
@@ -125,8 +123,10 @@ export default function AiBriefPanel({
 
       if (!result.applied) {
         setError(
-          result.parse_warning ||
-            'Could not detect both origin and destination — we filled what we could; check the form.'
+          sanitizeUserMessage(
+            result.parse_warning ||
+              'Could not detect both origin and destination — we filled what we could; check the form.'
+          )
         );
       }
 
@@ -135,7 +135,9 @@ export default function AiBriefPanel({
         setConfirmOpen(true);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'AI parse failed');
+      setError(
+        sanitizeUserMessage(e instanceof Error ? e.message : 'Could not understand that brief.')
+      );
     } finally {
       setLoading(false);
     }
@@ -143,7 +145,7 @@ export default function AiBriefPanel({
 
   const title =
     contextMode === 'home'
-      ? 'Describe your shipment (AI)'
+      ? 'Describe your shipment'
       : 'Or describe in your own words';
 
   return (
@@ -161,8 +163,8 @@ export default function AiBriefPanel({
         <div>
           <h3 className="text-sm font-bold text-on-surface">{title}</h3>
           <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
-            Write in English, Hindi, or Hinglish — AI turns it into origin, destination, weight,
-            and mode. Works best when GEMINI_API_KEY is set on the backend.
+            Write in English, Hindi, or Hinglish. We extract origin, destination, weight, budget,
+            and preferred transport mode.
           </p>
         </div>
       </div>
@@ -206,12 +208,6 @@ export default function AiBriefPanel({
       {parsed?.scenario_summary && (
         <p className="mt-3 text-xs text-on-surface-variant border-l-2 border-violet-400/40 pl-3">
           {parsed.scenario_summary}
-          {parsed.source_engine && (
-            <span className="block mt-1 text-[10px] text-outline">
-              via {parsed.source_engine}
-              {parsed.parse_warning ? ` · ${parsed.parse_warning}` : ''}
-            </span>
-          )}
         </p>
       )}
       {parsed && <IntentChips parsed={parsed} />}

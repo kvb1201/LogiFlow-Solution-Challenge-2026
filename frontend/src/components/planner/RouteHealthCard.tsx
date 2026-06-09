@@ -705,7 +705,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
             Confirming current location as{' '}
             <span className="font-semibold text-foreground capitalize">{activeLocation()}</span>.
-            Backend will record this location. Progress, ETA, and corridor will update automatically.
+            We will record this location. Progress, ETA, and corridor will update automatically.
           </p>
           <div className="grid grid-cols-3 gap-2 mb-3">
             {routeHealth.updated_eta_minutes != null && (
@@ -745,7 +745,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
             check_circle
           </span>
           <p className="text-[11px] text-emerald-300 font-semibold">
-            Shipment updated. Route and metrics recalculated from backend.
+            Shipment updated. Route and metrics recalculated.
           </p>
         </div>
       )}
