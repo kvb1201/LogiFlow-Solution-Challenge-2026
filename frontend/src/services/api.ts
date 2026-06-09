@@ -417,7 +417,7 @@ export interface HybridAssistantResponse {
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export const BACKEND_UNAVAILABLE_MSG =
-  'Backend is still waking up. Wait ~30 seconds and try again — Render free tier sleeps after ~15 min idle.';
+  'LogiFlow is starting up. Please wait about 30 seconds and try again.';
 
 async function fetchBackend(
   path: string,
@@ -610,6 +610,12 @@ export interface ComposeResult {
     cost_delta_inr?: number;
   } | null;
   hubs_considered?: Array<{ city: string; display_name: string; rail_stations: string[]; airport_code?: string | null }>;
+  hub_pairs_considered?: Array<{
+    origin_hub: { city: string; display_name: string; distance_km?: number };
+    dest_hub: { city: string; display_name: string; distance_km?: number };
+    label?: string;
+  }>;
+  rural_corridor?: boolean;
   unavailable_templates?: Record<string, string>;
   total_candidates?: number;
   multimodal_count?: number;
@@ -622,12 +628,16 @@ export interface ComposeResult {
 }
 
 export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
-  const budgetMs = ((payload.compose_options?.budget_seconds ?? 42) + 50) * 1000;
+  const budgetSec = payload.compose_options?.budget_seconds ?? 55;
+  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
+  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
+  const composeUrl =
+    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), budgetMs);
   let res: Response;
   try {
-    res = await fetch(`${BACKEND_BASE}/compose`, {
+    res = await fetch(composeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -1555,9 +1565,7 @@ export async function parseShipmentIntent(
     parsed = raw ? JSON.parse(raw) : {};
   } catch {
     throw new Error(
-      res.ok
-        ? 'Intent parse returned invalid JSON'
-        : `Backend unavailable — start the API server (got: ${raw.slice(0, 80)})`
+      res.ok ? 'Could not read the planning response. Please try again.' : BACKEND_UNAVAILABLE_MSG
     );
   }
   if (!res.ok) {

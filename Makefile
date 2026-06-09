@@ -1,4 +1,4 @@
-.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring
+.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick
 
 # IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)
@@ -133,6 +133,13 @@ dev-backend:
 # Recreate venv python symlinks when packages install to 3.13 but `python` points at 3.9
 fix-backend-venv:
 	cd backend/venv/bin && rm -f python python3 && ln -sf python3.13 python3 && ln -sf python3.13 python
+
+# Smoke-test production (Render + Vercel). Full run ~5–8 min; quick ~30s.
+prod-audit:
+	@chmod +x scripts/prod_audit.sh && ./scripts/prod_audit.sh
+
+prod-audit-quick:
+	@chmod +x scripts/prod_audit.sh && ./scripts/prod_audit.sh --quick
 
 # Clean environments if needed
 clean:

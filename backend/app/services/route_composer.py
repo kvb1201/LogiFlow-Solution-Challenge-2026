@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from typing import Any, Optional
 
 from app.services.compose_leg_cache import get_cached_leg, set_cached_leg
+from app.services.geo_hub_finder import HubPair, discover_rural_hub_pairs, is_remote_location
 from app.services.hub_catalog import Hub, canonical_city, get_hubs, is_known_corridor
 from app.services.itinerary_scorer import build_explanation, score_itineraries
 from app.services.leg_extractor import extract_best_route, leg_to_dict, route_to_leg
@@ -25,6 +26,7 @@ _HANDLING_FEE_INR = 250
 _MODE_FAIL_SKIP_AFTER = 2
 _MAX_LEG_CALLS_WARM = 12
 _MAX_LEG_CALLS_COLD = 6
+_MAX_LEG_CALLS_RURAL = 14
 
 _MODE_TIMEOUT_CAP: dict[str, float] = {
     "rail": 24,
@@ -131,6 +133,27 @@ class RouteComposer:
         warm_corridor = _corridor_is_warm(origin, dest, priority)
         known = is_known_corridor(origin, dest)
 
+        src_remote = is_remote_location(
+            canonical_city=src_r.canonical_city,
+            station_codes=src_r.station_codes or [],
+            lat=src_r.lat,
+            lng=src_r.lng,
+            raw=src_r.raw,
+            resolution=src_r.resolution,
+        )
+        dst_remote = is_remote_location(
+            canonical_city=dst_r.canonical_city,
+            station_codes=dst_r.station_codes or [],
+            lat=dst_r.lat,
+            lng=dst_r.lng,
+            raw=dst_r.raw,
+            resolution=dst_r.resolution,
+        )
+        rural_corridor = src_remote or dst_remote
+        hub_pairs: list[HubPair] = (
+            discover_rural_hub_pairs(src_r, dst_r, max_pairs=6) if rural_corridor else []
+        )
+
         if short_corridor:
             hubs = []
             templates: list[tuple[str, str, str]] = []
@@ -146,8 +169,10 @@ class RouteComposer:
 
             templates = _HUB_TEMPLATES if warm_corridor else _COLD_HUB_TEMPLATES
             max_leg_calls = _MAX_LEG_CALLS_WARM if warm_corridor else _MAX_LEG_CALLS_COLD
-            # Try road legs whenever corridor has on-path hubs (not only on cache warm-up).
-            try_road = warm_corridor or known or bool(hubs)
+            if rural_corridor:
+                max_leg_calls = _MAX_LEG_CALLS_RURAL
+            # Rural / village corridors always need road access legs to nearest metros.
+            try_road = warm_corridor or known or bool(hubs) or rural_corridor
 
         leg_cache: dict[tuple[str, str, str], Any] = {}
         mode_fail_counts: dict[str, int] = {}
@@ -240,9 +265,86 @@ class RouteComposer:
                 _record_fail(mode)
             return leg
 
-        # ── Phase 1: direct rail (highest hit-rate, answer fast) ──────────
+        # ── Phase 1: fast direct modes (road + air) — villages get truck option early ──
+        if not _past_deadline() and leg_calls < max_leg_calls:
+            if "road" not in excluded and not _should_skip_mode("road") and try_road:
+                leg = fetch_leg("road", origin, dest)
+                if leg:
+                    itineraries.append(self._single_leg_itinerary(leg, "direct_road"))
+                else:
+                    unavailable["direct_road"] = "No direct road route"
+
+        if not _past_deadline() and leg_calls < max_leg_calls:
+            if "air" not in excluded and not _should_skip_mode("air"):
+                leg = fetch_leg("air", origin, dest)
+                if leg:
+                    itineraries.append(self._single_leg_itinerary(leg, "direct_air"))
+                elif not short_corridor:
+                    unavailable["direct_air"] = "No direct air route"
+
+        # ── Phase 2: rural geo-hub chains (village → nearest metro → metro → village) ──
+        if not short_corridor and hub_pairs:
+            for pair in hub_pairs:
+                if _past_deadline() or leg_calls >= max_leg_calls:
+                    break
+                h_o, h_d = pair.origin_hub, pair.dest_hub
+                inter_modes = ["rail"]
+                if h_o.airport_code and h_d.airport_code:
+                    inter_modes.append("air")
+
+                for inter_mode in inter_modes:
+                    if inter_mode in excluded or _past_deadline() or leg_calls >= max_leg_calls:
+                        continue
+
+                    legs: list[Any] = []
+                    template_parts: list[str] = []
+
+                    if src_remote:
+                        if "road" in excluded:
+                            continue
+                        leg_a = fetch_leg("road", origin, h_o.city)
+                        if not leg_a:
+                            unavailable[f"rural:road:{h_o.city}"] = f"no road {origin}→{h_o.city}"
+                            continue
+                        legs.append(leg_a)
+                        template_parts.append("road")
+
+                    leg_mid = fetch_leg(inter_mode, h_o.city, h_d.city)
+                    if not leg_mid:
+                        unavailable[f"rural:{inter_mode}:{h_o.city}-{h_d.city}"] = (
+                            f"no {inter_mode} {h_o.city}→{h_d.city}"
+                        )
+                        continue
+                    legs.append(leg_mid)
+                    template_parts.append(inter_mode)
+
+                    if dst_remote:
+                        if "road" in excluded:
+                            continue
+                        leg_c = fetch_leg("road", h_d.city, dest)
+                        if not leg_c:
+                            unavailable[f"rural:road:{h_d.city}"] = f"no road {h_d.city}→{dest}"
+                            continue
+                        legs.append(leg_c)
+                        template_parts.append("road")
+
+                    if len(legs) < 2:
+                        continue
+
+                    template_id = "rural_" + "+".join(template_parts)
+                    if len(legs) == 2:
+                        hub = h_o if src_remote else h_d
+                        itineraries.append(
+                            self._compose_two_leg(template_id, hub, legs[0], legs[1])
+                        )
+                    else:
+                        itineraries.append(
+                            self._compose_three_leg(template_id, h_o, h_d, legs[0], legs[1], legs[2])
+                        )
+
+        # ── Phase 3: direct rail ──
         direct_rail_leg = None
-        if "rail" not in excluded:
+        if not _past_deadline() and leg_calls < max_leg_calls and "rail" not in excluded:
             leg = fetch_leg("rail", origin, dest)
             if leg:
                 direct_rail_leg = leg
@@ -250,18 +352,17 @@ class RouteComposer:
             else:
                 unavailable["direct_rail"] = "No direct rail route"
 
-        # Short OD (e.g. Vadodara→Surat): skip hub/multimodal entirely.
         fast_compose = False
-        if not short_corridor and direct_rail_leg is not None and not warm_corridor:
+        if not short_corridor and direct_rail_leg is not None and not warm_corridor and not rural_corridor:
             dr = leg_to_dict(direct_rail_leg)
             if dr["time_hr"] < 8:
                 fast_compose = True
                 hubs = hubs[:1]
                 templates = [("rail+rail", "rail", "rail")]
-                max_leg_calls = min(max_leg_calls, 4)
+                max_leg_calls = min(max_leg_calls, 6)
 
-        # ── Phase 2: hub chains (skipped when corridor < 200 km) ──
-        if not short_corridor:
+        # ── Phase 4: on-path hub chains (rail-schedule intermediates) ──
+        if not short_corridor and not fast_compose:
             for hub in hubs:
                 if _past_deadline() or leg_calls >= max_leg_calls:
                     unavailable["_budget"] = "Time budget reached — partial results returned"
@@ -291,60 +392,6 @@ class RouteComposer:
                         self._compose_two_leg(template_id, hub, leg_in, leg_out)
                     )
 
-                    if fast_compose:
-                        break
-
-                if fast_compose and len(
-                    [it for it in itineraries if it.get("type") == "multimodal"]
-                ):
-                    break
-
-        # ── Phase 3: direct air + road ──
-        if short_corridor:
-            if not _past_deadline() and leg_calls < max_leg_calls:
-                if "air" not in excluded and not _should_skip_mode("air"):
-                    leg = fetch_leg("air", origin, dest)
-                    if leg:
-                        itineraries.append(self._single_leg_itinerary(leg, "direct_air"))
-                    else:
-                        unavailable["direct_air"] = "No direct air route"
-            if (
-                not _past_deadline()
-                and leg_calls < max_leg_calls
-                and "road" not in excluded
-                and not _should_skip_mode("road")
-            ):
-                leg = fetch_leg("road", origin, dest)
-                if leg:
-                    itineraries.append(self._single_leg_itinerary(leg, "direct_road"))
-                else:
-                    unavailable["direct_road"] = "No direct road route"
-        else:
-            if not fast_compose and not _past_deadline() and leg_calls < max_leg_calls:
-                if "air" not in excluded and not _should_skip_mode("air"):
-                    leg = fetch_leg("air", origin, dest)
-                    if leg:
-                        itineraries.append(self._single_leg_itinerary(leg, "direct_air"))
-                    else:
-                        unavailable["direct_air"] = "No direct air route"
-
-            if (
-                warm_corridor
-                and try_road
-                and not _past_deadline()
-                and leg_calls < max_leg_calls
-            ):
-                if "road" not in excluded and not _should_skip_mode("road"):
-                    leg = fetch_leg("road", origin, dest)
-                    if leg:
-                        itineraries.append(self._single_leg_itinerary(leg, "direct_road"))
-                    else:
-                        unavailable["direct_road"] = "No direct road route"
-            elif fast_compose:
-                unavailable["direct_road"] = (
-                    "Retry for truck route — first run optimises train options"
-                )
-
         if include_heavy and not _past_deadline() and "water" not in excluded:
             leg = fetch_leg("water", origin, dest)
             if leg:
@@ -354,6 +401,8 @@ class RouteComposer:
             out: dict[str, Any] = {
                 "error": "No multimodal or direct routes could be composed for this corridor",
                 "hubs_considered": [h.to_dict() for h in hubs],
+                "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+                "rural_corridor": rural_corridor,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
@@ -364,6 +413,11 @@ class RouteComposer:
             }
             if short_corridor and corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
+            elif rural_corridor:
+                out["compose_note"] = (
+                    "Rural or unmapped place detected — showing direct routes plus "
+                    "options via nearest major hub cities (road + train/air)."
+                )
             return out
 
         if short_corridor:
@@ -373,6 +427,8 @@ class RouteComposer:
             out = {
                 "error": "No direct routes could be composed for this short corridor",
                 "hubs_considered": [],
+                "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+                "rural_corridor": rural_corridor,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
@@ -425,6 +481,8 @@ class RouteComposer:
             "baselines": baselines,
             "beats_single_mode": beats,
             "hubs_considered": [h.to_dict() for h in hubs],
+            "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+            "rural_corridor": rural_corridor,
             "unavailable_templates": unavailable,
             "total_candidates": len(ranked),
             "multimodal_count": len(multimodal),
@@ -437,6 +495,11 @@ class RouteComposer:
         }
         if short_corridor and corridor_km is not None:
             out["compose_note"] = _short_corridor_note(corridor_km)
+        elif rural_corridor:
+            out["compose_note"] = (
+                "Rural or unmapped place detected — showing direct routes plus "
+                "options via nearest major hub cities (road + train/air)."
+            )
         return out
 
     def _transfer_buffer(self, mode_a: str, mode_b: str) -> float:
@@ -456,6 +519,47 @@ class RouteComposer:
             "total_risk": round(d["risk"], 3),
             "transshipments": 0,
             "segments": d["segments"],
+        }
+
+    def _compose_three_leg(
+        self,
+        template_id: str,
+        hub_origin: Hub,
+        hub_dest: Hub,
+        leg1: Any,
+        leg2: Any,
+        leg3: Any,
+    ) -> dict[str, Any]:
+        d1 = leg_to_dict(leg1)
+        d2 = leg_to_dict(leg2)
+        d3 = leg_to_dict(leg3)
+        buf1 = self._transfer_buffer(d1["mode"], d2["mode"])
+        buf2 = self._transfer_buffer(d2["mode"], d3["mode"])
+        handling = _HANDLING_FEE_INR * 2
+
+        total_time = d1["time_hr"] + buf1 + d2["time_hr"] + buf2 + d3["time_hr"]
+        total_cost = d1["cost_inr"] + d2["cost_inr"] + d3["cost_inr"] + handling
+        total_risk = 1 - (1 - d1["risk"]) * (1 - d2["risk"]) * (1 - d3["risk"]) + 0.12
+
+        t1 = build_transfer_detail(
+            d1, d2, hub_origin.city, hub_origin.display_name, buf1, _HANDLING_FEE_INR
+        )
+        t2 = build_transfer_detail(
+            d2, d3, hub_dest.city, hub_dest.display_name, buf2, _HANDLING_FEE_INR
+        )
+
+        return {
+            "id": f"{template_id}:{hub_origin.city}:{hub_dest.city}",
+            "template_id": template_id,
+            "type": "multimodal",
+            "hub_cities": [hub_origin.city, hub_dest.city],
+            "legs": [d1, d2, d3],
+            "transfers": [t1, t2],
+            "total_time_hr": round(total_time, 2),
+            "total_cost_inr": int(total_cost),
+            "total_risk": round(min(1.0, total_risk), 3),
+            "transshipments": 2,
+            "segments": list(d1["segments"]) + list(d2["segments"]) + list(d3["segments"]),
         }
 
     def _compose_two_leg(

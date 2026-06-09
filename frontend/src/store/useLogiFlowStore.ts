@@ -547,7 +547,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
       set({
         railLoadingStep: 1,
-        railLoadingDetail: 'Pinging Render — cold start may take up to 90s',
+        railLoadingDetail: 'Connecting to LogiFlow — first load after idle can take up to a minute',
       });
       await ensureBackendWarm(120_000);
 
