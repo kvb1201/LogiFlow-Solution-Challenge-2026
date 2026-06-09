@@ -707,6 +707,112 @@ def split_route_at_location(
 
 
 # ---------------------------------------------------------------------------
+# Requirement 1 — Automatic time-based progression
+# ---------------------------------------------------------------------------
+
+def resolve_current_location(
+    report: ShipmentReport,
+    now: Optional[datetime] = None,
+) -> tuple[str, str, float | None]:
+    """
+    Determine the effective current location and continuous covered distance.
+
+    Returns (resolved_city_label, source, estimated_covered_km).
+
+    - resolved_city_label  — nearest checkpoint name (display only)
+    - source               — "manual" | "automatic" | "fallback"
+    - estimated_covered_km — continuous km from route start (None for manual/fallback)
+
+    The continuous km value is the authoritative source for:
+      progress_percentage, covered_distance_km, remaining_distance_km, ETA.
+
+    The city label is used only for:
+      current_city display, corridor split, corridor detection.
+
+    Rebasing (Requirement 4):
+      Manual Update Shipment stores:
+        current_location          = "Ankleshwar"
+        progression_base_location = "Ankleshwar"
+        progression_base_time     = <timestamp>
+
+      Future automatic progression starts from Ankleshwar's km position
+      at that timestamp, advancing forward continuously.
+    """
+    now = now or datetime.utcnow()
+    opt_result = report.optimization_result or {}
+    ri: dict[str, Any] = opt_result.get("route_intelligence") or {}
+    route_cities: list[str] = ri.get("route_cities") or []
+    total_km_stored = ri.get("total_km_estimate") or 0.0
+
+    confirmed: str = (opt_result.get("current_location") or "").strip()
+    base_location: str = (opt_result.get("progression_base_location") or "").strip()
+    base_time_str: str = (opt_result.get("progression_base_time") or "").strip()
+
+    # ── Manual-only path (no rebase info) ────────────────────────────
+    # A confirmed location was set without rebase metadata. Use it directly.
+    # No continuous km — derive_progress_and_eta will snap to checkpoint distance.
+    if confirmed and not base_location:
+        return confirmed, "manual", None
+
+    # ── Trip hasn't started ───────────────────────────────────────────
+    if not base_location and not report.started_at:
+        return confirmed or report.source, "manual" if confirmed else "fallback", None
+
+    # ── Determine anchor ──────────────────────────────────────────────
+    if base_location and base_time_str:
+        try:
+            base_dt = datetime.fromisoformat(base_time_str)
+        except ValueError:
+            base_dt = None
+        anchor_location = base_location
+        anchor_time = base_dt
+    elif report.started_at:
+        anchor_location = report.source
+        anchor_time = report.started_at
+    else:
+        return confirmed or report.source, "manual" if confirmed else "fallback", None
+
+    # ── Validate route data ───────────────────────────────────────────
+    if not route_cities or len(route_cities) < 2 or not anchor_time:
+        return confirmed or report.source, "manual" if confirmed else "fallback", None
+
+    cum = _cumulative_distances(route_cities)
+    total_km = cum[-1] if cum else total_km_stored or 1.0
+    if total_km < 0.1:
+        return confirmed or report.source, "manual" if confirmed else "fallback", None
+
+    original_eta_hours = float(report.estimated_time or 0)
+    if original_eta_hours <= 0:
+        return confirmed or report.source, "manual" if confirmed else "fallback", None
+
+    # ── Continuous km computation ─────────────────────────────────────
+    speed_kmh = total_km / original_eta_hours
+
+    # Distance at anchor point
+    anchor_covered_km = _distance_along_route(anchor_location, route_cities, cum) or 0.0
+
+    # Additional distance since anchor — continuous, sub-checkpoint precision
+    elapsed_since_anchor = max(0.0, (now - anchor_time).total_seconds() / 3600.0)
+    additional_km = elapsed_since_anchor * speed_kmh
+
+    # Clamp: never go backward, never exceed total
+    estimated_covered_km = min(total_km, anchor_covered_km + additional_km)
+
+    # ── City label: nearest checkpoint to estimated_covered_km ────────
+    # This is DISPLAY ONLY. It changes discretely as checkpoints are passed.
+    # Progress/ETA calculations use estimated_covered_km directly.
+    best_city = route_cities[0]
+    best_diff = float("inf")
+    for i, city in enumerate(route_cities):
+        diff = abs(cum[i] - estimated_covered_km)
+        if diff < best_diff:
+            best_diff = diff
+            best_city = city
+
+    return best_city, "automatic", estimated_covered_km
+
+
+# ---------------------------------------------------------------------------
 # Estimated location from progress %
 # ---------------------------------------------------------------------------
 
@@ -1197,6 +1303,10 @@ def should_recommend_reoptimization(
 
 
 # ---------------------------------------------------------------------------
+
+
+
+# ---------------------------------------------------------------------------
 # Master evaluate_route_health
 # ---------------------------------------------------------------------------
 
@@ -1208,60 +1318,84 @@ def evaluate_route_health(
     """
     Master health evaluation.
 
-    Architecture:
-      - route_intelligence.route_cities is read-only (immutable)
-      - current_location is the only mutable state (stored in opt_result)
-      - progress, ETA, split corridor are ALL derived at query time
-      - backtracking works automatically — any city in route_cities is valid
+    Location resolution (single source of truth — Requirements 1 & 2):
+      1. actual_location_name  → preview mode (Req 7): user is evaluating a
+         candidate city but has NOT committed. Does not touch stored state.
+      2. resolve_current_location() → combines:
+         a. confirmed manual current_location (from Update Shipment, Req 3)
+         b. time-based automatic progression rebased at the last update (Req 1 & 4)
+         c. source city (fallback, trip not started)
+
+    All other values (progress, ETA, split corridor, health) derive from
+    this one resolved city — nothing else is persisted.
     """
     now = current_time or datetime.utcnow()
 
     opt_result = report.optimization_result or {}
-    # Route intelligence is IMMUTABLE — always read the original
     route_intelligence: Optional[dict[str, Any]] = opt_result.get("route_intelligence")
-    confirmed_location: str = (opt_result.get("current_location") or "").strip()
-
-    # Driver city priority: explicit param → confirmed stored → nothing
-    driver_city: str = (actual_location_name or "").strip() or confirmed_location
-
-    # ── Requirement 7: use driver_city directly, skip estimated when known ─
-    if driver_city:
-        coords = get_coords(driver_city)
-        estimated = LocationEstimate(
-            label=driver_city,
-            latitude=round(coords[0], 5) if coords else None,
-            longitude=round(coords[1], 5) if coords else None,
-            segment_start=driver_city,
-            segment_end=report.destination,
-            confidence="confirmed" if driver_city == confirmed_location else "medium",
-        )
-    else:
-        # Fallback: no current location known → estimate from time-based progress
-        time_progress = calculate_trip_progress(report.started_at, report.expected_end_time, now)
-        estimated = estimate_trip_location(report, time_progress.progress_percentage)
-
-    # ── Requirement 3 & 4: dynamic progress/ETA from route geometry ───
-    # Use the FULL immutable route_cities — never a trimmed copy
     full_route_cities: list[str] = (
         route_intelligence.get("route_cities") if route_intelligence else None
     ) or []
+    confirmed_location: str = (opt_result.get("current_location") or "").strip()
 
-    effective_location = driver_city or estimated.label
-    dynamic = derive_progress_and_eta(
-        current_location=effective_location,
-        route_cities=full_route_cities,
-        mode=report.mode or "road",
-        original_estimated_time_hours=report.estimated_time,
-    )
+    # ── Resolve current location ──────────────────────────────────────
+    if actual_location_name and actual_location_name.strip():
+        # Preview: user is evaluating a city without committing (Req 7)
+        driver_city = actual_location_name.strip()
+        location_source = "preview"
+        auto_covered_km: float | None = None   # preview uses city-snapped distance
+    else:
+        # Automatic progression or confirmed manual — single source of truth
+        driver_city, location_source, auto_covered_km = resolve_current_location(report, now)
 
-    progress_pct = dynamic["progress_percentage"]
-    remaining_km = dynamic["remaining_distance_km"]
-    remaining_eta_minutes = dynamic["remaining_eta_minutes"]
+    # ── Elapsed section: Source → Current Location (Req 5) ───────────
+    # When automatic progression provides a continuous covered_km, use it
+    # directly — this gives smooth progress instead of checkpoint-stepped.
+    # For manual/preview locations, derive from the city's projected distance.
+    if auto_covered_km is not None and full_route_cities:
+        # Continuous path: use raw km from automatic progression
+        cum_for_total = _cumulative_distances(full_route_cities)
+        total_route_km_c = cum_for_total[-1] if cum_for_total else 0.0
 
-    # Also compute legacy time-based progress for backward compat fields
-    time_prog = calculate_trip_progress(report.started_at, report.expected_end_time, now)
+        if total_route_km_c > 0.1:
+            covered_km     = round(min(auto_covered_km, total_route_km_c), 1)
+            remaining_km   = round(max(0.0, total_route_km_c - covered_km), 1)
+            progress_pct   = round((covered_km / total_route_km_c) * 100, 1)
 
-    # ── Requirement 5 & 6: split corridor — derived, not persisted ────
+            speed_kmh = _MODE_SPEED.get((report.mode or "road").lower(), 55.0)
+            remaining_eta_minutes = int(round((remaining_km / speed_kmh) * 60)) if speed_kmh > 0 else 0
+            progress_derived_from = "geometry"
+            total_route_km = round(total_route_km_c, 1)
+        else:
+            # Route has no geometry — fall back to city-based
+            elapsed_dynamic = derive_progress_and_eta(
+                current_location=driver_city,
+                route_cities=full_route_cities,
+                mode=report.mode or "road",
+                original_estimated_time_hours=report.estimated_time,
+            )
+            progress_pct          = elapsed_dynamic["progress_percentage"]
+            covered_km            = elapsed_dynamic["covered_distance_km"]
+            remaining_km          = elapsed_dynamic["remaining_distance_km"]
+            remaining_eta_minutes = elapsed_dynamic["remaining_eta_minutes"]
+            progress_derived_from = elapsed_dynamic["derived_from"]
+            total_route_km        = elapsed_dynamic["total_route_km"]
+    else:
+        # Manual/preview: city-snapped distance (acceptable — user picked a city)
+        elapsed_dynamic = derive_progress_and_eta(
+            current_location=driver_city,
+            route_cities=full_route_cities,
+            mode=report.mode or "road",
+            original_estimated_time_hours=report.estimated_time,
+        )
+        progress_pct          = elapsed_dynamic["progress_percentage"]
+        covered_km            = elapsed_dynamic["covered_distance_km"]
+        remaining_km          = elapsed_dynamic["remaining_distance_km"]
+        remaining_eta_minutes = elapsed_dynamic["remaining_eta_minutes"]
+        progress_derived_from = elapsed_dynamic["derived_from"]
+        total_route_km        = elapsed_dynamic["total_route_km"]
+
+    # ── Split corridor — derived, never persisted (Req 5 & 6, Req 8) ─
     completed_cities: list[str] = []
     remaining_cities: list[str] = []
     if driver_city and full_route_cities:
@@ -1269,8 +1403,24 @@ def evaluate_route_health(
     elif full_route_cities:
         remaining_cities = full_route_cities[:]
 
-    # ── Corridor detection ────────────────────────────────────────────
-    actual_location = None
+    # ── Estimated location struct (for API compat) ────────────────────
+    coords = get_coords(driver_city)
+    estimated = LocationEstimate(
+        label=driver_city,
+        latitude=round(coords[0], 5) if coords else None,
+        longitude=round(coords[1], 5) if coords else None,
+        segment_start=driver_city,
+        segment_end=report.destination,
+        confidence=(
+            "confirmed" if location_source == "manual"
+            else "automatic" if location_source == "automatic"
+            else "preview" if location_source == "preview"
+            else "low"
+        ),
+    )
+
+    # ── Corridor detection (Req 9) ────────────────────────────────────
+    actual_location: Optional[dict[str, Any]] = None
     deviation_km: Optional[float] = None
     corridor_status = "ON_ROUTE"
     corridor_matched_city = ""
@@ -1281,45 +1431,27 @@ def evaluate_route_health(
             "label": driver_city,
             "latitude": round(actual_coords[0], 5) if actual_coords else None,
             "longitude": round(actual_coords[1], 5) if actual_coords else None,
-            "confidence": "confirmed" if driver_city == confirmed_location else (
-                "medium" if actual_coords else "low"
-            ),
+            "confidence": estimated.confidence,
         }
         if route_intelligence:
             res = detect_corridor_status(driver_city, route_intelligence)
             corridor_status = res["status"]
             corridor_matched_city = res["matched_city"]
-        else:
-            if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-                deviation_km = round(
-                    _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
-                )
-                if deviation_km >= 150:
-                    corridor_status = "OFF_ROUTE"
-                elif deviation_km >= 50:
-                    corridor_status = "NEAR_ROUTE"
 
-        if actual_coords and estimated.latitude is not None and estimated.longitude is not None:
-            deviation_km = round(
-                _haversine_km(actual_coords, (estimated.latitude, estimated.longitude)), 1
-            )
-
-    # ── Remaining journey evaluation (pipeline) ───────────────────────
-    current_for_eval = driver_city or estimated.label
+    # ── Pipeline evaluation for projected metrics ─────────────────────
     remaining_eval: dict[str, Any] = {}
-    if current_for_eval and progress_pct < 100:
+    if driver_city and progress_pct < 100:
         try:
-            remaining_eval = evaluate_remaining_journey(
-                report, current_for_eval, progress_pct
-            )
+            remaining_eval = evaluate_remaining_journey(report, driver_city, progress_pct)
         except Exception:
             remaining_eval = {}
 
-    # Use pipeline ETA when available (more accurate than speed model)
-    pipeline_eta = remaining_eval.get("updated_eta_minutes")
-    final_eta_minutes = pipeline_eta if pipeline_eta is not None else remaining_eta_minutes
+    pipeline_eta   = remaining_eval.get("updated_eta_minutes")
+    final_eta_min  = pipeline_eta if pipeline_eta is not None else remaining_eta_minutes
 
-    # ── Overdue / time fields ─────────────────────────────────────────
+    # ── Elapsed wall-clock time ───────────────────────────────────────
+    time_prog = calculate_trip_progress(report.started_at, report.expected_end_time, now)
+
     overdue_minutes = 0
     if report.expected_end_time and now > report.expected_end_time:
         overdue_minutes = int((now - report.expected_end_time).total_seconds() // 60)
@@ -1332,29 +1464,28 @@ def evaluate_route_health(
     if report.started_at and report.expected_end_time:
         total_minutes = max(1, int((report.expected_end_time - report.started_at).total_seconds() // 60))
 
-    base_risk = min(1.0, max(0.0, float(report.risk_score or 0.15)))
+    base_risk   = min(1.0, max(0.0, float(report.risk_score or 0.15)))
     updated_risk = remaining_eval.get("updated_risk")
 
-    # Pipeline metrics for traffic/weather signals
     pipeline_metrics: Optional[dict[str, Any]] = None
     if remaining_eval.get("pipeline_result"):
         best_route = remaining_eval["pipeline_result"].get("best") or {}
         if best_route:
             pipeline_metrics = best_route
 
-    # ── Health scoring ────────────────────────────────────────────────
+    # ── Health scoring (Req 9 — always from resolved current_location) ─
     score_result = compute_health_score(
         corridor_status=corridor_status,
         overdue_minutes=overdue_minutes,
         original_remaining_minutes=original_remaining,
-        updated_eta_minutes=final_eta_minutes,
+        updated_eta_minutes=final_eta_min,
         base_risk=base_risk,
         updated_risk=updated_risk,
         pipeline_metrics=pipeline_metrics,
     )
     health_score = score_result["health_score"]
     health_level = score_result["health_level"]
-    confidence = score_result["confidence"]
+    confidence   = score_result["confidence"]
 
     # ── Recommendation ────────────────────────────────────────────────
     current_metrics = {
@@ -1363,16 +1494,18 @@ def evaluate_route_health(
         "risk": report.risk_score,
     }
     updated_metrics = remaining_eval.get("metrics") or {}
-    recommendation = get_reoptimization_recommendation(health_score, current_metrics, updated_metrics)
+    recommendation = get_reoptimization_recommendation(
+        health_score, current_metrics, updated_metrics
+    )
     recommended_action = recommendation["action"]
-    reopt_recommended = recommendation["suggest_reoptimization"]
+    reopt_recommended  = recommendation["suggest_reoptimization"]
     reopt_reason = (
         "; ".join(recommendation["improvement_reasons"])
         if recommendation["improvement_reasons"]
         else recommendation["label"]
     )
 
-    # ── Legacy compat fields ──────────────────────────────────────────
+    # ── Legacy compat ────────────────────────────────────────────────
     if corridor_status == "OFF_ROUTE":
         deviation_level = "major"
     elif corridor_status == "NEAR_ROUTE":
@@ -1387,7 +1520,7 @@ def evaluate_route_health(
         eta_variance_minutes += max(60, int(total_minutes * 0.15))
 
     delay_risk = (
-        "high" if health_score < _THRESHOLD_SUGGEST
+        "high"   if health_score < _THRESHOLD_SUGGEST
         else "medium" if health_score < _THRESHOLD_MONITOR
         else "low"
     )
@@ -1404,20 +1537,31 @@ def evaluate_route_health(
         "reoptimization_recommended": reopt_recommended,
         "reoptimization_reason": reopt_reason,
         "recommendation": recommendation,
-        # Requirement 3: dynamic progress (geometry-derived, never stored)
+        # Resolved current location + origin
+        "current_location": driver_city,
+        "location_source": location_source,       # "manual"|"automatic"|"preview"|"fallback"
+        "confirmed_current_location": confirmed_location or None,
+        # Elapsed: Source → Current Location (Req 5)
         "progress_percentage": progress_pct,
-        "covered_distance_km": dynamic["covered_distance_km"],
-        "remaining_distance_km": remaining_km,
-        "total_route_km": dynamic["total_route_km"],
-        "progress_derived_from": dynamic["derived_from"],
-        # Requirement 4: dynamic remaining ETA
-        "remaining_eta_minutes": final_eta_minutes,
-        # Legacy time-based progress fields (for backward compat)
+        "covered_distance_km": covered_km,
+        "total_route_km": total_route_km,
+        "progress_derived_from": progress_derived_from,
         "elapsed_minutes": time_prog.elapsed_minutes,
+        # Projected: Current Location → Destination (Req 6)
+        "remaining_distance_km": remaining_km,
+        "remaining_eta_minutes": final_eta_min,
         "remaining_minutes": time_prog.remaining_minutes,
-        "eta_variance_minutes": eta_variance_minutes,
-        "delay_risk": delay_risk,
-        # Locations
+        "updated_cost": remaining_eval.get("updated_cost"),
+        "updated_risk": updated_risk,
+        "updated_eta_minutes": pipeline_eta,
+        # Full immutable route + derived corridor split
+        "route_cities": full_route_cities or None,
+        "completed_cities": completed_cities,
+        "remaining_cities": remaining_cities,
+        # Corridor
+        "corridor_status": corridor_status,
+        "corridor_matched_city": corridor_matched_city,
+        # Location structs (API compat)
         "estimated_location": {
             "label": estimated.label,
             "latitude": estimated.latitude,
@@ -1427,18 +1571,10 @@ def evaluate_route_health(
             "confidence": estimated.confidence,
         },
         "actual_location": actual_location,
-        "confirmed_current_location": confirmed_location or None,
         "deviation_level": deviation_level,
         "deviation_km": deviation_km,
-        "corridor_status": corridor_status,
-        "corridor_matched_city": corridor_matched_city,
-        # Requirement 5 & 6: full immutable route + derived split
-        "route_cities": full_route_cities or None,
-        "completed_cities": completed_cities,
-        "remaining_cities": remaining_cities,
-        # Pipeline-derived updated metrics
-        "updated_eta_minutes": pipeline_eta,
-        "updated_cost": remaining_eval.get("updated_cost"),
-        "updated_risk": updated_risk,
+        # Legacy
+        "eta_variance_minutes": eta_variance_minutes,
+        "delay_risk": delay_risk,
         "checked_at": now.isoformat(),
     }
