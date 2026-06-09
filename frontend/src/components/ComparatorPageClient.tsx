@@ -205,7 +205,7 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
-            Gemini adjusted your plan
+            Shipment understood
           </p>
           <p className="text-sm text-on-surface leading-relaxed">
             {ai.scenario_summary || 'Scenario parsed into optimization constraints before scoring.'}
@@ -369,7 +369,7 @@ export default function ComparatorPageClient() {
               Smart Supply Chain
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200">
-              Gemini constraints
+              Smart planning
             </span>
           </div>
           <h1 className="font-headline text-3xl sm:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.05] max-w-3xl">
@@ -377,9 +377,7 @@ export default function ComparatorPageClient() {
           </h1>
           <p className="mt-4 text-[15px] sm:text-base text-on-surface-variant max-w-2xl leading-relaxed">
             Compare <strong className="text-on-surface">road, rail, air, and water</strong> on delay-adjusted time,
-            cost, and risk. Describe your shipment in plain English —{' '}
-            <strong className="text-violet-200">Google Gemini</strong> turns it into optimization constraints before
-            scoring.
+            cost, and risk. Describe your shipment in plain English and we turn it into constraints before scoring.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button
@@ -554,7 +552,7 @@ export default function ComparatorPageClient() {
               <div>
                 <h2 className="text-lg font-bold text-on-surface">What constraints matter?</h2>
                 <p className="text-sm text-on-surface-variant mt-1">
-                  Gemini reads this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
+                  We use this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
                   and excluded modes.
                 </p>
               </div>

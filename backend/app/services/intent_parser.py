@@ -498,7 +498,7 @@ def parse_shipment_intent(user_brief: str, context_mode: str = "home") -> dict[s
         result["parse_warning"] = f"{warning} {llm_note}".strip() if warning else llm_note
     elif needs_llm and result.get("applied") and "gemini" not in engines_used and "groq" not in engines_used:
         result["parse_warning"] = (
-            "Understood via basic rules only — set GEMINI_API_KEY or GROQ_API_KEY on the backend for Hinglish/Hindi."
+            "Understood via basic rules only — for Hindi or Hinglish, try adding city names in English as well."
         )
 
     return result

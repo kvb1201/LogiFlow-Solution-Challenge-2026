@@ -1,56 +1,44 @@
-/** Backend-aligned steps shown during rail optimization. */
+/** User-facing progress steps during rail optimization. */
 
-export type RailLoadingStepId =
-  | 'resolve'
-  | 'warm'
-  | 'optimize'
-  | 'map'
-  | 'ready';
+export type RailLoadingStepId = 'resolve' | 'warm' | 'optimize' | 'map' | 'ready';
 
 export interface RailLoadingStep {
   id: RailLoadingStepId;
   label: string;
-  backend: string;
   detail: string;
 }
 
 export const RAIL_LOADING_STEPS: RailLoadingStep[] = [
   {
     id: 'resolve',
-    label: 'Resolve corridor endpoints',
-    backend: 'location_funnel · station_name.pdf',
-    detail: 'Map city names and station codes to canonical clusters',
+    label: 'Reading your corridor',
+    detail: 'Matching stations and cities along your route',
   },
   {
     id: 'warm',
-    label: 'Connect to API',
-    backend: 'GET /health · warm-backend',
-    detail: 'Wake Render instance if sleeping (may take up to 90s on free tier)',
+    label: 'Connecting to LogiFlow',
+    detail: 'First request after idle can take up to a minute — please stay on this page',
   },
   {
     id: 'optimize',
-    label: 'Optimize parcel routes',
-    backend: 'POST /railway/optimize',
-    detail: 'Schedule sources → tariffs → scraped delay ML → cheapest / fastest / safest',
+    label: 'Finding train options',
+    detail: 'Schedules, tariffs, and delay risk for your cargo',
   },
   {
     id: 'map',
-    label: 'Prepare corridor map',
-    backend: 'station lookup · Supabase geometry cache',
-    detail: 'Load lat/lng for intermediate halts on the recommended train',
+    label: 'Drawing the route map',
+    detail: 'Loading station locations and track geometry',
   },
   {
     id: 'ready',
-    label: 'Render results',
-    backend: 'client',
-    detail: 'Apply recommendations to dashboard and map',
+    label: 'Preparing your results',
+    detail: 'Applying recommendations to your dashboard',
   },
 ];
 
 export function stepProgress(activeIndex: number): number {
   if (activeIndex < 0) return 0;
   if (activeIndex >= RAIL_LOADING_STEPS.length) return 100;
-  // Completed steps count fully; active step counts half.
   const unit = 100 / RAIL_LOADING_STEPS.length;
   return Math.min(100, Math.round(activeIndex * unit + unit * 0.45));
 }
