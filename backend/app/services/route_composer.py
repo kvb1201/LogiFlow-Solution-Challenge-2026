@@ -138,12 +138,16 @@ class RouteComposer:
             station_codes=src_r.station_codes or [],
             lat=src_r.lat,
             lng=src_r.lng,
+            raw=src_r.raw,
+            resolution=src_r.resolution,
         )
         dst_remote = is_remote_location(
             canonical_city=dst_r.canonical_city,
             station_codes=dst_r.station_codes or [],
             lat=dst_r.lat,
             lng=dst_r.lng,
+            raw=dst_r.raw,
+            resolution=dst_r.resolution,
         )
         rural_corridor = src_remote or dst_remote
         hub_pairs: list[HubPair] = (
@@ -397,6 +401,8 @@ class RouteComposer:
             out: dict[str, Any] = {
                 "error": "No multimodal or direct routes could be composed for this corridor",
                 "hubs_considered": [h.to_dict() for h in hubs],
+                "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+                "rural_corridor": rural_corridor,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
@@ -407,6 +413,11 @@ class RouteComposer:
             }
             if short_corridor and corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
+            elif rural_corridor:
+                out["compose_note"] = (
+                    "Rural or unmapped place detected — showing direct routes plus "
+                    "options via nearest major hub cities (road + train/air)."
+                )
             return out
 
         if short_corridor:
@@ -416,6 +427,8 @@ class RouteComposer:
             out = {
                 "error": "No direct routes could be composed for this short corridor",
                 "hubs_considered": [],
+                "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+                "rural_corridor": rural_corridor,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
