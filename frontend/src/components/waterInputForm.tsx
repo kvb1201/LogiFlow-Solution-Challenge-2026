@@ -215,6 +215,7 @@ export default function WaterInputForm() {
     cargoWeight, setCargoWeight,
     cargoType, setCargoType,
     budgetMax, setBudgetMax,
+    departureDate, setDepartureDate,
     handleOptimize,
     loading,
   } = useLogiFlowStore();
@@ -258,7 +259,7 @@ export default function WaterInputForm() {
       <FormShell
         mode="water"
         title="Maritime route search"
-        subtitle={`${WATER_PORTS.length} ports · ${WATER_PORT_REGION_COUNT} regions · transshipment-aware`}
+        subtitle={`${WATER_PORTS.length} global ports · ${WATER_PORT_REGION_COUNT} regions · transshipment-aware`}
         advancedToggle={
           <AdvancedToggle
             open={showAdvanced}
@@ -379,6 +380,27 @@ export default function WaterInputForm() {
               />
             </FormField>
 
+            {/* Departure date */}
+            <FormField
+              label="Departure date"
+              hint="Used for real-time marine weather and wave forecasts along the route."
+            >
+              <div className="relative flex items-center">
+                <div className="absolute left-3 w-7 h-7 rounded-lg bg-surface-container/60 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
+                    calendar_today
+                  </span>
+                </div>
+                <input
+                  type="date"
+                  value={departureDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setDepartureDate(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3.5 border border-outline-variant/15 rounded-xl bg-surface-container-lowest/50 focus:border-teal-400/40 focus:ring-1 focus:ring-teal-400/20 text-on-surface transition-all outline-none text-sm"
+                />
+              </div>
+            </FormField>
+
             <div className="rounded-xl border border-teal-400/20 bg-teal-500/5 p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-teal-300">
@@ -389,7 +411,7 @@ export default function WaterInputForm() {
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {['India', 'Middle East', 'Southeast Asia', 'East Asia', 'Europe'].map((region) => (
+                {['India', 'Middle East', 'Southeast Asia', 'East Asia', 'Europe', 'Africa', 'Americas'].map((region) => (
                   <span
                     key={region}
                     className="rounded-full border border-outline-variant/15 bg-surface-container-lowest/35 px-2.5 py-1 text-[10px] font-medium text-on-surface-variant"

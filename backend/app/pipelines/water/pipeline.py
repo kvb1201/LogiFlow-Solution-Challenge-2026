@@ -24,9 +24,6 @@ class WaterPipeline(BasePipeline):
 
     def generate(self, source: str, destination: str, payload: dict | None = None, context=None):
         payload = payload or {}
-        from app.services.location_funnel import corridor_endpoints
-
-        source, destination = corridor_endpoints(source, destination, context=context)
         constraints = payload.get("constraints") or {}
 
         if source.strip().lower() == destination.strip().lower():
@@ -70,11 +67,21 @@ class WaterPipeline(BasePipeline):
             for dp in dest_ports:
                 if op.port_id == dp.port_id:
                     continue
+                # max_legs is the number of sea segments, not transshipments.
+                # transshipments = legs - 1 (intermediate ports).
+                # We need enough legs for hub routing (e.g. India → Jebel Ali → Port Said → Rotterdam
+                # = 3 legs, 2 transshipments). Add +2 headroom for hub-to-hub routing.
+                # But honour max_transshipments=0 strictly (direct routes only = max_legs=1).
+                max_trans = int(constraints.get("max_transshipments", 3))
+                if max_trans == 0:
+                    max_legs = 1   # strictly direct, 1 sea leg
+                else:
+                    max_legs = max(max_trans + 2, 4)
                 port_paths = generate_port_paths(
                     op.port_id,
                     dp.port_id,
                     k=5,
-                    max_legs=max(int(constraints.get("max_transshipments", 1)) + 1, 1),
+                    max_legs=max_legs,
                 )
                 if not port_paths:
                     continue
