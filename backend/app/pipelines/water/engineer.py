@@ -378,6 +378,10 @@ def engineer_routes(
             key_factors.append(
                 f"Transit time based on real satellite-observed shipping data"
             )
+        elif transit_source == "ml_model":
+            key_factors.append(
+                "Transit delay estimated by trained GradientBoosting ML model"
+            )
         if active_disruptions:
             red_count    = sum(1 for d in active_disruptions if d["alert"] == "RED")
             orange_count = sum(1 for d in active_disruptions if d["alert"] == "ORANGE")

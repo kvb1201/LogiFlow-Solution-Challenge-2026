@@ -1,25 +1,69 @@
 """
-Water pipeline ML models — Phase 2.
+Water pipeline ML models — Phase 4.
 
-Replaces the heuristic stubs with real data-backed functions:
+Loads trained GradientBoosting models from models/ when available.
+Falls back to the Phase 2 heuristic if pkl files are absent
+(e.g., before training is run).
 
-  predict_port_congestion()   ← PORT_CONGESTION_INDEX from Daily_Ports_Data.csv
-  predict_chokepoint_stress() ← CHOKEPOINT_STRESS from Daily_Chokepoints_Data.csv
-  predict_eta_adjustment()    ← SPILLOVER_TRANSIT_DAYS + chokepoint stress + weather
+predict_port_congestion()   ← PORT_CONGESTION_INDEX from Daily_Ports_Data.csv
+predict_chokepoint_stress() ← CHOKEPOINT_STRESS from Daily_Chokepoints_Data.csv
+predict_eta_adjustment()    ← trained pkl (Phase 4) or heuristic fallback (Phase 2)
 
-Phase 4 will replace predict_eta_adjustment() with a trained GradientBoosting model.
-Until then, it uses the observed spillover transit days as a strong base and applies
-real multipliers on top.
+To train the models:
+  cd backend
+  python -m app.pipelines.water.train_model
 """
 
 from __future__ import annotations
 
 import logging
+import pickle
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
+
+# ── Trained model loader (Phase 4) ───────────────────────────────────────────
+
+def _models_dir() -> Path:
+    return Path(__file__).resolve().parent / "models"
+
+
+_delay_model = None   # loaded lazily
+_eta_model   = None
+
+
+def _load_models() -> tuple[object | None, object | None]:
+    """Load trained pkl files if they exist. Returns (delay_model, eta_model)."""
+    global _delay_model, _eta_model
+    if _delay_model is not None:
+        return _delay_model, _eta_model
+
+    md = _models_dir()
+    delay_path = md / "water_delay_model.pkl"
+    eta_path   = md / "water_eta_model.pkl"
+
+    if delay_path.exists():
+        try:
+            with open(delay_path, "rb") as f:
+                _delay_model = pickle.load(f)
+            log.info("[ml_models] Loaded water_delay_model.pkl")
+        except Exception as e:
+            log.warning("[ml_models] Failed to load water_delay_model.pkl: %s", e)
+            _delay_model = None
+
+    if eta_path.exists():
+        try:
+            with open(eta_path, "rb") as f:
+                _eta_model = pickle.load(f)
+            log.info("[ml_models] Loaded water_eta_model.pkl")
+        except Exception as e:
+            log.warning("[ml_models] Failed to load water_eta_model.pkl: %s", e)
+            _eta_model = None
+
+    return _delay_model, _eta_model
 
 # ── Lazy import guard — data_loader may not have congestion data in dev ───────
 
@@ -146,17 +190,80 @@ def predict_eta_adjustment(
     Returns: (eta_multiplier, expected_delay_hours, source_label)
       eta_multiplier   : multiply nominal sea_hr by this (>= 1.0)
       expected_delay_hours : absolute delay in hours on top of nominal
-      source_label     : "observed" | "heuristic" for transparency
+      source_label     : "ml_model" | "observed" | "heuristic"
 
     Priority:
-      1. Observed transit days from Spillover simulator (if portid pair known)
-      2. Heuristic based on distance + season + chokepoint stress + weather
+      1. Trained ML model (Phase 4) — if pkl exists
+      2. Observed transit days from Spillover simulator (if portid pair known)
+      3. Heuristic based on distance + season + chokepoint stress + weather
     """
     dt = departure_dt or datetime.now()
     chokepoints = chokepoint_ids or []
 
     # ── Base: nominal sea hours ────────────────────────────────────────────
     nominal_sea_hr = sea_distance_nm / max(16.0, 1e-6)   # 16 knots default
+
+    # ── Step 0: Try trained ML model ──────────────────────────────────────
+    delay_model, eta_model = _load_models()
+    if delay_model is not None or eta_model is not None:
+        try:
+            from app.pipelines.water.train_model import FEATURE_COLS
+            from app.pipelines.water.data_loader import PORTWATCH_PORTS
+
+            fp_meta = PORTWATCH_PORTS.get(from_portid or "")
+            tp_meta = PORTWATCH_PORTS.get(to_portid or "")
+
+            fp_vc  = fp_meta.vessel_count_total if fp_meta else 1000
+            tp_vc  = tp_meta.vessel_count_total if tp_meta else 1000
+            fp_iq  = fp_meta.infrastructure_quality if fp_meta else 0.80
+            tp_iq  = tp_meta.infrastructure_quality if tp_meta else 0.80
+            infra_avg = (fp_iq + tp_iq) / 2.0
+
+            fp_cong = predict_port_congestion(from_portid or "")
+            tp_cong = predict_port_congestion(to_portid or "")
+            cp_stress = predict_chokepoint_stress(chokepoints)
+
+            fp_cont = fp_meta.continent if fp_meta else ""
+            tp_cont = tp_meta.continent if tp_meta else ""
+            cross_region = int(fp_cont != tp_cont and bool(fp_cont) and bool(tp_cont))
+
+            # Build feature vector matching FEATURE_COLS order
+            features = [[
+                sea_distance_nm,
+                dt.month,
+                fp_vc,
+                tp_vc,
+                fp_cong,
+                tp_cong,
+                cp_stress,
+                wave_height_m if wave_height_m is not None else 0.0,
+                wind_speed_kn if wind_speed_kn is not None else 0.0,
+                int(storm_flag),
+                0.0,          # precipitation_mm — not available at request time
+                0,            # has_disruption — handled by engineer.py separately
+                0,            # disruption_severity
+                infra_avg,
+                cross_region,
+            ]]
+
+            if eta_model is not None:
+                eta_mult = float(eta_model.predict(features)[0])
+                eta_mult = max(1.0, min(2.0, eta_mult))
+                # Reconstruct delay hours from ETA multiplier and nominal time
+                delay_hr = (eta_mult - 1.0) * nominal_sea_hr
+                delay_hr += 1.2 * max(transshipments, 0)
+                delay_hr  = max(0.0, min(72.0, delay_hr))
+                return round(eta_mult, 3), round(delay_hr, 2), "ml_model"
+
+            elif delay_model is not None:
+                delay_hr = float(delay_model.predict(features)[0])
+                delay_hr += 1.2 * max(transshipments, 0)
+                delay_hr  = max(0.0, min(72.0, delay_hr))
+                eta_mult  = 1.0 + min(delay_hr / max(nominal_sea_hr, 1.0), 0.50)
+                return round(eta_mult, 3), round(delay_hr, 2), "ml_model"
+
+        except Exception as ml_err:
+            log.warning("[ml_models] ML inference failed, falling back: %s", ml_err)
 
     # ── Step 1: Try observed transit days from Spillover data ─────────────
     if from_portid and to_portid:
