@@ -24,7 +24,9 @@ export default function NavBar() {
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+    pathname === null
+      ? false
+      : href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <header className="sticky top-0 z-40 shrink-0">
@@ -107,7 +109,7 @@ export default function NavBar() {
 
         {/* Right side actions */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {liveTrains.length > 0 && pathname.startsWith('/railway') && (
+          {liveTrains.length > 0 && pathname?.startsWith('/railway') && (
             <div className="hidden items-center gap-1.5 rounded-full border border-border bg-surface/60 px-2.5 py-1 lg:flex">
               <span className="live-dot" />
               <span className="font-mono text-[11px] font-semibold text-foreground">
@@ -145,7 +147,7 @@ export default function NavBar() {
             const accent = mode ? modeMeta[mode].accent : 'var(--foreground)';
             return (
               <Link
-                key={`mobile-${item.href}`}
+                key={item.href}
                 href={item.href}
                 onClick={item.href === '/' ? resetSearch : undefined}
                 className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all duration-200 ${
