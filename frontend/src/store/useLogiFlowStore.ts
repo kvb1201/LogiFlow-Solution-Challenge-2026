@@ -518,6 +518,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           source: source.trim(),
           destination: destination.trim(),
           priority,
+          departure_date: departureDate,
           cargo_weight_kg: cargoWeight,
           cargo_type: cargoType,
           constraints: {
