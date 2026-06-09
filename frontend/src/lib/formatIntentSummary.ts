@@ -5,6 +5,7 @@ const MODE_LABELS: Record<string, string> = {
   road: 'Road freight',
   air: 'Air cargo',
   water: 'Water / ports',
+  hybrid: 'Hybrid multimodal composer',
   comparator: 'All modes compared (comparator)',
 };
 
