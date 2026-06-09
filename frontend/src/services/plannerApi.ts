@@ -76,29 +76,39 @@ export interface RouteHealthResponse {
     weather: number;
     risk: number;
   };
-  // Condition Intelligence V1
+  // Condition Intelligence V2
   condition_profile: {
+    traffic_level: number | null;
+    traffic_delay_minutes: number;
+    predicted_delay_hours: number | null;
+    temperature: number | null;
+    precipitation: number | null;
+    visibility: number | null;
+    weather_condition: string | null;
     traffic_score: number;
     weather_score: number;
-    congestion_score: number;
+    delay_score: number;
     route_adherence_score: number;
     eta_variance_score: number;
-    traffic_delay_minutes: number;
-    weather_delay_minutes: number;
+    confidence_score: number;
+    signal_sources: string[];
     explanations: {
       traffic: string;
       weather: string;
-      congestion: string;
+      delay: string;
       adherence: string;
       eta: string;
     };
   } | null;
+  /** Real-signal source badges e.g. ["tomtom", "weather_api", "ml_delay_model"] */
+  signal_sources: string[];
   health_breakdown: {
     adherence: { points: number; max: number; delta: number; why: string };
     eta:       { points: number; max: number; delta: number; why: string };
-    traffic:   { points: number; max: number; delta: number; why: string };
-    weather:   { points: number; max: number; delta: number; why: string };
-    risk:      { points: number; max: number; delta: number; why: string };
+    traffic:   { points: number; max: number; delta: number; why: string; source?: string };
+    weather:   { points: number; max: number; delta: number; why: string; source?: string };
+    delay:     { points: number; max: number; delta: number; why: string; source?: string };
+    risk?:     { points: number; max: number; delta: number; why: string };
     summary:   string;
   } | null;
   condition_history: Array<{

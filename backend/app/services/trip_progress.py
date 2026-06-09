@@ -1488,41 +1488,76 @@ def evaluate_route_health(
     confidence   = score_result["confidence"]
     component_scores = score_result["component_scores"]
 
-    # ── Condition Intelligence V1 ────────────────────────────────────
+    # ── Condition Intelligence V2 (real signals + fallback) ─────────
+    from app.services.condition_snapshot import (
+        build_condition_snapshot,
+        compute_health_from_snapshot,
+        build_snapshot_breakdown,
+    )
     from app.services.condition_intelligence import (
-        build_condition_profile, build_health_breakdown,
+        build_traffic_condition,
+        build_weather_condition,
+        build_adherence_score,
+        build_eta_variance_score,
+        build_health_breakdown,      # kept for backward-compat profile
+        ConditionProfile,
     )
     from app.services.condition_history import (
         append_condition_history, get_condition_history,
     )
 
-    # ETA gap for condition profile
-    _eta_gap_for_profile = 0
+    # ETA gap for condition signals
+    _eta_gap_for_snapshot = 0
     if final_eta_min is not None and original_remaining > 0:
-        _eta_gap_for_profile = max(0, final_eta_min - original_remaining)
+        _eta_gap_for_snapshot = max(0, final_eta_min - original_remaining)
 
-    condition_profile = build_condition_profile(
+    _route_km_for_snapshot = total_route_km if total_route_km else (
+        float(opt_result.get("route_intelligence", {}).get("total_km_estimate") or 0)
+    )
+
+    # Build snapshot — real signals preferred, heuristic fallback
+    snapshot = build_condition_snapshot(
+        optimization_result=opt_result,
         corridor_status=corridor_status,
         deviation_km=deviation_km,
         overdue_minutes=overdue_minutes,
-        eta_gap_minutes=_eta_gap_for_profile,
-        route_km=total_route_km if total_route_km else (
-            float(opt_result.get("route_intelligence", {}).get("total_km_estimate") or 0)
-        ),
+        eta_gap_minutes=_eta_gap_for_snapshot,
+        route_km=_route_km_for_snapshot,
         stop_count=len(report.stops or []),
         mode=report.mode or "road",
         source=report.source,
         destination=report.destination,
+        fallback_traffic_fn=build_traffic_condition,
+        fallback_weather_fn=build_weather_condition,
+        fallback_adherence_fn=build_adherence_score,
+        fallback_eta_fn=build_eta_variance_score,
     )
-    condition_profile_dict = condition_profile.to_dict()
 
-    health_breakdown = build_health_breakdown(
-        adherence_pts=component_scores["adherence"],
-        eta_pts=component_scores["eta"],
-        traffic_pts=component_scores["traffic"],
-        weather_pts=component_scores["weather"],
-        risk_pts=component_scores["risk"],
-        condition_profile=condition_profile,
+    # Phase 6 — compute health from real signals
+    health_score, health_level = compute_health_from_snapshot(snapshot)
+    confidence = snapshot.confidence_score
+
+    # Phase 7 — explainable breakdown
+    health_breakdown = build_snapshot_breakdown(snapshot)
+
+    # Build backward-compat condition_profile dict using snapshot data
+    condition_profile_dict = snapshot.to_dict()
+
+    # Build a minimal ConditionProfile for backward-compat build_health_breakdown call
+    # (used only when reverting to legacy path — keep in sync)
+    _legacy_profile = ConditionProfile(
+        traffic_score=snapshot.traffic_score,
+        weather_score=snapshot.weather_score,
+        congestion_score=snapshot.traffic_score,
+        route_adherence_score=snapshot.route_adherence_score,
+        eta_variance_score=snapshot.eta_variance_score,
+        traffic_delay_minutes=snapshot.traffic_delay_minutes,
+        weather_delay_minutes=0,
+        traffic_explanation=snapshot.traffic_explanation,
+        weather_explanation=snapshot.weather_explanation,
+        congestion_explanation=snapshot.traffic_explanation,
+        adherence_explanation=snapshot.adherence_explanation,
+        eta_explanation=snapshot.eta_explanation,
     )
 
     # ── Recommendation ────────────────────────────────────────────────
@@ -1563,9 +1598,7 @@ def evaluate_route_health(
         else "low"
     )
 
-    # ── Condition History (Phase 6) — only persist for real evaluations ─
-    # Skip for preview mode (actual_location_name supplied) to avoid
-    # flooding history with ephemeral location selections.
+    # ── Condition History (Phase 8) — only persist for real evaluations ─
     condition_history: list[dict[str, Any]] = get_condition_history(opt_result)
     if not actual_location_name:
         try:
@@ -1580,14 +1613,11 @@ def evaluate_route_health(
                     now,
                 )
                 report.optimization_result = new_opt
-                # Note: caller (planner_routes) commits the session.
-                # We mark it as modified so SQLAlchemy picks up the change.
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(report, "optimization_result")
-                # Refresh local copy of history
                 condition_history = get_condition_history(new_opt)
         except Exception:
-            pass  # History is non-critical — never fail a health check for it
+            pass
 
     return {
         "status": report.status,
@@ -1596,10 +1626,11 @@ def evaluate_route_health(
         "shipment_health_score": health_score,
         "health_confidence": confidence,
         "health_component_scores": component_scores,
-        # Condition Intelligence V1
+        # Condition Intelligence V2
         "condition_profile": condition_profile_dict,
         "health_breakdown": health_breakdown,
         "condition_history": condition_history,
+        "signal_sources": snapshot.signal_sources,
         # Recommendation
         "recommended_action": recommended_action,
         "reoptimization_recommended": reopt_recommended,

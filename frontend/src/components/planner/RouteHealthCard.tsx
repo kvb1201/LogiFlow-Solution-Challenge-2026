@@ -319,7 +319,31 @@ function RouteCorridor({
   );
 }
 
-// ── Health Breakdown Panel (Phase 5 — Why this score?) ───────────────────
+// ── Signal Source Badges ──────────────────────────────────────────────────
+
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  tomtom:        { label: 'TomTom',      color: 'bg-blue-500/15 text-blue-300 border-blue-500/25' },
+  weather_api:   { label: 'Weather API', color: 'bg-sky-500/15 text-sky-300 border-sky-500/25' },
+  ml_delay_model:{ label: 'ML Delay',    color: 'bg-violet-500/15 text-violet-300 border-violet-500/25' },
+};
+
+function SignalBadges({ sources }: { sources: string[] }) {
+  if (!sources.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {sources.map(src => {
+        const meta = SOURCE_LABELS[src.toLowerCase()] ?? { label: src, color: 'bg-surface-container/40 text-outline border-border/20' };
+        return (
+          <span key={src} className={`text-[8px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide ${meta.color}`}>
+            {meta.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Health Breakdown Panel (Phase 7 — Why this score?) ───────────────────
 
 function HealthBreakdownPanel({
   breakdown,
@@ -333,11 +357,11 @@ function HealthBreakdownPanel({
   if (!breakdown) return null;
 
   const factors = [
-    { key: 'adherence', label: 'Route Adherence', icon: 'route', max: 40 },
-    { key: 'eta',       label: 'ETA',             icon: 'schedule', max: 25 },
-    { key: 'risk',      label: 'Risk',            icon: 'warning', max: 25 },
-    { key: 'traffic',   label: 'Traffic',         icon: 'traffic', max: 5 },
-    { key: 'weather',   label: 'Weather',         icon: 'cloud', max: 5 },
+    { key: 'traffic',  label: 'Traffic',         icon: 'traffic',    max: 35 },
+    { key: 'weather',  label: 'Weather',         icon: 'cloud',      max: 20 },
+    { key: 'delay',    label: 'ML Delay',        icon: 'schedule',   max: 20 },
+    { key: 'adherence',label: 'Route Adherence', icon: 'route',      max: 15 },
+    { key: 'eta',      label: 'ETA Variance',    icon: 'timer',      max: 10 },
   ] as const;
 
   return (
@@ -386,6 +410,14 @@ function HealthBreakdownPanel({
                       {f.icon}
                     </span>
                     <span className="text-[10px] font-semibold text-foreground">{f.label}</span>
+                    {(() => {
+                      const src = (data as Record<string, unknown>).source as string | undefined;
+                      return src && !['heuristic','schedule','corridor'].includes(src) ? (
+                        <span className="text-[8px] px-1 py-0.5 rounded border bg-primary/10 text-primary border-primary/20 font-bold uppercase">
+                          {src}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className={`text-[10px] font-bold mono ${isGood ? 'text-emerald-300' : 'text-amber-300'}`}>
@@ -408,22 +440,42 @@ function HealthBreakdownPanel({
             );
           })}
 
-          {/* Condition profile delay estimates */}
-          {conditionProfile && (conditionProfile.traffic_delay_minutes > 0 || conditionProfile.weather_delay_minutes > 0) && (
-            <div className="pt-2 border-t border-border/15 flex gap-4">
-              {conditionProfile.traffic_delay_minutes > 0 && (
+          {/* Condition snapshot detail */}
+          {conditionProfile && (
+            <div className="pt-2 border-t border-border/15 flex flex-wrap gap-4">
+              {conditionProfile.traffic_level != null && (
                 <div>
-                  <div className="text-[9px] text-outline uppercase font-bold">Traffic delay</div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Traffic</div>
                   <div className="text-[11px] font-semibold text-foreground mono">
-                    +{conditionProfile.traffic_delay_minutes}m
+                    {Math.round(conditionProfile.traffic_level * 100)}% congestion
                   </div>
                 </div>
               )}
-              {conditionProfile.weather_delay_minutes > 0 && (
+              {conditionProfile.temperature != null && (
                 <div>
-                  <div className="text-[9px] text-outline uppercase font-bold">Weather delay</div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Temp</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">{conditionProfile.temperature}°C</div>
+                </div>
+              )}
+              {conditionProfile.precipitation != null && conditionProfile.precipitation > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Rain</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">{conditionProfile.precipitation}mm/h</div>
+                </div>
+              )}
+              {conditionProfile.traffic_delay_minutes > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Traffic delay</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">+{conditionProfile.traffic_delay_minutes}m</div>
+                </div>
+              )}
+              {conditionProfile.predicted_delay_hours != null && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">ML delay</div>
                   <div className="text-[11px] font-semibold text-foreground mono">
-                    +{conditionProfile.weather_delay_minutes}m
+                    {conditionProfile.predicted_delay_hours < 1
+                      ? `${Math.round(conditionProfile.predicted_delay_hours * 60)}m`
+                      : `${conditionProfile.predicted_delay_hours.toFixed(1)}h`}
                   </div>
                 </div>
               )}
@@ -950,6 +1002,14 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           </span>
         </div>
       </div>
+
+      {/* ── Signal source badges ── */}
+      {routeHealth.signal_sources && routeHealth.signal_sources.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-[9px] text-outline uppercase font-bold">Live signals:</span>
+          <SignalBadges sources={routeHealth.signal_sources} />
+        </div>
+      )}
 
       {/* ── Current Location row ── */}
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
