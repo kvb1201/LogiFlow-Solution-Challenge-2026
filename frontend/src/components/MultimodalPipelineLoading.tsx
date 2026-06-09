@@ -153,7 +153,7 @@ export default function MultimodalPipelineLoading({
         </p>
 
         {/* Steps */}
-        <ol className="max-h-[38vh] space-y-2 overflow-y-auto pr-1" aria-label="Backend pipeline steps">
+        <ol className="max-h-[38vh] space-y-2 overflow-y-auto pr-1" aria-label="Progress steps">
           {config.steps.map((step, index) => {
             const done = index < stepIndex;
             const active = index === stepIndex;
@@ -199,11 +199,8 @@ export default function MultimodalPipelineLoading({
                     >
                       {step.label}
                     </p>
-                    <p className={`mt-0.5 font-mono text-[10px] ${config.accentClass} opacity-90`}>
-                      {step.backend}
-                    </p>
                     <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                      {active && activeStep?.id === step.id ? step.detail : step.detail}
+                      {step.detail}
                     </p>
                   </div>
                   {active && (
@@ -225,7 +222,7 @@ export default function MultimodalPipelineLoading({
         </ol>
 
         <p className="mt-4 text-center text-[10px] text-outline">
-          Usually 15–25 seconds · backend is working, not frozen
+          Usually under a minute · still working, not frozen
         </p>
       </div>
     </div>

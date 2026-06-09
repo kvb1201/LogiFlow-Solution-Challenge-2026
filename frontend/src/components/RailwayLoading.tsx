@@ -88,7 +88,7 @@ export default function RailwayLoading() {
         </div>
 
         {/* Steps */}
-        <ol className="space-y-2" aria-label="Backend pipeline steps">
+        <ol className="space-y-2" aria-label="Progress steps">
           {RAIL_LOADING_STEPS.map((step, index) => {
             const done = index < stepIndex;
             const active = index === stepIndex;
@@ -130,7 +130,6 @@ export default function RailwayLoading() {
                     >
                       {step.label}
                     </p>
-                    <p className="mt-0.5 font-mono text-[10px] text-rail/90">{step.backend}</p>
                     <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
                       {active && stepDetail ? stepDetail : step.detail}
                     </p>

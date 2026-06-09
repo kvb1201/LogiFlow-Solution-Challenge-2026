@@ -1,4 +1,4 @@
-/** Backend-aligned steps for slow multimodal API calls (15–25s). */
+/** User-facing progress steps for slow multimodal API calls. */
 
 export type MultimodalLoadingVariant = 'optimize' | 'compare' | 'compose';
 
@@ -15,7 +15,6 @@ export type MultimodalLoadingStepId =
 export interface MultimodalLoadingStep {
   id: MultimodalLoadingStepId;
   label: string;
-  backend: string;
   detail: string;
 }
 
@@ -27,7 +26,6 @@ export interface MultimodalLoadingConfig {
   accentBorder: string;
   accentBg: string;
   ambient: 'hybrid' | 'comparator';
-  /** Milliseconds after load start when each step becomes active */
   stepDelaysMs: number[];
   steps: MultimodalLoadingStep[];
   tips: string[];
@@ -35,89 +33,69 @@ export interface MultimodalLoadingConfig {
 
 const SHARED_RESOLVE: MultimodalLoadingStep = {
   id: 'resolve',
-  label: 'Resolve corridor endpoints',
-  backend: 'location_funnel · geocoder',
-  detail: 'Map city names to canonical hubs and station clusters',
+  label: 'Reading your corridor',
+  detail: 'Matching origin and destination to cities, stations, and hubs',
 };
 
 const SHARED_WARM: MultimodalLoadingStep = {
   id: 'warm',
-  label: 'Connect to API',
-  backend: 'GET /health · warm-backend',
-  detail: 'Wake Render if sleeping (free tier may take up to 90s on cold start)',
+  label: 'Connecting to LogiFlow',
+  detail: 'First request after idle can take up to a minute — please stay on this page',
 };
 
 const SHARED_PIPELINES: MultimodalLoadingStep = {
   id: 'pipelines',
-  label: 'Run transport pipelines in parallel',
-  backend: 'POST /road · /railway · /air · /water',
-  detail: 'TomTom routing · IR schedules · OpenFlights · port graph — up to 30s each',
+  label: 'Checking each transport mode',
+  detail: 'Road, rail, air, and water options are evaluated in parallel',
 };
 
 const SHARED_SCORE: MultimodalLoadingStep = {
   id: 'score',
-  label: 'Normalize & score modes',
-  backend: 'HybridPipeline · Pareto rank',
-  detail: 'Delay-adjusted time, cost, risk — weighted by your priority',
+  label: 'Scoring your options',
+  detail: 'Balancing time, cost, and risk using your priority',
 };
 
 const SHARED_RECOMMEND: MultimodalLoadingStep = {
   id: 'recommend',
-  label: 'Build recommendation',
-  backend: 'tradeoffs · mode insights',
-  detail: 'Pick winner and explain why other modes were not chosen',
+  label: 'Choosing the best fit',
+  detail: 'Picking a winner and noting trade-offs versus other modes',
 };
 
 const SHARED_READY: MultimodalLoadingStep = {
   id: 'ready',
-  label: 'Render results',
-  backend: 'client',
-  detail: 'Apply comparison table, map, and verdict card',
+  label: 'Preparing your results',
+  detail: 'Building the comparison table, map, and recommendation',
 };
 
 export const OPTIMIZE_LOADING_CONFIG: MultimodalLoadingConfig = {
   variant: 'optimize',
   title: 'Comparing all transport modes',
-  badge: 'Hybrid optimizer · POST /optimize',
+  badge: 'Multimodal comparison',
   accentClass: 'text-comparator',
   accentBorder: 'border-comparator/40',
   accentBg: 'bg-comparator/10',
   ambient: 'comparator',
   stepDelaysMs: [0, 1200, 2800, 4500, 10500, 13500, 15000],
-  steps: [
-    SHARED_RESOLVE,
-    SHARED_WARM,
-    SHARED_PIPELINES,
-    SHARED_SCORE,
-    SHARED_RECOMMEND,
-    SHARED_READY,
-  ],
+  steps: [SHARED_RESOLVE, SHARED_WARM, SHARED_PIPELINES, SHARED_SCORE, SHARED_RECOMMEND, SHARED_READY],
   tips: [
-    'Four pipelines run in parallel — road, rail, air, and water.',
-    'Scores factor in ML delay prediction and weather risk.',
-    'Pareto dominance removes strictly worse options before ranking.',
-    'Your priority weights cost, time, and safety differently.',
+    'Four transport modes are compared side by side.',
+    'Scores include typical delays and weather risk where available.',
+    'Strictly worse options are removed before ranking.',
+    'Your priority setting changes how time, cost, and safety are weighted.',
   ],
 };
 
 export const COMPARE_LOADING_CONFIG: MultimodalLoadingConfig = {
   ...OPTIMIZE_LOADING_CONFIG,
   variant: 'compare',
-  badge: 'Mode comparator · POST /compare/routes',
-  steps: [
-    SHARED_RESOLVE,
-    SHARED_WARM,
-    { ...SHARED_PIPELINES, backend: 'POST /compare/routes → 4 pipelines' },
-    SHARED_SCORE,
-    SHARED_RECOMMEND,
-    SHARED_READY,
-  ],
+  badge: 'All-mode comparison',
+  steps: [SHARED_RESOLVE, SHARED_WARM, SHARED_PIPELINES, SHARED_SCORE, SHARED_RECOMMEND, SHARED_READY],
 };
 
 export const COMPOSE_LOADING_CONFIG: MultimodalLoadingConfig = {
   variant: 'compose',
-  title: 'Composing multimodal chains',
-  badge: 'Route composer · POST /compose',
+  title: 'Building multimodal routes',
+  badge: 'Hybrid route planner',
   accentClass: 'text-hybrid',
   accentBorder: 'border-hybrid/40',
   accentBg: 'bg-hybrid/10',
@@ -128,41 +106,36 @@ export const COMPOSE_LOADING_CONFIG: MultimodalLoadingConfig = {
     SHARED_WARM,
     {
       id: 'hubs',
-      label: 'Discover hub cities',
-      backend: 'geo_hub_finder · hub_catalog',
-      detail: 'Find transfer cities for rail→air, rail→road, and rail→rail chains',
+      label: 'Finding hub cities',
+      detail: 'Looking for sensible transfer cities between road, rail, and air',
     },
     {
       id: 'pipelines',
-      label: 'Optimize corridor legs',
-      backend: 'rail+road · rail+air · rail+rail templates',
-      detail: 'Black-box pipeline calls per leg with per-mode timeouts',
+      label: 'Planning each leg',
+      detail: 'Optimizing road, train, and flight segments for your corridor',
     },
     {
       id: 'chain',
-      label: 'Chain itineraries',
-      backend: 'transfer buffers · leg cache',
-      detail: 'Join legs with realistic transshipment and handling fees',
+      label: 'Linking legs together',
+      detail: 'Adding realistic transfer and handling time between segments',
     },
     {
       id: 'score',
-      label: 'Score chained routes',
-      backend: 'itinerary_scorer',
-      detail: 'Rank hub itineraries by time, cost, risk, and your priority',
+      label: 'Ranking route chains',
+      detail: 'Sorting itineraries by time, cost, risk, and your priority',
     },
     {
       id: 'recommend',
-      label: 'Pick best chain',
-      backend: 'POST /compose',
-      detail: 'Select recommended multimodal itinerary with segment breakdown',
+      label: 'Selecting the best chain',
+      detail: 'Finalizing the recommended multimodal itinerary',
     },
     SHARED_READY,
   ],
   tips: [
-    'Chained routes can beat single-mode on cost or reliability.',
-    'Hub discovery considers rural corridors and known freight lanes.',
-    'Transfer buffers account for rail→air and rail→road handoffs.',
-    'Leg results are cached so repeat corridors respond faster.',
+    'Hub routes can beat a single mode on cost or reliability.',
+    'Rural corridors may route through the nearest major city.',
+    'Transfer time between modes is included in the total.',
+    'Repeat corridors usually load faster.',
   ],
 };
 

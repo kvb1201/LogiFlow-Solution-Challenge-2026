@@ -1042,7 +1042,7 @@ function RouteCard({
                 </tbody>
               </table>
               <p className="px-3 py-2 text-[9px] text-outline/60 italic">
-                Estimates for components not provided by backend are based on standard road freight rates.
+                Some line items are estimated using standard road freight rates when exact quotes are unavailable.
               </p>
             </div>
           )}
