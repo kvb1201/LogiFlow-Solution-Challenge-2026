@@ -1,179 +1,184 @@
-# Shipment Tracking Consistency Refactor
+# Fix Shipment Location Update Workflow
 
-## Architecture
+## Root Cause
 
-### Immutable vs Mutable vs Derived
+The workflow broke at one specific point: `canUpdateShipment` compared `previewCity` against `resolvedLocation`, but `resolvedLocation` comes from `routeHealth.current_location` — which the backend already resolves to the preview city after `fetchRouteHealth(id, city)` is called.
 
-| Field | State | Where stored |
-|---|---|---|
-| `source` | Immutable | `ShipmentReport.source` |
-| `destination` | Immutable | `ShipmentReport.destination` |
-| `route_intelligence.route_cities` | Immutable | `optimization_result.route_intelligence` |
-| `route_intelligence.checkpoints` | Immutable | `optimization_result.route_intelligence` |
-| `route_geometry` | Immutable | `optimization_result.best.geometry` |
-| `current_location` | **Only mutable state** | `optimization_result.current_location` |
-| `progress_percentage` | Derived | Never stored |
-| `completed_cities` | Derived | Never stored |
-| `remaining_cities` | Derived | Never stored |
-| `remaining_distance_km` | Derived | Never stored |
-| `remaining_eta_minutes` | Derived | Never stored |
-| `shipment_health` | Derived | Never stored |
-| `recommendation` | Derived | Never stored |
+**Before (broken):**
+```
+User selects "Ankleshwar"
+handleCitySelect("Ankleshwar")
+  → fetchRouteHealth(id, "Ankleshwar")        ← backend returns current_location = "ankleshwar"
+  
+resolvedLocation = routeHealth.current_location = "ankleshwar"
+previewCity      = activeLocation()            = "ankleshwar"  (from selectedCity)
 
----
-
-## Requirement 1 — Route Corridor is Immutable
-
-The `update-location` endpoint previously trimmed `route_intelligence.route_cities` and mutated `report.stops`. Both are removed.
-
-The endpoint now writes only `optimization_result.current_location`. Nothing else changes.
-
-Before (broken):
-```python
-# Was trimming route_cities — caused backtracking bug
-route_intelligence["route_cities"] = full_rc[split_idx:]
-route_intelligence["completed_cities"] = full_rc[:split_idx]
-report.stops = remaining_stops  # was being trimmed
+hasPreviewCity = previewCity !== resolvedLocation = "ankleshwar" !== "ankleshwar" = FALSE
+canUpdateShipment = FALSE
+→ Update Shipment panel never appears
 ```
 
-After (correct):
-```python
-existing_result["current_location"] = current_location
-existing_result["current_location_updated_at"] = now.isoformat()
-# Nothing else written — route_cities, stops, checkpoints untouched
+**After (fixed):**
+```
+User selects "Ankleshwar"
+handleCitySelect("Ankleshwar")
+  → setSelectedCity("Ankleshwar")             ← NO auto-fetch
+  → setEvaluatedPreviewCity("")               ← reset
+
+User clicks "Evaluate"
+runCheck()
+  → setEvaluatedPreviewCity("Ankleshwar")     ← record what was evaluated
+  → fetchRouteHealth(id, "Ankleshwar")
+
+canUpdateShipment = !!evaluatedPreviewCity     = "Ankleshwar" ≠ "" = TRUE
+→ Update Shipment panel appears
 ```
 
 ---
 
-## Requirement 2 — Only `current_location` is Mutable
+## What Changed
 
-`ShipmentLocationUpdateRequest` accepts only `{ current_location: str }`. No metric fields.
+### New state: `evaluatedPreviewCity`
 
-The backend records the location and returns the updated report. All derived values are computed on the next call to `GET /route-health`.
+Tracks the city that was explicitly submitted via the **Evaluate** button. Separate from `activeLocation()` (selector value) and `routeHealth.current_location` (backend response). This is the authoritative "what the user wants to commit".
+
+```ts
+const [evaluatedPreviewCity, setEvaluatedPreviewCity] = useState<string>('');
+```
+
+### `handleCitySelect` — no longer auto-evaluates
+
+Previously called `fetchRouteHealth(id, city)` immediately on dropdown selection, which put the card in a state where `previewCity === resolvedLocation`. Now it only updates local selector state. The user must explicitly click **Evaluate**.
+
+```ts
+const handleCitySelect = (city: string) => {
+  setSelectedCity(city);
+  setLocationMode('dropdown');
+  setShipmentUpdated(false);
+  setEvaluatedPreviewCity('');  // not yet evaluated
+  // No fetchRouteHealth here
+};
+```
+
+### `runCheck` — sets `evaluatedPreviewCity`
+
+```ts
+const runCheck = () => {
+  const loc = activeLocation();
+  if (!loc) { fetchRouteHealth(report.id); return; }
+  setEvaluatedPreviewCity(loc);          // record what was evaluated
+  fetchRouteHealth(report.id, loc);      // backend returns preview metrics
+};
+```
+
+### `canUpdateShipment` — uses `evaluatedPreviewCity`
+
+```ts
+const canUpdateShipment =
+  !!evaluatedPreviewCity &&
+  evaluatedPreviewCity.toLowerCase() !== (routeHealth?.confirmed_current_location || '').toLowerCase() &&
+  !shipmentUpdated;
+```
+
+Compares against `confirmed_current_location` (the last stored location), not against the backend-resolved preview. Backtracking to Bharuch from Karjan works correctly because Bharuch ≠ the stored Karjan.
+
+### `commitLocation` — prefers `evaluatedPreviewCity`
+
+```ts
+const commitLocation = (): string =>
+  evaluatedPreviewCity || activeLocation() || routeHealth?.current_location || report.source;
+```
+
+### `handleUpdateShipment` — clears `evaluatedPreviewCity` after commit
+
+```ts
+setShipmentUpdated(true);
+setEvaluatedPreviewCity('');   // ← new
+setLocationMode('estimated');
+setSelectedCity('');
+setManualLocation('');
+fetchRouteHealth(report.id);
+onShipmentUpdated?.(updated);
+```
+
+### `handleModeChange` — clears `evaluatedPreviewCity` on tab switch
+
+```ts
+const handleModeChange = (mode) => {
+  setLocationMode(mode);
+  setShipmentUpdated(false);
+  setEvaluatedPreviewCity('');   // ← reset preview when user switches tabs
+  if (mode === 'estimated') { setSelectedCity(''); setManualLocation(''); }
+};
+```
+
+### Preview panel — shows `evaluatedPreviewCity` + Cancel button
+
+The panel now shows the evaluated city name (not `previewCity` which was the same as `resolvedLocation`). A **Cancel** button dismisses the panel without committing.
 
 ---
 
-## Dynamic Progress Calculation (Requirement 3)
+## Scenario Walkthrough
 
-### `derive_progress_and_eta(current_location, route_cities, mode, original_estimated_time_hours)`
+### Scenario A — Select → Evaluate → Update
 
-**Formula:**
 ```
-covered_km     = project(current_location) onto route polyline
-progress_pct   = (covered_km / total_route_km) × 100
-remaining_km   = total_route_km - covered_km
-```
+1. User opens dropdown, selects "Ankleshwar"
+   → selectedCity = "Ankleshwar", evaluatedPreviewCity = ""
+   → canUpdateShipment = false (not yet evaluated)
 
-**Projection algorithm:**
-For each consecutive segment in `route_cities`:
-1. Compute the nearest-point on the segment to `current_location` using vector projection (dot product, clamped to `[0,1]`)
-2. Compute perpendicular distance from city to that projected point
-3. Take the segment with minimum perpendicular distance
-4. `covered_km = cumulative_up_to_segment_start + t × segment_length`
+2. User clicks "Evaluate"
+   → evaluatedPreviewCity = "Ankleshwar"
+   → fetchRouteHealth(id, "Ankleshwar") called
+   → backend returns preview metrics for Ankleshwar
+   → canUpdateShipment = true → panel appears
 
-This handles any city — both cities explicitly listed in `route_cities` and intermediate corridor cities like Karjan (between Bharuch and Vadodara).
-
-**Validated results (Surat → Vadodara corridor):**
-
-| City | Progress | ETA |
-|---|---|---|
-| Surat | 0% | ~240m |
-| Ankleshwar | 68.4% | 87m |
-| Bharuch | 72.6% | 76m |
-| Karjan | 88.2% | 33m |
-| Vadodara | 100% | 0m |
-
----
-
-## Dynamic Remaining ETA (Requirement 4)
-
-**Formula:**
-```
-remaining_eta = remaining_km / speed_kmh × 60  (geometry path)
-             OR original_time × (remaining_km / total_km)  (time_ratio fallback)
+3. User clicks "Update Shipment"
+   → updateShipmentLocation({current_location: "Ankleshwar"})
+   → evaluatedPreviewCity = "", locationMode = "estimated"
+   → fetchRouteHealth(id) called → shows Ankleshwar as confirmed
+   → onShipmentUpdated(updated) called
 ```
 
-**Speed model:**
-| Mode | Speed |
-|---|---|
-| road | 55 km/h |
-| rail | 80 km/h |
-| air | 700 km/h |
-| water | 25 km/h |
+### Scenario B — Select → Evaluate → Do NOT update
 
-The pipeline ETA (`updated_eta_minutes` from `evaluate_remaining_journey`) takes precedence over the speed-model ETA when available.
-
-The response field `progress_derived_from` indicates which method was used: `"geometry"`, `"time_ratio"`, or `"unavailable"`.
-
----
-
-## Dynamic Corridor Rendering (Requirement 5)
-
-### `split_route_at_location(route_cities, current_location)`
-
-Computes `(completed_cities, remaining_cities)` at query time. Never persisted.
-
-Algorithm:
-1. Exact name match (case-insensitive)
-2. Coordinate proximity: if current city is within 30 km of a route checkpoint, treat as that checkpoint
-
-**Example: Bharuch selected on Surat → Vadodara**
 ```
-route_cities:  [Surat, kosamba, ankleshwar, bharuch, karjan, Vadodara]
-current:       bharuch
+1. User selects "Ankleshwar" + clicks Evaluate
+   → Preview panel appears
 
-completed:     [Surat, kosamba, ankleshwar]
-remaining:     [karjan, Vadodara]
+2. User closes the panel via Cancel (or navigates away)
+   → evaluatedPreviewCity = ""
+   → Backend current_location unchanged
+   → shipment persists with original location
 ```
 
-**Example: After backtrack to Ankleshwar**
+### Scenario C — Persist after refresh
+
 ```
-route_cities:  [Surat, kosamba, ankleshwar, bharuch, karjan, Vadodara]  ← UNCHANGED
-current:       ankleshwar
+1. User updates to Ankleshwar
+   → backend writes current_location = "Ankleshwar" + rebase metadata
 
-completed:     [Surat, kosamba]
-remaining:     [bharuch, karjan, Vadodara]
+2. Page refresh
+   → report.optimization_result.current_location = "Ankleshwar" (persisted)
+   → fetchRouteHealth(id) → resolve_current_location finds rebase anchor
+   → confirmed_current_location = "Ankleshwar" shown correctly
 ```
 
-The route_cities list is the same in both calls. No mutation required or performed.
+### Scenario D — Backtrack Karjan → Bharuch
 
----
+```
+1. Current: Karjan (confirmed)
+   → confirmed_current_location = "Karjan"
 
-## Backtracking Support (Requirement 6)
+2. User selects "Bharuch" + Evaluate
+   → evaluatedPreviewCity = "Bharuch"
+   → canUpdateShipment: "Bharuch" !== "Karjan" = true → panel appears
+   → metrics show higher ETA, longer remaining distance
 
-Because `route_cities` is never trimmed, selecting any city in the route — including previously "passed" cities — works correctly.
-
-The old implementation trimmed `route_cities` to `[current_location:]` on each update. This meant that after reaching Karjan, the list became `[karjan, Vadodara]` — Bharuch was no longer selectable without a page reload.
-
-Now: `route_cities` always contains the full route from source to destination. `split_route_at_location` recomputes the completed/remaining split every time from scratch.
-
----
-
-## Route Health from Current Location (Requirement 7)
-
-`evaluate_route_health` priority order:
-
-1. `actual_location_name` query param (fresh user input — ephemeral check)
-2. `optimization_result.current_location` (confirmed stored location)
-3. Progress-based estimate (only when no confirmed location exists)
-
-When a confirmed location exists, progress estimation is skipped entirely. The location is used directly as the driver city for all derived computations.
-
----
-
-## UI: Progress/Distance/ETA display (Requirement 8)
-
-`RouteHealthCard.tsx` progress metrics panel now shows:
-
-| Metric | Source |
-|---|---|
-| Progress | `routeHealth.progress_percentage` (geometry-derived) |
-| Remaining | `routeHealth.remaining_distance_km` km (+ `total_route_km` as sub-label) |
-| Remaining ETA | `routeHealth.remaining_eta_minutes` (geometry or pipeline) |
-
-Sub-labels show `"distance-based"` when `progress_derived_from === "geometry"`.
-
-The corridor display uses `completed_cities`/`remaining_cities` from the health response — recomputed on every Evaluate.
+3. Update Shipment
+   → current_location = "Bharuch", rebase at Bharuch
+   → progression continues forward from Bharuch
+```
 
 ---
 
@@ -181,31 +186,19 @@ The corridor display uses `completed_cities`/`remaining_cities` from the health 
 
 | File | Change |
 |---|---|
-| `backend/app/routes/planner_routes.py` | `update-location` endpoint: removed all route mutation, now only writes `current_location` |
-| `backend/app/services/trip_progress.py` | Added `derive_progress_and_eta`, `split_route_at_location`, `_cumulative_distances`, `_distance_along_route`; rewrote `evaluate_route_health` to use dynamic derivation |
-| `frontend/src/services/plannerApi.ts` | `RouteHealthResponse` extended with `remaining_distance_km`, `remaining_eta_minutes`, `covered_distance_km`, `total_route_km`, `progress_derived_from` |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | Progress metrics panel uses distance/ETA fields; removed "route will be trimmed" copy |
+| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `evaluatedPreviewCity` state; `handleCitySelect` no longer auto-evaluates; `runCheck` sets evaluated city; `canUpdateShipment` uses `evaluatedPreviewCity`; preview panel shows evaluated city + Cancel button |
 
 ---
 
-## Validation Results
+## Validation
 
-| Scenario | Expected | Result |
-|---|---|---|
-| Bharuch → Ankleshwar: progress decreases | ✓ 72.6% → 68.4% | PASS |
-| Bharuch → Ankleshwar: ETA increases | ✓ 76m → 87m | PASS |
-| Bharuch → Ankleshwar: remaining route grows | ✓ 2 → 3 cities | PASS |
-| Backtrack Karjan → Bharuch: progress decreases | ✓ 88.2% → 72.6% | PASS |
-| Backtrack Karjan → Bharuch: ETA increases | ✓ 33m → 76m | PASS |
-| Backtrack Karjan → Bharuch: route NOT corrupted | ✓ route unchanged | PASS |
-| Forward Bharuch → Karjan: progress increases | ✓ 72.6% → 88.2% | PASS |
-| Forward Bharuch → Karjan: ETA decreases | ✓ 76m → 33m | PASS |
-| Forward Bharuch → Karjan: remaining route shrinks | ✓ 2 → 1 city | PASS |
-| 5 operations: route_cities unchanged | ✓ immutable | PASS |
-| Split at Bharuch: completed=[Surat,kosamba,ankleshwar] | ✓ | PASS |
-| Split at Ankleshwar: completed=[Surat,kosamba] | ✓ | PASS |
-| Split at Surat (source): completed=[] | ✓ | PASS |
-| Split at Vadodara (dest): remaining=[] | ✓ | PASS |
-| `npx tsc --noEmit` | 0 errors | PASS |
-| `npm run build` | 16/16 pages | PASS |
-| Backend `py_compile` | 0 errors | PASS |
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ 0 errors |
+| `npm run build` | ✅ 16/16 pages |
+| Scenario A — Select + Evaluate + Update → location changes | ✅ |
+| Scenario B — Select + Evaluate + no click → unchanged | ✅ evaluatedPreviewCity not committed |
+| Scenario C — Update + refresh → persists | ✅ backend stores current_location |
+| Scenario D — Backtrack Karjan → Bharuch → works | ✅ confirmed_current_location comparison |
+| Cancel button dismisses panel without commit | ✅ |
+| Switching location tabs resets preview | ✅ handleModeChange clears evaluatedPreviewCity |
