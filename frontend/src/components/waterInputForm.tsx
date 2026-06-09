@@ -259,7 +259,7 @@ export default function WaterInputForm() {
       <FormShell
         mode="water"
         title="Maritime route search"
-        subtitle={`${WATER_PORTS.length} ports · ${WATER_PORT_REGION_COUNT} regions · transshipment-aware`}
+        subtitle={`${WATER_PORTS.length} global ports · ${WATER_PORT_REGION_COUNT} regions · transshipment-aware`}
         advancedToggle={
           <AdvancedToggle
             open={showAdvanced}
@@ -411,7 +411,7 @@ export default function WaterInputForm() {
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {['India', 'Middle East', 'Southeast Asia', 'East Asia', 'Europe'].map((region) => (
+                {['India', 'Middle East', 'Southeast Asia', 'East Asia', 'Europe', 'Africa', 'Americas'].map((region) => (
                   <span
                     key={region}
                     className="rounded-full border border-outline-variant/15 bg-surface-container-lowest/35 px-2.5 py-1 text-[10px] font-medium text-on-surface-variant"
