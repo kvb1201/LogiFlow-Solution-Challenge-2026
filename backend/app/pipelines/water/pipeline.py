@@ -24,9 +24,6 @@ class WaterPipeline(BasePipeline):
 
     def generate(self, source: str, destination: str, payload: dict | None = None, context=None):
         payload = payload or {}
-        from app.services.location_funnel import corridor_endpoints
-
-        source, destination = corridor_endpoints(source, destination, context=context)
         constraints = payload.get("constraints") or {}
 
         if source.strip().lower() == destination.strip().lower():
