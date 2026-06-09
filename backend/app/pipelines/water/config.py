@@ -697,40 +697,112 @@ SEA_LANES: dict[str, list[str]] = {
 # Maps (origin_port_id, dest_port_id) pairs to list of chokepoints transited.
 # Used by route_generator to annotate paths and by engineer.py for risk.
 ROUTE_CHOKEPOINTS: dict[tuple[str, str], list[str]] = {
-    # India ↔ Middle East (Strait of Hormuz)
-    ("port776", "port411"):   ["chokepoint6"],
-    ("port777", "port411"):   ["chokepoint6"],
-    ("port540", "port411"):   ["chokepoint6"],
+    # ── India ↔ Middle East (Strait of Hormuz) ────────────────────────────
+    ("port776", "port411"):   ["chokepoint6"],   # JNPT → Jebel Ali
+    ("port777", "port411"):   ["chokepoint6"],   # Mundra → Jebel Ali
+    ("port540", "port411"):   ["chokepoint6"],   # Kandla → Jebel Ali
+    ("port583", "port411"):   ["chokepoint6"],   # Kochi → Jebel Ali
+    ("port1161", "port776"):  ["chokepoint6"],   # Salalah → JNPT
+    ("port1161", "port777"):  ["chokepoint6"],   # Salalah → Mundra
+    ("port411", "port776"):   ["chokepoint6"],
+    ("port411", "port777"):   ["chokepoint6"],
+    ("port411", "port540"):   ["chokepoint6"],
 
-    # Middle East ↔ Europe (Bab-el-Mandeb + Suez Canal)
+    # ── Middle East ↔ Europe (Bab-el-Mandeb + Suez Canal + Gibraltar) ────
     ("port411", "port909"):   ["chokepoint4", "chokepoint1"],
     ("port411", "port1114"):  ["chokepoint4", "chokepoint1", "chokepoint8"],
     ("port411", "port57"):    ["chokepoint4", "chokepoint1", "chokepoint8"],
     ("port411", "port446"):   ["chokepoint4", "chokepoint1", "chokepoint8"],
     ("port566", "port909"):   ["chokepoint4", "chokepoint1"],
+    ("port566", "port1114"):  ["chokepoint4", "chokepoint1", "chokepoint8"],
+    ("port1161", "port909"):  ["chokepoint4", "chokepoint1"],
+    ("port1161", "port1114"): ["chokepoint4", "chokepoint1", "chokepoint8"],
+    # Reverse
+    ("port909", "port411"):   ["chokepoint1", "chokepoint4"],
+    ("port1114", "port411"):  ["chokepoint8", "chokepoint1", "chokepoint4"],
 
-    # India ↔ Singapore (Malacca Strait)
+    # ── India ↔ Europe (via Bab-el-Mandeb + Suez + Gibraltar) ────────────
+    ("port776", "port1114"):  ["chokepoint6", "chokepoint4", "chokepoint1", "chokepoint8"],
+    ("port777", "port1114"):  ["chokepoint6", "chokepoint4", "chokepoint1", "chokepoint8"],
+    ("port235", "port1114"):  ["chokepoint5", "chokepoint4", "chokepoint1", "chokepoint8"],
+    ("port583", "port1114"):  ["chokepoint4", "chokepoint1", "chokepoint8"],
+    ("port1367", "port1114"): ["chokepoint5", "chokepoint4", "chokepoint1", "chokepoint8"],
+
+    # ── India ↔ Singapore (Malacca Strait) ────────────────────────────────
     ("port583", "port1201"):  ["chokepoint5"],
     ("port235", "port1201"):  ["chokepoint5"],
     ("port1367", "port1201"): ["chokepoint5"],
     ("port442", "port1201"):  ["chokepoint5"],
     ("port207", "port1201"):  ["chokepoint5"],
+    ("port1331", "port1201"): ["chokepoint5"],
+    ("colombo", "port1201"):  ["chokepoint5"],
+    # Reverse
+    ("port1201", "port583"):  ["chokepoint5"],
+    ("port1201", "port235"):  ["chokepoint5"],
 
-    # Singapore ↔ East Asia (Taiwan Strait)
+    # ── Singapore ↔ East Asia (Taiwan Strait, Korea Strait) ──────────────
     ("port1201", "port1188"): ["chokepoint11"],
     ("port1201", "port824"):  ["chokepoint11"],
+    ("port1201", "port474"):  ["chokepoint11"],
     ("port1201", "port1065"): ["chokepoint11", "chokepoint12"],
+    ("port1201", "port485"):  ["chokepoint11", "chokepoint12"],
+    ("port474", "port1065"):  ["chokepoint12"],
+    ("port1188", "port1065"): ["chokepoint12"],
+    # Reverse
+    ("port1188", "port1201"): ["chokepoint11"],
+    ("port474", "port1201"):  ["chokepoint11"],
 
-    # India ↔ Europe via Cape (no Suez — alternate route)
+    # ── Singapore ↔ India (full corridor) ────────────────────────────────
+    ("port1201", "port583"):  ["chokepoint5"],
+    ("port1201", "port235"):  ["chokepoint5"],
+
+    # ── India ↔ East Asia (Malacca + Taiwan Strait) ───────────────────────
+    ("port235", "port1188"):  ["chokepoint5", "chokepoint11"],
+    ("port583", "port1188"):  ["chokepoint5", "chokepoint11"],
+    ("port583", "port474"):   ["chokepoint5", "chokepoint11"],
+    ("port235", "port474"):   ["chokepoint5", "chokepoint11"],
+    ("port235", "port1065"):  ["chokepoint5", "chokepoint11", "chokepoint12"],
+
+    # ── Cape of Good Hope (Durban corridor — avoids Suez) ─────────────────
     ("port311", "port1114"):  ["chokepoint7"],
     ("port311", "port57"):    ["chokepoint7"],
+    ("port311", "port446"):   ["chokepoint7"],
+    ("port311", "port1201"):  ["chokepoint7"],
+    # Reverse
+    ("port1114", "port311"):  ["chokepoint7"],
+    ("port1201", "port311"):  ["chokepoint7"],
 
-    # Europe ↔ Mediterranean (Gibraltar)
+    # ── Europe ↔ Mediterranean (Gibraltar) ────────────────────────────────
     ("port909", "port1114"):  ["chokepoint8"],
     ("port909", "port57"):    ["chokepoint8"],
     ("port909", "port446"):   ["chokepoint8"],
+    ("port23", "port1114"):   ["chokepoint8"],
+    # Reverse
+    ("port1114", "port909"):  ["chokepoint8"],
+    ("port57", "port909"):    ["chokepoint8"],
+    ("port446", "port909"):   ["chokepoint8"],
 
-    # Singapore ↔ Indonesia (Sunda / Lombok alternatives)
+    # ── Tanger Med (Gibraltar) ────────────────────────────────────────────
+    ("port1265", "port909"):  ["chokepoint8"],
+    ("port1265", "port1114"): ["chokepoint8"],
+
+    # ── Rotterdam ↔ Americas (no chokepoint — open Atlantic) ─────────────
+    # ("port1114", "port481"):  [],   # Rotterdam → Houston (open Atlantic)
+    # ("port1114", "port1160"): [],   # Rotterdam → Santos
+
+    # ── Singapore ↔ Indonesia (Sunda / Lombok) ───────────────────────────
     ("port1201", "port568"):  ["chokepoint5"],
     ("port568", "port1188"):  ["chokepoint15"],
+    ("port568", "port474"):   ["chokepoint15"],
+
+    # ── Bosporus (Istanbul / Black Sea routes) ────────────────────────────
+    ("port504", "port909"):   ["chokepoint3"],
+    ("port504", "port1114"):  ["chokepoint3", "chokepoint8"],
+    ("port909", "port504"):   ["chokepoint3"],
+
+    # ── Panama Canal (Americas ↔ Pacific) ─────────────────────────────────
+    ("port481", "port1201"):  ["chokepoint2"],
+    ("port481", "port1188"):  ["chokepoint2", "chokepoint11"],
+    # Reverse
+    ("port1201", "port481"):  ["chokepoint2"],
 }

@@ -542,6 +542,43 @@ def _load_chokepoint_stress() -> None:
     log.info("[data_loader] Built stress index for %d chokepoints", len(CHOKEPOINT_STRESS))
 
 
+# ── Congestion cache (avoids 606MB scan on every startup) ────────────────────
+
+import json as _json
+
+def _congestion_cache_path() -> Path:
+    return Path(__file__).resolve().parent / "models" / "port_congestion_cache.json"
+
+
+def _save_congestion_cache() -> None:
+    """Write PORT_CONGESTION_INDEX to a small JSON file so future starts skip the CSV scan."""
+    if not PORT_CONGESTION_INDEX:
+        return
+    path = _congestion_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(path, "w") as f:
+            _json.dump(PORT_CONGESTION_INDEX, f, indent=None, separators=(",", ":"))
+        log.info("[data_loader] Congestion cache saved → %s (%d ports)", path, len(PORT_CONGESTION_INDEX))
+    except Exception as e:
+        log.warning("[data_loader] Could not save congestion cache: %s", e)
+
+
+def _load_congestion_from_cache() -> None:
+    """Load PORT_CONGESTION_INDEX from pre-computed JSON cache (fast path)."""
+    path = _congestion_cache_path()
+    if not path.exists():
+        log.info("[data_loader] No congestion cache found at %s — index will be empty", path)
+        return
+    try:
+        with open(path) as f:
+            data = _json.load(f)
+        PORT_CONGESTION_INDEX.update({k: float(v) for k, v in data.items()})
+        log.info("[data_loader] Loaded congestion index from cache: %d ports", len(PORT_CONGESTION_INDEX))
+    except Exception as e:
+        log.warning("[data_loader] Could not load congestion cache: %s", e)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_port(portid: str) -> Optional[PortMeta]:
@@ -626,8 +663,11 @@ def load_all(vessel_threshold: int = 1000, force: bool = False,
 
     if skip_congestion:
         log.info("[data_loader] Skipping congestion index scan (WATER_SKIP_CONGESTION_SCAN=1)")
+        # Try loading from cache first
+        _load_congestion_from_cache()
     else:
         _load_port_congestion_index()
+        _save_congestion_cache()
 
     _LOADED = True
     log.info(

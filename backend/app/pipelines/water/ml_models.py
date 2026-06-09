@@ -169,6 +169,87 @@ def get_chokepoint_names(chokepoint_ids: list[str]) -> list[str]:
         return chokepoint_ids
 
 
+# ── Transit days interpolation ────────────────────────────────────────────────
+
+def _port_sea_distance_nm(portid_a: str, portid_b: str) -> float:
+    """Estimate nautical miles between two ports using their PortWatch coordinates."""
+    try:
+        from app.pipelines.water.data_loader import PORTWATCH_PORTS
+        import math
+        pa = PORTWATCH_PORTS.get(portid_a)
+        pb = PORTWATCH_PORTS.get(portid_b)
+        if pa is None or pb is None:
+            return 0.0
+        R = 3440.065
+        lat1, lon1 = math.radians(pa.lat), math.radians(pa.lon)
+        lat2, lon2 = math.radians(pb.lat), math.radians(pb.lon)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    except Exception:
+        return 0.0
+
+
+def _interpolate_transit_days(
+    from_portid: str,
+    to_portid: str,
+    sea_distance_nm: float,
+    td_map: dict,
+    max_candidates: int = 30,
+) -> float | None:
+    """
+    Estimate transit days for an unknown port pair by finding the most similar
+    known pair (by sea distance) and scaling linearly.
+
+    Returns None if insufficient data is available.
+    """
+    if not td_map or sea_distance_nm <= 0:
+        return None
+
+    # Build (distance, days) samples from known pairs
+    # Use pairs that share at least one port endpoint for better locality
+    same_origin = [(k, v) for k, v in td_map.items() if k[0] == from_portid]
+    same_dest   = [(k, v) for k, v in td_map.items() if k[1] == to_portid]
+    local_pairs = same_origin + same_dest
+
+    if len(local_pairs) < 3:
+        # Fallback: use any pairs with similar distance
+        all_pairs = list(td_map.items())
+        # Sample up to max_candidates for speed
+        step = max(1, len(all_pairs) // max_candidates)
+        local_pairs = all_pairs[::step]
+
+    # Find pair whose distance is closest to ours
+    best_dist_diff = float("inf")
+    best_speed_kn: float | None = None
+
+    for (fp, tp), days in local_pairs:
+        if days <= 0:
+            continue
+        d_nm = _port_sea_distance_nm(fp, tp)
+        if d_nm <= 0:
+            continue
+        speed = d_nm / (days * 24.0)   # knots implied
+        if speed < 6 or speed > 30:    # sanity: 6–30 kn reasonable for cargo
+            continue
+        diff = abs(d_nm - sea_distance_nm)
+        if diff < best_dist_diff:
+            best_dist_diff = diff
+            best_speed_kn = speed
+
+    if best_speed_kn is None:
+        return None
+
+    estimated_days = sea_distance_nm / (best_speed_kn * 24.0)
+    log.debug(
+        "[transit_interp] %s→%s %.0fnm → %.1fd (inferred speed=%.1fkn, closest_pair_diff=%.0fnm)",
+        from_portid, to_portid, sea_distance_nm, estimated_days,
+        best_speed_kn, best_dist_diff,
+    )
+    return round(estimated_days, 2)
+
+
 # ── 3. ETA adjustment ─────────────────────────────────────────────────────────
 
 def predict_eta_adjustment(
@@ -269,6 +350,13 @@ def predict_eta_adjustment(
     if from_portid and to_portid:
         td_map = _get_transit_days_map()
         observed_days = td_map.get((from_portid, to_portid))
+
+        # If no direct pair, try distance-based interpolation from nearby known pairs
+        if not observed_days and sea_distance_nm > 0:
+            observed_days = _interpolate_transit_days(
+                from_portid, to_portid, sea_distance_nm, td_map
+            )
+
         if observed_days and observed_days > 0:
             observed_sea_hr = observed_days * 24.0
 
