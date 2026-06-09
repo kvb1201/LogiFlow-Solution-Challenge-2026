@@ -91,6 +91,11 @@ def _match_city_key(place: str) -> str | None:
 
 def canonical_city(place: str) -> str:
     """Single canonical label for pipeline calls — avoids duplicate geocode/scrape."""
+    from app.services.location_funnel import resolve_location
+
+    resolved = resolve_location(place)
+    if resolved.canonical_city:
+        return resolved.canonical_city
     matched = _match_city_key(place)
     if matched:
         return matched
@@ -233,3 +238,9 @@ def get_hubs(source: str, destination: str, max_hubs: int = 4) -> list[Hub]:
     hubs = [_build_hub(city, on_route=True) for city in cities]
     hubs.sort(key=lambda h: (h.tier, h.city))
     return hubs
+
+
+def enrich_hub_airports(hubs: list[Hub]) -> list[Hub]:
+    from app.services.geo_hub_finder import _attach_airport
+
+    return [_attach_airport(h) for h in hubs]

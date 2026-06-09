@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 import NavBar from '@/components/NavBar';
 import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 
+import { AuthInitializer } from '@/components/auth/AuthInitializer';
 export const metadata: Metadata = {
   title: 'LogiFlow — Multimodal Freight Optimizer',
   description:
@@ -30,12 +33,15 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-dvh flex flex-col overflow-x-hidden font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
+          <AuthInitializer />
         <BackendWarmup />
         <NavBar />
         <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
           <AmbientBackdrop variant="subtle" className="opacity-60" />
           <div className="relative z-10 w-full pointer-events-auto">{children}</div>
         </main>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

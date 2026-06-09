@@ -27,6 +27,8 @@ import {
   type RailSimulationParams,
   type RailSimulateResult,
 } from '@/lib/railSimulation';
+import { ensureBackendWarm } from '@/lib/backendWarmup';
+import { dedupeRailOptions } from '@/lib/dedupeRailOptions';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -61,6 +63,25 @@ export type RoadRoute = {
     weather: 'good' | 'moderate' | 'bad';
     delay_hours: number;
   };
+  /** Present when the route was computed as a multi-stop journey */
+  stops?: string[];
+  waypoints?: string[];
+  stop_count?: number;
+  stop_order_optimised?: boolean;
+  /** Per-leg segment details for multi-stop routes */
+  segments?: Array<{
+    mode: string;
+    from: string;
+    to: string;
+    distance_km?: number;
+    duration_minutes?: number;
+  }>;
+  /**
+   * Stable route identifier emitted by the backend pipeline.
+   * Used to associate Start Driving / Share Route actions with a specific route
+   * for future Shipment Health, Route Lock, and Live Monitoring integration.
+   */
+  route_id?: string;
 };
 
 type RoadOptimizeResponse = {
@@ -113,6 +134,9 @@ export interface LogiFlowState {
   trafficAware: boolean;
   vehicleType: 'mini_truck' | 'truck' | 'heavy_truck';
   fuelPrice: number;
+  /** Intermediate stops for multi-stop road routing */
+  roadStops: string[];
+  optimizeStopOrder: boolean;
 
   // Map data
   liveTrains: LiveTrainPosition[];
@@ -134,6 +158,9 @@ export interface LogiFlowState {
   // UI state
   loading: boolean;
   loadingMode: 'rail' | 'road' | 'water' | 'air' | null;
+  railLoadingStep: number;
+  railLoadingDetail: string;
+  railLoadingStartedAt: number | null;
   hasSearched: boolean;
   activeView: 'recommendations' | 'all_options';
   error: string | null;
@@ -161,6 +188,12 @@ export interface LogiFlowState {
   setTrafficAware: (val: boolean) => void;
   setVehicleType: (val: 'mini_truck' | 'truck' | 'heavy_truck') => void;
   setFuelPrice: (val: number) => void;
+  setRoadStops: (stops: string[]) => void;
+  addRoadStop: (stop: string) => void;
+  removeRoadStop: (index: number) => void;
+  updateRoadStop: (index: number, value: string) => void;
+  reorderRoadStops: (stops: string[]) => void;
+  setOptimizeStopOrder: (val: boolean) => void;
 
   handleOptimize: (opts?: {
     mode?: 'rail' | 'road' | 'water' | 'air';
@@ -222,6 +255,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   trafficAware: true,
   vehicleType: 'truck',
   fuelPrice: 100,
+  roadStops: [],
+  optimizeStopOrder: false,
 
   liveTrains: [],
   stationCoords: {},
@@ -237,6 +272,9 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   loading: false,
   loadingMode: null,
+  railLoadingStep: -1,
+  railLoadingDetail: '',
+  railLoadingStartedAt: null,
   hasSearched: false,
   activeView: 'recommendations',
   error: null,
@@ -267,11 +305,24 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setTrafficAware: (val) => set({ trafficAware: val }),
   setVehicleType: (val) => set({ vehicleType: val }),
   setFuelPrice: (val) => set({ fuelPrice: val }),
+  setRoadStops: (stops) => set({ roadStops: stops }),
+  addRoadStop: (stop) => set(state => ({ roadStops: [...state.roadStops, stop] })),
+  removeRoadStop: (index) => set(state => ({
+    roadStops: state.roadStops.filter((_, i) => i !== index),
+  })),
+  updateRoadStop: (index, value) => set(state => ({
+    roadStops: state.roadStops.map((s, i) => (i === index ? value : s)),
+  })),
+  reorderRoadStops: (stops) => set({ roadStops: stops }),
+  setOptimizeStopOrder: (val) => set({ optimizeStopOrder: val }),
 
   resetSearch: () => set({
     hasSearched: false,
     loading: false,
     loadingMode: null,
+    railLoadingStep: -1,
+    railLoadingDetail: '',
+    railLoadingStartedAt: null,
     recommendations: { cheapest: null, fastest: null, safest: null },
     allOptions: [],
     airRoutes: [],
@@ -291,6 +342,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     selectedWaterRoute: 0,
     scenarioBrief: '',
     lastParsedIntent: null,
+    roadStops: [],
+    optimizeStopOrder: false,
   }),
 
   // ── Main optimize call ─────────────────────────────────────────────
@@ -309,7 +362,24 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     } = get();
     if (!source.trim() || !destination.trim()) return;
     const mode = opts?.mode || 'rail';
-    set({ loading: true, loadingMode: mode, hasSearched: true, error: null });
+    const corridorLabel = `${source.trim()} → ${destination.trim()}`;
+    set({
+      loading: true,
+      loadingMode: mode,
+      hasSearched: true,
+      error: null,
+      ...(mode === 'rail'
+        ? {
+            railLoadingStep: 0,
+            railLoadingDetail: corridorLabel,
+            railLoadingStartedAt: Date.now(),
+          }
+        : {
+            railLoadingStep: -1,
+            railLoadingDetail: '',
+            railLoadingStartedAt: null,
+          }),
+    });
 
     // ALWAYS fetch source/destination city coordinates for the map immediately
     // to ensure user sees "dots" even if everything else fails.
@@ -352,6 +422,26 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           budget_limit: budgetMax,
           deadline_hours: deadlineHours,
         });
+        if (result.status === 'no_routes') {
+          set({
+            searchMode: 'air',
+            airRoutes: [],
+            selectedAirRouteIndex: 0,
+            airConstraintsApplied: result.constraints_applied ?? null,
+            error: result.message || `No valid air routes found between ${source.trim()} and ${destination.trim()}.`,
+            recommendations: { cheapest: null, fastest: null, safest: null },
+            allOptions: [],
+            constraintsApplied: null,
+            routeMetadata: null,
+            routes: [],
+            selectedRoute: 0,
+            trainDelayDetail: null,
+            selectedTrainLive: null,
+            detailTrainNumber: null,
+            mapFocusedTrainNumber: null,
+          });
+          return;
+        }
         set({
           searchMode: 'air',
           airRoutes: result.ranked_routes || [],
@@ -374,6 +464,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         const avoidTolls = opts?.avoidTolls ?? get().avoidTolls ?? false;
         const avoidHighways = opts?.avoidHighways ?? get().avoidHighways ?? false;
         const trafficAware = opts?.trafficAware ?? get().trafficAware ?? false;
+        const roadStops = get().roadStops.filter(s => s.trim());
+        const optimizeStopOrder = get().optimizeStopOrder;
 
         const payload = {
           source: source.trim(),
@@ -388,6 +480,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           traffic_aware: trafficAware,
           vehicle_type: vehicleType,
           fuel_price: fuelPrice,
+          stops: roadStops.length > 0 ? roadStops : undefined,
+          optimize_stop_order: roadStops.length > 1 ? optimizeStopOrder : undefined,
           mode: (opts?.simulation_mode ? 'simulation' : 'realtime') as 'simulation' | 'realtime',
           simulation: opts?.simulation,
         };
@@ -451,6 +545,17 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
       let result: OptimizeResult;
 
+      set({
+        railLoadingStep: 1,
+        railLoadingDetail: 'Connecting to LogiFlow — first load after idle can take up to a minute',
+      });
+      await ensureBackendWarm(120_000);
+
+      set({
+        railLoadingStep: 2,
+        railLoadingDetail: `${cargoWeight.toLocaleString()} kg ${cargoType} · ${priority} priority`,
+      });
+
       if (opts?.simulation_mode && opts.rail_simulation) {
         const sim = (await simulateCargoRoute({
           origin_city: source.trim(),
@@ -484,7 +589,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           fastest: result.fastest,
           safest: result.safest,
         },
-        allOptions: result.all_options || [],
+        allOptions: dedupeRailOptions(result.all_options || []),
         airRoutes: [],
         selectedAirRouteIndex: 0,
         airConstraintsApplied: null,
@@ -493,6 +598,12 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         selectedOptionIndex: 0,
         routes: [],
         selectedRoute: 0,
+      });
+
+      const optionCount = result.all_options?.length ?? 0;
+      set({
+        railLoadingStep: 3,
+        railLoadingDetail: `${optionCount} ranked routes — resolving station coordinates`,
       });
 
       // Fetch station coordinates for map (from segments)
@@ -512,6 +623,11 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       const coordPromises = Array.from(codes).map(code => get().fetchStationCoord(code));
       await Promise.allSettled(coordPromises);
 
+      set({
+        railLoadingStep: 4,
+        railLoadingDetail: 'Recommendations ready',
+      });
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to optimize';
       const isRailNoRouteCase =
@@ -521,13 +637,16 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
       const isWaterNoRouteCase =
         /no maritime routes found/i.test(msg) ||
         /no water routes.*satisfy/i.test(msg);
+      const isAirNoRouteCase =
+        /no valid air routes found/i.test(msg) ||
+        /no route available/i.test(msg);
       const friendlyNoRouteMessage =
         'Sorry, this train route is not available right now. We are continuously expanding route coverage.';
       const mode = opts?.mode || get().searchMode || 'rail';
       set({
         searchMode: mode,
         // Expected empty results: keep message for dedicated empty-state UI, not crash styling.
-        error: isRailNoRouteCase ? msg || friendlyNoRouteMessage : msg,
+        error: isRailNoRouteCase || isAirNoRouteCase ? msg || friendlyNoRouteMessage : msg,
         routes: [],
         selectedRoute: 0,
         waterRoutes: [],
@@ -540,11 +659,17 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         constraintsApplied: null,
         routeMetadata: null,
       });
-      if (!isRailNoRouteCase && !isWaterNoRouteCase) {
+      if (!isRailNoRouteCase && !isWaterNoRouteCase && !isAirNoRouteCase) {
         console.error('Optimize error:', err);
       }
     } finally {
-      set({ loading: false, loadingMode: null });
+      set({
+        loading: false,
+        loadingMode: null,
+        railLoadingStep: -1,
+        railLoadingDetail: '',
+        railLoadingStartedAt: null,
+      });
     }
   },
 

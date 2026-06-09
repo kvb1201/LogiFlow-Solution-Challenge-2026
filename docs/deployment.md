@@ -19,12 +19,19 @@
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key (intent parse, route explanations, hybrid compare) |
+| `GROQ_API_KEY` | ❌ | Groq fallback for intent parse + rail explanations if Gemini fails |
 | `TOMTOM_API_KEY` | ✅ | TomTom routing API key |
+| `RAIL_ENABLE_LLM_EXPLANATION` | ❌ | Default **on** when `GEMINI_API_KEY` or `GROQ_API_KEY` is set; set `false` to disable |
+| `RAIL_LLM_EXPLANATION_TIMEOUT_S` | ❌ | Seconds for rail LLM blurb during `/optimize` (default `6`) |
 | `REDIS_URL` | ❌ | Redis connection URL (omit for in-memory cache) |
 | `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
-| `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-1.5-flash-latest`) |
+| `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
 | `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
+| `SUPABASE_URL` | ❌ | Supabase project URL (geometry + ML metrics sync) |
+| `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
+| *(geometry backfill)* | — | `POST /railway/geometry/ensure` computes missing `(train, from, to)` legs and upserts into `train_route_geometry` (no duplicates; PK is train+from+to) |
+| `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
 | `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |
 | `CONFIRMTKT_READ_TIMEOUT_S` | ❌ | ConfirmTkt read timeout (default: `4`) |
 
@@ -83,16 +90,92 @@ The built-in warmup reduces 503s for users but the **first visitor after a long 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup (e.g., `https://logiflow-api.onrender.com`) |
+| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup |
 | `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | `https://mwvohdvtxwltzkyuboaz.supabase.co` — **map geometry** + ML metrics (browser → Supabase direct) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase **anon** key (same as `SUPABASE_KEY` in backend `.env`) |
 
-### Configuration
+**Critical:** `NEXT_PUBLIC_*` vars are baked in at **build time**. After adding or changing them in Vercel → **Redeploy** (Deployments → ⋯ → Redeploy).
 
-Ensure `next.config.js` has:
-```js
-module.exports = {
-  output: "export",  // Static site generation for Capacitor compatibility
-}
+Without these two vars, the train map never loads geometry from Supabase (it falls back to Render, which can cold-start for 30–90s).
+
+Verify after deploy: open the site → DevTools → Network → filter `train_route_geometry` — you should see requests to `*.supabase.co`, not only `onrender.com`.
+
+The railway delay-model panel and **route map** both fetch **Supabase first**, then fall back to Render.
+
+### Vercel Web Analytics & Speed Insights
+
+The frontend includes `@vercel/analytics` and `@vercel/speed-insights` in `src/app/layout.tsx`.
+
+After deploy, enable in the Vercel dashboard (one-time per project):
+
+1. **Project → Analytics → Web Analytics → Enable**
+2. **Project → Speed Insights → Enable**
+
+Data appears after the next production deploy and real traffic. View under **Analytics** and **Speed Insights** tabs.
+
+### Auto-deploy when collaborators push (Hobby plan workaround)
+
+Vercel **blocks** production deploys on private repos when the commit author is not the Vercel team owner. The workflow `.github/workflows/deploy-vercel-production.yml` fixes this:
+
+- **Collaborator pushes to `main`** (`github.actor` is not `kvb1201`) → deploy **immediately** as Kaveh (rewrite commit author + Vercel CLI).
+- **Kaveh pushes to `main` himself** → workflow **skipped**; Vercel’s normal Git deploy handles it.
+- **Manual test:** Actions → “Deploy frontend to Vercel” → Run workflow.
+
+#### One-time setup — **Kaveh only** (~10 minutes)
+
+**Step 1 — Vercel access token**
+
+1. Log in to [vercel.com](https://vercel.com) as **kvb1201**
+2. **Account Settings** → **Tokens** → **Create**
+3. Name: `github-actions-logiflow`, scope: full account (or this project)
+4. Copy the token (shown once)
+
+**Step 2 — Org ID and Project ID**
+
+1. Open project **logi-flow-solution-challenge-2026**
+2. **Settings → General** → copy **Project ID** → `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu`
+3. **Team Settings → General** → copy **Team ID** → `team_QNI9cRl0sS1VVLoJhfHRq3sD` (verify it matches)
+
+**Step 3 — GitHub repo secrets**
+
+GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** for each:
+
+| Secret name | Value |
+|-------------|--------|
+| `VERCEL_TOKEN` | Token from Step 1 |
+| `VERCEL_ORG_ID` | Team ID from Step 2 |
+| `VERCEL_PROJECT_ID` | `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu` |
+| `VERCEL_GIT_EMAIL` | `kavyabhatiya44@gmail.com` (must match his GitHub verified email) |
+| `VERCEL_GIT_NAME` | `Bhatiya Kavya Vishnukumar` (his GitHub display / git name) |
+
+**Step 4 — Confirm Vercel env vars are set**
+
+In Vercel project → **Settings → Environment Variables** (Production):
+
+- `BACKEND_URL` = `https://logiflow-solution-challenge-2026.onrender.com`
+- `NEXT_PUBLIC_API_URL` = same
+- `NEXT_PUBLIC_SUPABASE_URL` = `https://mwvohdvtxwltzkyuboaz.supabase.co`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` = Supabase anon key
+
+**Step 5 — Test**
+
+1. GitHub → **Actions** → **Deploy frontend to Vercel** → **Run workflow**
+2. Wait for green check (~3–5 min)
+3. Open https://logi-flow-solution-challenge-2026.vercel.app
+
+After setup, any collaborator push to `main` triggers an immediate production deploy under Kaveh’s Vercel identity. Ignore red **BLOCKED** rows from Vercel’s native Git hook on collaborator commits — the Action deploy is the one that matters.
+
+Verify: GitHub → **Actions** → latest **Deploy frontend to Vercel** run should be green; Vercel should show a new **READY** production deployment (via CLI, not blocked).
+
+### Supabase sync (after deploy or retrain)
+
+From `backend/` with `SUPABASE_URL` + `SUPABASE_KEY` in `.env`:
+
+```bash
+make sync-rail-ml-metrics          # ML quantifiers → rail_ml_metrics
+make sync-rail-geometry-trains TRAINS=100   # corridor geometry
+make audit-rail-geometry TRAINS=100         # schedule vs map audit
 ```
 
 ---

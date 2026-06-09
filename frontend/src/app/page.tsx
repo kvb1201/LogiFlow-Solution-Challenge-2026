@@ -1,3 +1,5 @@
+
+
 import HomeIntentSection from '@/components/HomeIntentSection';
 import { HomePage as HomePageView } from '@/components/cockpit/HomePage';
 

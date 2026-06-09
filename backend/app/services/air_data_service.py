@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from app.services.airport_locator_service import get_airport_by_iata, resolve_city_to_airport
+from app.services.air_store import get_international_routes
 
 DEFAULT_OPENFLIGHTS_ROUTES_PATH = Path(__file__).resolve().parents[2] / "data" / "routes.dat"
 OPENFLIGHTS_ROUTES_PATH = os.getenv("OPENFLIGHTS_ROUTES_PATH", str(DEFAULT_OPENFLIGHTS_ROUTES_PATH))
@@ -22,6 +23,26 @@ AIRLINE_CODE_TO_NAME = {
     "SG": "SpiceJet",
     "UK": "Vistara",
     "9W": "Jet Airways",
+    "EK": "Emirates",
+    "QR": "Qatar Airways",
+    "EY": "Etihad Airways",
+    "SQ": "Singapore Airlines",
+    "LH": "Lufthansa",
+    "BA": "British Airways",
+    "AF": "Air France",
+    "KL": "KLM",
+    "CX": "Cathay Pacific",
+    "JL": "Japan Airlines",
+    "KE": "Korean Air",
+    "AA": "American Airlines",
+    "UA": "United Airlines",
+    "DL": "Delta Air Lines",
+    "TK": "Turkish Airlines",
+    "QF": "Qantas",
+    "AC": "Air Canada",
+    "FX": "FedEx Express",
+    "5Y": "Atlas Air",
+    "CV": "Cargolux",
 }
 
 
@@ -32,19 +53,25 @@ def is_configured() -> bool:
     return False
 
 
-def get_airport_on_time_probability(airport_code: str, date_str: str):
+def get_airport_on_time_probability(airport_code: str, date_str: str) -> Optional[float]:
     """
-    Placeholder for future live on-time integrations.
-    The free-stack version uses heuristic congestion risk instead.
+    Baseline OTP only (no penalties). Prefer OTPScoringService.score() for full congestion metrics.
     """
-    return None
+    from app.services.otp_scoring_service import get_otp_scoring_service
+
+    code = (airport_code or "").strip().upper()
+    if not code:
+        return None
+
+    otp, _source = get_otp_scoring_service().lookup_baseline_otp(code, date_str)
+    return round(max(0.0, min(float(otp), 1.0)), 3)
 
 
 def get_live_air_routes(source: str, destination: str, departure_date: str) -> List[dict]:
     """
     Use the checked-in OpenFlights route snapshot as a free route-support dataset.
-    If the snapshot has no matching direct or one-stop support, return an empty list
-    so the pipeline can fall back to inferred candidates.
+    Returns direct and one-stop candidates when OpenFlights supports the airport pair.
+    Returns an empty list when no route support exists (pipeline surfaces no_routes).
     """
     _ = departure_date
     source_airport = _resolve_airport_details(source)
@@ -53,6 +80,10 @@ def get_live_air_routes(source: str, destination: str, departure_date: str) -> L
     source_code = source_airport.get("code")
     destination_code = destination_airport.get("code")
     if not source_code or not destination_code:
+        return []
+
+    if source_code == destination_code:
+        # Don't support intra-city flights even if the dataset has loops
         return []
 
     routes = []
@@ -79,12 +110,22 @@ def _build_direct_route(source_airport: dict, destination_airport: dict) -> Opti
     if not airlines:
         return None
 
-    distance = _estimate_path_distance_km([source_airport, destination_airport]) or 1050
+    graph = _load_openflights_graph()
+    intl_edge = graph.get("international_edges", {}).get((source_code, destination_code))
+    if intl_edge:
+        distance = int(round(float(intl_edge["distance_km"])))
+        duration = float(intl_edge["duration_hours"])
+        data_source = "international_routes"
+    else:
+        distance = _estimate_path_distance_km([source_airport, destination_airport]) or 1050
+        duration = _estimate_duration_hours(distance, stops=0)
+        data_source = "openflights_routes.dat"
+
     return {
         "airline": _choose_airline_name(airlines),
         "stops": 0,
         "distance": distance,
-        "duration": _estimate_duration_hours(distance, stops=0),
+        "duration": duration,
         "delay_risk": 0.18,
         "cost_per_kg": 8.0,
         "cargo_types": ["general", "fragile", "perishable"],
@@ -98,9 +139,9 @@ def _build_direct_route(source_airport: dict, destination_airport: dict) -> Opti
                 "support_type": "direct",
             }
         ],
-        "data_source": "openflights_routes.dat",
+        "data_source": data_source,
         "route_support_type": "direct",
-        "supported_by": "openflights_routes.dat",
+        "supported_by": data_source,
         "supporting_airlines": [_format_airline_name(code) for code in airlines[:5]],
     }
 
@@ -209,11 +250,39 @@ def _choose_airline_name(airline_codes: List[str]) -> str:
 
 
 def _format_airline_name(code: str) -> str:
+    if code == "INT":
+        return "International carriers"
     return AIRLINE_CODE_TO_NAME.get(code, code)
 
 
 def _get_pair_airlines(source_code: str, destination_code: str) -> Set[str]:
-    return _load_openflights_graph()["pair_airlines"].get((source_code, destination_code), set())
+    airlines = _load_openflights_graph()["pair_airlines"].get((source_code, destination_code), set())
+    if airlines:
+        return airlines
+    if _has_route_support(source_code, destination_code):
+        return {"INT"}
+    return set()
+
+
+def _has_route_support(source_code: str, destination_code: str) -> bool:
+    graph = _load_openflights_graph()
+    return destination_code in graph["outgoing"].get(source_code, set())
+
+
+def _merge_international_routes(graph: Dict[str, Dict]) -> None:
+    """Add international hub edges from Supabase or checked-in CSV fallback."""
+    for route in get_international_routes():
+        source = route["source_iata"]
+        dest = route["destination_iata"]
+        graph["outgoing"][source].add(dest)
+        graph["incoming"][dest].add(source)
+        graph["degree"][source] += 1
+        graph["degree"][dest] += 1
+        graph["pair_airlines"][(source, dest)].add("INT")
+        graph["international_edges"][(source, dest)] = {
+            "distance_km": route["distance_km"],
+            "duration_hours": route["duration_hours"],
+        }
 
 
 @lru_cache(maxsize=1)
@@ -223,32 +292,32 @@ def _load_openflights_graph() -> Dict[str, Dict]:
         "incoming": defaultdict(set),
         "degree": defaultdict(int),
         "pair_airlines": defaultdict(set),
+        "international_edges": {},
     }
 
-    if not OPENFLIGHTS_ROUTES_PATH or not os.path.exists(OPENFLIGHTS_ROUTES_PATH):
-        return graph
+    if OPENFLIGHTS_ROUTES_PATH and os.path.exists(OPENFLIGHTS_ROUTES_PATH):
+        with open(OPENFLIGHTS_ROUTES_PATH, "r", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            for row in reader:
+                if len(row) < 9:
+                    continue
 
-    with open(OPENFLIGHTS_ROUTES_PATH, "r", encoding="utf-8") as handle:
-        reader = csv.reader(handle)
-        for row in reader:
-            if len(row) < 9:
-                continue
+                airline_code, _, source_code, _, destination_code, _, _, _, _ = row[:9]
+                source_code = (source_code or "").strip().upper()
+                destination_code = (destination_code or "").strip().upper()
+                airline_code = (airline_code or "").strip().upper()
 
-            airline_code, _, source_code, _, destination_code, _, _, _, _ = row[:9]
-            source_code = (source_code or "").strip().upper()
-            destination_code = (destination_code or "").strip().upper()
-            airline_code = (airline_code or "").strip().upper()
+                if len(source_code) != 3 or len(destination_code) != 3:
+                    continue
 
-            if len(source_code) != 3 or len(destination_code) != 3:
-                continue
+                graph["outgoing"][source_code].add(destination_code)
+                graph["incoming"][destination_code].add(source_code)
+                graph["degree"][source_code] += 1
+                graph["degree"][destination_code] += 1
+                if airline_code:
+                    graph["pair_airlines"][(source_code, destination_code)].add(airline_code)
 
-            graph["outgoing"][source_code].add(destination_code)
-            graph["incoming"][destination_code].add(source_code)
-            graph["degree"][source_code] += 1
-            graph["degree"][destination_code] += 1
-            if airline_code:
-                graph["pair_airlines"][(source_code, destination_code)].add(airline_code)
-
+    _merge_international_routes(graph)
     return graph
 
 

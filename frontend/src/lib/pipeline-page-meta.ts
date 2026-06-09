@@ -94,10 +94,10 @@ export const comparatorPageMeta = {
   titleLead: 'Comparator',
   titleRest: ' compare',
   description:
-    'One scenario across road, rail, air, and water — Gemini parses constraints before scoring all four modes.',
+    'One scenario across road, rail, air, and water — describe constraints in plain language before scoring all four modes.',
   pills: [
     { icon: 'hub', label: '4-mode scoring' },
-    { icon: 'psychology', label: 'Gemini constraints' },
+    { icon: 'psychology', label: 'Smart constraints' },
     { icon: 'compare_arrows', label: 'Normalized rank' },
     { icon: 'verified', label: 'Explainable pick' },
   ],

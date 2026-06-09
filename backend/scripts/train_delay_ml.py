@@ -71,6 +71,16 @@ def main() -> None:
     print("=" * 60)
     print(json.dumps(report["cv_metrics"], indent=2))
 
+    try:
+        from app.services.rail_ml_metrics_store import save_model_info_payload
+
+        if save_model_info_payload():
+            print("\nSupabase: rail_ml_metrics synced")
+        else:
+            print("\nSupabase: sync skipped (not configured)")
+    except Exception as exc:
+        print(f"\nSupabase: sync failed — {exc}")
+
 
 if __name__ == "__main__":
     main()

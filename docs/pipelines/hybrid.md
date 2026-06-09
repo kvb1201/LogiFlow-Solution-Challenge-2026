@@ -4,15 +4,31 @@
 
 The Hybrid pipeline is the central orchestrator that executes all transport mode pipelines in parallel, normalizes their outputs into a common schema, scores and ranks them using priority-weighted multi-objective optimization, and generates human-readable explanations.
 
-## Flow
+## Rural / village corridors (`/compose`)
+
+The **Hybrid** page uses `POST /compose` (`RouteComposer`), not the legacy `HybridPipeline`.
+
+For places that are not mapped metros (remote villages, small towns):
+
+1. **Geocode** the village name (offline station DB → static cities → TomTom/Google/Nominatim).
+2. Find **nearest major hub cities** by latitude/longitude (Delhi, Mumbai, Kanpur, etc.).
+3. Build itineraries:
+   - **Direct** road (and air when available)
+   - **Village → hub (road) → hub (rail or air) → destination**
+   - **On-path rail hubs** when CSV schedules connect the metros
+
+Compose runs **road and air first** (fast), then geo-hub chains, then direct rail — so rural users see truck options without waiting for a full rail scrape.
+
+## Flow (legacy mode comparison API)
 
 ```
 Input: source, destination, priority, explanation_mode
   │
   ├─ 1. Parallel Execution
   │     ├─ Road Pipeline ──┐
-  │     ├─ Rail Pipeline ──┼── ThreadPoolExecutor (timeout=30s)
-  │     └─ Air Pipeline  ──┘
+  │     ├─ Rail Pipeline ──┤
+  │     ├─ Air Pipeline  ──┼── ThreadPoolExecutor max_workers=4 (timeout=30s)
+  │     └─ Water Pipeline ─┘
   │
   ├─ 2. Mode Availability Detection
   │     ├─ status: "no_routes" → skip mode
@@ -38,7 +54,7 @@ Output: {recommended_mode, comparison, tradeoffs, available_modes}
 ## Key Features
 
 ### Parallel Execution with Timeout
-- Uses `ThreadPoolExecutor(max_workers=3)` to run pipelines concurrently
+- Uses `ThreadPoolExecutor(max_workers=4)` to run road, rail, air, and water concurrently
 - Each pipeline has a **30-second timeout** via `future.result(timeout=30)`
 - Timed-out pipelines are treated as unavailable — remaining modes proceed
 

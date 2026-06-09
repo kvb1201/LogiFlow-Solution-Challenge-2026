@@ -1,9 +1,17 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLogiFlowStore, type RoadRoute } from '@/store/useLogiFlowStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { fetchExplanation } from '@/services/api';
+import {
+  buildGoogleMapsUrl,
+  getRouteNavigationInfo,
+  devAssertNavigationConsistency,
+} from '@/lib/routeNavigation';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import type { ReportMode } from '@/services/plannerApi';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -453,6 +461,208 @@ function devValidate(
   });
 }
 
+// ── Toast notification ────────────────────────────────────────────────
+
+type ToastKind = 'success' | 'error';
+
+function Toast({ message, kind, onDone }: { message: string; kind: ToastKind; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2800);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={[
+        'fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999]',
+        'flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-xl',
+        'text-[12px] font-medium mono whitespace-nowrap',
+        'animate-slide-up',
+        kind === 'success'
+          ? 'bg-emerald-950/95 border border-emerald-500/30 text-emerald-200'
+          : 'bg-red-950/95 border border-red-500/30 text-red-200',
+      ].join(' ')}
+    >
+      <span className="material-symbols-outlined text-[14px]">
+        {kind === 'success' ? 'check_circle' : 'error'}
+      </span>
+      {message}
+    </div>
+  );
+}
+
+// ── Navigation disclaimer ─────────────────────────────────────────────
+
+function NavigationDisclaimer({ waypoints, wasOptimised }: { waypoints: string[]; wasOptimised: boolean }) {
+  const hasStops = waypoints.length > 2;
+  return (
+    <div className="rounded-xl bg-surface-container-low/30 border border-outline-variant/10 px-3 py-2.5 mt-3">
+      <div className="text-[9px] uppercase tracking-widest text-outline font-label font-bold mb-1.5">
+        Optimised route
+      </div>
+      <p className="text-[10px] text-on-surface-variant leading-relaxed mono">
+        {waypoints.join(' → ')}
+      </p>
+      {hasStops && (
+        <p className="text-[9px] text-outline/70 mt-1.5 leading-relaxed">
+          Includes {waypoints.length - 2} intermediate stop{waypoints.length - 2 !== 1 ? 's' : ''}.
+          {wasOptimised && ' Stop order was optimised by LogiFlow.'}
+        </p>
+      )}
+      <p className="text-[9px] text-outline/60 mt-1 leading-relaxed italic">
+        LogiFlow sets the stop sequence · Google Maps chooses roads between stops
+      </p>
+    </div>
+  );
+}
+
+// ── Navigation action buttons ─────────────────────────────────────────
+
+function NavigationActions({
+  route,
+  isSelected,
+  onSave,
+}: {
+  route: RoadRoute;
+  isSelected: boolean;
+  onSave: () => void;
+}) {
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const user = useAuthStore(s => s.user);
+
+  const navInfo = useMemo(() => getRouteNavigationInfo(route), [route]);
+
+  // Dev consistency check
+  useEffect(() => {
+    devAssertNavigationConsistency(route, navInfo);
+  }, [route, navInfo]);
+
+  const handleStartDriving = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!navInfo.isNavigable) return;
+    window.open(navInfo.mapsUrl, '_blank', 'noopener,noreferrer');
+  }, [navInfo]);
+
+  const handleShare = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!navInfo.isNavigable) return;
+    try {
+      await navigator.clipboard.writeText(navInfo.mapsUrl);
+      setToast({ message: 'Route link copied to clipboard.', kind: 'success' });
+    } catch {
+      setToast({ message: 'Unable to copy route link.', kind: 'error' });
+    }
+  }, [navInfo]);
+
+  const disabled = !navInfo.isNavigable;
+  const disabledTitle = 'Navigation unavailable — route waypoints missing.';
+
+  const drivingClass = [
+    'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200',
+    disabled
+      ? 'opacity-40 cursor-not-allowed bg-surface-container/40 text-outline border border-outline-variant/10'
+      : isSelected
+      ? 'bg-primary text-on-primary hover:bg-primary/90 shadow-[0_0_12px_rgba(172,199,255,0.25)] border border-primary/50'
+      : 'bg-surface-container/60 text-on-surface-variant hover:bg-primary/10 hover:text-primary border border-outline-variant/15',
+  ].join(' ');
+
+  const shareClass = [
+    'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200 border',
+    disabled
+      ? 'opacity-40 cursor-not-allowed bg-surface-container/40 text-outline border-outline-variant/10'
+      : isSelected
+      ? 'bg-surface-container/60 text-primary border-primary/30 hover:bg-primary/10'
+      : 'bg-surface-container/30 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container/60 hover:text-on-surface',
+  ].join(' ');
+
+  return (
+    <>
+      {toast && (
+        <Toast
+          message={toast.message}
+          kind={toast.kind}
+          onDone={() => setToast(null)}
+        />
+      )}
+
+      <div className="mt-3 pt-3 border-t border-outline-variant/8">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleStartDriving}
+            disabled={disabled}
+            title={disabled ? disabledTitle : `Start navigation in Google Maps`}
+            className={drivingClass}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+              navigation
+            </span>
+            Start Driving
+          </button>
+
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={disabled}
+            title={disabled ? disabledTitle : 'Copy route link to clipboard'}
+            className={shareClass}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+              share
+            </span>
+            Share Route
+          </button>
+
+          {navInfo.waypoints.length > 2 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setShowPreview(v => !v); }}
+              className="ml-auto text-[10px] text-outline hover:text-on-surface-variant transition-colors flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
+                {showPreview ? 'expand_less' : 'expand_more'}
+              </span>
+              {showPreview ? 'Hide' : 'Preview route'}
+            </button>
+          )}
+        </div>
+
+        {/* Route preview — shown on demand, always for multi-stop */}
+        {(showPreview || navInfo.waypoints.length > 2) && navInfo.isNavigable && (
+          <NavigationDisclaimer
+            waypoints={navInfo.waypoints}
+            wasOptimised={navInfo.wasStopOrderOptimised}
+          />
+        )}
+
+        {/* Save Report */}
+        <div className="mt-2.5 pt-2.5 border-t border-outline-variant/8">
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onSave(); }}
+            title={!user ? 'Sign in to save reports' : 'Save this optimized route as a shipment plan'}
+            className={[
+              'flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold transition-all duration-200 border w-full justify-center',
+              isSelected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                : 'bg-surface-container/30 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/60 hover:text-on-surface',
+            ].join(' ')}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+              bookmark_add
+            </span>
+            Save Report
+            {!user && <span className="text-[9px] opacity-60">(sign in required)</span>}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Metric tile ───────────────────────────────────────────────────────
 
 function MetricTile({
@@ -505,8 +715,13 @@ function RouteCard({
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
-  const priority = useLogiFlowStore(s => s.priority);
+  const priority   = useLogiFlowStore(s => s.priority);
+  const storeSource      = useLogiFlowStore(s => s.source);
+  const storeDestination = useLogiFlowStore(s => s.destination);
+  const cargoType        = useLogiFlowStore(s => s.cargoType);
+  const searchMode       = useLogiFlowStore(s => s.searchMode);
 
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
   const ml = route.ml_summary;
@@ -577,6 +792,7 @@ function RouteCard({
   };
 
   return (
+    <>
     <div
       role="button"
       tabIndex={0}
@@ -597,8 +813,10 @@ function RouteCard({
       <div className="px-4 py-2.5 bg-surface-container/25 border-b border-outline-variant/8">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] leading-relaxed text-on-surface-variant mono truncate">
-            {source || 'Origin'} → {destination || 'Destination'} ·{' '}
-            {Number(route.distance_km ?? 0).toFixed(0)} km · {Number(route.time).toFixed(1)}h ·{' '}
+            {route.waypoints && route.waypoints.length > 2
+              ? route.waypoints.join(' → ')
+              : `${source || 'Origin'} → ${destination || 'Destination'}`}{' '}
+            · {Number(route.distance_km ?? 0).toFixed(0)} km · {Number(route.time).toFixed(1)}h ·{' '}
             {highwayHint(route)}
           </p>
           <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-surface-container/60 text-on-surface-variant mono border border-outline-variant/12 whitespace-nowrap">
@@ -645,6 +863,12 @@ function RouteCard({
                     Safest
                   </span>
                 )}
+                {/* Multi-stop badge */}
+                {(route.stop_count ?? 0) > 0 && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-violet-500/12 text-violet-300 mono border border-violet-500/20">
+                    {route.stop_count} stop{route.stop_count !== 1 ? 's' : ''}
+                  </span>
+                )}
                 {isSelected && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-primary/12 text-primary mono">
                     On map
@@ -673,6 +897,49 @@ function RouteCard({
           <MetricTile emoji="⚠️" label="Risk"     value={riskPct(route)}                                  unit="%" />
           <MetricTile emoji="📍" label="Distance" value={Number(route.distance_km ?? 0).toFixed(0)}       unit="km" />
         </div>
+
+        {/* Multi-stop leg breakdown */}
+        {route.waypoints && route.waypoints.length > 2 && (
+          <div className="mb-4 rounded-xl bg-surface-container-low/30 border border-outline-variant/10 px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-label font-bold mb-2">
+              Stop summary · {route.waypoints.length - 1} leg{route.waypoints.length - 2 > 1 ? 's' : ''}
+            </div>
+            <ol className="space-y-1">
+              {route.waypoints.map((wp, wi) => {
+                const seg = route.segments?.[wi];
+                const isLast = wi === route.waypoints!.length - 1;
+                return (
+                  <li key={`${wp}-${wi}`} className="flex items-center gap-2 text-[11px]">
+                    <span className={[
+                      'w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0',
+                      wi === 0
+                        ? 'bg-primary/20 text-primary border border-primary/30'
+                        : isLast
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-violet-500/15 text-violet-300 border border-violet-500/20',
+                    ].join(' ')}>
+                      {wi === 0 ? 'O' : isLast ? 'D' : wi}
+                    </span>
+                    <span className="text-on-surface-variant truncate flex-1">{wp}</span>
+                    {seg && !isLast && (
+                      <span className="text-outline mono text-[9px] shrink-0">
+                        {seg.distance_km?.toFixed(0)} km · {seg.duration_minutes ? Math.round(seg.duration_minutes / 60 * 10) / 10 : '—'}h
+                      </span>
+                    )}
+                    {!isLast && (
+                      <span className="text-outline/40 shrink-0 text-[9px]">↓</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            {route.stop_order_optimised && (
+              <p className="mt-2 text-[9px] text-violet-300/70 italic">
+                Stop order was automatically optimised for shortest path.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ML summary */}
         {ml && (
@@ -775,7 +1042,7 @@ function RouteCard({
                 </tbody>
               </table>
               <p className="px-3 py-2 text-[9px] text-outline/60 italic">
-                Estimates for components not provided by backend are based on standard road freight rates.
+                Some line items are estimated using standard road freight rates when exact quotes are unavailable.
               </p>
             </div>
           )}
@@ -878,8 +1145,30 @@ function RouteCard({
             </>
           )}
         </div>
+
+        {/* Navigation actions — Start Driving + Share Route + Save Report */}
+        <NavigationActions route={route} isSelected={isSelected} onSave={() => setSaveModalOpen(true)} />
       </div>
     </div>
+
+    {/* Save Report modal — rendered outside the card button so clicks don't bubble */}
+    <SaveReportModal
+      isOpen={saveModalOpen}
+      onClose={() => setSaveModalOpen(false)}
+      prefill={{
+        source: source || storeSource,
+        destination: destination || storeDestination,
+        stops: route.stops,
+        mode: (searchMode === 'road' ? 'road' : searchMode === 'rail' ? 'rail' : searchMode === 'air' ? 'air' : searchMode === 'water' ? 'water' : 'road') as ReportMode,
+        cargoType,
+        optimizationInput: { priority, route_id: route.route_id },
+        optimizationResult: route as unknown as Record<string, unknown>,
+        estimatedCost: route.cost,
+        estimatedTime: route.time,
+        riskScore: route.risk,
+      }}
+    />
+  </>
   );
 }
 
@@ -1001,9 +1290,36 @@ export default function RouteResults() {
           </div>
         </div>
         <div className="text-[10px] mono text-on-surface-variant break-words sm:text-right">
-          {source} → {destination}
+          {(() => {
+            const wp = routes[0]?.waypoints;
+            if (wp && wp.length > 2) return wp.join(' → ');
+            return `${source} → ${destination}`;
+          })()}
         </div>
       </div>
+
+      {/* Final sequence banner — shown when multi-stop results have waypoints */}
+      {(() => {
+        const selectedWp = routes[safeIndex]?.waypoints;
+        const wasOptimised = routes[safeIndex]?.stop_order_optimised ?? false;
+        if (!selectedWp || selectedWp.length <= 2) return null;
+        return (
+          <div className="mb-4 rounded-xl border border-violet-500/20 bg-violet-500/5 px-3.5 py-3">
+            <div className="text-[9px] uppercase tracking-widest text-violet-400/70 font-label font-bold mb-1.5">
+              Final optimised stop sequence
+            </div>
+            <p className="text-[11px] text-on-surface-variant mono leading-relaxed">
+              {selectedWp.join(' → ')}
+            </p>
+            <p className="text-[9px] text-outline/60 mt-1.5 leading-relaxed">
+              {wasOptimised
+                ? 'Stop order was optimised by LogiFlow for better efficiency.'
+                : 'Stop order follows your input.'}{' '}
+              Google Maps handles road selection between stops.
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Cards column */}
@@ -1050,6 +1366,7 @@ export default function RouteResults() {
                 key={`map-${selectedRoute}-${routes.length}-${Math.round(routes[0]?.cost ?? 0)}`}
                 routes={routes}
                 selectedRoute={selectedRoute}
+                waypoints={routes[safeIndex]?.waypoints}
               />
             </div>
           </div>

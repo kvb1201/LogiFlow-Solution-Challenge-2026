@@ -7,9 +7,11 @@ import { formatHours, formatInr, modeLabel } from '@/lib/hybrid-ui';
 export function ComposeResults({
   result,
   onEdit,
+  onSave,
 }: {
   result: ComposeResult;
   onEdit: () => void;
+  onSave?: () => void;
 }) {
   const recommended = result.recommended;
   const alternatives = (result.alternatives || []).filter((a) => a.id !== recommended?.id);
@@ -29,7 +31,38 @@ export function ComposeResults({
         </div>
       )}
 
+      {result.rural_corridor && result.compose_note && !result.short_corridor && (
+        <div
+          className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90 leading-relaxed"
+          role="status"
+        >
+          <p className="font-medium text-sky-200/95 mb-1">Village / remote place — hub-connected routes</p>
+          <p>{result.compose_note}</p>
+          {result.hub_pairs_considered && result.hub_pairs_considered.length > 0 && (
+            <p className="mt-2 text-xs text-sky-200/75">
+              Hub pairs:{' '}
+              {result.hub_pairs_considered
+                .slice(0, 4)
+                .map((p) => `${p.origin_hub.city} ↔ ${p.dest_hub.city}`)
+                .join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
+
       <ItineraryCard itinerary={recommended} recommended variant="full" />
+
+      {onSave && (
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={onSave}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-500/10 border border-violet-400/30 px-4 py-2 text-sm font-semibold text-violet-300 hover:bg-violet-500/20 transition-all"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
+            Save Report
+          </button>
+        </div>
+      )}
 
       {baselines.length > 0 && (
         <div className="flex flex-wrap gap-2">

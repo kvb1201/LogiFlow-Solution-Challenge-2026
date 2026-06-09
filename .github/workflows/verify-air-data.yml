@@ -1,0 +1,46 @@
+name: Verify air data
+
+on:
+  push:
+    paths:
+      - 'backend/data/airports.csv'
+      - 'backend/data/routes.dat'
+      - 'backend/data/otp-baselines.json'
+      - 'backend/scripts/fetch_air_data.py'
+      - 'backend/scripts/verify_air_data.py'
+      - '.github/workflows/verify-air-data.yml'
+  pull_request:
+    paths:
+      - 'backend/data/**'
+      - 'backend/scripts/fetch_air_data.py'
+      - 'backend/scripts/verify_air_data.py'
+      - 'backend/app/services/air_data_service.py'
+      - 'backend/app/pipelines/air/**'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify checked-in air snapshots
+        run: python backend/scripts/verify_air_data.py
+
+      - name: OpenFlights dataset smoke test
+        run: |
+          cd backend
+          PYTHONPATH=. python -c "
+          from app.services.air_data_service import get_live_air_routes
+          from app.services.otp_scoring_service import get_otp_scoring_service
+          routes = get_live_air_routes('Delhi', 'Mumbai', '2026-04-10')
+          assert routes, 'Expected DEL->BOM routes'
+          otp = get_otp_scoring_service().score('DEL', '2026-04-10T08:00:00', {'condition': 'Clear'}, 0)
+          assert otp['congestionLevel'] in {'Low','Medium','High','Critical'}
+          print(f'OK: {len(routes)} DEL->BOM candidates, congestion={otp[\"congestionLevel\"]}')
+          "

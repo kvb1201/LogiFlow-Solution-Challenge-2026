@@ -150,9 +150,17 @@ for city, codes in CITY_TO_STATION.items():
 # ── Cargo types and their constraints ──────────────────────────────────
 CARGO_CONSTRAINTS = {
     "General":    {"max_kg_per_booking": 500, "fragile": False},
+    "Bicycle":    {"max_kg_per_booking": 100, "fragile": True,
+                   "chargeable_weight_kg": 40, "handling_inr": 200,
+                   "default_scale": "L",
+                   "notes": "IR two-wheeler/parcel rules; min ~40kg chargeable weight"},
+    "Bike":       {"max_kg_per_booking": 100, "fragile": True,
+                   "chargeable_weight_kg": 40, "handling_inr": 200,
+                   "default_scale": "L"},
     "Perishable": {"max_kg_per_booking": 200, "fragile": True,
                    "notes": "Cold storage not guaranteed in SLR"},
-    "Fragile":    {"max_kg_per_booking": 100, "fragile": True},
+    "Fragile":    {"max_kg_per_booking": 100, "fragile": True,
+                   "handling_inr": 100},
     "Hazardous":  {"max_kg_per_booking": 0,
                    "notes": "NOT allowed in passenger parcel vans"},
     "Electronics": {"max_kg_per_booking": 200, "fragile": True,

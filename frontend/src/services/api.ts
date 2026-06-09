@@ -3,7 +3,10 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const BACKEND_BASE = '/api';
+const BACKEND_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
+  'http://127.0.0.1:8000';
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -36,6 +39,10 @@ export interface RoadPayload {
   traffic_aware: boolean;
   vehicle_type?: 'mini_truck' | 'truck' | 'heavy_truck';
   fuel_price?: number;
+  /** Intermediate waypoints for multi-stop routing */
+  stops?: string[];
+  /** When true the backend reorders stops using nearest-neighbour heuristic */
+  optimize_stop_order?: boolean;
   // simulation controls
   mode?: 'realtime' | 'simulation';
   simulation?: {
@@ -113,6 +120,8 @@ export interface RankedOption {
   segments: RouteSegment[];
   geometry?: [number, number][];
   data_source: string;
+  llm_explanation?: string;
+  selection_reason?: string;
 }
 
 export interface RouteSegment {
@@ -233,6 +242,23 @@ export interface AirAirportInfo {
   city_name?: string;
 }
 
+export interface AirOtpPrediction {
+  baselineOTP: number;
+  adjustedOTP: number;
+  congestionScore: number;
+  congestionLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  factors: {
+    baselineSource: string;
+    weatherPenalty: number;
+    peakHourPenalty: number;
+    weekendPenalty: number;
+    inboundDelayPenalty: number;
+    departureHour: number;
+    departureWeekday: string;
+    weatherCondition: string;
+  };
+}
+
 export interface AirRoute {
   type: string;
   mode: string;
@@ -246,6 +272,9 @@ export interface AirRoute {
   cost_per_kg: number;
   weather_risk: number;
   congestion_risk: number;
+  otp_prediction?: AirOtpPrediction;
+  congestion_score?: number;
+  congestion_level?: string;
   reliability: number;
   cargo_type: string;
   cargo_weight: number;
@@ -275,11 +304,13 @@ export interface AirRoute {
 
 export interface AirOptimizeResult {
   mode: 'air';
+  status?: 'no_routes';
+  message?: string;
   best_route: AirRoute | null;
   alternatives: AirRoute[];
   ranked_routes: AirRoute[];
   total_routes: number;
-  constraints_applied: {
+  constraints_applied?: {
     budget_limit: number | null;
     deadline_hours: number | null;
     max_stops: number | null;
@@ -316,6 +347,27 @@ export interface HybridModeRoute {
   train_name?: string | null;
   airline?: string | null;
   distance_km?: number | null;
+  /** Alternate field names the backend sometimes uses */
+  time?: number | null;
+  cost?: number | null;
+  geometry?: [number, number][] | null;
+}
+
+export interface HybridPayload {
+  source: string;
+  destination: string;
+  priority: string;
+  departure_date?: string;
+  cargo_weight_kg?: number;
+  cargo_type?: string;
+  scenario_brief?: string;
+  cargo?: { weight: number; type: string };
+  constraints?: {
+    budget_max_inr?: number;
+    budget_limit?: number;
+    delay_tolerance_hours?: number;
+    excluded_modes?: string[];
+  };
 }
 
 export interface HybridOptimizeResult {
@@ -326,34 +378,46 @@ export interface HybridOptimizeResult {
   demo_mode?: boolean;
   unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
-  best_per_mode?: Partial<Record<'road' | 'rail' | 'air' | 'water', HybridModeRoute | null>> | null;
+  best_per_mode?: {
+    road?: HybridModeRoute | null;
+    rail?: HybridModeRoute | null;
+    air?: HybridModeRoute | null;
+    water?: HybridModeRoute | null;
+  } | null;
 }
 
-export interface HybridPayload {
+export interface HybridAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface HybridAssistantContext {
   source: string;
   destination: string;
   priority: string;
-  departure_date?: string;
-  cargo_weight_kg?: number;
-  cargo_type?: string;
-  cargo?: { weight: number; type: string };
-  scenario_brief?: string;
-  preferences?: { preferred_mode?: string };
-  constraints?: {
-    excluded_modes?: string[];
-    risk_threshold?: number;
-    delay_tolerance_hours?: number;
-    max_transshipments?: number;
-    budget_max_inr?: number;
-    max_stops?: number;
-    budget_limit?: number;
-  };
+  recommended_mode?: string | null;
+  recommended_reason?: string | null;
+  comparison?: HybridComparisonRow[];
+  tradeoffs?: string[];
+  reason?: string;
+  mode_insights?: Record<string, string[]>;
+  best_per_mode?: HybridOptimizeResult['best_per_mode'];
+}
+
+export interface HybridAssistantPayload {
+  question: string;
+  context: HybridAssistantContext;
+  history?: HybridAssistantMessage[];
+}
+
+export interface HybridAssistantResponse {
+  answer: string;
 }
 
 // ── Backend API calls (proxied via Next.js) ──────────────────────────
 
 export const BACKEND_UNAVAILABLE_MSG =
-  'Backend is still waking up. Wait ~30 seconds and try again — Render free tier sleeps after ~15 min idle.';
+  'LogiFlow is starting up. Please wait about 30 seconds and try again.';
 
 async function fetchBackend(
   path: string,
@@ -546,6 +610,12 @@ export interface ComposeResult {
     cost_delta_inr?: number;
   } | null;
   hubs_considered?: Array<{ city: string; display_name: string; rail_stations: string[]; airport_code?: string | null }>;
+  hub_pairs_considered?: Array<{
+    origin_hub: { city: string; display_name: string; distance_km?: number };
+    dest_hub: { city: string; display_name: string; distance_km?: number };
+    label?: string;
+  }>;
+  rural_corridor?: boolean;
   unavailable_templates?: Record<string, string>;
   total_candidates?: number;
   multimodal_count?: number;
@@ -558,12 +628,16 @@ export interface ComposeResult {
 }
 
 export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
-  const budgetMs = ((payload.compose_options?.budget_seconds ?? 42) + 50) * 1000;
+  const budgetSec = payload.compose_options?.budget_seconds ?? 55;
+  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
+  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
+  const composeUrl =
+    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), budgetMs);
   let res: Response;
   try {
-    res = await fetch(`${BACKEND_BASE}/compose`, {
+    res = await fetch(composeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -612,6 +686,21 @@ export async function optimizeHybridRoute(payload: HybridPayload): Promise<Hybri
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function askHybridAssistant(
+  payload: HybridAssistantPayload
+): Promise<HybridAssistantResponse> {
+  const res = await fetch(`${BACKEND_BASE}/optimize/assistant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Hybrid assistant failed (${res.status}): ${text}`);
   }
   return res.json();
 }
@@ -712,20 +801,82 @@ export interface RailModelInfo {
   error?: string;
 }
 
-export async function fetchRailModelInfo(): Promise<RailModelInfo> {
-  const res = await fetch(`${BACKEND_BASE}/railway/model-info`, { cache: 'no-store' });
-  if (!res.ok) {
-    throw new Error(`Model info failed (${res.status})`);
+const RAIL_ML_FALLBACK_URL = '/data/rail-ml-metrics.json';
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+function hasQuantifierValues(info: RailModelInfo | null): boolean {
+  return Boolean(
+    info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
+  );
+}
+
+async function fetchRailModelInfoFromSupabase(): Promise<RailModelInfo | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/rail_ml_metrics?id=eq.current&select=payload`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(4_000),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{ payload?: RailModelInfo }>;
+    const payload = rows[0]?.payload;
+    return payload && hasQuantifierValues(payload) ? payload : null;
+  } catch {
+    return null;
   }
-  return res.json();
+}
+
+async function fetchRailModelInfoFallback(): Promise<RailModelInfo> {
+  const res = await fetch(RAIL_ML_FALLBACK_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Static ML metrics unavailable');
+  return res.json() as Promise<RailModelInfo>;
+}
+
+export async function fetchRailModelInfo(): Promise<RailModelInfo> {
+  const staticPromise = fetchRailModelInfoFallback().catch(() => null);
+  const fromSupabase = await fetchRailModelInfoFromSupabase();
+  if (fromSupabase) return fromSupabase;
+
+  const fallback = await staticPromise;
+  if (fallback && hasQuantifierValues(fallback)) return fallback;
+
+  try {
+    const res = await fetch(`${BACKEND_BASE}/railway/model-info`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) throw new Error(`Model info failed (${res.status})`);
+    const data = (await res.json()) as RailModelInfo;
+    if (hasQuantifierValues(data)) return data;
+  } catch {
+    /* static fallback last */
+  }
+
+  return (await staticPromise) ?? fetchRailModelInfoFallback();
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
-  const res = await fetch(`${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.stations || [];
+  try {
+    const res = await fetch(
+      `${BACKEND_BASE}/railway/search/stations?query=${encodeURIComponent(query)}`,
+      { signal: AbortSignal.timeout(15_000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.stations || [];
+  } catch {
+    return [];
+  }
 }
 
 export async function searchCities(query: string): Promise<Array<{ name: string; lat?: number; lng?: number }>> {
@@ -793,23 +944,227 @@ export interface TrainRouteGeometryResult {
   source?: string;
 }
 
-/** Fetch map polyline + labelled stops for one train leg. */
-export async function getTrainRouteGeometry(
+const GEOMETRY_FETCH_TIMEOUT_MS = 120_000;
+const GEOMETRY_SUPABASE_TIMEOUT_MS = 4_000;
+
+/** Only reject known-bad single-point stubs; corridor_reference is fine for map display. */
+const UNTRUSTED_GEOMETRY_SOURCES = new Set(['direct']);
+
+function combineSignals(...signals: AbortSignal[]): AbortSignal {
+  const active = signals.filter(Boolean);
+  if (active.length === 0) return AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS);
+  if (active.length === 1) return active[0];
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(active);
+  return active[0];
+}
+
+function normalizeGeometryStops(raw: unknown): RouteGeometryStop[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const lng = Number(row.lng);
+    const lat = Number(row.lat);
+    if (Number.isNaN(lng) || Number.isNaN(lat)) return [];
+    const code = String(row.code || row.station_code || '').trim().toUpperCase();
+    const name = String(row.name || row.station_name || code);
+    const city = String(row.city || name);
+    return [{ code, name, city, lng, lat }];
+  });
+}
+
+function isTrustedSupabaseGeometry(
+  row: {
+    geometry?: unknown;
+    stops?: unknown;
+    point_count?: number;
+    source?: string;
+  },
+  fromCode: string,
+  toCode: string
+): boolean {
+  const geometry = Array.isArray(row.geometry) ? (row.geometry as [number, number][]) : [];
+  const stops = normalizeGeometryStops(row.stops);
+  const pointCount = Number(row.point_count) || geometry.length;
+  const source = String(row.source || '').toLowerCase();
+
+  if (geometry.length < 2 || pointCount < 2) return false;
+  if (UNTRUSTED_GEOMETRY_SOURCES.has(source)) return false;
+  // Row is keyed by (train_number, from_code, to_code); hub aliases may differ in stops[].
+  return true;
+}
+
+async function fetchTrainRouteGeometryFromSupabase(
   trainNumber: string,
   fromCode: string,
   toCode: string,
   signal?: AbortSignal
+): Promise<TrainRouteGeometryResult | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  const trainNo = trainNumber.trim();
+  const fromU = fromCode.trim().toUpperCase();
+  const toU = toCode.trim().toUpperCase();
+  if (!trainNo || !fromU || !toU) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'geometry,stops,source,point_count',
+      train_number: `eq.${trainNo}`,
+      from_code: `eq.${fromU}`,
+      to_code: `eq.${toU}`,
+      limit: '1',
+    });
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/train_route_geometry?${params}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: combineSignals(
+        signal ?? AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS),
+        AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS)
+      ),
+    });
+    if (!res.ok) return null;
+
+    const rows = (await res.json()) as Array<{
+      geometry?: [number, number][];
+      stops?: RouteGeometryStop[];
+      source?: string;
+      point_count?: number;
+    }>;
+    const row = rows[0];
+    if (!row || !isTrustedSupabaseGeometry(row, fromU, toU)) return null;
+
+    return {
+      geometry: row.geometry ?? [],
+      stops: normalizeGeometryStops(row.stops),
+      source: `supabase:${row.source || 'cache'}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Compute missing leg on backend and upsert into Supabase (dedupe-safe). */
+async function ensureTrainRouteGeometryInSupabase(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult | null> {
+  const trainNo = trainNumber.trim();
+  const fromU = fromCode.trim().toUpperCase();
+  const toU = toCode.trim().toUpperCase();
+  if (!trainNo || !fromU || !toU) return null;
+
+  try {
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
+    const res = await fetch(`${BACKEND_BASE}/railway/geometry/ensure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        legs: [{ train_number: trainNo, from_code: fromU, to_code: toU }],
+      }),
+      signal: combined,
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      results?: Array<{
+        ok?: boolean;
+        geometry?: [number, number][];
+        stops?: RouteGeometryStop[];
+        source?: string;
+      }>;
+    };
+    const row = data.results?.[0];
+    if (!row?.ok || !row.geometry || row.geometry.length < 2) return null;
+
+    return {
+      geometry: row.geometry,
+      stops: normalizeGeometryStops(row.stops),
+      source: `backfill:${row.source || 'computed'}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureTrainCorridorGeometriesInSupabase(
+  segments: RouteSegment[],
+  trainNumber: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const legs = segments
+    .map((seg) => ({
+      train_number: (seg.train_no || trainNumber || '').trim(),
+      from_code: (seg.from || '').trim().toUpperCase(),
+      to_code: (seg.to || '').trim().toUpperCase(),
+    }))
+    .filter((leg) => leg.train_number && leg.from_code && leg.to_code);
+
+  if (!legs.length) return;
+
+  const unique = Array.from(
+    new Map(legs.map((leg) => [`${leg.train_number}|${leg.from_code}|${leg.to_code}`, leg] as const)).values()
+  ).slice(0, 20);
+
+  try {
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
+    await fetch(`${BACKEND_BASE}/railway/geometry/ensure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ legs: unique }),
+      signal: combined,
+    });
+  } catch {
+    // Corridor draw still falls back per-leg
+  }
+}
+
+async function fetchTrainRouteGeometryFromRender(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal,
+  attempt = 0
 ): Promise<TrainRouteGeometryResult> {
   try {
     const params = new URLSearchParams({
       from_code: fromCode.trim(),
       to_code: toCode.trim(),
     });
+    const combined = combineSignals(
+      signal ?? AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS),
+      AbortSignal.timeout(GEOMETRY_FETCH_TIMEOUT_MS)
+    );
+
     const res = await fetch(
       `${BACKEND_BASE}/railway/trains/${encodeURIComponent(trainNumber)}/geometry?${params}`,
-      { signal }
+      { signal: combined }
     );
-    if (!res.ok) return { geometry: [], stops: [] };
+    if (!res.ok) {
+      if (attempt < 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        return fetchTrainRouteGeometryFromRender(
+          trainNumber,
+          fromCode,
+          toCode,
+          signal,
+          attempt + 1
+        );
+      }
+      return { geometry: [], stops: [] };
+    }
     const data = (await res.json()) as {
       geometry?: [number, number][];
       stops?: RouteGeometryStop[];
@@ -820,9 +1175,148 @@ export async function getTrainRouteGeometry(
       stops: Array.isArray(data.stops) ? data.stops : [],
       source: data.source,
     };
-  } catch {
+  } catch (err) {
+    if (attempt < 1 && !(err instanceof DOMException && err.name === 'AbortError')) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return fetchTrainRouteGeometryFromRender(
+        trainNumber,
+        fromCode,
+        toCode,
+        signal,
+        attempt + 1
+      );
+    }
     return { geometry: [], stops: [] };
   }
+}
+
+async function fetchStationCoordFromSupabase(
+  stationCode: string,
+  signal?: AbortSignal
+): Promise<StationInfo | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  const code = stationCode.trim().toUpperCase();
+  if (!code) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'station_code,station_name,city,lat,lng',
+      station_code: `eq.${code}`,
+      limit: '1',
+    });
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/station_coordinates?${params}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: combineSignals(
+        signal ?? AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS),
+        AbortSignal.timeout(GEOMETRY_SUPABASE_TIMEOUT_MS)
+      ),
+    });
+    if (!res.ok) return null;
+
+    const rows = (await res.json()) as Array<{
+      station_code?: string;
+      station_name?: string;
+      city?: string;
+      lat?: number;
+      lng?: number;
+    }>;
+    const row = rows[0];
+    if (!row || row.lat == null || row.lng == null) return null;
+
+    return {
+      code: String(row.station_code || code).toUpperCase(),
+      name: String(row.station_name || row.city || code),
+      lat: Number(row.lat),
+      lng: Number(row.lng),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch map polyline + labelled stops for one train leg (Supabase → backfill → chord). */
+export async function getTrainRouteGeometry(
+  trainNumber: string,
+  fromCode: string,
+  toCode: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult> {
+  const cached = await fetchTrainRouteGeometryFromSupabase(trainNumber, fromCode, toCode, signal);
+  if (cached && cached.geometry.length >= 2) return cached;
+
+  const backfilled = await ensureTrainRouteGeometryInSupabase(
+    trainNumber,
+    fromCode,
+    toCode,
+    signal
+  );
+  if (backfilled && backfilled.geometry.length >= 2) {
+    const refreshed = await fetchTrainRouteGeometryFromSupabase(
+      trainNumber,
+      fromCode,
+      toCode,
+      signal
+    );
+    if (refreshed && refreshed.geometry.length >= 2) return refreshed;
+    return backfilled;
+  }
+
+  const rendered = await fetchTrainRouteGeometryFromRender(
+    trainNumber,
+    fromCode,
+    toCode,
+    signal
+  );
+  if (rendered.geometry.length >= 2) {
+    const refreshed = await fetchTrainRouteGeometryFromSupabase(
+      trainNumber,
+      fromCode,
+      toCode,
+      signal
+    );
+    if (refreshed && refreshed.geometry.length >= 2) return refreshed;
+    return rendered;
+  }
+
+  return fallbackLegGeometry(fromCode, toCode, undefined, undefined, signal);
+}
+
+/** Two-point chord from Supabase station coords, then Render station API. */
+async function fallbackLegGeometry(
+  fromCode: string,
+  toCode: string,
+  fromName?: string,
+  toName?: string,
+  signal?: AbortSignal
+): Promise<TrainRouteGeometryResult> {
+  const [fromSupa, toSupa] = await Promise.all([
+    fetchStationCoordFromSupabase(fromCode, signal),
+    fetchStationCoordFromSupabase(toCode, signal),
+  ]);
+
+  const fromInfo = fromSupa ?? (await getStationInfo(fromCode));
+  const toInfo = toSupa ?? (await getStationInfo(toCode));
+  if (!fromInfo?.lat || !toInfo?.lat) return { geometry: [], stops: [] };
+
+  const fromCity = fromName || fromInfo.name || fromCode;
+  const toCity = toName || toInfo.name || toCode;
+  return {
+    geometry: [
+      [fromInfo.lng, fromInfo.lat],
+      [toInfo.lng, toInfo.lat],
+    ],
+    stops: [
+      { code: fromCode, name: fromCity, city: fromCity, lng: fromInfo.lng, lat: fromInfo.lat },
+      { code: toCode, name: toCity, city: toCity, lng: toInfo.lng, lat: toInfo.lat },
+    ],
+    source: fromSupa && toSupa ? 'supabase:station_chord' : 'segment_fallback',
+  };
 }
 
 function mergeGeometryLegs(legs: TrainRouteGeometryResult[]): TrainRouteGeometryResult {
@@ -856,20 +1350,36 @@ export async function buildTrainCorridorGeometry(
 ): Promise<TrainRouteGeometryResult> {
   if (!segments.length) return { geometry: [], stops: [] };
 
-  const legRequests = segments
-    .map((seg) => {
+  await ensureTrainCorridorGeometriesInSupabase(segments, trainNumber, signal);
+
+  const legs = await Promise.all(
+    segments.map(async (seg) => {
       const from = (seg.from || '').trim();
       const to = (seg.to || '').trim();
       const tno = (seg.train_no || trainNumber || '').trim();
-      if (!from || !to || !tno) return null;
-      return getTrainRouteGeometry(tno, from, to, signal);
+      if (!from || !to || !tno) return { geometry: [], stops: [] } as TrainRouteGeometryResult;
+
+      const primary = await getTrainRouteGeometry(tno, from, to, signal);
+      if (primary.geometry.length >= 2) return primary;
+      return fallbackLegGeometry(from, to, seg.from_name, seg.to_name, signal);
     })
-    .filter((req): req is Promise<TrainRouteGeometryResult> => req !== null);
+  );
 
-  if (!legRequests.length) return { geometry: [], stops: [] };
-
-  const legs = await Promise.all(legRequests);
-  return mergeGeometryLegs(legs);
+  const merged = mergeGeometryLegs(legs);
+  if (merged.geometry.length >= 2) return merged;
+  return mergeGeometryLegs(
+    await Promise.all(
+      segments.map((seg) =>
+        fallbackLegGeometry(
+          (seg.from || '').trim(),
+          (seg.to || '').trim(),
+          seg.from_name,
+          seg.to_name,
+          signal
+        )
+      )
+    )
+  );
 }
 
 export async function getStationInfo(stationCode: string): Promise<StationInfo | null> {
@@ -1055,9 +1565,7 @@ export async function parseShipmentIntent(
     parsed = raw ? JSON.parse(raw) : {};
   } catch {
     throw new Error(
-      res.ok
-        ? 'Intent parse returned invalid JSON'
-        : `Backend unavailable — start the API server (got: ${raw.slice(0, 80)})`
+      res.ok ? 'Could not read the planning response. Please try again.' : BACKEND_UNAVAILABLE_MSG
     );
   }
   if (!res.ok) {

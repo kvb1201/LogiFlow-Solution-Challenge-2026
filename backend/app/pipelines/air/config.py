@@ -27,36 +27,11 @@ AIRLINE_RELIABILITY = {
     "Air India": 0.76,
     "Akasa Air": 0.82,
     "SpiceJet": 0.68,
-}
-
-MOCK_ROUTES = {
-    ("Delhi", "Mumbai"): [
-        {
-            "airline": "IndiGo",
-            "stops": 0,
-            "distance": 1150,
-            "duration": 2.0,
-            "delay_risk": 0.18,
-            "cost_per_kg": 8.0,
-            "cargo_types": ["general", "fragile", "perishable"],
-        },
-        {
-            "airline": "Air India",
-            "stops": 1,
-            "distance": 1300,
-            "duration": 3.1,
-            "delay_risk": 0.32,
-            "cost_per_kg": 6.2,
-            "cargo_types": ["general", "fragile"],
-        },
-        {
-            "airline": "Akasa Air",
-            "stops": 0,
-            "distance": 1180,
-            "duration": 2.4,
-            "delay_risk": 0.22,
-            "cost_per_kg": 7.3,
-            "cargo_types": ["general", "fragile"],
-        },
-    ],
+    "Emirates": 0.86,
+    "Qatar Airways": 0.87,
+    "Singapore Airlines": 0.90,
+    "Lufthansa": 0.84,
+    "British Airways": 0.82,
+    "International carriers": 0.80,
+    "Multiple carriers": 0.78,
 }

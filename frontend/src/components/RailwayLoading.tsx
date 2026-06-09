@@ -1,104 +1,154 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { RAIL_LOADING_STEPS, stepProgress } from '@/lib/rail-loading-steps';
+import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, '0')}`;
+}
 
 export default function RailwayLoading() {
-  const [dots, setDots] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [phase, setPhase] = useState(0);
+  const source = useLogiFlowStore((s) => s.source);
+  const destination = useLogiFlowStore((s) => s.destination);
+  const cargoWeight = useLogiFlowStore((s) => s.cargoWeight);
+  const cargoType = useLogiFlowStore((s) => s.cargoType);
+  const priority = useLogiFlowStore((s) => s.priority);
+  const activeStep = useLogiFlowStore((s) => s.railLoadingStep);
+  const stepDetail = useLogiFlowStore((s) => s.railLoadingDetail);
+  const startedAt = useLogiFlowStore((s) => s.railLoadingStartedAt);
 
-  const phases = [
-    'Loading Indian Railways schedules...',
-    'Building corridor candidates...',
-    'Running LogiFlow feature engineering...',
-    'Scoring routes by your priority...',
-    'Applying ML delay predictions...',
-    'Finalizing recommendations...',
-  ];
+  const [elapsed, setElapsed] = useState(0);
+
+  const stepIndex = Math.max(0, activeStep);
+  const progress = useMemo(() => stepProgress(stepIndex), [stepIndex]);
 
   useEffect(() => {
-    const dotInterval = setInterval(() => {
-      setDots(prev => (prev.length >= 3 ? '' : prev + '.'));
-    }, 400);
+    if (activeStep < 0 || !startedAt) return;
+    const tick = () => setElapsed(Date.now() - startedAt);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [activeStep, startedAt]);
 
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 98) return prev;
-        const inc = Math.random() * 12 + 2;
-        return Math.min(prev + inc, 98);
-      });
-    }, 700);
-
-    const phaseInterval = setInterval(() => {
-      setPhase(prev => (prev + 1) % phases.length);
-    }, 1800);
-
-    return () => {
-      clearInterval(dotInterval);
-      clearInterval(progressInterval);
-      clearInterval(phaseInterval);
-    };
-  }, []);
+  const corridor = `${source.trim() || '…'} → ${destination.trim() || '…'}`;
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-[#080b12] flex flex-col items-center justify-center overflow-hidden">
-      {/* Background atmosphere */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 h-[min(90vw,600px)] w-[min(90vw,600px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-[120px] animate-pulse-slow" />
-        <div className="absolute top-1/4 right-1/4 h-[min(70vw,350px)] w-[min(70vw,350px)] rounded-full bg-tertiary/5 blur-[100px] animate-mesh-1" />
-        <div className="absolute bottom-1/4 left-1/4 h-[min(75vw,400px)] w-[min(75vw,400px)] rounded-full bg-primary/4 blur-[110px] animate-mesh-2" />
-        <div className="absolute inset-0 hero-dot-grid opacity-[0.15]" />
+    <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center overflow-hidden bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0">
+        <AmbientBackdrop variant="rail" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'radial-gradient(ellipse at center, transparent 15%, var(--background) 72%)',
+          }}
+        />
       </div>
 
-      {/* Decorative corners */}
-      <div className="absolute top-6 left-4 h-14 w-14 rounded-tl-2xl border-t border-l border-primary/15 sm:top-10 sm:left-10 sm:h-20 sm:w-20" />
-      <div className="absolute bottom-6 right-4 h-14 w-14 rounded-br-2xl border-b border-r border-tertiary/15 sm:bottom-10 sm:right-10 sm:h-20 sm:w-20" />
-
-      {/* Central content */}
-      <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">
-        {/* Icon */}
-        <div className="relative mb-10">
-          <div className="w-20 h-20 rounded-2xl bg-surface-container-low border border-white/5 flex items-center justify-center shadow-2xl relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/15 via-transparent to-tertiary/15" />
-            <div className="absolute top-0 left-0 w-full h-0.5 bg-primary/50 blur-sm animate-scan" />
-            <span
-              className="material-symbols-outlined text-3xl text-primary relative z-10 animate-pulse-slow"
-              style={{ fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 48" }}
-            >
-              train
+      <div className="relative z-10 w-full max-w-lg px-5 sm:px-6">
+        {/* Header */}
+        <div className="mb-6 text-center">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-rail/25 bg-surface/80 px-3 py-1 backdrop-blur-sm">
+            <span className="live-dot" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+              Rail pipeline · in progress
             </span>
           </div>
-          <div className="absolute inset-[-10px] border border-primary/15 rounded-[26px] animate-spin-slow pointer-events-none" />
-          <div className="absolute inset-[-20px] border border-white/4 rounded-[34px] animate-reverse-spin-slow pointer-events-none" />
-        </div>
-
-        {/* Text */}
-        <div className="text-center space-y-2 mb-10">
-          <h2 className="text-xl font-headline font-black tracking-tight text-on-surface">
-            OPTIMIZING ROUTES<span className="w-6 inline-block text-left text-primary mono">{dots}</span>
+          <h2 className="font-headline text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            Analyzing corridor
           </h2>
-          <p className="text-[11px] font-mono text-on-surface-variant/70 min-h-[16px] transition-all duration-500">
-            {phases[phase]}
-          </p>
-          <p className="text-[10px] text-primary/60 tracking-[0.2em] uppercase font-semibold">
-            LogiFlow Rail Pipeline
+          <p className="mt-2 font-mono text-sm text-rail">{corridor}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {cargoWeight.toLocaleString()} kg {cargoType.toLowerCase()} · {priority} priority
           </p>
         </div>
 
         {/* Progress */}
-        <div className="w-full space-y-2">
-          <div className="flex justify-between items-center text-[10px]">
-            <span className="mono text-outline uppercase tracking-wider">Syncing Nodes</span>
-            <span className="mono text-primary font-semibold">{Math.floor(progress)}%</span>
+        <div className="mb-5 rounded-2xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
+          <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span>Pipeline progress</span>
+            <span className="font-mono text-rail">{progress}%</span>
           </div>
-          <div className="h-0.5 w-full bg-white/5 rounded-full overflow-hidden">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
             <div
-              className="h-full bg-gradient-to-r from-primary to-tertiary transition-all duration-700 ease-out"
+              className="h-full rounded-full bg-gradient-to-r from-rail/80 to-primary transition-all duration-700 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
-
+          <div className="mt-2 flex justify-between font-mono text-[10px] text-muted-foreground">
+            <span>Elapsed {formatElapsed(elapsed)}</span>
+            <span>
+              Step {Math.min(stepIndex + 1, RAIL_LOADING_STEPS.length)}/{RAIL_LOADING_STEPS.length}
+            </span>
+          </div>
         </div>
+
+        {/* Steps */}
+        <ol className="space-y-2" aria-label="Progress steps">
+          {RAIL_LOADING_STEPS.map((step, index) => {
+            const done = index < stepIndex;
+            const active = index === stepIndex;
+            const pending = index > stepIndex;
+
+            return (
+              <li
+                key={step.id}
+                className={`rounded-xl border px-3 py-2.5 transition-colors ${
+                  active
+                    ? 'border-rail/40 bg-rail/10'
+                    : done
+                      ? 'border-border/50 bg-surface/40'
+                      : 'border-border/30 bg-surface/20 opacity-60'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] ${
+                      done
+                        ? 'bg-rail/20 text-rail'
+                        : active
+                          ? 'bg-rail/25 text-rail'
+                          : 'bg-surface-3 text-muted-foreground'
+                    }`}
+                    aria-hidden
+                  >
+                    {done ? (
+                      <span className="material-symbols-outlined text-base">check</span>
+                    ) : active ? (
+                      <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
+                    ) : (
+                      <span className="font-mono">{index + 1}</span>
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-sm font-semibold ${active ? 'text-foreground' : done ? 'text-foreground/90' : 'text-muted-foreground'}`}
+                    >
+                      {step.label}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                      {active && stepDetail ? stepDetail : step.detail}
+                    </p>
+                  </div>
+                  {active && (
+                    <span className="shrink-0 rounded bg-rail/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rail">
+                      Live
+                    </span>
+                  )}
+                  {pending && (
+                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
+                      Queued
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       </div>
     </div>
   );

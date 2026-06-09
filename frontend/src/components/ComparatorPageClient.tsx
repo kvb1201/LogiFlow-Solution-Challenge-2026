@@ -19,6 +19,8 @@ import {
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -203,7 +205,7 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
-            Gemini adjusted your plan
+            Shipment understood
           </p>
           <p className="text-sm text-on-surface leading-relaxed">
             {ai.scenario_summary || 'Scenario parsed into optimization constraints before scoring.'}
@@ -249,6 +251,7 @@ export default function ComparatorPageClient() {
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
+  const [saveMode, setSaveMode] = useState<Mode | null>(null);
 
   const skipWizard = loading || Boolean(result) || (autoTriggered && !error);
 
@@ -366,7 +369,7 @@ export default function ComparatorPageClient() {
               Smart Supply Chain
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200">
-              Gemini constraints
+              Smart planning
             </span>
           </div>
           <h1 className="font-headline text-3xl sm:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.05] max-w-3xl">
@@ -374,9 +377,7 @@ export default function ComparatorPageClient() {
           </h1>
           <p className="mt-4 text-[15px] sm:text-base text-on-surface-variant max-w-2xl leading-relaxed">
             Compare <strong className="text-on-surface">road, rail, air, and water</strong> on delay-adjusted time,
-            cost, and risk. Describe your shipment in plain English —{' '}
-            <strong className="text-violet-200">Google Gemini</strong> turns it into optimization constraints before
-            scoring.
+            cost, and risk. Describe your shipment in plain English and we turn it into constraints before scoring.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button
@@ -551,7 +552,7 @@ export default function ComparatorPageClient() {
               <div>
                 <h2 className="text-lg font-bold text-on-surface">What constraints matter?</h2>
                 <p className="text-sm text-on-surface-variant mt-1">
-                  Gemini reads this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
+                  We use this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
                   and excluded modes.
                 </p>
               </div>
@@ -636,12 +637,7 @@ export default function ComparatorPageClient() {
           </div>
         )}
 
-        {loading && (
-          <div className="mt-8 flex flex-col items-center gap-4 py-16">
-            <div className="h-12 w-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-            <p className="text-sm text-on-surface-variant">Running road, rail, air & water pipelines…</p>
-          </div>
-        )}
+        {loading && <MultimodalPipelineLoading variant="optimize" />}
 
         {result && !loading && (
           <div className="mt-8 pb-16 space-y-6 animate-fade-in">
@@ -729,11 +725,20 @@ export default function ComparatorPageClient() {
                       {MODE_META[mode].label}
                     </h4>
                     {data ? (
-                      <div className="text-xs space-y-1 font-mono text-on-surface-variant">
-                        <p>Time {formatHours(data.time_hr ?? (data as { time?: number }).time)}</p>
-                        <p>Cost {formatInr(data.cost_inr ?? (data as { cost?: number }).cost)}</p>
-                      </div>
-                    ) : (
+                      <>
+                        <div className="text-xs space-y-1 font-mono text-on-surface-variant">
+                          <p>Time {formatHours(data.time_hr ?? data.time)}</p>
+                          <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
+                        </div>
+                        <button
+                          onClick={() => setSaveMode(mode)}
+                          className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg bg-surface/50 border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-on-surface hover:bg-white/10 transition-all"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+                          Save Report
+                        </button>
+                      </>
+                  ) : (
                       <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
                     )}
                   </div>
@@ -742,16 +747,16 @@ export default function ComparatorPageClient() {
             </div>
 
             {Boolean(
-              (result.best_per_mode?.road as { geometry?: [number, number][] } | null)?.geometry?.length
+              result.best_per_mode?.road?.geometry?.length
             ) && (
               <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
                 <MapView
                   routes={[
-                    result.best_per_mode!.road! as {
-                      geometry: [number, number][];
-                      time: number;
-                      cost: number;
-                      risk: number;
+                    {
+                      geometry: result.best_per_mode!.road!.geometry!,
+                      time: result.best_per_mode!.road!.time_hr ?? result.best_per_mode!.road!.time ?? 0,
+                      cost: result.best_per_mode!.road!.cost_inr ?? result.best_per_mode!.road!.cost ?? 0,
+                      risk: result.best_per_mode!.road!.risk ?? 0,
                     },
                   ]}
                   selectedRoute={0}
@@ -772,6 +777,27 @@ export default function ComparatorPageClient() {
           </div>
         )}
       </div>
+
+      <SaveReportModal
+        isOpen={saveMode !== null}
+        onClose={() => setSaveMode(null)}
+        prefill={{
+          source,
+          destination,
+          stops: [],
+          mode: 'comparator',
+          cargoType,
+          optimizationInput: { priority },
+          optimizationResult: saveMode ? { 
+            ...(result?.best_per_mode?.[saveMode] || {}), 
+            selected_from_comparator: true, 
+            selected_mode: saveMode 
+          } as Record<string, unknown> : undefined,
+          estimatedCost: saveMode ? (result?.best_per_mode?.[saveMode]?.cost_inr ?? result?.best_per_mode?.[saveMode]?.cost ?? undefined) : undefined,
+          estimatedTime: saveMode ? (result?.best_per_mode?.[saveMode]?.time_hr ?? result?.best_per_mode?.[saveMode]?.time ?? undefined) : undefined,
+          riskScore: saveMode ? (result?.best_per_mode?.[saveMode]?.risk ?? undefined) : undefined,
+        }}
+      />
     </div>
   );
 }

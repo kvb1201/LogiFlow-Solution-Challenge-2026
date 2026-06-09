@@ -1,12 +1,13 @@
 from copy import deepcopy
 
-from app.pipelines.air.config import CITY_TO_AIRPORT, MOCK_ROUTES
+from app.pipelines.air.config import CITY_TO_AIRPORT
 from app.pipelines.air.engine import score_routes
 from app.pipelines.air.ml_models import predict_delay_probability
 from app.pipelines.base import BasePipeline
 from app.services.air_data_service import get_live_air_routes
 from app.services.airport_locator_service import resolve_city_to_airport
 from app.services.air_weather_service import get_route_weather_context
+from app.services.air_timezone_service import build_route_schedule
 
 
 class AirPipeline(BasePipeline):
@@ -64,14 +65,20 @@ class AirPipeline(BasePipeline):
         payload = payload or {}
         cargo = payload.get("cargo") or {}
         constraints = payload.get("constraints") or {}
+        mode = payload.get("mode", "realtime")
+        simulation = payload.get("simulation") or {} if mode == "simulation" else {}
+        weight = float(cargo.get("weight", 100))
         return {
+            "mode": mode,
             "priority": self._normalize_priority(payload.get("priority")),
-            "cargo_weight": float(cargo.get("weight", 100)),
+            "cargo_weight": weight,
+            "cargo_volume": float(cargo.get("volume", weight / 167.0)),
             "cargo_type": str(cargo.get("type", "general")).lower(),
             "max_stops": constraints.get("max_stops"),
             "budget_limit": constraints.get("budget_limit"),
             "deadline_hours": constraints.get("deadline_hours"),
             "departure_date": payload.get("departure_date"),
+            "simulation": simulation,
         }
 
     def _get_departure_date(self, payload):
@@ -89,35 +96,68 @@ class AirPipeline(BasePipeline):
                 route["is_fallback"] = False
             return live_routes
 
-        # No real routes found — return empty instead of mock data
-        print(f"[AIR] No routes found for {source} \u2192 {destination}")
-        print(f"[AIR] Skipping fallback routes")
+        # No OpenFlights support for this airport pair — return empty for a clean no_routes response.
+        print(f"[AIR] No routes found for {source} -> {destination}")
         return []
 
     def _engineer_features(self, routes, source, destination, payload, context=None):
         engineered = []
         cargo_weight = payload["cargo_weight"]
+        cargo_volume = payload["cargo_volume"]
         cargo_type = payload["cargo_type"]
         cargo_rule = self.CARGO_RULES.get(cargo_type, self.CARGO_RULES["general"])
         departure_date = self._get_departure_date(payload)
         weather_context = get_route_weather_context(source, destination, context=context)
+
+        simulation_mode = payload.get("mode") == "simulation"
+        sim = payload.get("simulation") or {} if simulation_mode else {}
 
         for route in routes:
             supported = [item.lower() for item in route.get("cargo_types", ["general"])]
             if cargo_type not in supported:
                 continue
 
-            delay_prob, weather_risk, reliability, congestion_risk = predict_delay_probability(
+            delay_prob, weather_risk, reliability, congestion_risk, otp_prediction = predict_delay_probability(
                 route,
                 source,
                 destination,
                 departure_date,
                 weather_context=weather_context,
             )
+
+            # Apply simulation mode adjustments
+            if simulation_mode:
+                # Adjust weather risk based on simulation
+                if sim.get("weather_level") is not None:
+                    sim_weather = float(sim.get("weather_level"))
+                    weather_risk = 0.5 * weather_risk + 0.5 * sim_weather
+
+                # Adjust congestion risk based on simulation
+                if sim.get("congestion_level") is not None:
+                    sim_congestion = float(sim.get("congestion_level"))
+                    congestion_risk = 0.5 * congestion_risk + 0.5 * sim_congestion
+
+                # Adjust delay probability based on simulation
+                if sim.get("delay_factor") is not None:
+                    sim_delay = float(sim.get("delay_factor"))
+                    delay_prob = 0.5 * delay_prob + 0.5 * sim_delay
+
+                # Adjust reliability based on simulation
+                if sim.get("reliability_factor") is not None:
+                    sim_reliability = float(sim.get("reliability_factor"))
+                    reliability = 0.5 * reliability + 0.5 * sim_reliability
+
             stops = int(route.get("stops", 0))
             time = float(route.get("duration", 0))
-            cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_type, cargo_rule)
+            cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_volume, cargo_type, cargo_rule)
             cost = cost_breakdown["total"]
+
+            # Apply simulation mode to cost
+            if simulation_mode:
+                if sim.get("fuel_price") is not None:
+                    fuel_factor = float(sim.get("fuel_price")) / 100.0
+                    cost = cost * fuel_factor
+
             business_rules = self._evaluate_business_rules(route, cargo_weight, cargo_type, cargo_rule)
             risk_raw = (
                 float(route.get("delay_risk", 0))
@@ -137,6 +177,12 @@ class AirPipeline(BasePipeline):
             source_airport = route.get("source_airport") or CITY_TO_AIRPORT.get(source, {"code": source[:3].upper(), "name": source})
             destination_airport = route.get("destination_airport") or CITY_TO_AIRPORT.get(destination, {"code": destination[:3].upper(), "name": destination})
             confidence_score, confidence_reasons = self._build_confidence(route, reliability, cargo_rule, business_rules)
+            schedule = build_route_schedule(
+                departure_date,
+                time,
+                source_airport,
+                destination_airport,
+            )
 
             engineered.append({
                 "type": "Air",
@@ -151,10 +197,14 @@ class AirPipeline(BasePipeline):
                 "cost_per_kg": route.get("cost_per_kg", 0),
                 "weather_risk": weather_risk,
                 "congestion_risk": congestion_risk,
+                "otp_prediction": otp_prediction,
+                "congestion_score": otp_prediction["congestionScore"],
+                "congestion_level": otp_prediction["congestionLevel"],
                 "reliability": round(reliability, 3),
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
-                "data_source": route.get("data_source", "mock"),
+                "cargo_volume": cargo_volume,
+                "data_source": route.get("data_source", "openflights"),
                 "is_fallback": route.get("is_fallback", True),
                 "route_support_type": route.get("route_support_type", "inferred"),
                 "supported_by": route.get("supported_by", "internal_fallback"),
@@ -163,6 +213,12 @@ class AirPipeline(BasePipeline):
                 "confidence_reasons": confidence_reasons,
                 "cost_breakdown": cost_breakdown,
                 "business_rules_applied": business_rules["messages"],
+                "simulation_mode": simulation_mode,
+                "sim_weather_level": sim.get("weather_level") if simulation_mode else None,
+                "sim_congestion_level": sim.get("congestion_level") if simulation_mode else None,
+                "sim_delay_factor": sim.get("delay_factor") if simulation_mode else None,
+                "sim_reliability_factor": sim.get("reliability_factor") if simulation_mode else None,
+                "sim_fuel_price": sim.get("fuel_price") if simulation_mode else None,
                 "segments": route.get("segments")
                 or [
                     {
@@ -177,9 +233,13 @@ class AirPipeline(BasePipeline):
                     "delay_prob": delay_prob,
                     "weather_risk": weather_risk,
                     "congestion_risk": congestion_risk,
+                    "otp_prediction": otp_prediction,
+                    "congestion_score": otp_prediction["congestionScore"],
+                    "congestion_level": otp_prediction["congestionLevel"],
                     "reliability": round(reliability, 3),
                     "cargo_type": cargo_type,
                     "cargo_weight": cargo_weight,
+                    "cargo_volume": cargo_volume,
                     "source_airport": source_airport,
                     "destination_airport": destination_airport,
                     "hub_airport": route.get("hub_airport"),
@@ -190,6 +250,11 @@ class AirPipeline(BasePipeline):
                     "confidence_reasons": confidence_reasons,
                     "cost_breakdown": cost_breakdown,
                     "business_rules_applied": business_rules["messages"],
+                    "schedule": schedule,
+                    "departure_local": schedule["departure_local"],
+                    "arrival_local": schedule["arrival_local"],
+                    "departure_utc": schedule["departure_utc"],
+                    "arrival_utc": schedule["arrival_utc"],
                 },
             })
 
@@ -230,60 +295,157 @@ class AirPipeline(BasePipeline):
             filtered.append(route)
         return filtered
 
-    def _explain_route(self, route, priority):
+    def _explain_route(self, route, priority, simulation_mode=False):
         reasons = []
-        if priority == "fast":
-            reasons.append("Prioritized fastest air cargo movement")
-        elif priority == "cheap":
-            reasons.append("Prioritized lowest freight cost")
-        elif priority == "safe":
-            reasons.append("Prioritized lower operational risk")
-        else:
-            reasons.append("Balanced time, cost, and risk across air routes")
+        seen = set()
 
+        def add_factor(text: str):
+            if text and text not in seen:
+                seen.add(text)
+                reasons.append(text)
+
+        # Priority-based explanation
+        if priority == "fast":
+            add_factor("Prioritized fastest air cargo movement")
+        elif priority == "cheap":
+            add_factor("Prioritized lowest freight cost")
+        elif priority == "safe":
+            add_factor("Prioritized lower operational risk")
+        else:
+            add_factor("Balanced time, cost, and risk across air routes")
+
+        # Stop count explanation
         if route["stops"] == 0:
             if route.get("route_support_type") == "direct":
-                reasons.append("Direct airport pair is validated from the OpenFlights route snapshot")
+                add_factor("Direct airport pair is validated from the OpenFlights route snapshot")
             else:
-                reasons.append("Direct flight reduces handling and transfer delay")
+                add_factor("Direct flight reduces handling and transfer delay")
         else:
             if route.get("route_support_type") == "one_stop":
-                reasons.append("One-stop airport chain is validated from the OpenFlights route snapshot")
+                add_factor("One-stop airport chain is validated from the OpenFlights route snapshot")
             else:
-                reasons.append(f"{route['stops']} stop route trades speed for lower fare")
+                add_factor(f"{route['stops']} stop route trades speed for lower fare")
 
-        reasons.append(f"Predicted delay probability: {int(route['delay_prob'] * 100)}%")
-        reasons.append(f"Airline reliability score: {route['reliability']:.2f}")
-        reasons.append(f"Confidence score: {route['confidence_score']}% ({route['confidence_label']})")
-        reasons.extend(route.get("business_rules_applied", []))
-        reasons.append(f"Data source: {route.get('data_source', 'mock')}")
+        # Congestion and delay information
+        congestion_level = route.get('congestion_level', 'Unknown')
+        congestion_score = route.get('congestion_score', 0)
+        if congestion_level == "High":
+            add_factor(f"High airport congestion detected ({congestion_score}/100)")
+        elif congestion_level == "Medium":
+            add_factor(f"Moderate airport congestion ({congestion_score}/100)")
+        else:
+            add_factor(f"Low airport congestion ({congestion_score}/100)")
 
-        route["reason"] = reasons[0]
+        delay_prob = int(route['delay_prob'] * 100)
+        if delay_prob > 30:
+            add_factor(f"High delay probability ({delay_prob}%)")
+        elif delay_prob > 15:
+            add_factor(f"Moderate delay probability ({delay_prob}%)")
+        else:
+            add_factor(f"Low delay probability ({delay_prob}%)")
+
+        # Reliability information
+        reliability = route['reliability']
+        if reliability > 0.85:
+            add_factor(f"High airline reliability ({reliability:.2f})")
+        elif reliability > 0.70:
+            add_factor(f"Moderate airline reliability ({reliability:.2f})")
+        else:
+            add_factor(f"Lower airline reliability ({reliability:.2f})")
+
+        # Confidence score
+        confidence_score = route['confidence_score']
+        confidence_label = route['confidence_label']
+        add_factor(f"Confidence score: {confidence_score}% ({confidence_label})")
+
+        # Business rules
+        for rule in route.get("business_rules_applied", []):
+            add_factor(rule)
+
+        # Data source
+        add_factor(f"Data source: {route.get('data_source', 'openflights')}")
+
+        # Simulation mode specific information
+        if simulation_mode:
+            add_factor("Simulation mode: Adjusted parameters applied")
+            if route.get("sim_weather_level") is not None:
+                weather_level = route.get("sim_weather_level")
+                if weather_level > 0.7:
+                    add_factor(f"Simulated adverse weather conditions (level: {weather_level})")
+                elif weather_level > 0.4:
+                    add_factor(f"Simulated moderate weather (level: {weather_level})")
+                else:
+                    add_factor(f"Simulated favorable weather (level: {weather_level})")
+
+            if route.get("sim_congestion_level") is not None:
+                congestion = route.get("sim_congestion_level")
+                add_factor(f"Simulated congestion level: {congestion}")
+
+            if route.get("sim_delay_factor") is not None:
+                delay_factor = route.get("sim_delay_factor")
+                add_factor(f"Simulated delay factor: {delay_factor}")
+
+            if route.get("sim_reliability_factor") is not None:
+                reliability_factor = route.get("sim_reliability_factor")
+                add_factor(f"Simulated reliability factor: {reliability_factor}")
+
+            if route.get("sim_fuel_price") is not None:
+                fuel_price = route.get("sim_fuel_price")
+                add_factor(f"Simulated fuel price adjustment: {fuel_price}%")
+
+        # Risk assessment
+        risk = route['risk']
+        if risk > 0.6:
+            add_factor(f"High operational risk ({int(risk * 100)}%)")
+        elif risk > 0.3:
+            add_factor(f"Moderate operational risk ({int(risk * 100)}%)")
+        else:
+            add_factor(f"Low operational risk ({int(risk * 100)}%)")
+
+        # Cost information
+        cost = route['cost']
+        add_factor(f"Total cost: ₹{int(cost)}")
+
+        # Time information
+        time = route['time']
+        add_factor(f"Estimated transit time: {time} hrs")
+
+        route["reason"] = reasons[0] if reasons else "Alternative feasible route"
         route["key_factors"] = reasons
         route["eta"] = f"{route['time']} hrs"
         return route
 
-    def _build_cost_breakdown(self, route, cargo_weight, cargo_type, cargo_rule):
-        base_freight = float(route.get("cost_per_kg", 0)) * cargo_weight
-        fuel_surcharge = round(base_freight * 0.12, 2)
-        terminal_fee = round(320 + cargo_weight * cargo_rule["security_fee_per_kg"], 2)
-        handling_fee = round(route.get("stops", 0) * cargo_rule["handling_fee_per_stop"], 2)
-        cargo_markup = round(base_freight * (cargo_rule["base_markup"] - 1), 2)
-        heavy_lift_fee = round(max(0.0, cargo_weight - 180) * 1.1, 2)
-        total = round(
-            base_freight + fuel_surcharge + terminal_fee + handling_fee + cargo_markup + heavy_lift_fee,
-            2,
-        )
+    def _build_cost_breakdown(self, route, cargo_weight, cargo_volume, cargo_type, cargo_rule):
+        actual_weight = cargo_weight
+        volumetric_weight = cargo_volume * 167.0
+        chargeable_weight = max(actual_weight, volumetric_weight)
+
+        route_rate = float(route.get("cost_per_kg", 0))
+        fuel_rate = route_rate * 0.12  # Extracted from previous 12% surcharge logic
+        security_rate = cargo_rule.get("security_fee_per_kg", 0.0)
+
+        freight = round(chargeable_weight * route_rate, 2)
+        fuel = round(chargeable_weight * fuel_rate, 2)
+        security = round(chargeable_weight * security_rate, 2)
+        
+        awb_fee = 320.0
+        terminal_fee = round(route.get("stops", 0) * cargo_rule.get("handling_fee_per_stop", 0.0), 2)
+
+        cargo_markup = round(freight * (cargo_rule.get("base_markup", 1.0) - 1.0), 2)
+
+        total = round(freight + fuel + security + awb_fee + terminal_fee + cargo_markup, 2)
+
         return {
-            "base_freight": round(base_freight, 2),
-            "fuel_surcharge": fuel_surcharge,
+            "base_freight": freight,
+            "fuel_surcharge": fuel,
+            "security_fee": security,
+            "awb_fee": awb_fee,
             "terminal_fee": terminal_fee,
-            "handling_fee": handling_fee,
             "cargo_markup": cargo_markup,
-            "heavy_lift_fee": heavy_lift_fee,
             "total": total,
             "currency": "INR",
             "pricing_basis": f"{cargo_type} cargo business rule model",
+            "chargeable_weight": chargeable_weight,
         }
 
     def _evaluate_business_rules(self, route, cargo_weight, cargo_type, cargo_rule):
@@ -333,7 +495,6 @@ class AirPipeline(BasePipeline):
         reasons = []
         support_type = route.get("route_support_type", "inferred")
         stops = int(route.get("stops", 0))
-        is_fallback = route.get("is_fallback", False)
 
         if support_type == "direct":
             score += 18
@@ -342,12 +503,7 @@ class AirPipeline(BasePipeline):
             score += 10
             reasons.append("Airport chain is supported by the OpenFlights route snapshot.")
         else:
-            reasons.append("Route is inferred from nearest-airport matching and fallback airline heuristics.")
-
-        # Penalize mock/fallback routes — they have no real schedule validation
-        if is_fallback:
-            score -= 15
-            reasons.append("Route is based on fallback/mock data — no verified schedule.")
+            reasons.append("Route support type could not be verified from OpenFlights.")
 
         reliability_bonus = round((reliability - 0.7) * 45)
         score += reliability_bonus
@@ -375,12 +531,27 @@ class AirPipeline(BasePipeline):
         return "watch"
 
     def generate(self, source, destination, payload=None, context=None):
+        from app.services.location_funnel import corridor_endpoints
+
+        source, destination = corridor_endpoints(source, destination, context=context)
         try:
             normalized = self._get_payload(payload)
+            mode = normalized.get("mode", "realtime")
+
+            if mode not in ["realtime", "simulation"]:
+                raise ValueError(f"Invalid mode '{mode}'. Allowed values: 'realtime' or 'simulation'")
+
+            # Normalize mode back into payload to ensure consistency everywhere
+            normalized["mode"] = mode
+
+            simulation_mode = mode == "simulation"
+            priority = normalized["priority"]
+
             routes = self._fetch_routes(source, destination, normalized, context=context)
             if not routes:
                 return {
                     "mode": "air",
+                    "simulation": simulation_mode,
                     "status": "no_routes",
                     "message": f"No valid air routes found between {source} and {destination}",
                     "best": None,
@@ -388,12 +559,30 @@ class AirPipeline(BasePipeline):
                     "all": [],
                 }
 
-            engineered = self._engineer_features(routes, source, destination, normalized, context=context)
-            filtered = self._apply_constraints(engineered, normalized)
+            # Always compute realtime baseline first
+            realtime_payload = normalized.copy()
+            realtime_payload["mode"] = "realtime"
+            realtime_payload["simulation"] = {}
+
+            realtime_enriched = self._engineer_features(routes, source, destination, realtime_payload, context=context)
+            realtime_filtered = self._apply_constraints(realtime_enriched, realtime_payload)
+            realtime_ranked = score_routes(realtime_filtered, priority)
+
+            # If simulation mode → apply simulation to ALL routes
+            if simulation_mode:
+                import copy
+                sim_routes = copy.deepcopy(routes)
+                simulated_enriched = self._engineer_features(sim_routes, source, destination, normalized, context=context)
+                filtered = self._apply_constraints(simulated_enriched, normalized)
+                ranked = score_routes(filtered, priority)
+            else:
+                filtered = realtime_filtered
+                ranked = realtime_ranked
 
             if not filtered:
                 return {
                     "mode": "air",
+                    "simulation": simulation_mode,
                     "status": "no_routes",
                     "message": f"No valid air routes found between {source} and {destination}",
                     "best": None,
@@ -401,23 +590,31 @@ class AirPipeline(BasePipeline):
                     "all": [],
                 }
 
-            ranked = score_routes(filtered, normalized["priority"])
-            explained = [self._explain_route(route, normalized["priority"]) for route in ranked]
+            explained = [self._explain_route(route, priority, simulation_mode) for route in ranked]
 
             best = explained[0] if explained else None
             alternatives = explained[1:] if len(explained) > 1 else []
 
             return {
                 "mode": "air",
+                "simulation": simulation_mode,
                 "best": best,
                 "alternatives": alternatives,
-                "all": explained
+                "all": explained,
+                "constraints_applied": {
+                    "max_stops": normalized.get("max_stops"),
+                    "budget_limit": normalized.get("budget_limit"),
+                    "deadline_hours": normalized.get("deadline_hours"),
+                    "routes_before": len(routes),
+                    "routes_after": len(filtered),
+                }
             }
 
         except Exception as e:
             print("[AIR PIPELINE ERROR]", str(e), type(e))
             return {
                 "mode": "air",
+                "simulation": normalized.get("mode") == "simulation" if normalized else False,
                 "best": None,
                 "alternatives": [],
                 "all": [],
