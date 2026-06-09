@@ -238,3 +238,9 @@ def get_hubs(source: str, destination: str, max_hubs: int = 4) -> list[Hub]:
     hubs = [_build_hub(city, on_route=True) for city in cities]
     hubs.sort(key=lambda h: (h.tier, h.city))
     return hubs
+
+
+def enrich_hub_airports(hubs: list[Hub]) -> list[Hub]:
+    from app.services.geo_hub_finder import _attach_airport
+
+    return [_attach_airport(h) for h in hubs]
