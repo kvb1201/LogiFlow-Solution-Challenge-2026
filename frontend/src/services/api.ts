@@ -721,7 +721,7 @@ export type WaterRoute = {
   delay_prob?: number;
   reliability_score?: number;
   notes?: string;
-  // Cost breakdown (populated by engineer.py Item #2)
+  // Cost breakdown (populated by engineer.py)
   cost_breakdown?: {
     sea_freight?: number;
     road_drayage?: number;
@@ -729,9 +729,29 @@ export type WaterRoute = {
     transshipment_fees?: number;
     regional_surcharge?: number;
   };
-  // Route insight (populated by engineer.py Item #3)
+  // Route insight
   reason?: string;
   key_factors?: string[];
+  // Phase 2/3 fields from water pipeline
+  transit_days_source?: 'ml_model' | 'observed' | 'heuristic';
+  chokepoints_transited?: string[];
+  active_disruptions?: Array<{
+    event_id: string;
+    event_type: string;
+    event_name: string;
+    alert: 'RED' | 'ORANGE' | 'GREEN';
+    country: string;
+    year: number;
+  }>;
+  marine_conditions?: {
+    wave_height_max_m?: number | null;
+    wind_speed_mean_kn?: number | null;
+    storm_flag?: boolean;
+    ocean_current_max_kmh?: number | null;
+    weather_source?: string;
+  };
+  // Departure date forwarded from input form
+  departure_date?: string;
 };
 
 export type WaterPayload = {
@@ -740,6 +760,7 @@ export type WaterPayload = {
   cargo_weight_kg?: number;
   cargo_type?: string;
   priority?: string;
+  departure_date?: string;
   constraints?: {
     risk_threshold?: number | null;
     delay_tolerance_hours?: number | null;
