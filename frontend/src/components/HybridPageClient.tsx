@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   composeMultimodalRoute,
   BACKEND_UNAVAILABLE_MSG,
   type ComposeResult,
 } from '@/services/api';
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
+import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
@@ -48,7 +49,8 @@ export default function HybridPageClient() {
   const [result, setResult] = useState<ComposeResult | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
-  const showForm = !loading && !result?.recommended;
+  const skipWizard = loading || Boolean(result?.recommended) || (autoTriggered && !error);
+  const showForm = !skipWizard;
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -119,16 +121,23 @@ export default function HybridPageClient() {
     if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
   }, [storeScenarioBrief]);
 
-  useEffect(() => {
+  // Match comparator: only mark autorun started once corridor is in the store.
+  useLayoutEffect(() => {
     syncAutorunFromSession();
-    if (shouldRunShipmentAutorun('hybrid')) {
-      markShipmentAutorunStarted('hybrid');
-      setAutoTriggered(true);
-      if (source.trim() && destination.trim()) {
-        void runComposeRef.current();
-      }
+    if (!shouldRunShipmentAutorun('hybrid')) return;
+
+    const state = useLogiFlowStore.getState();
+    if (!state.source.trim() || !state.destination.trim()) return;
+
+    if (state.scenarioBrief?.trim()) {
+      setScenarioBrief(state.scenarioBrief);
     }
-  }, [source, destination]);
+    markShipmentAutorunStarted('hybrid');
+    setAutoTriggered(true);
+    setStep(2);
+    setLoading(true);
+    void runComposeRef.current();
+  }, []);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -299,13 +308,7 @@ export default function HybridPageClient() {
           </p>
         )}
 
-        {loading && (
-          <div className="flex flex-col items-center gap-3 py-20">
-            <span className="h-8 w-8 rounded-full border-2 border-violet-400/20 border-t-violet-400 animate-spin" />
-            <p className="text-sm text-muted-foreground">Finding best chain…</p>
-            <p className="text-xs text-outline">Usually under a minute</p>
-          </div>
-        )}
+        {loading && <MultimodalPipelineLoading variant="compose" />}
 
         {result?.recommended && !loading && (
           <ComposeResults
