@@ -625,12 +625,12 @@ SEA_LANES: dict[str, list[str]] = {
     "port271":   ["port2039", "port907"],                         # Dahej
     "port907":   ["port271", "port776", "port511"],               # Pipavav
     "port776":   ["port777", "port540", "port907", "port511",     # JNPT
-                  "port709", "port411"],
+                  "port709", "port411", "port583", "port1201"],  # + Kochi + direct SG
     "port511":   ["port776", "port709"],                          # Jaigad
     "port709":   ["port776", "port511", "port811"],               # Mormugao
     "port811":   ["port709", "port583"],                          # New Mangalore
     "port583":   ["port811", "port1331", "port235", "colombo",    # Kochi
-                  "port1201"],
+                  "port1201"],                                    # direct to Singapore
     "port1199":  ["port777", "port540"],                          # Sikka/Vadinar
 
     # ── India East Coast chain ──────────────────────────────────────────────
@@ -738,9 +738,12 @@ ROUTE_CHOKEPOINTS: dict[tuple[str, str], list[str]] = {
     ("port207", "port1201"):  ["chokepoint5"],
     ("port1331", "port1201"): ["chokepoint5"],
     ("colombo", "port1201"):  ["chokepoint5"],
+    ("port776", "port1201"):  ["chokepoint5"],   # JNPT direct → Singapore
+    ("port777", "port1201"):  ["chokepoint5"],   # Mundra → Singapore
     # Reverse
     ("port1201", "port583"):  ["chokepoint5"],
     ("port1201", "port235"):  ["chokepoint5"],
+    ("port1201", "port776"):  ["chokepoint5"],
 
     # ── Singapore ↔ East Asia (Taiwan Strait, Korea Strait) ──────────────
     ("port1201", "port1188"): ["chokepoint11"],

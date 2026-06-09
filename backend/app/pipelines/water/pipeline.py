@@ -72,12 +72,14 @@ class WaterPipeline(BasePipeline):
                     continue
                 # max_legs is the number of sea segments, not transshipments.
                 # transshipments = legs - 1 (intermediate ports).
-                # We add +2 to the transshipment count to give the BFS room
-                # to route through hub ports (e.g. SG -> Salalah -> JebelAli -> PortSaid -> Rotterdam
-                # = 4 legs, 3 transshipments, but needs max_legs=4 not 3).
-                # Floor at 4 so cross-region routes always have enough headroom.
+                # We need enough legs for hub routing (e.g. India → Jebel Ali → Port Said → Rotterdam
+                # = 3 legs, 2 transshipments). Add +2 headroom for hub-to-hub routing.
+                # But honour max_transshipments=0 strictly (direct routes only = max_legs=1).
                 max_trans = int(constraints.get("max_transshipments", 3))
-                max_legs = max(max_trans + 2, 4)
+                if max_trans == 0:
+                    max_legs = 1   # strictly direct, 1 sea leg
+                else:
+                    max_legs = max(max_trans + 2, 4)
                 port_paths = generate_port_paths(
                     op.port_id,
                     dp.port_id,

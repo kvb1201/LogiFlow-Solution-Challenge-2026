@@ -41,6 +41,7 @@ from app.pipelines.water.ml_models import (
 from app.pipelines.water.ports import haversine_km
 from app.pipelines.water.route_generator import port_coords, port_name, sea_distance_km
 from app.utils.coordinates import get_coords
+from app.services.geocoder import geocode_latlng_global
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +60,92 @@ def _port_meta(port_id: str) -> dict:
         if str(p.get("id")) == str(port_id):
             return p
     return {}
+
+
+# Known international city → (lat, lng) for water pipeline road legs.
+# Avoids the India-biased geocoder returning "Dubai, Uttar Pradesh" etc.
+_INTL_CITY_COORDS: dict[str, tuple[float, float]] = {
+    "dubai":        (25.2048,  55.2708),
+    "abu dhabi":    (24.4539,  54.3773),
+    "jeddah":       (21.4858,  39.1925),
+    "riyadh":       (24.7136,  46.6753),
+    "muscat":       (23.5880,  58.3829),
+    "doha":         (25.2854,  51.5310),
+    "kuwait city":  (29.3759,  47.9774),
+    "rotterdam":    (51.9244,   4.4777),
+    "amsterdam":    (52.3676,   4.9041),
+    "antwerp":      (51.2194,   4.4025),
+    "hamburg":      (53.5753,   9.9954),
+    "london":       (51.5074,  -0.1278),
+    "paris":        (48.8566,   2.3522),
+    "barcelona":    (41.3851,   2.1734),
+    "marseille":    (43.2965,   5.3698),
+    "singapore":    ( 1.3521, 103.8198),
+    "kuala lumpur": ( 3.1390, 101.6869),
+    "jakarta":      (-6.2088, 106.8456),
+    "bangkok":      (13.7563, 100.5018),
+    "ho chi minh":  (10.7769, 106.7009),
+    "manila":       (14.5995, 120.9842),
+    "hong kong":    (22.3193, 114.1694),
+    "shanghai":     (31.2304, 121.4737),
+    "beijing":      (39.9042, 116.4074),
+    "shenzhen":     (22.5431, 114.0579),
+    "guangzhou":    (23.1291, 113.2644),
+    "tokyo":        (35.6762, 139.6503),
+    "osaka":        (34.6937, 135.5023),
+    "busan":        (35.1796, 129.0756),
+    "seoul":        (37.5665, 126.9780),
+    "sydney":       (-33.8688, 151.2093),
+    "melbourne":    (-37.8136, 144.9631),
+    "new york":     (40.7128, -74.0060),
+    "los angeles":  (34.0522, -118.2437),
+    "houston":      (29.7604, -95.3698),
+    "miami":        (25.7617, -80.1918),
+    "santos":       (-23.9619, -46.3342),
+    "rio de janeiro": (-22.9068, -43.1729),
+    "cape town":    (-33.9249,  18.4241),
+    "durban":       (-29.8587,  31.0218),
+    "nairobi":      (-1.2921,  36.8219),
+    "lagos":        ( 6.5244,   3.3792),
+    "casablanca":   (33.5731,  -7.5898),
+    "colombo":      ( 6.9271,  79.8612),
+    "karachi":      (24.8607,  67.0011),
+    "istanbul":     (41.0082,  28.9784),
+    "cairo":        (30.0444,  31.2357),
+    "alexandria":   (31.2001,  29.9187),
+}
+
+
+def _get_city_coords(city: str) -> tuple[float, float] | None:
+    """
+    Resolve city coordinates for road leg calculation.
+    Priority:
+      1. Known international city table (fast, no API)
+      2. India-biased static lookup (for Indian cities)
+      3. Global geocoder (API call)
+    Returns None if the city can't be resolved.
+    """
+    key = city.strip().lower()
+    # Strip country suffix for lookup
+    for suffix in [", india", ", uae", ", uk", ", usa", ", netherlands", ", germany", ", singapore", ", china"]:
+        key = key.removesuffix(suffix)
+
+    # 1. International table
+    if key in _INTL_CITY_COORDS:
+        return _INTL_CITY_COORDS[key]
+    # partial match
+    for k, v in _INTL_CITY_COORDS.items():
+        if k in key or key in k:
+            return v
+
+    # 2. Indian static table (handles Indian cities correctly)
+    coords = get_coords(city)
+    if coords:
+        return coords
+
+    # 3. Global geocoder as last resort
+    coords = geocode_latlng_global(city)
+    return coords
 
 
 def _disruption_risk_score(port_ids: list[str]) -> tuple[float, list[dict]]:
@@ -121,8 +208,17 @@ def _road_leg(
     port_lat: float,
     port_lng: float,
 ) -> tuple[float, float]:
-    """Returns (distance_km, time_hours)."""
-    c_lat, c_lng = get_coords(city)
+    """
+    Returns (distance_km, time_hours) for the road leg from city to port.
+    Uses the international-aware coord lookup so Dubai/Rotterdam/Singapore
+    don't resolve to Indian villages.
+    If the city cannot be geocoded, returns a 0 km / 0 hr leg (data gap).
+    """
+    coords = _get_city_coords(city)
+    if not coords:
+        log.warning("[engineer] Could not geocode city '%s' for road leg — using 0 km", city)
+        return 0.0, 0.0
+    c_lat, c_lng = coords
     d_km = haversine_km(c_lat, c_lng, port_lat, port_lng)
     t_hr = d_km / max(TRUCK_SPEED_KMPH, 1e-6)
     return float(d_km), float(t_hr)

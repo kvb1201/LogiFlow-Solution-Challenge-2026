@@ -191,7 +191,7 @@ def get_port_marine_conditions(lat: float, lon: float) -> MarineConditions:
     }
 
     try:
-        resp = requests.get(url, params=params, timeout=6)
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
@@ -300,7 +300,7 @@ def get_departure_wind_conditions(
     }
 
     try:
-        resp = requests.get(url, params=params, timeout=6)
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
