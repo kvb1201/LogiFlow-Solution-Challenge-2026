@@ -21,6 +21,7 @@ class WaterPayload(BaseModel):
     cargo_weight_kg: float = 100
     cargo_type: str = "General"
     priority: str = "balanced"
+    departure_date: Optional[str] = None
     constraints: WaterConstraints = Field(default_factory=WaterConstraints)
 
 
@@ -39,6 +40,7 @@ def optimize_water(payload: WaterPayload):
                 "priority": payload.priority,
                 "cargo_weight_kg": payload.cargo_weight_kg,
                 "cargo_type": payload.cargo_type,
+                "departure_date": payload.departure_date,
                 "constraints": payload.constraints.dict(),
             },
             context=context,

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Air pipeline finds cargo-feasible flight routes between Indian cities using the **OpenFlights dataset**. It resolves city names to airports, matches routes from the dataset, applies confidence scoring, and filters out unreliable results. No mock or fabricated routes are returned.
+The Air pipeline finds cargo-feasible flight routes using **OpenFlights** plus **Supabase** tables (`airports`, `air_routes`, `otp_baselines`) for domestic and international lanes. It resolves cities via the shared location funnel, scores OTP/congestion risk, and returns only routes above the confidence threshold. No mock or fabricated routes are returned.
+
+See also [international air routing](../international-air-routing-summary.md).
 
 ## Flow
 

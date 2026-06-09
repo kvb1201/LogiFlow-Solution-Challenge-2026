@@ -188,6 +188,7 @@ def _schedule_from_csv(train_number: str) -> dict[str, Any] | None:
     }
 
 
+@lru_cache(maxsize=512)
 def _schedule_from_delay_scrape(train_number: str) -> dict[str, Any] | None:
     if not _DELAY_CSV_PATH.exists():
         return None

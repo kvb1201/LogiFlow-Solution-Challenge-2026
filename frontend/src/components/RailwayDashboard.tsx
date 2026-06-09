@@ -8,13 +8,18 @@ import RailwayLoading from '@/components/RailwayLoading';
 import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
+import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import {
   buildTrainCorridorGeometry,
   fetchExplanation,
   type Recommendation,
   type RankedOption,
   type RouteGeometryStop,
+  type RouteSegment,
 } from '@/services/api';
+
+const NO_SEGMENTS: RouteSegment[] = [];
+const NO_STOPS: RouteGeometryStop[] = [];
 import {
   formatRailDataSource,
   formatRailDelaySource,
@@ -300,12 +305,43 @@ function DetailPanel({
   ranked,
   trainDelayDetail,
   selectedTrainLive,
+  origin,
+  destination,
+  priority,
+  onSave,
 }: {
   rec: Recommendation | null;
   ranked: RankedOption | null;
   trainDelayDetail: import('@/services/api').TrainDelayData | null;
   selectedTrainLive: Record<string, unknown> | null;
+  origin: string;
+  destination: string;
+  priority: string;
+  onSave?: () => void;
 }) {
+  const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+
+  const trainKey = rec?.train_number || ranked?.train_number || '';
+
+  useEffect(() => {
+    setDynamicExplanation(null);
+    setIsLoadingExplanation(false);
+  }, [trainKey, rec?.llm_explanation]);
+
+  async function handleExplain() {
+    const base = rec ?? ranked;
+    if (!base) return;
+    setIsLoadingExplanation(true);
+    const expl = await fetchExplanation({
+      pipeline: 'rail',
+      priority,
+      route_data: base,
+      context: { origin, destination },
+    });
+    if (expl) setDynamicExplanation(expl);
+    setIsLoadingExplanation(false);
+  }
   const liveEntries = useMemo(() => {
     if (!selectedTrainLive || typeof selectedTrainLive !== 'object') return [];
     const preferred = ['currentStationName', 'currentStation', 'nextStationName', 'nextStation', 'delayMinutes', 'delay', 'status', 'position', 'speed'];
@@ -359,7 +395,7 @@ function DetailPanel({
   const delaySrc = isRec ? delay?.delay_data_source : ranked!.delay_source;
   const runningDays = isRec ? rec!.running_days : ranked!.running_days;
   const distanceKm = isRec ? rec!.distance_km : ranked!.distance_km;
-  const llmExplanation = isRec ? rec!.llm_explanation : undefined;
+  const llmExplanation = (isRec ? rec!.llm_explanation : undefined) || dynamicExplanation || undefined;
 
   const riskColor =
     riskScore < 0.2 ? '#10b981' : riskScore < 0.4 ? '#f59e0b' : '#ef4444';
@@ -378,6 +414,20 @@ function DetailPanel({
             <div className="text-[10px] text-outline mono">{distanceKm} km</div>
           </div>
         </div>
+        
+        {/* Save Report Action */}
+        {onSave && (
+          <div className="mb-3">
+            <button
+              onClick={onSave}
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
+              Save to My Plans
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-1.5">
           <MetricChip label="HOURS" value={`${durationH}h`} />
           <MetricChip label="RISK IDX" value={riskPct} />
@@ -477,16 +527,16 @@ function DetailPanel({
       </section>
 
       {/* Explanation */}
-      {llmExplanation && (
-        <section>
-          <SectionHeader icon="lightbulb" title="Why this recommendation" />
-          <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3">
+      <section>
+        <SectionHeader icon="lightbulb" title="Why this recommendation" />
+        <div className="bg-surface-container/20 rounded-xl border border-outline-variant/8 p-3 space-y-2">
+          {llmExplanation ? (
             <ul className="space-y-1.5 text-[11px] text-on-surface-variant leading-relaxed">
               {llmExplanation
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean)
-                .slice(0, 5)
+                .slice(0, 6)
                 .map((line, i) => (
                   <li key={`${line}-${i}`} className="flex gap-2">
                     <span className="text-primary/70 shrink-0">•</span>
@@ -494,9 +544,23 @@ function DetailPanel({
                   </li>
                 ))}
             </ul>
-          </div>
-        </section>
-      )}
+          ) : (
+            <p className="text-[10px] text-on-surface-variant leading-relaxed">
+              Get an AI summary of cost, delay risk, and why this train fits your corridor.
+            </p>
+          )}
+          {!llmExplanation && (
+            <button
+              type="button"
+              onClick={() => void handleExplain()}
+              disabled={isLoadingExplanation}
+              className="text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 disabled:opacity-60"
+            >
+              {isLoadingExplanation ? 'Generating…' : 'Generate AI explanation'}
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Station delays */}
       {trainDelayDetail?.route && trainDelayDetail.route.length > 0 && (
@@ -597,19 +661,27 @@ export default function RailwayDashboard() {
     resetSearch,
     setLiveMapMode,
     routeMetadata,
+    cargoType,
+    priority,
   } = useLogiFlowStore();
 
   const [selectedRecType, setSelectedRecType] = useState<'cheapest' | 'fastest' | 'safest'>('cheapest');
   const [routeGeometry, setRouteGeometry] = useState<[number, number][] | null>(null);
   const [routeStops, setRouteStops] = useState<RouteGeometryStop[]>([]);
   const [geometryLoading, setGeometryLoading] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   const activeRec = activeView === 'recommendations' ? recommendations[selectedRecType] : null;
   const activeOption = activeView === 'all_options' ? allOptions[selectedOptionIndex] : null;
 
   const activeTrainNumber = activeRec?.train_number || activeOption?.train_number || '';
   const activeTrainName = activeRec?.train_name || activeOption?.train_name || '';
-  const activeSegments = activeRec?.segments || activeOption?.segments || [];
+  const activeSegments = activeRec?.segments ?? activeOption?.segments ?? NO_SEGMENTS;
+
+  const corridorFetchKey =
+    activeTrainNumber && activeSegments.length > 0
+      ? `${activeTrainNumber}|${activeSegments.map((s) => `${s.from ?? ''}-${s.to ?? ''}`).join(';')}`
+      : '';
 
   useEffect(() => {
     if (!hasSearched || loading) return;
@@ -617,20 +689,20 @@ export default function RailwayDashboard() {
   }, [hasSearched, loading, setLiveMapMode]);
 
   useEffect(() => {
-    const trainNo = activeRec?.train_number || activeOption?.train_number || '';
-    const segments = activeRec?.segments || activeOption?.segments || [];
     const controller = new AbortController();
 
-    if (!trainNo || !segments.length) {
-      setRouteGeometry(null);
-      setRouteStops([]);
-      setGeometryLoading(false);
+    if (!corridorFetchKey) {
+      // Use stable NO_SEGMENTS + functional updates — setRouteStops([]) was a new [] every run → infinite loop
+      setRouteGeometry((prev) => (prev === null ? prev : null));
+      setRouteStops((prev) => (prev.length === 0 ? prev : NO_STOPS));
+      setGeometryLoading((prev) => (prev === false ? prev : false));
       return () => controller.abort();
     }
 
     setGeometryLoading(true);
 
-    void buildTrainCorridorGeometry(trainNo, segments, controller.signal)
+    // Supabase-first — do not wait for Render cold start before drawing the map
+    void buildTrainCorridorGeometry(activeTrainNumber, activeSegments, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         setRouteGeometry(result.geometry.length >= 2 ? result.geometry : null);
@@ -639,15 +711,16 @@ export default function RailwayDashboard() {
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        setRouteGeometry(null);
-        setRouteStops([]);
+        setRouteGeometry((prev) => (prev === null ? prev : null));
+        setRouteStops((prev) => (prev.length === 0 ? prev : NO_STOPS));
       })
       .finally(() => {
         if (!controller.signal.aborted) setGeometryLoading(false);
       });
 
     return () => controller.abort();
-  }, [activeRec, activeOption]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by corridorFetchKey string only
+  }, [corridorFetchKey]);
 
   const showRailLoading = loading && loadingMode === 'rail';
   const showNoRoutePage =
@@ -848,9 +921,33 @@ export default function RailwayDashboard() {
             ranked={activeOption}
             trainDelayDetail={trainDelayDetail}
             selectedTrainLive={selectedTrainLive as Record<string, unknown> | null}
+            origin={source}
+            destination={destination}
+            priority={priority}
+            onSave={() => setSaveModalOpen(true)}
           />
         </aside>
       </main>
+
+      {/* Save Report Modal */}
+      {activeRec || activeOption ? (
+        <SaveReportModal
+          isOpen={saveModalOpen}
+          onClose={() => setSaveModalOpen(false)}
+          prefill={{
+            source,
+            destination,
+            stops: activeSegments.slice(0, -1).map(s => s.to_name || s.to),
+            mode: 'rail',
+            cargoType,
+            optimizationInput: { priority },
+            optimizationResult: (activeRec || activeOption) as unknown as Record<string, unknown>,
+            estimatedCost: activeRec?.parcel_cost_inr ?? activeOption?.parcel_cost_inr,
+            estimatedTime: activeRec?.duration_hours ?? activeOption?.effective_hours,
+            riskScore: activeRec?.risk_score ?? activeOption?.risk_score,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

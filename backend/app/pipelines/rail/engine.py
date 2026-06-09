@@ -148,6 +148,36 @@ def decide(enriched_routes, payload):
               f"Showing best available.")
         filtered = enriched_routes[:]
 
+    # ── Dedupe direct trains: one row per train number (alias hubs reuse same service) ─
+    deduped_filtered: list[dict] = []
+    seen_direct_train: dict[str, dict] = {}
+    for r in filtered:
+        if r.get("has_transfer"):
+            deduped_filtered.append(r)
+            continue
+        trains = r.get("trains") or []
+        if not trains:
+            deduped_filtered.append(r)
+            continue
+        from app.pipelines.rail.station_coordinates import normalize_train_number
+
+        tno = normalize_train_number(trains[0].get("train_no", ""))
+        if not tno:
+            deduped_filtered.append(r)
+            continue
+        prev = seen_direct_train.get(tno)
+        if prev is None:
+            seen_direct_train[tno] = r
+            deduped_filtered.append(r)
+            continue
+        prev_dur = prev.get("total_duration_minutes", 10**9)
+        cur_dur = r.get("total_duration_minutes", 10**9)
+        if cur_dur < prev_dur:
+            idx = deduped_filtered.index(prev)
+            deduped_filtered[idx] = r
+            seen_direct_train[tno] = r
+    filtered = deduped_filtered
+
     # ── Cheapest ──────────────────────────────────────────────────────
     cheapest_route = min(filtered, key=lambda r: r.get("parcel_cost_inr", float("inf")))
     cheapest = _build_recommendation(

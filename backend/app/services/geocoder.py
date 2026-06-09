@@ -268,7 +268,20 @@ def _rail_station_lookup(name: str) -> Optional[tuple[float, float]]:
     City → primary IR station code → offline lat/lng.
     Uses station_coords_cache.json (8k+ stations, already in repo).
     """
+    token = (name or "").strip().upper()
+    if re.fullmatch(r"[A-Z0-9]{2,5}", token):
+        hit = _station_code_latlng(token)
+        if hit:
+            return hit
+
     city = _match_city(name)
+    if not city and token:
+        try:
+            from app.pipelines.rail.config import STATION_TO_CITY
+
+            city = STATION_TO_CITY.get(token)
+        except Exception:
+            city = None
     if not city:
         return None
     for code in _load_city_stations().get(city, []):
@@ -372,6 +385,16 @@ def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
     """Return (lat, lng) for a city/place name in India."""
     if not name or not str(name).strip():
         return None
+
+    raw = str(name).strip()
+    token = raw.upper()
+    if re.fullmatch(r"[A-Z0-9]{2,5}", token):
+        station_hit = _station_code_latlng(token)
+        if station_hit:
+            if context:
+                context.set(f"geocode:{_normalize_key(name)}", station_hit)
+            _COORD_CACHE[_normalize_key(name)] = station_hit
+            return station_hit
 
     cache_key = f"geocode:{_normalize_key(name)}"
     if context and context.has(cache_key):

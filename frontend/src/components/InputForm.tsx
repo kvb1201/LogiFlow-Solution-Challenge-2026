@@ -39,11 +39,17 @@ function useStationSearch(setGlobalSuggestions: (rows: StationSearchResult[]) =>
         return;
       }
       setLoading(true);
-      timeoutRef.current = setTimeout(async () => {
-        const data = await searchStations(query);
-        setResults(data);
-        setGlobalSuggestions(data);
-        setLoading(false);
+      timeoutRef.current = setTimeout(() => {
+        void searchStations(query)
+          .then((data) => {
+            setResults(data);
+            setGlobalSuggestions(data);
+          })
+          .catch(() => {
+            setResults([]);
+            setGlobalSuggestions([]);
+          })
+          .finally(() => setLoading(false));
       }, 300);
     },
     [setGlobalSuggestions]

@@ -440,14 +440,18 @@ def engineer_features(routes, payload, weather_override=None):
         
         # Keep all provider-returned trains for scoring/ML.
 
-        scale = determine_scale(t_name, t_type, t_number)
+        from app.pipelines.rail.tariff import resolve_billing_scale
 
-        # ── Calculate features (using official IRCA tariff tables) ────
+        scale = resolve_billing_scale(cargo_type, t_name, t_type, t_number)
+
+        # ── Calculate features (official IRCA distance×weight slabs) ────
         parcel_cost = calc_parcel_cost(
             distance_km=distance,
             weight_kg=weight,
             train_name=t_name,
             train_type=t_type,
+            train_number=t_number,
+            cargo_type=cargo_type,
             scale=scale,
         )
         tariff_detail = get_tariff_breakdown(
@@ -455,6 +459,7 @@ def engineer_features(routes, payload, weather_override=None):
             weight_kg=weight,
             train_name=t_name,
             train_type=t_type,
+            cargo_type=cargo_type,
             scale=scale,
         )
         risk = calc_risk_score(route, date_str, weather_data=weather_data)

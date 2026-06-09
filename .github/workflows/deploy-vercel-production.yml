@@ -1,0 +1,122 @@
+# Deploy frontend to Vercel when a collaborator pushes to main (Hobby private-repo workaround).
+#
+# Vercel blocks deploys when the commit author is not the team owner. When someone
+# other than Kaveh (kvb1201) pushes to main, this workflow rewrites the commit
+# author to Kaveh's Git identity and deploys immediately via his Vercel token.
+#
+# When Kaveh pushes to main himself, this workflow does NOT run — Vercel's normal
+# Git integration handles his commits.
+#
+# One-time setup: Kaveh adds GitHub repo secrets — see docs/deployment.md
+name: Deploy frontend to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Only deploy for collaborator pushes. Owner pushes use Vercel Git deploy.
+    if: github.event_name == 'workflow_dispatch' || github.actor != 'kvb1201'
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log trigger
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor (who pushed): ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
+
+      - name: Check required secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_GIT_EMAIL: ${{ secrets.VERCEL_GIT_EMAIL }}
+          VERCEL_GIT_NAME: ${{ secrets.VERCEL_GIT_NAME }}
+        run: |
+          missing=0
+          for key in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_GIT_EMAIL VERCEL_GIT_NAME; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing GitHub secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "Add secrets under GitHub → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+      - name: Rewrite commit author to Kaveh (Vercel Hobby owner)
+        env:
+          VERCEL_GIT_EMAIL: ${{ secrets.VERCEL_GIT_EMAIL }}
+          VERCEL_GIT_NAME: ${{ secrets.VERCEL_GIT_NAME }}
+        run: |
+          git config user.email "$VERCEL_GIT_EMAIL"
+          git config user.name "$VERCEL_GIT_NAME"
+          git commit --amend --no-edit --reset-author
+          echo "Deploying as: $(git log -1 --format='%an <%ae>')"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      # Vercel project Root Directory is `frontend` — run CLI from repo root so paths are not doubled.
+      - name: Pull Vercel project settings and production env
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          # Ensure NEXT_PUBLIC_* vars reach the Next.js build (root directory = frontend).
+          vercel env pull frontend/.env.production.local --environment=production --yes --token="$VERCEL_TOKEN"
+
+      - name: Verify Supabase env present for client bundle
+        run: |
+          found=0
+          for f in frontend/.env.production.local .vercel/.env.production.local .env.production.local; do
+            if [ -f "$f" ] && grep -q '^NEXT_PUBLIC_SUPABASE_URL=' "$f"; then
+              echo "Found NEXT_PUBLIC_SUPABASE_URL in $f"
+              found=1
+              break
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL missing from pulled production env. Set it in Vercel → Settings → Environment Variables → Production, then redeploy."
+            exit 1
+          fi
+          if ! grep -q '^NEXT_PUBLIC_SUPABASE_ANON_KEY=' frontend/.env.production.local 2>/dev/null; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY missing from frontend/.env.production.local"
+            exit 1
+          fi
+
+      - name: Build for production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy prebuilt output to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

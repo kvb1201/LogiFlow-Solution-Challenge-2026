@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Activity, Bell, Plus, Radar } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Bell, Plus, Radar, LogOut } from 'lucide-react';
 import { modeMeta } from '@/lib/mode-meta';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { ModeIcon } from '@/components/cockpit/ModeIcon';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import { NotificationBell } from '@/components/planner/NotificationBell';
 
 const navItems = [
   { href: '/', label: 'Home' },
@@ -20,11 +22,22 @@ const navItems = [
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const liveTrains = useLogiFlowStore((s) => s.liveTrains);
   const resetSearch = useLogiFlowStore((s) => s.resetSearch);
+  const { user, token, logout } = useAuthStore();
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+    pathname === null
+      ? false
+      : href === '/'
+        ? pathname === '/'
+        : pathname === href || pathname.startsWith(`${href}/`);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/');
+  };
 
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-border/70 bg-background/80 shadow-[0_12px_40px_-28px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
@@ -47,32 +60,80 @@ export default function NavBar() {
           </div>
         </Link>
 
-        <nav className="hidden min-w-0 items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            const mode = 'mode' in item ? item.mode : null;
-            const accent = mode ? modeMeta[mode].accent : 'var(--foreground)';
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={item.href === '/' ? resetSearch : undefined}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                  active
-                    ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                style={active ? { color: accent } : undefined}
-              >
-                {mode ? <ModeIcon mode={mode} className="h-3.5 w-3.5" /> : null}
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {/* Navigation - different based on auth status */}
+        {token && user ? (
+          // Authenticated nav
+          <nav className="hidden min-w-0 items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
+            <Link
+              href="/dashboard"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isActive('/dashboard')
+                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/hybrid"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isActive('/hybrid')
+                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Plan & Optimize
+            </Link>
+            <Link
+              href="/comparator"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isActive('/comparator')
+                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Compare
+            </Link>
+            <Link
+              href="/reports"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                isActive('/reports')
+                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              My Plans
+            </Link>
+          </nav>
+        ) : (
+          // Unauthenticated nav
+          <nav className="hidden min-w-0 items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
+            {navItems.map((item) => {
+              const active = isActive(item.href);
+              const mode = 'mode' in item ? item.mode : null;
+              const accent = mode ? modeMeta[mode].accent : 'var(--foreground)';
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={item.href === '/' ? resetSearch : undefined}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
+                    active
+                      ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  style={active ? { color: accent } : undefined}
+                >
+                  {mode ? <ModeIcon mode={mode} className="h-3.5 w-3.5" /> : null}
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
-          {liveTrains.length > 0 && pathname.startsWith('/railway') && (
+          {liveTrains.length > 0 && pathname?.startsWith('/railway') && (
             <div className="hidden items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 lg:flex">
               <span className="live-dot" />
               <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
@@ -80,49 +141,56 @@ export default function NavBar() {
               </span>
             </div>
           )}
-          <button
-            type="button"
-            className="hidden h-8 w-8 place-items-center rounded-md border border-border bg-surface/60 text-muted-foreground transition-colors hover:text-foreground sm:grid"
-            aria-label="Alerts"
-          >
-            <Bell className="h-3.5 w-3.5" />
-          </button>
-          <Link
-            href="/comparator"
-            className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New scenario</span>
-          </Link>
-        </div>
-      </div>
 
-      <div className="border-t border-border/40 bg-surface/20 md:hidden">
-        <nav className="mx-auto flex max-w-[1440px] gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            const mode = 'mode' in item ? item.mode : null;
-            return (
-              <Link
-                key={`mobile-${item.href}`}
-                href={item.href}
-                onClick={item.href === '/' ? resetSearch : undefined}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11.5px] font-medium ${
-                  active
-                    ? 'border-border-strong bg-surface-3 text-foreground'
-                    : 'border-border bg-surface/50 text-muted-foreground'
-                }`}
-              >
-                {mode ? (
-                  <ModeIcon mode={mode} className="h-3.5 w-3.5" />
-                ) : (
-                  <Activity className="h-3.5 w-3.5" />
+          {/* Notification bell */}
+          {token && user ? (
+            <NotificationBell />
+          ) : (
+            <button
+              type="button"
+              className="hidden h-8 w-8 place-items-center rounded-md border border-border bg-surface/60 text-muted-foreground transition-colors hover:text-foreground sm:grid"
+              aria-label="Alerts"
+            >
+              <Bell className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Auth buttons */}
+          {token && user ? (
+            <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 sm:flex">
+                {user.avatar && (
+                  <img
+                    src={user.avatar}
+                    alt={user.name}
+                    className="h-7 w-7 rounded-full border border-border"
+                  />
                 )}
-                {item.label}
+                <span className="text-[12px] font-medium text-muted-foreground hidden lg:inline">
+                  {user.name}
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface/60 px-2.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-all"
+                title="Logout"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Smart Shipment Planner</span>
               </Link>
-            );
-          })}
-        </nav>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

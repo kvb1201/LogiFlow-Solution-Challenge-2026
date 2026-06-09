@@ -525,3 +525,28 @@
     transform: translateX(120%);
   }
 }
+
+/* Railway map — labels on dark Carto basemap */
+.leaflet-tooltip.logiflow-map-label,
+.leaflet-tooltip.logiflow-city-label {
+  color: #f8fafc;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(15 23 42 / 88%);
+  border: 1px solid rgb(148 163 184 / 35%);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 45%);
+  pointer-events: none;
+}
+
+.leaflet-tooltip.logiflow-map-label strong,
+.leaflet-tooltip.logiflow-city-label strong {
+  color: #ffffff;
+}
+
+/* Corridor hub markers — pointer cursor on interactive stops */
+.leaflet-interactive.logiflow-corridor-hub {
+  cursor: pointer;
+}

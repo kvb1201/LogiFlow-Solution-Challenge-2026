@@ -29,10 +29,16 @@ backend/data/railways_online/vstflugel_stations.json
 ml/models/*.pkl
 ml/models/*.joblib
 
+# Large PortWatch CSVs (>100MB — too big for GitHub, keep locally only)
+backend/data/water/Daily_Ports_Data.csv
+backend/data/water/Spillover_simulator%3A_country-level_impact.csv
+backend/data/water/Spillover_simulator%3A_supply-chain_impact.csv
+
 # =========================
 # 🔹 Logs
 # =========================
 *.log
+backend/logs/
 
 # =========================
 # 🔹 OS Files

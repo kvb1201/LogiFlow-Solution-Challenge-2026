@@ -125,3 +125,49 @@ def sea_distance_km(path: list[str]) -> float:
     for a, b in zip(path, path[1:]):
         d += _edge_distance_km(a, b)
     return d
+
+
+def annotate_chokepoints(path: list[str]) -> list[str]:
+    """
+    Return the list of chokepoint IDs transited by a port path.
+    Wrapper so callers don't need to import ml_models directly.
+    """
+    try:
+        from app.pipelines.water.config import ROUTE_CHOKEPOINTS
+    except Exception:
+        return []
+
+    cps: list[str] = []
+    seen: set[str] = set()
+    for a, b in zip(path, path[1:]):
+        for cp in ROUTE_CHOKEPOINTS.get((a, b), []) + ROUTE_CHOKEPOINTS.get((b, a), []):
+            if cp not in seen:
+                seen.add(cp)
+                cps.append(cp)
+    return cps
+
+
+def annotated_port_paths(
+    origin_port_id: str,
+    dest_port_id: str,
+    k: int = 5,
+    max_legs: int = 3,
+) -> list[dict]:
+    """
+    Like generate_port_paths but returns enriched dicts with chokepoints annotated.
+
+    Each item: {
+      "path":         list[str] — port IDs
+      "chokepoints":  list[str] — chokepoint IDs transited
+      "sea_distance_km": float
+    }
+    """
+    paths = generate_port_paths(origin_port_id, dest_port_id, k=k, max_legs=max_legs)
+    return [
+        {
+            "path":            p,
+            "chokepoints":     annotate_chokepoints(p),
+            "sea_distance_km": sea_distance_km(p),
+        }
+        for p in paths
+    ]

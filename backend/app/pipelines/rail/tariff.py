@@ -42,7 +42,11 @@ def _load_scale_table(filename: str) -> List[Tuple[int, int, List[float]]]:
     try:
         with open(path, "r") as f:
             data = json.load(f)
-        return [(r["lo"], r["hi"], r["rates"]) for r in data["rows"]]
+        return [
+            (r["lo"], r["hi"], r["rates"])
+            for r in data["rows"]
+            if int(r.get("hi", 0)) > int(r.get("lo", 0))
+        ]
     except FileNotFoundError:
         print(f"  [Tariff] WARNING: {filename} not found, scale unavailable")
         return []
@@ -56,25 +60,25 @@ _TABLE_R = _load_scale_table("scale_r_official.json")
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 2026 Real-world Scaling Constants
+# Official surcharges & post-processing (Railway Board / GST)
 # ═══════════════════════════════════════════════════════════════════════
 
 MIN_CHARGEABLE_DISTANCE_KM = 50
 MIN_CHARGE_RS = 30.0
 DEV_SURCHARGE_RATE = 0.02
 ANIMALS_SURCHARGE_RATE = 0.25
-
-# As of 2026, official rates have scaled up from the old base tables
-# discovered by comparing provided 'real-world' 1950km rates with JSON tables.
-SCALE_MULTIPLIERS = {
-    "S": 2.291,  # Standard: 540 / 235.69
-    "P": 2.302,  # Premier: 1085 / 471.36
-    "L": 2.555,  # Luggage: 1360 / 532.35
-    "R": 2.305,  # Rajdhani: 1630 / 707.04
-}
-
 STATIONARY_CHARGE_RS = 5.0
 GST_RATE = 0.05
+
+# Optional revision factor from env when a new rate circular supersedes PDF tables.
+# Default 1.0 = exact PDF slab values (see scripts/parse_ir_parcel_rates.py).
+def _rate_revision_factor() -> float:
+    raw = os.getenv("IR_PARCEL_RATE_REVISION", "1").strip()
+    try:
+        factor = float(raw)
+        return factor if factor > 0 else 1.0
+    except ValueError:
+        return 1.0
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -182,19 +186,11 @@ def lookup_tariff(
         slab_idx = min(int((effective_wt - 1) // 10), 9)
         total += rates[slab_idx]
 
-    # No multiplier needed — all scales use exact PDF values
-
-    # Animals/birds surcharge
     if is_animal:
         total *= (1 + ANIMALS_SURCHARGE_RATE)
 
-    # Apply 2026 Scaling Factor
-    # The JSON tables are 'Standard' base rates; 2026 'Real-world' rates
-    # are significantly higher as per official 2026 policy.
-    multiplier = SCALE_MULTIPLIERS.get(scale, SCALE_MULTIPLIERS["S"])
-    total *= multiplier
+    total *= _rate_revision_factor()
 
-    # Development surcharge (usually 2%)
     if include_surcharge:
         total *= (1 + DEV_SURCHARGE_RATE)
 
@@ -289,6 +285,60 @@ def determine_scale(
     return "S"
 
 
+def resolve_chargeable_weight(cargo_type: str, weight_kg: float) -> float:
+    """Apply IR minimum chargeable weight (e.g. bicycles ~40 kg)."""
+    from app.pipelines.rail.config import CARGO_CONSTRAINTS
+
+    constraint = CARGO_CONSTRAINTS.get(cargo_type) or CARGO_CONSTRAINTS.get("General", {})
+    floor = constraint.get("chargeable_weight_kg")
+    if floor is not None:
+        return max(float(weight_kg), float(floor))
+    return float(weight_kg)
+
+
+def resolve_handling_charge(cargo_type: str) -> float:
+    """Packing / wharfage-style handling (not in slab tables)."""
+    from app.pipelines.rail.config import CARGO_CONSTRAINTS
+
+    constraint = CARGO_CONSTRAINTS.get(cargo_type) or CARGO_CONSTRAINTS.get("General", {})
+    try:
+        return float(constraint.get("handling_inr") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def resolve_billing_scale(
+    cargo_type: str,
+    train_name: str = "",
+    train_type: str = "",
+    train_number: str = "",
+    *,
+    is_luggage: bool = False,
+    scale_override: Optional[str] = None,
+) -> str:
+    """Pick IRCA scale: cargo-type default, accompanied luggage, or train class."""
+    if scale_override:
+        return scale_override.upper()
+    if is_luggage:
+        return "L"
+    from app.pipelines.rail.config import CARGO_CONSTRAINTS
+
+    constraint = CARGO_CONSTRAINTS.get(cargo_type) or {}
+    default_scale = constraint.get("default_scale")
+    if default_scale:
+        return str(default_scale).upper()
+    return determine_scale(train_name, train_type, train_number)
+
+
+def _finalize_parcel_total(freight_inr: float, handling_inr: float = 0.0) -> float:
+    """GST on freight, stationary charge, minimum, ₹10 rounding."""
+    total = float(freight_inr) + float(handling_inr) + STATIONARY_CHARGE_RS
+    gst_amount = float(freight_inr) * GST_RATE
+    total += gst_amount
+    total = max(total, MIN_CHARGE_RS)
+    return float(round(total / 10) * 10)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # High-level API
 # ═══════════════════════════════════════════════════════════════════════
@@ -298,9 +348,11 @@ def calc_parcel_cost(
     weight_kg: float,
     train_name: str = "",
     train_type: str = "",
+    train_number: str = "",
     scale: Optional[str] = None,
+    cargo_type: str = "General",
     is_luggage: bool = False,
-    include_surcharge: bool = False,
+    include_surcharge: bool = True,
     is_animal: bool = False,
 ) -> float:
     """
@@ -319,38 +371,25 @@ def calc_parcel_cost(
     Returns:
         Total parcel cost in INR (rupees).
     """
-    if is_luggage:
-        effective_scale = "L"
-    elif scale:
-        effective_scale = scale.upper()
-    else:
-        effective_scale = determine_scale(train_name, train_type)
+    chargeable_kg = resolve_chargeable_weight(cargo_type, weight_kg)
+    effective_scale = resolve_billing_scale(
+        cargo_type,
+        train_name,
+        train_type,
+        train_number=train_number,
+        is_luggage=is_luggage,
+        scale_override=scale,
+    )
 
-    # Base calculation using 2026 scaled tables
-    raw_cost = lookup_tariff(
+    freight = lookup_tariff(
         distance_km=distance_km,
-        weight_kg=weight_kg,
+        weight_kg=chargeable_kg,
         scale=effective_scale,
         include_surcharge=include_surcharge,
         is_animal=is_animal,
     )
-
-    # Fixed Charges: Stationary/Service Charge (approx Rs 5 as of 2026)
-    total = raw_cost + STATIONARY_CHARGE_RS
-
-    # GST Calculation (5% on Freight + Development Charge)
-    # raw_cost already includes Dev Surcharge if requested.
-    gst_amount = raw_cost * GST_RATE
-    total += gst_amount
-
-    # Ensure minimum charge
-    total = max(total, MIN_CHARGE_RS)
-
-    # 2026 Rounding Rule: Official receipts are rounded to the nearest Rs 10
-    # (e.g., 1167.03 -> 1170)
-    rounded_total = round(total / 10) * 10
-
-    return float(rounded_total)
+    handling = resolve_handling_charge(cargo_type)
+    return _finalize_parcel_total(freight, handling)
 
 
 def get_tariff_breakdown(
@@ -359,6 +398,9 @@ def get_tariff_breakdown(
     train_name: str = "",
     train_type: str = "",
     scale: Optional[str] = None,
+    cargo_type: str = "General",
+    is_luggage: bool = False,
+    include_surcharge: bool = True,
 ) -> dict:
     """
     Return a detailed breakdown of the tariff calculation.
@@ -366,22 +408,31 @@ def get_tariff_breakdown(
     Returns:
         dict with scale, slab info, charges, and notes.
     """
-    if scale:
-        effective_scale = scale.upper()
-    else:
-        effective_scale = determine_scale(train_name, train_type)
+    chargeable_kg = resolve_chargeable_weight(cargo_type, weight_kg)
+    effective_scale = resolve_billing_scale(
+        cargo_type,
+        train_name,
+        train_type,
+        scale_override=scale,
+        is_luggage=is_luggage,
+    )
 
     table = _get_scale_table(effective_scale)
     slab_lo, slab_hi = _get_slab_info(table, distance_km)
 
-    base_charge = lookup_tariff(distance_km, weight_kg, effective_scale)
-    # Note: include_surcharge=True adds the 2% Development Charge
-    freight_with_dc = lookup_tariff(distance_km, weight_kg, effective_scale,
-                                    include_surcharge=True)
-
+    base_charge = lookup_tariff(
+        distance_km, chargeable_kg, effective_scale, include_surcharge=False
+    )
+    freight_with_dc = lookup_tariff(
+        distance_km,
+        chargeable_kg,
+        effective_scale,
+        include_surcharge=include_surcharge,
+    )
+    handling = resolve_handling_charge(cargo_type)
     gst_amount = freight_with_dc * GST_RATE
-    total = freight_with_dc + STATIONARY_CHARGE_RS + gst_amount
-    rounded_total = round(total / 10) * 10
+    total = freight_with_dc + handling + STATIONARY_CHARGE_RS + gst_amount
+    rounded_total = _finalize_parcel_total(freight_with_dc, handling)
 
     scale_names = {
         "L": "Luggage Parcel Service",
@@ -390,8 +441,8 @@ def get_tariff_breakdown(
         "R": "Rajdhani Parcel Service",
     }
 
-    full_hundreds = int(weight_kg) // 100
-    remainder_kg = weight_kg - (full_hundreds * 100)
+    full_hundreds = int(chargeable_kg) // 100
+    remainder_kg = chargeable_kg - (full_hundreds * 100)
     num_consignments = full_hundreds + (1 if remainder_kg > 0 else 0)
 
     return {
@@ -401,11 +452,14 @@ def get_tariff_breakdown(
         "effective_distance_km": max(distance_km, MIN_CHARGEABLE_DISTANCE_KM),
         "distance_slab": f"{slab_lo}-{slab_hi} km",
         "weight_kg": weight_kg,
+        "chargeable_weight_kg": chargeable_kg,
         "num_consignments": num_consignments,
         "base_freight_inr": base_charge,
         "dev_charge_2pct": round(freight_with_dc - base_charge, 2),
+        "handling_packing_inr": handling,
         "stationary_service_charge": STATIONARY_CHARGE_RS,
         "gst_5pct": round(gst_amount, 2),
+        "rate_revision_factor": _rate_revision_factor(),
         "total_exact_inr": round(total, 2),
         "grand_total_rounded": rounded_total,
         "minimum_charge_inr": MIN_CHARGE_RS,
@@ -414,9 +468,10 @@ def get_tariff_breakdown(
             f"Distance slab: {slab_lo}-{slab_hi} km",
             f"Min chargeable distance: {MIN_CHARGEABLE_DISTANCE_KM} km",
             f"Min charge: Rs{MIN_CHARGE_RS}",
+            f"Chargeable weight: {chargeable_kg} kg",
             f"Booked as {num_consignments} consignment(s)",
-            "Applied 2026 scaling factor to official base tables",
-            "Included GST (5%) and Stationary charges",
+            "Slab rates from official IRCA PDF tables",
+            "Includes 2% development surcharge, 5% GST, stationary charge",
             "Rounding to nearest Rs 10 as per official practice",
             "Bulky Warning: If any single piece > 70kg, double-rate may apply.",
             "Recommendation: Split 100kg into 2 x 50kg to avoid bulky surcharge.",
