@@ -20,6 +20,7 @@ import {
 } from '@/lib/shipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -638,12 +639,7 @@ export default function ComparatorPageClient() {
           </div>
         )}
 
-        {loading && (
-          <div className="mt-8 flex flex-col items-center gap-4 py-16">
-            <div className="h-12 w-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-            <p className="text-sm text-on-surface-variant">Running road, rail, air & water pipelines…</p>
-          </div>
-        )}
+        {loading && <MultimodalPipelineLoading variant="optimize" />}
 
         {result && !loading && (
           <div className="mt-8 pb-16 space-y-6 animate-fade-in">
