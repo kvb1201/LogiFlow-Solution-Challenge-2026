@@ -96,7 +96,8 @@ export default function AiBriefPanel({
   function navigateToPipeline(result: ParsedIntent, runImmediately: boolean) {
     const path = getModePath(result);
     const mode = resolveTargetMode(result);
-    if (runImmediately && result.applied) {
+    const corridorReady = Boolean(result.source?.trim() && result.destination?.trim());
+    if (runImmediately && corridorReady) {
       setShipmentAutorun(mode);
     }
     setConfirmOpen(false);
