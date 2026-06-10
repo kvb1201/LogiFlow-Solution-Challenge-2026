@@ -19,6 +19,7 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
 
 const DEMO_SOURCE = 'Lucknow, India';
 const DEMO_DEST = 'Delhi, India';
@@ -48,6 +49,8 @@ export default function HybridPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  /** Reason string when road is rejected as an invalid corridor by the backend. */
+  const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
   const skipWizard = loading || Boolean(result?.recommended) || (autoTriggered && !error);
   const showForm = !skipWizard;
@@ -63,6 +66,7 @@ export default function HybridPageClient() {
     setStep(1);
     setError(null);
     setResult(null);
+    setRoadUnavailableReason(null);
   }, [setSource, setDestination, setPriority, setCargoWeight, setCargoType, setBudgetMax]);
 
   const runCompose = useCallback(async () => {
@@ -73,6 +77,7 @@ export default function HybridPageClient() {
 
     const brief = (scenarioBrief || state.scenarioBrief || '').trim();
     setError(null);
+    setRoadUnavailableReason(null);
     setLoading(true);
     setStep(2);
     setAutoTriggered(true);
@@ -101,9 +106,20 @@ export default function HybridPageClient() {
       if (data.error && !data.recommended) {
         throw new Error(data.error);
       }
+
+      // ── Extract road-unavailable reason from compose result ───────────────
+      // If the road template was rejected as an invalid corridor, surface the
+      // reason so users understand it's a valid planning outcome, not an error.
+      const roadUnavail =
+        (data.unavailable_templates?.road as string | undefined) ?? null;
+      if (roadUnavail) {
+        setRoadUnavailableReason(roadUnavail);
+      }
+
       setResult(data);
     } catch (err: unknown) {
       setResult(null);
+      setRoadUnavailableReason(null);
       setError(
         err instanceof Error
           ? err.message
@@ -310,11 +326,24 @@ export default function HybridPageClient() {
 
         {loading && <MultimodalPipelineLoading variant="compose" />}
 
+        {/* Road segment unavailable — shown as an informational notice, not an error */}
+        {roadUnavailableReason && !loading && (
+          <div className="mt-4">
+            <InvalidCorridorCard
+              mode="road"
+              source={source}
+              destination={destination}
+              reason={roadUnavailableReason}
+            />
+          </div>
+        )}
+
         {result?.recommended && !loading && (
           <ComposeResults
             result={result}
             onEdit={() => {
               setResult(null);
+              setRoadUnavailableReason(null);
               setStep(1);
             }}
             onSave={() => setSaveModalOpen(true)}

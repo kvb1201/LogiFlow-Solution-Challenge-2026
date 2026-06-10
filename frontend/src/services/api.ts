@@ -376,6 +376,11 @@ export interface HybridOptimizeResult {
   tradeoffs?: string[] | null;
   ai_constraints?: AiConstraintsApplied | null;
   demo_mode?: boolean;
+  /**
+   * Modes that have no route for this corridor.
+   * May be plain mode names ("road") or "mode: reason" strings
+   * e.g. "road: No drivable road route between Europe and North America."
+   */
   unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
   best_per_mode?: {
@@ -616,6 +621,11 @@ export interface ComposeResult {
     label?: string;
   }>;
   rural_corridor?: boolean;
+  /**
+   * Templates that could not be evaluated for this corridor.
+   * Key is the template/mode name (e.g. "road"), value is the rejection reason.
+   * Populated when a mode like road is rejected as an invalid corridor.
+   */
   unavailable_templates?: Record<string, string>;
   total_candidates?: number;
   multimodal_count?: number;

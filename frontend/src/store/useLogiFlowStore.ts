@@ -82,6 +82,15 @@ export type RoadRoute = {
    * for future Shipment Health, Route Lock, and Live Monitoring integration.
    */
   route_id?: string;
+  /**
+   * Validity flags from the backend.
+   * valid=false means the corridor is physically undrivable (trans-oceanic, etc.)
+   * is_fallback=true means TomTom was unavailable and haversine estimates were used.
+   */
+  valid?: boolean;
+  is_fallback?: boolean;
+  data_source?: string;
+  fallback_reason?: string;
 };
 
 type RoadOptimizeResponse = {
@@ -123,6 +132,8 @@ export interface LogiFlowState {
   // Road results
   routes: RoadRoute[];
   selectedRoute: number;
+  /** Set when the backend returns status='no_routes' for road (invalid corridor, etc.) */
+  roadNoRoutesReason: string | null;
 
   // Water results
   waterRoutes: WaterRoute[];
@@ -246,6 +257,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   routes: [],
   selectedRoute: 0,
+  roadNoRoutesReason: null,
 
   waterRoutes: [],
   selectedWaterRoute: 0,
@@ -331,6 +343,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
     selectedOptionIndex: 0,
     routes: [],
     selectedRoute: 0,
+    roadNoRoutesReason: null,
     searchMode: 'rail',
     error: null,
     trainDelayDetail: null,
@@ -492,6 +505,34 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
         console.log("[LogiFlow] RESPONSE →", raw?.all?.[0]?.time, raw?.all?.[0]?.risk);
 
+        // ── Detect invalid corridor (no_routes with valid=false) ───────────────
+        // Backend returns { status: 'no_routes', valid: false, message: '...' }
+        // for physically undrivable corridors (trans-oceanic, etc.).
+        // Store the reason for the UI to render <InvalidCorridorCard> instead of
+        // an empty result set or a generic error banner.
+        const rawAny = raw as Record<string, unknown>;
+        if (rawAny?.status === 'no_routes') {
+          const noRouteReason =
+            (rawAny?.message as string | undefined) ||
+            (rawAny?.reason as string | undefined) ||
+            'No drivable road route available for this corridor.';
+          console.log("[LogiFlow] ROAD no_routes →", noRouteReason);
+          set({
+            searchMode: 'road',
+            routes: [],
+            selectedRoute: 0,
+            roadNoRoutesReason: noRouteReason,
+            recommendations: { cheapest: null, fastest: null, safest: null },
+            allOptions: [],
+            airRoutes: [],
+            selectedAirRouteIndex: 0,
+            airConstraintsApplied: null,
+            // Do NOT set error — this is a valid planning outcome, not an API failure.
+            // The UI will render InvalidCorridorCard instead of an error banner.
+          });
+          return;
+        }
+
         const all = Array.isArray(raw?.all) ? raw.all : [];
 
         console.log("[LogiFlow] ZUSTAND SET →", {
@@ -504,6 +545,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           searchMode: 'road',
           routes: all.map(r => ({ ...r })),
           selectedRoute: 0,
+          roadNoRoutesReason: null,
           recommendations: { cheapest: null, fastest: null, safest: null },
           allOptions: [],
           airRoutes: [],
