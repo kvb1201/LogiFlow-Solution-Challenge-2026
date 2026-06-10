@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   optimizeHybridRoute,
+  TrafficQueueError,
   type AiConstraintsApplied,
   type HybridComparisonRow,
   type HybridOptimizeResult,
