@@ -146,7 +146,7 @@ export default function InputForm() {
   };
 
   return (
-    <div className="w-full space-y-4">
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
       <AiBriefPanel contextMode="rail" />
       <FormShell
         mode="rail"
@@ -215,7 +215,7 @@ export default function InputForm() {
                 <input
                   type="number"
                   min={1}
-                  max={5000}
+                  max={500_000}
                   value={cargoWeight}
                   onChange={(e) => setCargoWeight(Number(e.target.value))}
                   className={`${formInputClass} pr-12`}

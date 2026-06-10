@@ -50,13 +50,26 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 
 def _fallback_routes(source, destination, payload, reason):
-    """Generate deterministic fallback road routes when TomTom is unavailable."""
+    """
+    Generate deterministic fallback road routes when TomTom is unavailable.
+
+    IMPORTANT: First checks whether a road route is physically possible.
+    Returns [] for trans-oceanic or geographically impossible corridors.
+    All generated routes are marked valid=False, fallback=True.
+    """
     c1 = geocode_latlng(source)
     c2 = geocode_latlng(destination)
     if not c1 or not c2:
         return []
     lat1, lon1 = c1
     lat2, lon2 = c2
+
+    # ── Validity gate: reject impossible road corridors ───────────────
+    from app.pipelines.road.route_validator import validate_fallback_route
+    drivable, rejection_reason = validate_fallback_route((lat1, lon1), (lat2, lon2))
+    if not drivable:
+        print(f"[ROUTE_PROVIDER] Fallback rejected (not drivable): {rejection_reason}")
+        return []   # caller will handle empty list as "no routes"
 
     base_distance = max(_haversine_km(lat1, lon1, lat2, lon2), 40.0)
     base_speed = 50.0
@@ -95,6 +108,9 @@ def _fallback_routes(source, destination, payload, reason):
             "incident_count": 0,
             "data_source": "fallback_offline",
             "fallback_reason": reason,
+            # ── Validity flags ────────────────────────────────────────
+            "valid": False,           # ALWAYS False for fallback routes
+            "is_fallback": True,
             "geometry": [
                 [round(lon1, 6), round(lat1, 6)],
                 [mid_lon, mid_lat],
@@ -140,6 +156,17 @@ def get_routes(source, destination, payload=None, context=None):
 
     lat1, lon1 = c1
     lat2, lon2 = c2
+
+    # ── Validity gate: reject physically impossible road corridors BEFORE
+    #    calling TomTom or generating fallbacks.  This prevents the pipeline
+    #    from fabricating routes for trans-oceanic journeys regardless of what
+    #    TomTom returns (it can sometimes route via ferry links).
+    from app.pipelines.road.route_validator import validate_corridor
+    corridor_valid, corridor_reason = validate_corridor((lat1, lon1), (lat2, lon2))
+    if not corridor_valid:
+        print(f"[ROUTE_PROVIDER] Corridor rejected (not drivable by road): {corridor_reason}")
+        # Return a sentinel that the pipeline will convert into a no_routes response
+        return {"_invalid_corridor": True, "reason": corridor_reason}
 
     if not TOMTOM_API_KEY:
         print("[ROUTE_PROVIDER] TOMTOM_API_KEY not set — using haversine fallback routes")
@@ -290,6 +317,10 @@ def get_routes(source, destination, payload=None, context=None):
             "night_travel": False,
             "incident_count": incident_count,
             "geometry": coords,
+            # ── Validity flags (real TomTom route) ───────────────────
+            "valid": True,
+            "is_fallback": False,
+            "data_source": "tomtom",
         })
 
     return result

@@ -8,6 +8,7 @@ import { isExpired, expiresIn, type ShipmentReport, type ReportStatus } from '@/
 import { getReport } from '@/services/plannerApi';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 import { RouteHealthCard } from './RouteHealthCard';
+import { routeForMode } from '@/lib/applyParsedIntent';
 
 function MetricBlock({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -182,7 +183,7 @@ export function ReportDetailPage({ reportId }: Props) {
               </p>
             </div>
             <Link
-              href={`/${report.mode}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
+              href={`${routeForMode(report.mode)}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
               className="shrink-0 flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition"
             >
               Regenerate Plan
@@ -526,7 +527,7 @@ export function ReportDetailPage({ reportId }: Props) {
 
             return (
               <Link
-                href={`/${report.mode}?${params.toString()}`}
+                href={`${routeForMode(report.mode)}?${params.toString()}`}
                 className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
               >
                 <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>refresh</span>

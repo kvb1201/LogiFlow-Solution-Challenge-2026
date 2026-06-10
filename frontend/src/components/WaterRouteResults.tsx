@@ -718,7 +718,7 @@ export default function WaterRouteResults() {
   const hasSearched = useLogiFlowStore((s) => s.hasSearched);
   const loading = useLogiFlowStore((s) => s.loading);
   const loadingMode = useLogiFlowStore((s) => s.loadingMode);
-  const resetSearch = useLogiFlowStore((s) => s.resetSearch);
+  const resetResults = useLogiFlowStore((s) => s.resetResults);
   const cargoType = useLogiFlowStore((s) => s.cargoType);
   const priority = useLogiFlowStore((s) => s.priority);
 
@@ -748,7 +748,7 @@ export default function WaterRouteResults() {
         source={source}
         destination={destination}
         error={error}
-        onTryAgain={resetSearch}
+        onTryAgain={resetResults}
       />
     );
   }

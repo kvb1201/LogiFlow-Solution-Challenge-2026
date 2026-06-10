@@ -24,6 +24,23 @@ declare global {
   }
 }
 
+/** Map raw API/network errors to user-friendly messages. */
+function friendlyError(err: unknown): string {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('audience') || msg.includes('token') || msg.includes('invalid')) {
+      return 'Unable to verify your Google account. Please try again.';
+    }
+    if (msg.includes('network') || msg.includes('fetch')) {
+      return 'Connection error. Check your internet and try again.';
+    }
+    if (msg.includes('401') || msg.includes('unauthorized')) {
+      return 'Google authentication failed. Please try again.';
+    }
+  }
+  return 'Google authentication failed. Please try again.';
+}
+
 export function LoginPage() {
   const router = useRouter();
   const { user, token, setUser, setToken, setError, error } = useAuthStore();
@@ -84,7 +101,6 @@ export function LoginPage() {
   }, []);
 
   const handleGoogleSuccess = async (response: GoogleAuthResponse) => {
-    // Show "Authenticating…" immediately — prevents freeze perception
     setAuthenticating(true);
     setError(null);
 
@@ -96,38 +112,43 @@ export function LoginPage() {
       });
 
       if (!loginResponse.ok) {
-        throw new Error('Login failed. Please try again.');
+        const body = await loginResponse.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? 'Login failed');
       }
 
       const { user, token } = await loginResponse.json() as { user: unknown; token: string };
 
-      // Persist token and user immediately — this prevents restore() from clearing them
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('auth_token', token);
       }
       setToken(token);
       setUser(user as Parameters<typeof setUser>[0]);
-
-      // Navigate after state is set — replace so back button doesn't return to /login
       router.replace('/dashboard');
     } catch (err) {
       setAuthenticating(false);
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      setError(friendlyError(err));
     }
   };
 
   // Already authenticated — show nothing while redirecting
   if (token && user) return null;
 
-  // Authenticating overlay — shown immediately after Google credential received
+  // Loading overlay — shown immediately after Google credential received
   if (authenticating) {
     return (
       <div className="relative flex min-h-screen items-center justify-center">
         <AmbientBackdrop variant="home" />
-        <div className="relative z-10 flex flex-col items-center gap-4 text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
-          <p className="text-sm font-semibold text-foreground">Authenticating…</p>
-          <p className="text-[11px] text-muted-foreground">Restoring your session</p>
+        <div
+          role="status"
+          aria-live="polite"
+          className="relative z-10 flex flex-col items-center gap-4 text-center"
+        >
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-foreground"
+            aria-hidden="true"
+          />
+          <p className="text-sm font-semibold text-foreground">Signing you in…</p>
+          <p className="text-[11px] text-muted-foreground">Verifying your Google account</p>
         </div>
       </div>
     );
@@ -137,64 +158,90 @@ export function LoginPage() {
     <div className="relative w-full min-h-screen overflow-hidden flex flex-col">
       <AmbientBackdrop variant="home" />
 
-      {/* Back to home link — no duplicate LogiFlow branding here; NavBar handles that */}
+      {/* Back to home — NavBar already carries the LogiFlow brand */}
       <div className="relative z-20 flex items-center justify-end px-4 sm:px-6 py-4 sm:py-5">
         <Link
           href="/"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Back to LogiFlow home"
         >
           ← Back to home
         </Link>
       </div>
 
-      {/* Main Content */}
+      {/* Main card */}
       <div className="relative z-10 flex flex-1 items-center justify-center px-4 sm:px-6 py-8">
         <div className="w-full max-w-md">
           <div className="rounded-2xl border border-border/50 bg-surface/40 backdrop-blur-sm p-8 sm:p-10 space-y-6">
 
-            {/* Heading — no LogiFlow logo here; it's already in NavBar */}
+            {/* Heading */}
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">
                 Smart Shipment Planner
               </h1>
               <p className="text-sm text-muted-foreground">
-                Sign in to plan optimized multimodal shipments, track active trips, and save your routes.
+                Sign in to plan optimised multimodal shipments, track active trips, and save your routes.
               </p>
             </div>
 
-            {/* Error Message */}
+            {/* Error banner */}
             {error && (
-              <div className="rounded-lg border border-risk/30 bg-risk/10 p-4">
+              <div
+                role="alert"
+                className="rounded-lg border border-risk/30 bg-risk/10 px-4 py-3"
+              >
                 <p className="text-sm text-foreground">{error}</p>
               </div>
             )}
 
-            {/* Google Sign-In Button */}
-            <div>
-              <div
-                id="google-signin-button"
-                className="flex justify-center"
-              />
-            </div>
+            {/* Google Sign-In button — rendered by GSI SDK */}
+            <div
+              id="google-signin-button"
+              className="flex justify-center"
+              aria-label="Sign in with Google"
+            />
 
-            {/* Terms */}
+            {/* Legal links */}
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              By signing in, you agree to LogiFlow's{' '}
-              <a href="#" className="text-rail hover:underline">Terms of Service</a>
+              By signing in, you agree to LogiFlow&apos;s{' '}
+              <Link href="/terms" className="text-rail hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-rail rounded">
+                Terms of Service
+              </Link>
               {' '}and{' '}
-              <a href="#" className="text-rail hover:underline">Privacy Policy</a>.
+              <Link href="/privacy" className="text-rail hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-rail rounded">
+                Privacy Policy
+              </Link>.
             </p>
           </div>
 
-          {/* Sign up hint */}
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            New here?{' '}
-            <button
-              onClick={() => document.getElementById('google-signin-button')?.querySelector('div')?.click()}
-              className="text-rail font-semibold hover:underline"
+          {/* New account hint */}
+          <div className="mt-6 text-center space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Don&apos;t have a Google account?
+            </p>
+            <a
+              href="https://accounts.google.com/signup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-sm font-semibold text-rail hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-rail rounded"
+              aria-label="Create a Google account (opens in new tab)"
             >
-              Create an account with Google
-            </button>
+              Create a Google account →
+            </a>
+            <p className="text-xs text-muted-foreground px-4">
+              LogiFlow uses Google for authentication. Create a Google account first if you don&apos;t already have one.
+            </p>
+          </div>
+
+          {/* Footer legal links */}
+          <div className="mt-8 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+            <Link href="/privacy" className="hover:text-foreground transition-colors">
+              Privacy Policy
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/terms" className="hover:text-foreground transition-colors">
+              Terms &amp; Conditions
+            </Link>
           </div>
         </div>
       </div>

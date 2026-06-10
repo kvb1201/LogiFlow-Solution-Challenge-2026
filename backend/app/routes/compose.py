@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from app.services.route_composer import RouteComposer
 from app.utils.request_context import RequestContext
+from app.middleware.rate_limit import rate_limit, COMPOSE_LIMIT
 
 router = APIRouter()
 
@@ -41,7 +42,8 @@ class ComposeRequest(BaseModel):
 
 
 @router.post("/compose")
-def compose_multimodal(data: ComposeRequest):
+@rate_limit(COMPOSE_LIMIT)
+def compose_multimodal(request: Request, data: ComposeRequest):
     context = RequestContext()
     composer = RouteComposer()
 

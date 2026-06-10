@@ -1,15 +1,12 @@
 'use client';
 
-import RoadInputForm from '@/components/roadInputForm';
-import RouteResults from '@/components/RouteResults';
-import { PipelineModePage } from '@/components/cockpit/PipelineModePage';
+import { Suspense } from 'react';
+import RoadPageClient from '@/components/RoadPageClient';
 
 export default function RoadPage() {
   return (
-    <PipelineModePage
-      mode="road"
-      form={<RoadInputForm />}
-      results={<RouteResults />}
-    />
+    <Suspense fallback={null}>
+      <RoadPageClient />
+    </Suspense>
   );
 }

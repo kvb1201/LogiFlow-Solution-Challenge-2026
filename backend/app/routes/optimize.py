@@ -1,7 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional, Literal
 from app.pipelines.hybrid.pipeline import HybridPipeline
+from app.middleware.rate_limit import rate_limit, OPTIMIZE_LIMIT, ASSISTANT_LIMIT
+from app.middleware.optimize_guard import (
+    get_cached_optimize,
+    optimize_request_key,
+    optimize_slot,
+    set_cached_optimize,
+)
 
 router = APIRouter()
 
@@ -183,7 +190,13 @@ def _build_hybrid_fallback_answer(question: str, context: Dict[str, Any]) -> str
 # ------------------ API ------------------
 
 @router.post("/optimize")
-def optimize(data: OptimizeRequest):
+@rate_limit(OPTIMIZE_LIMIT)
+def optimize(request: Request, data: OptimizeRequest):
+    cache_key = optimize_request_key(data)
+    cached = get_cached_optimize(cache_key)
+    if cached is not None:
+        return cached
+
     # Normalize priority aliases to what scorer expects.
     p = (data.priority or "").strip()
     p_l = p.lower()
@@ -192,24 +205,28 @@ def optimize(data: OptimizeRequest):
 
     from app.utils.request_context import RequestContext
 
-    pipeline = HybridPipeline()
-    context = RequestContext()
+    with optimize_slot():
+        pipeline = HybridPipeline()
+        context = RequestContext()
 
-    payload = {
-        "priority": data.priority.lower(),
-        "cargo_weight_kg": data.cargo.weight if data.cargo else data.cargo_weight_kg,
-        "cargo_type": data.cargo.type if data.cargo else data.cargo_type,
-        "budget": data.constraints.budget_limit or data.constraints.budget_max_inr if data.constraints else None,
-        "max_stops": data.constraints.max_stops if data.constraints else None,
-        "preferred_mode": data.preferences.preferred_mode if data.preferences else None,
-        "constraints": data.constraints.dict() if data.constraints else {},
-    }
+        payload = {
+            "priority": data.priority.lower(),
+            "cargo_weight_kg": data.cargo.weight if data.cargo else data.cargo_weight_kg,
+            "cargo_type": data.cargo.type if data.cargo else data.cargo_type,
+            "budget": data.constraints.budget_limit or data.constraints.budget_max_inr if data.constraints else None,
+            "max_stops": data.constraints.max_stops if data.constraints else None,
+            "preferred_mode": data.preferences.preferred_mode if data.preferences else None,
+            "constraints": data.constraints.dict() if data.constraints else {},
+        }
 
-    return pipeline.generate(data.source, data.destination, payload, context=context)
+        result = pipeline.generate(data.source, data.destination, payload, context=context)
+        set_cached_optimize(cache_key, result)
+        return result
 
 
 @router.post("/optimize/assistant")
-def hybrid_assistant(data: HybridAssistantRequest):
+@rate_limit(ASSISTANT_LIMIT)
+def hybrid_assistant(request: Request, data: HybridAssistantRequest):
     from app.services.gemini_service import generate_transport_followup_response
 
     question = (data.question or "").strip()

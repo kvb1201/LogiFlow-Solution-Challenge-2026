@@ -79,7 +79,12 @@ def optimize_water(payload: WaterPayload):
             context=context,
         )
         if isinstance(results, dict) and results.get("status") == "no_routes":
-            raise HTTPException(status_code=400, detail=results.get("message", "No water routes found"))
+            return {
+                "mode": "water",
+                "status": "no_routes",
+                "message": results.get("message", "No water routes found"),
+                "routes": [],
+            }
         return results
     except HTTPException:
         raise

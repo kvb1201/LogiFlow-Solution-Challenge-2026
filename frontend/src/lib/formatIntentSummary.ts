@@ -28,6 +28,7 @@ export function buildIntentSummary(parsed: ParsedIntent): {
       : 'Not specified';
   const deadline =
     parsed.deadline_hours != null ? `Within ${parsed.deadline_hours} hours` : 'Not specified';
+  const departure = parsed.departure_date?.trim() || 'Not specified';
   const priority = parsed.priority
     ? parsed.priority.charAt(0).toUpperCase() + parsed.priority.slice(1)
     : 'Balanced';
@@ -46,6 +47,7 @@ export function buildIntentSummary(parsed: ParsedIntent): {
     { label: 'To', value: dest },
     { label: 'Weight', value: weight },
     { label: 'Cargo type', value: cargo },
+    { label: 'Departure', value: departure },
     { label: 'Budget cap', value: budget },
     { label: 'Deadline', value: deadline },
     { label: 'Priority', value: priority },

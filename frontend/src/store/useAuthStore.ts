@@ -37,7 +37,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
-      loading: false,
+      loading: true,
       error: null,
 
       setUser: (user) => set({ user }),
@@ -47,8 +47,10 @@ export const useAuthStore = create<AuthState>()(
         if (typeof window !== 'undefined') {
           if (token) {
             sessionStorage.setItem('auth_token', token);
+            sessionStorage.setItem('auth_token_ts', String(Date.now()));
           } else {
             sessionStorage.removeItem('auth_token');
+            sessionStorage.removeItem('auth_token_ts');
           }
         }
       },

@@ -9,6 +9,7 @@ import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import {
   buildTrainCorridorGeometry,
   fetchExplanation,
@@ -643,6 +644,8 @@ function DetailPanel({
 // ── Main Dashboard ────────────────────────────────────────────────────
 
 export default function RailwayDashboard() {
+  usePlannerRegenerateParams('rail');
+
   const {
     source,
     destination,
@@ -658,7 +661,7 @@ export default function RailwayDashboard() {
     trainDelayDetail,
     selectedTrainLive,
     error,
-    resetSearch,
+    resetResults,
     setLiveMapMode,
     routeMetadata,
     cargoType,
@@ -756,7 +759,7 @@ export default function RailwayDashboard() {
               expanding route coverage.
             </p>
             <button
-              onClick={resetSearch}
+              onClick={resetResults}
               className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition"
             >
               Try Another Route

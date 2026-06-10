@@ -17,7 +17,8 @@ FastAPI (Render)
       ├─ /railway/optimize
       ├─ /air/optimize
       ├─ /water/optimize
-      ├─ /comparator/routes
+      ├─ /compare/routes (alias /comparator/routes)
+      ├─ /optimize (Comparator UI)
       ├─ /compose
       ├─ /intent/parse
       └─ /locations/resolve
