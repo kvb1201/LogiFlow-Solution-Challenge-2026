@@ -84,6 +84,51 @@ def _corridor_distance_km(origin: str, dest: str, context: RequestContext) -> Op
     return round(_haversine_km(src[0], src[1], dst[0], dst[1]), 1)
 
 
+def _endpoint_coords(
+    loc: Any,
+    feeder: FeederAccess | None,
+    context: RequestContext,
+) -> tuple[float, float] | None:
+    """User-facing endpoint coords — station pin for feeder stops, not collapsed metro centre."""
+    if feeder and feeder.local_station_code:
+        try:
+            from app.pipelines.rail.station_coordinates import get_station_latlng
+
+            pt = get_station_latlng(feeder.local_station_code)
+            if pt:
+                return (float(pt[0]), float(pt[1]))
+        except Exception:
+            pass
+    if loc.lat is not None and loc.lng is not None:
+        return (float(loc.lat), float(loc.lng))
+    from app.services.geocoder import geocode_latlng
+
+    raw = (loc.raw or loc.canonical_city or "").strip()
+    if not raw:
+        return None
+    hit = geocode_latlng(raw, context=context)
+    return (float(hit[0]), float(hit[1])) if hit else None
+
+
+def _corridor_distance_for_resolution(
+    src_r: Any,
+    dst_r: Any,
+    src_feeder: FeederAccess | None,
+    dst_feeder: FeederAccess | None,
+    context: RequestContext,
+) -> Optional[float]:
+    """End-to-end corridor km using local station pins when feeder access applies."""
+    src_pt = _endpoint_coords(src_r, src_feeder, context)
+    dst_pt = _endpoint_coords(dst_r, dst_feeder, context)
+    if not src_pt or not dst_pt:
+        return _corridor_distance_km(
+            src_r.canonical_city,
+            dst_r.canonical_city,
+            context,
+        )
+    return round(_haversine_km(src_pt[0], src_pt[1], dst_pt[0], dst_pt[1]), 1)
+
+
 def _short_corridor_note(distance_km: float) -> str:
     return (
         f"This corridor is about {distance_km:.0f} km — under {_SHORT_CORRIDOR_KM} km, "
@@ -153,8 +198,10 @@ class RouteComposer:
             for m in (payload.get("constraints") or {}).get("excluded_modes", [])
         )
 
-        corridor_km = _corridor_distance_km(origin_effective, dest_effective, context)
-        short_corridor = corridor_km is not None and corridor_km < _SHORT_CORRIDOR_KM
+        corridor_km = _corridor_distance_for_resolution(
+            src_r, dst_r, src_feeder, dst_feeder, context
+        )
+        has_feeder = bool(src_feeder or dst_feeder)
 
         warm_corridor = _corridor_is_warm(origin_effective, dest_effective, priority)
         known = is_known_corridor(origin_effective, dest_effective)
@@ -178,6 +225,14 @@ class RouteComposer:
         rural_corridor = src_remote or dst_remote
         hub_pairs: list[HubPair] = (
             discover_rural_hub_pairs(src_r, dst_r, max_pairs=6) if rural_corridor else []
+        )
+
+        # Feeder / rural corridors need local access legs — never collapse to direct-only.
+        short_corridor = (
+            corridor_km is not None
+            and corridor_km < _SHORT_CORRIDOR_KM
+            and not has_feeder
+            and not rural_corridor
         )
 
         if short_corridor:
@@ -467,8 +522,7 @@ class RouteComposer:
                 )
                 if wrapped_it:
                     wrapped.append(wrapped_it)
-            if wrapped:
-                itineraries = wrapped
+            itineraries = wrapped
 
         if not itineraries:
             out: dict[str, Any] = {
@@ -476,16 +530,26 @@ class RouteComposer:
                 "hubs_considered": [h.to_dict() for h in hubs],
                 "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
                 "rural_corridor": rural_corridor,
+                "feeder_corridor": has_feeder,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
                 "short_corridor": short_corridor,
                 "corridor_distance_km": corridor_km,
-                "resolved_source": src_r.to_dict(),
-                "resolved_destination": dst_r.to_dict(),
+                "resolved_source": {
+                    **src_r.to_dict(),
+                    **({"feeder_access": src_feeder.to_dict()} if src_feeder else {}),
+                },
+                "resolved_destination": {
+                    **dst_r.to_dict(),
+                    **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
+                },
             }
+            feeder_note = _feeder_access_note(src_feeder, dst_feeder)
             if short_corridor and corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
+            elif feeder_note:
+                out["compose_note"] = feeder_note
             elif rural_corridor:
                 out["compose_note"] = (
                     "Rural or unmapped place detected — showing direct routes plus "
@@ -494,24 +558,42 @@ class RouteComposer:
             return out
 
         if short_corridor:
-            itineraries = [it for it in itineraries if it.get("type") == "direct"]
+            itineraries = [
+                it
+                for it in itineraries
+                if it.get("type") == "direct"
+                or str(it.get("template_id") or "").startswith("feeder+")
+            ]
 
         if not itineraries:
             out = {
-                "error": "No direct routes could be composed for this short corridor",
+                "error": (
+                    "No direct routes could be composed for this short corridor. "
+                    "Try naming the nearest major city or station as origin/destination."
+                ),
                 "hubs_considered": [],
                 "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
                 "rural_corridor": rural_corridor,
+                "feeder_corridor": has_feeder,
                 "unavailable_templates": unavailable,
                 "baselines": {},
                 "partial": False,
                 "short_corridor": True,
                 "corridor_distance_km": corridor_km,
-                "resolved_source": src_r.to_dict(),
-                "resolved_destination": dst_r.to_dict(),
+                "resolved_source": {
+                    **src_r.to_dict(),
+                    **({"feeder_access": src_feeder.to_dict()} if src_feeder else {}),
+                },
+                "resolved_destination": {
+                    **dst_r.to_dict(),
+                    **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
+                },
             }
+            feeder_note = _feeder_access_note(src_feeder, dst_feeder)
             if corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
+            elif feeder_note:
+                out["compose_note"] = feeder_note
             return out
 
         ranked = score_itineraries(itineraries, priority)
@@ -663,8 +745,6 @@ class RouteComposer:
             extra_handling += _HANDLING_FEE_INR
             extra_time += d0["time_hr"] + buf
         elif src_feeder and not access_in_leg:
-            pass
-        else:
             return None
 
         if dst_feeder and access_out_leg:
@@ -695,7 +775,8 @@ class RouteComposer:
             extra_handling += _HANDLING_FEE_INR
             extra_time += d_last["time_hr"] + buf
         elif dst_feeder and not access_out_leg:
-            pass
+            if not (src_feeder and access_in_leg):
+                return None
 
         if (src_feeder and access_in_leg) or (dst_feeder and access_out_leg):
             template_id = f"feeder+{template_id}"

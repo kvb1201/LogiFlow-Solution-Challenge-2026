@@ -19,6 +19,7 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
@@ -26,6 +27,7 @@ import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -260,7 +262,7 @@ export default function ComparatorPageClient() {
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
   const [saveMode, setSaveMode] = useState<Mode | null>(null);
 
-  const skipWizard = loading || Boolean(result) || (autoTriggered && !error);
+  const skipWizard = loading || Boolean(result);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -272,6 +274,7 @@ export default function ComparatorPageClient() {
     setBudgetMax(8000);
     setStep(2);
     setError(null);
+    setResult(null);
   }, [setSource, setDestination, setPriority, setCargoWeight, setCargoType, setBudgetMax]);
 
   const comparisonRows = useMemo(
@@ -342,11 +345,35 @@ export default function ComparatorPageClient() {
   const runOptimizeRef = useRef(runOptimize);
   runOptimizeRef.current = runOptimize;
 
+  const corridorReady = Boolean(source.trim() && destination.trim());
+
+  const beginOptimizeRun = useCallback(() => {
+    setResult(null);
+    setError(null);
+    setAutoTriggered(true);
+    setStep(3);
+    setLoading(true);
+    void runOptimizeRef.current();
+  }, []);
+
   useEffect(() => {
     if (storeScenarioBrief?.trim()) {
       setScenarioBrief(storeScenarioBrief);
     }
   }, [storeScenarioBrief]);
+
+  useShipmentAutorun('comparator', beginOptimizeRun, corridorReady);
+
+  const onIntentApplied = useIntentFormReset((_parsed, action) => {
+    setError(null);
+    setResult(null);
+    if (action === 'run') {
+      if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
+      return;
+    }
+    setAutoTriggered(false);
+    setStep(1);
+  });
 
   useLayoutEffect(() => {
     syncAutorunFromSession();
@@ -359,11 +386,8 @@ export default function ComparatorPageClient() {
       setScenarioBrief(state.scenarioBrief);
     }
     markShipmentAutorunStarted('comparator');
-    setAutoTriggered(true);
-    setStep(3);
-    setLoading(true);
-    void runOptimizeRef.current();
-  }, []);
+    beginOptimizeRun();
+  }, [beginOptimizeRun]);
 
   return (
     <div className="flex-1 flex flex-col overflow-x-hidden bg-[#05070c] min-h-0">
@@ -473,7 +497,11 @@ export default function ComparatorPageClient() {
         )}
 
         {!skipWizard && (
-          <AiBriefPanel contextMode="comparator" className="mb-6" />
+          <AiBriefPanel
+            contextMode="comparator"
+            className="mb-6"
+            onIntentApplied={onIntentApplied}
+          />
         )}
 
         <form id="logiflow-pipeline-form" onSubmit={onSubmit} className="space-y-6">
@@ -715,7 +743,7 @@ export default function ComparatorPageClient() {
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-outline mb-1">
                     Unavailable modes
                   </p>
-                  {unavailableModes.map((entry) => {
+                  {unavailableModes.map((entry, entryIdx) => {
                     const modeRaw = typeof entry === 'object' && entry !== null
                       ? String(entry.mode ?? '')
                       : String(entry ?? '');
@@ -724,7 +752,7 @@ export default function ComparatorPageClient() {
                       : 'Not available for this corridor.';
                     return (
                       <InvalidCorridorInline
-                        key={modeRaw || Math.random()}
+                        key={modeRaw || `unavail-${entryIdx}`}
                         mode={modeRaw}
                         reason={reasonRaw}
                       />

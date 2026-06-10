@@ -12,6 +12,23 @@ def test_dabhoi_is_feeder_to_vadodara():
     assert access.local_station and "DABHOI" in access.local_station.upper()
 
 
+def test_phaphamau_is_feeder_to_prayagraj():
+    loc = resolve_location("Phaphamau")
+    access = get_feeder_access(loc)
+    assert access is not None
+    assert access.local_place.lower() == "phaphamau"
+    assert access.hub_city == "Prayagraj"
+    assert access.local_station_code == "PFM"
+
+
+def test_phulpur_is_feeder_to_prayagraj():
+    loc = resolve_location("Phulpur")
+    access = get_feeder_access(loc)
+    assert access is not None
+    assert access.hub_city == "Prayagraj"
+    assert access.local_station_code == "PLP"
+
+
 def test_vadodara_metro_not_feeder():
     loc = resolve_location("Vadodara")
     assert get_feeder_access(loc) is None

@@ -21,6 +21,8 @@ type AiBriefPanelProps = {
   navigateOnApply?: boolean;
   /** Show secondary button to parse + navigate (home / comparator) */
   showRouteButton?: boolean;
+  /** Called after a successful parse — mode is fill-only vs run-optimize */
+  onIntentApplied?: (parsed: ParsedIntent, action: 'fill' | 'run') => void;
   className?: string;
 };
 
@@ -52,6 +54,7 @@ export default function AiBriefPanel({
   contextMode,
   navigateOnApply = false,
   showRouteButton = false,
+  onIntentApplied,
   className = '',
 }: AiBriefPanelProps) {
   const router = useRouter();
@@ -162,6 +165,7 @@ export default function AiBriefPanel({
         const mode = resolveTargetMode(mergedResult);
         const targetPath = getModePath(mergedResult);
         setShipmentAutorun(mode);
+        onIntentApplied?.(mergedResult, 'run');
         setFillNotice('Form updated — running optimization…');
         if (pathname !== targetPath) {
           router.push(targetPath);
@@ -170,6 +174,8 @@ export default function AiBriefPanel({
         }
         return;
       }
+
+      onIntentApplied?.(mergedResult, 'fill');
 
       let notice =
         contextMode === 'home'
@@ -226,7 +232,17 @@ export default function AiBriefPanel({
 
       <ParagraphInputWithStt
         value={text}
-        onChange={setText}
+        onChange={(v) => {
+          setText(v);
+          if (
+            parsed &&
+            v.trim() !== (parsed.scenario_brief || scenarioBrief || '').trim()
+          ) {
+            setParsed(null);
+            setFillNotice(null);
+            setError(null);
+          }
+        }}
         rows={contextMode === 'home' ? 5 : 4}
         placeholder="e.g. I have 80kg medicines from Delhi to Chennai, max ₹12,000, need delivery within 2 days, prefer train not flight…"
         className="px-4 py-3 rounded-xl border border-violet-400/25 bg-surface-container-lowest text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-violet-400/35 resize-y min-h-[100px]"

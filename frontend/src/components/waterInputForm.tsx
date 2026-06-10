@@ -5,6 +5,8 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { useWaterPortCatalog } from '@/hooks/useWaterPortCatalog';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
+import { hasShipmentAutorunPending } from '@/lib/shipmentAutorun';
 import {
   AdvancedToggle,
   ChoicePills,
@@ -311,6 +313,10 @@ export default function WaterInputForm() {
 
   useShipmentAutorun('water', runWaterOptimize, portsReady);
 
+  const onIntentApplied = useIntentFormReset(() => {});
+  const autorunWaitingForPorts =
+    hasShipmentAutorunPending('water') && !portsReady && Boolean(source.trim() && destination.trim());
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) {
@@ -341,7 +347,13 @@ export default function WaterInputForm() {
 
   return (
     <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="water" />
+      <AiBriefPanel contextMode="water" onIntentApplied={onIntentApplied} />
+      {autorunWaitingForPorts && (
+        <p className="text-xs text-amber-200/90 border border-amber-400/25 bg-amber-500/10 rounded-lg px-3 py-2">
+          Resolving ports for your corridor — pick a matching port from the dropdown if autocomplete
+          does not match, then run optimize.
+        </p>
+      )}
       <FormShell
         mode="water"
         title="Maritime route search"

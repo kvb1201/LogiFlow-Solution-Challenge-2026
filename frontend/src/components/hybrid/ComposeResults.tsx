@@ -2,6 +2,7 @@
 
 import type { ComposeResult } from '@/services/api';
 import { ItineraryCard } from '@/components/hybrid/ItineraryCard';
+import { ComposeContextBanner } from '@/components/hybrid/ComposeContextBanner';
 import { formatHours, formatInr, modeLabel } from '@/lib/hybrid-ui';
 
 export function ComposeResults({
@@ -17,67 +18,19 @@ export function ComposeResults({
   const alternatives = (result.alternatives || []).filter((a) => a.id !== recommended?.id);
   const baselines = result.baselines ? Object.entries(result.baselines) : [];
 
-  if (!recommended) return null;
+  if (!recommended && alternatives.length === 0) return null;
+
+  const topPick = recommended || alternatives[0];
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      {result.short_corridor && result.compose_note && (
-        <div
-          className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90 leading-relaxed"
-          role="status"
-        >
-          <p className="font-medium text-amber-200/95 mb-1">Short corridor — direct routes only</p>
-          <p>{result.compose_note}</p>
-        </div>
+      <ComposeContextBanner result={result} />
+
+      {topPick && (
+        <ItineraryCard itinerary={topPick} recommended={Boolean(recommended)} variant="full" />
       )}
 
-      {result.feeder_corridor && result.compose_note && !result.short_corridor && (
-        <div
-          className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100/90 leading-relaxed"
-          role="status"
-        >
-          <p className="font-medium text-emerald-200/95 mb-1">Local hub connection included</p>
-          <p>{result.compose_note}</p>
-          {result.resolved_source?.feeder_access && (
-            <p className="mt-2 text-xs text-emerald-200/75">
-              Origin: {result.resolved_source.feeder_access.local_place} via{' '}
-              {result.resolved_source.feeder_access.hub_city}
-              {result.resolved_source.feeder_access.local_station
-                ? ` (${result.resolved_source.feeder_access.local_station})`
-                : ''}
-            </p>
-          )}
-          {result.resolved_destination?.feeder_access && (
-            <p className="mt-1 text-xs text-emerald-200/75">
-              Destination: {result.resolved_destination.feeder_access.hub_city} hub →{' '}
-              {result.resolved_destination.feeder_access.local_place}
-            </p>
-          )}
-        </div>
-      )}
-
-      {result.rural_corridor && result.compose_note && !result.short_corridor && !result.feeder_corridor && (
-        <div
-          className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90 leading-relaxed"
-          role="status"
-        >
-          <p className="font-medium text-sky-200/95 mb-1">Village / remote place — hub-connected routes</p>
-          <p>{result.compose_note}</p>
-          {result.hub_pairs_considered && result.hub_pairs_considered.length > 0 && (
-            <p className="mt-2 text-xs text-sky-200/75">
-              Hub pairs:{' '}
-              {result.hub_pairs_considered
-                .slice(0, 4)
-                .map((p) => `${p.origin_hub.city} ↔ ${p.dest_hub.city}`)
-                .join(' · ')}
-            </p>
-          )}
-        </div>
-      )}
-
-      <ItineraryCard itinerary={recommended} recommended variant="full" />
-
-      {onSave && (
+      {onSave && recommended && (
         <div className="flex justify-end mt-2">
           <button
             onClick={onSave}

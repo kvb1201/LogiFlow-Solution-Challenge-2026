@@ -5,6 +5,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { searchCities, type StationSearchResult } from '@/services/api';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import {
   AdvancedToggle,
   ChoicePills,
@@ -437,6 +438,8 @@ export default function RoadInputForm() {
 
   useShipmentAutorun('road', runRoadOptimize, Boolean(source.trim() && destination.trim()));
 
+  const onIntentApplied = useIntentFormReset(() => {});
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) {
@@ -452,22 +455,12 @@ export default function RoadInputForm() {
       return;
     }
     setError(null);
-    console.log("[FORM SUBMIT]", {
-      mode: 'road',
-      simulationMode,
-      simTraffic,
-      simWeather,
-      simIncidents,
-      source,
-      destination,
-      priority,
-    });
     runRoadOptimize();
   };
 
   return (
     <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="road" />
+      <AiBriefPanel contextMode="road" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="road"
         title="Road route search"

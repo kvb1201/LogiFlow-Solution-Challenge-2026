@@ -89,11 +89,41 @@ def get_feeder_access(loc: "ResolvedLocation") -> FeederAccess | None:
     if raw_n == canon_n or raw_n.startswith(f"{canon_n} "):
         return None
 
-    # Village geocoding uses rural hub discovery instead.
-    if loc.resolution == "village_geocoded":
-        return None
-
     from app.services.hub_catalog import _match_city_key
+
+    # Geocoded villages near a metro: treat as feeder when within practical road/rail access.
+    if loc.resolution == "village_geocoded" and loc.lat is not None and loc.lng is not None:
+        try:
+            from app.services.geo_hub_finder import nearest_metropolitan_hubs
+
+            near = nearest_metropolitan_hubs(float(loc.lat), float(loc.lng), max_hubs=1)
+            if near:
+                hub = near[0]
+                hub_pt = _hub_coords(hub.city)
+                if hub_pt:
+                    dist = _distance_km((float(loc.lat), float(loc.lng)), hub_pt)
+                    if _FEEDER_MIN_KM <= dist <= 120:
+                        primary_hub = _primary_hub_code(hub.city)
+                        hub_station = None
+                        if primary_hub:
+                            try:
+                                from app.services.station_pdf_index import get_pdf_index
+
+                                rec = get_pdf_index().lookup_code(primary_hub)
+                                hub_station = rec.name if rec else primary_hub
+                            except Exception:
+                                hub_station = primary_hub
+                        local_label = raw.title() if raw.islower() else raw
+                        return FeederAccess(
+                            local_place=local_label,
+                            hub_city=hub.city,
+                            hub_station=hub_station,
+                            hub_station_code=primary_hub,
+                            reason="feeder_village",
+                        )
+        except Exception:
+            pass
+        return None
 
     metro_key = _match_city_key(canonical)
     if not metro_key:
@@ -116,6 +146,16 @@ def get_feeder_access(loc: "ResolvedLocation") -> FeederAccess | None:
     station_core = _norm(_strip_station_suffix(station_label or ""))
     local_label = raw.title() if raw.islower() else raw
 
+    hub_station = None
+    if primary_hub:
+        try:
+            from app.services.station_pdf_index import get_pdf_index
+
+            rec = get_pdf_index().lookup_code(primary_hub)
+            hub_station = rec.name if rec else primary_hub
+        except Exception:
+            hub_station = primary_hub
+
     # User typed a distinct station under the metro cluster (Dabhoi → Vadodara).
     name_matches_user = bool(
         station_core
@@ -124,15 +164,6 @@ def get_feeder_access(loc: "ResolvedLocation") -> FeederAccess | None:
     non_primary_station = bool(primary_hub and local_code and local_code != primary_hub)
 
     if name_matches_user and non_primary_station:
-        hub_station = None
-        if primary_hub:
-            try:
-                from app.services.station_pdf_index import get_pdf_index
-
-                rec = get_pdf_index().lookup_code(primary_hub)
-                hub_station = rec.name if rec else primary_hub
-            except Exception:
-                hub_station = primary_hub
         return FeederAccess(
             local_place=local_label,
             hub_city=canonical,
@@ -153,6 +184,9 @@ def get_feeder_access(loc: "ResolvedLocation") -> FeederAccess | None:
                     local_place=local_label,
                     hub_city=canonical,
                     local_station=station_label,
+                    hub_station=hub_station,
+                    local_station_code=local_code or None,
+                    hub_station_code=primary_hub,
                     reason="feeder_distance",
                 )
 

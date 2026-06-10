@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import {
   AdvancedToggle,
   ChoicePills,
@@ -59,9 +60,11 @@ export default function AirInputForm() {
 
   useShipmentAutorun('air', runAirOptimize, Boolean(source.trim() && destination.trim()));
 
+  const onIntentApplied = useIntentFormReset(() => {});
+
   return (
     <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="air" />
+      <AiBriefPanel contextMode="air" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="air"
         title="Air cargo search"

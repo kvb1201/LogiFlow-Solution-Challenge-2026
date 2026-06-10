@@ -20,10 +20,17 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
+import {
+  extractRoadUnavailableReason,
+  isComposeFailureWithContext,
+} from '@/lib/compose-insights';
+import { ComposeFailurePanel } from '@/components/hybrid/ComposeFailurePanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 
 const DEMO_SOURCE = 'Lucknow, India';
 const DEMO_DEST = 'Delhi, India';
@@ -54,12 +61,14 @@ export default function HybridPageClient() {
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
+  const [failureContext, setFailureContext] = useState<ComposeResult | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   /** Reason string when road is rejected as an invalid corridor by the backend. */
   const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
-  const skipWizard = loading || Boolean(result?.recommended) || (autoTriggered && !error);
+  const skipWizard = loading || Boolean(result?.recommended);
   const showForm = !skipWizard;
+  const showBriefPanel = !skipWizard || Boolean(error || failureContext);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -83,6 +92,7 @@ export default function HybridPageClient() {
 
     const brief = (scenarioBrief || state.scenarioBrief || '').trim();
     setError(null);
+    setFailureContext(null);
     setRoadUnavailableReason(null);
     setLoading(true);
     setStep(2);
@@ -110,18 +120,19 @@ export default function HybridPageClient() {
       });
 
       if (data.error && !data.recommended) {
+        if (isComposeFailureWithContext(data)) {
+          setFailureContext(data);
+          throw new Error(data.error);
+        }
         throw new Error(data.error);
       }
 
-      // ── Extract road-unavailable reason from compose result ───────────────
-      // If the road template was rejected as an invalid corridor, surface the
-      // reason so users understand it's a valid planning outcome, not an error.
-      const roadUnavail =
-        (data.unavailable_templates?.road as string | undefined) ?? null;
+      const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
       if (roadUnavail) {
         setRoadUnavailableReason(roadUnavail);
       }
 
+      setFailureContext(null);
       setResult(data);
     } catch (err: unknown) {
       if (err instanceof TrafficQueueError) return;
@@ -142,11 +153,45 @@ export default function HybridPageClient() {
   const runComposeRef = useRef(runCompose);
   runComposeRef.current = runCompose;
 
+  const corridorReady = Boolean(source.trim() && destination.trim());
+
+  const beginComposeRun = useCallback(() => {
+    setResult(null);
+    setError(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setAutoTriggered(true);
+    setStep(2);
+    setLoading(true);
+    void runComposeRef.current();
+  }, []);
+
   useEffect(() => {
     if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
   }, [storeScenarioBrief]);
 
-  // Match comparator: only mark autorun started once corridor is in the store.
+  useShipmentAutorun('hybrid', beginComposeRun, corridorReady);
+
+  function resetToEdit(stepTarget = 0) {
+    setResult(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setAutoTriggered(false);
+    setStep(stepTarget);
+  }
+
+  const handleIntentApplied = useIntentFormReset((_parsed, action) => {
+    setError(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setResult(null);
+    if (action === 'run') {
+      if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
+      return;
+    }
+    resetToEdit(0);
+  });
+
   useLayoutEffect(() => {
     syncAutorunFromSession();
     if (!shouldRunShipmentAutorun('hybrid')) return;
@@ -158,11 +203,8 @@ export default function HybridPageClient() {
       setScenarioBrief(state.scenarioBrief);
     }
     markShipmentAutorunStarted('hybrid');
-    setAutoTriggered(true);
-    setStep(2);
-    setLoading(true);
-    void runComposeRef.current();
-  }, []);
+    beginComposeRun();
+  }, [beginComposeRun]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -188,7 +230,13 @@ export default function HybridPageClient() {
           </p>
         </header>
 
-        <AiBriefPanel contextMode="hybrid" className="mb-6" />
+        {showBriefPanel && (
+          <AiBriefPanel
+            contextMode="hybrid"
+            className="mb-6"
+            onIntentApplied={handleIntentApplied}
+          />
+        )}
 
         {/* Step dots — minimal */}
         {(showForm || loading) && (
@@ -330,9 +378,28 @@ export default function HybridPageClient() {
         </form>
 
         {error && (
-          <p className="mt-4 text-sm text-red-300/90 rounded-lg border border-red-400/20 bg-red-500/5 px-4 py-3">
-            {error}
-          </p>
+          <div className="mt-4 space-y-4">
+            {failureContext ? (
+              <ComposeFailurePanel
+                result={failureContext}
+                message={error}
+                onEdit={() => resetToEdit(0)}
+              />
+            ) : (
+              <div className="text-sm text-red-300/90 rounded-lg border border-red-400/20 bg-red-500/5 px-4 py-3">
+                <p>{error}</p>
+                {autoTriggered && (
+                  <button
+                    type="button"
+                    onClick={() => resetToEdit(0)}
+                    className="mt-3 text-xs font-semibold text-red-100 underline"
+                  >
+                    Edit corridor and try again
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {loading && <MultimodalPipelineLoading variant="compose" />}
@@ -352,11 +419,7 @@ export default function HybridPageClient() {
         {result?.recommended && !loading && (
           <ComposeResults
             result={result}
-            onEdit={() => {
-              setResult(null);
-              setRoadUnavailableReason(null);
-              setStep(1);
-            }}
+            onEdit={() => resetToEdit(0)}
             onSave={() => setSaveModalOpen(true)}
           />
         )}
