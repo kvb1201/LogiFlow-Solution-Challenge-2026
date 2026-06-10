@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import {
   composeMultimodalRoute,
   BACKEND_UNAVAILABLE_MSG,
+  TrafficQueueError,
   type ComposeResult,
 } from '@/services/api';
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
@@ -122,6 +123,7 @@ export default function HybridPageClient() {
 
       setResult(data);
     } catch (err: unknown) {
+      if (err instanceof TrafficQueueError) return;
       setResult(null);
       setRoadUnavailableReason(null);
       setError(

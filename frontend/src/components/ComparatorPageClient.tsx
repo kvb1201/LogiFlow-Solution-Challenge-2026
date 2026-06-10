@@ -18,7 +18,7 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
-import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { BACKEND_UNAVAILABLE_MSG, TrafficQueueError } from '@/services/api';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
@@ -318,6 +318,7 @@ export default function ComparatorPageClient() {
       }
       setResult(data);
     } catch (err: unknown) {
+      if (err instanceof TrafficQueueError) return;
       setResult(null);
       setError(
         err instanceof Error
