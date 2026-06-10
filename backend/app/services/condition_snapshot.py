@@ -42,6 +42,8 @@ class ConditionSnapshot:
     # --- Confidence + sources ---
     confidence_score: int                    # 0–100
     signal_sources: list[str]               # e.g. ["tomtom", "weather_api", "ml_delay_model"]
+    signal_freshness: dict[str, str]        # {"traffic":"live","weather":"live","delay":"heuristic"}
+    signals_refreshed_at: Optional[str]     # ISO timestamp of last live refresh
 
     # --- Explanations ---
     traffic_explanation: str
@@ -66,6 +68,8 @@ class ConditionSnapshot:
             "eta_variance_score": round(self.eta_variance_score, 1),
             "confidence_score": self.confidence_score,
             "signal_sources": self.signal_sources,
+            "signal_freshness": self.signal_freshness,
+            "signals_refreshed_at": self.signals_refreshed_at,
             "explanations": {
                 "traffic": self.traffic_explanation,
                 "weather": self.weather_explanation,
@@ -320,13 +324,8 @@ def build_delay_score_from_ml(
 
 def compute_confidence_score(signal_sources: list[str]) -> int:
     """
-    0–100 confidence based on which real signals were available.
-
-    Weights:
-      TomTom traffic  → +35
-      Weather API     → +25
-      ML delay model  → +25
-      Base            → +15 (always — route + progress always present)
+    Legacy function — kept for backward compatibility.
+    Use _compute_confidence_from_freshness for new code.
     """
     conf = 15
     sources_lower = {s.lower() for s in signal_sources}
@@ -336,6 +335,36 @@ def compute_confidence_score(signal_sources: list[str]) -> int:
         conf += 25
     if "ml_delay_model" in sources_lower:
         conf += 25
+    return min(100, conf)
+
+
+def _compute_confidence_from_freshness(signal_freshness: dict[str, str]) -> int:
+    """
+    Phase 6: Confidence reflects signal freshness.
+
+    Traffic:
+      live    → +35
+      stored  → +20
+      fallback/heuristic → +5
+    Weather:
+      live    → +25
+      stored  → +15
+      unavailable → 0
+    Delay:
+      live    → +25
+      stored/heuristic → +12
+      unavailable → 0
+    Base: 15 (always — route + progress present)
+    """
+    conf = 15
+    t = signal_freshness.get("traffic", "unavailable")
+    w = signal_freshness.get("weather", "unavailable")
+    d = signal_freshness.get("delay",   "unavailable")
+
+    conf += {"live": 35, "stored": 20, "fallback": 5}.get(t, 0)
+    conf += {"live": 25, "stored": 15}.get(w, 0)
+    conf += {"live": 25, "heuristic": 12, "stored": 12}.get(d, 0)
+
     return min(100, conf)
 
 
@@ -478,7 +507,201 @@ def build_condition_snapshot(
     fallback_weather_fn = None,
     fallback_adherence_fn = None,
     fallback_eta_fn = None,
+    # Phase 5: live_signals takes highest priority (from live_signal_refresh)
+    live_signals: Any = None,
 ) -> ConditionSnapshot:
+    """
+    Build a ConditionSnapshot.
+
+    Signal priority (Phase 5):
+      1. live_signals  — freshly fetched TomTom + Weather + ML (this call)
+      2. optimization_result.best — stored pipeline signals
+      3. fallback heuristics
+
+    live_signals is a LiveSignals object from live_signal_refresh.refresh_condition_signals().
+    """
+    signal_sources: list[str] = []
+    signal_freshness: dict[str, str] = {
+        "traffic": "unavailable",
+        "weather": "unavailable",
+        "delay":   "unavailable",
+    }
+    signals_refreshed_at: Optional[str] = None
+
+    # ── Extract stored pipeline signals (fallback #2) ─────────────────
+    pipeline = _extract_pipeline_signals(optimization_result)
+    stored_traffic_level  = pipeline.get("traffic_level")
+    stored_traffic_factor = pipeline.get("traffic_factor")
+    stored_predicted_delay = pipeline.get("predicted_delay")
+    stored_weather_factor  = pipeline.get("weather_factor")
+
+    # ── Resolve traffic signal (live > stored > heuristic) ────────────
+    traffic_level: Optional[float] = None
+    traffic_factor_val: Optional[float] = None
+    used_live_traffic = False
+
+    if live_signals and live_signals.traffic_level is not None:
+        traffic_level = live_signals.traffic_level
+        traffic_factor_val = None  # use traffic_level directly
+        used_live_traffic = True
+        signal_freshness["traffic"] = live_signals.traffic_freshness
+        signals_refreshed_at = live_signals.refreshed_at
+    elif stored_traffic_level is not None or stored_traffic_factor is not None:
+        traffic_level = stored_traffic_level
+        traffic_factor_val = stored_traffic_factor
+        signal_freshness["traffic"] = "stored"
+    # else: heuristic — signal_freshness["traffic"] stays "unavailable"
+
+    # ── Resolve weather signal (live > stored > heuristic) ────────────
+    temp: Optional[float] = None
+    rain: Optional[float] = None
+    condition: Optional[str] = None
+    _weather_from_api = False
+
+    if live_signals and live_signals.temperature is not None:
+        temp = live_signals.temperature
+        rain = live_signals.precipitation or 0.0
+        condition = live_signals.weather_condition or "Clear"
+        _weather_from_api = True
+        signal_freshness["weather"] = live_signals.weather_freshness
+        if not signals_refreshed_at:
+            signals_refreshed_at = live_signals.refreshed_at
+    else:
+        # Try stored pipeline weather
+        weather_data: dict[str, Any] = {}
+        if optimization_result:
+            cached_weather = (optimization_result.get("best") or {}).get("weather")
+            if not cached_weather and optimization_result.get("all"):
+                first = (optimization_result["all"] or [None])[0]
+                cached_weather = (first or {}).get("weather") if isinstance(first, dict) else None
+            if cached_weather and isinstance(cached_weather, dict) and cached_weather.get("temp") is not None:
+                weather_data = cached_weather
+                _weather_from_api = True
+                signal_freshness["weather"] = "stored"
+            else:
+                try:
+                    import os
+                    from app.services.weather_service import get_weather
+                    if os.getenv("OPENWEATHER_API_KEY"):
+                        live_w = get_weather(source)
+                        if live_w and live_w.get("temp") is not None:
+                            weather_data = live_w
+                            _weather_from_api = True
+                            signal_freshness["weather"] = "live"
+                except Exception:
+                    pass
+        temp = weather_data.get("temp")
+        rain = float(weather_data.get("rain") or 0)
+        condition = weather_data.get("condition")
+
+    # ── Resolve ML delay signal (live > stored > heuristic) ───────────
+    predicted_delay: Optional[float] = None
+    used_live_delay = False
+
+    if live_signals and live_signals.predicted_delay_hours is not None:
+        predicted_delay = live_signals.predicted_delay_hours
+        used_live_delay = True
+        signal_freshness["delay"] = live_signals.delay_freshness
+    elif stored_predicted_delay is not None:
+        predicted_delay = stored_predicted_delay
+        signal_freshness["delay"] = "stored"
+    # else: heuristic proxy computed below
+
+    # ── Build traffic score ───────────────────────────────────────────
+    traffic_score_val, traffic_delay_min, traffic_exp, used_real_traffic = \
+        build_traffic_score_from_real(traffic_level, traffic_factor_val, route_km)
+
+    if used_real_traffic:
+        freshness_label = signal_freshness["traffic"]
+        src_label = "live" if freshness_label == "live" else (
+            "stored (TomTom)" if freshness_label == "stored" else "TomTom"
+        )
+        if freshness_label in ("live", "stored"):
+            signal_sources.append("tomtom" if freshness_label == "live" else "tomtom_stored")
+        traffic_score = traffic_score_val
+        traffic_exp_final = traffic_exp
+    else:
+        if fallback_traffic_fn:
+            ts, _, td, te = fallback_traffic_fn(route_km, stop_count, mode, source, destination)
+            traffic_score = ts
+            traffic_delay_min = td
+            traffic_exp_final = te
+        else:
+            traffic_score = 65.0
+            traffic_exp_final = "Traffic estimate unavailable (heuristic)."
+
+    # ── Build weather score ───────────────────────────────────────────
+    weather_score_val, weather_delay_min, temp_c, precip, vis, weather_exp, used_real_weather = \
+        build_weather_score_from_real(temp, rain, condition, stored_weather_factor, mode)
+
+    if used_real_weather and _weather_from_api:
+        freshness_label = signal_freshness["weather"]
+        signal_sources.append("weather_api" if freshness_label == "live" else "weather_stored")
+        weather_score = weather_score_val
+        weather_exp_final = weather_exp
+    else:
+        if fallback_weather_fn:
+            ws, _, we = fallback_weather_fn(route_km, mode, source, destination)
+            weather_score = ws
+            weather_exp_final = we
+        else:
+            weather_score = 75.0
+            weather_exp_final = "Weather estimate unavailable (heuristic)."
+        temp_c = None; precip = None; vis = None; weather_delay_min = 0
+
+    # ── Build delay score ─────────────────────────────────────────────
+    delay_score_val, delay_exp, used_ml = build_delay_score_from_ml(predicted_delay)
+
+    if used_ml:
+        freshness_label = signal_freshness["delay"]
+        signal_sources.append("ml_delay_model" if freshness_label in ("live","heuristic") else "ml_delay_stored")
+        delay_score = delay_score_val
+        delay_exp_final = delay_exp
+    else:
+        proxy = (traffic_score * 0.6 + weather_score * 0.4)
+        delay_score = round(proxy)
+        delay_exp_final = "ML delay prediction unavailable — estimated from traffic/weather."
+
+    # ── Adherence and ETA ─────────────────────────────────────────────
+    if fallback_adherence_fn:
+        adherence_score, adherence_exp = fallback_adherence_fn(corridor_status, deviation_km)
+    else:
+        adherence_score = 100.0 if corridor_status == "ON_ROUTE" else 60.0
+        adherence_exp = "Corridor adherence estimate."
+
+    if fallback_eta_fn:
+        eta_score, eta_exp = fallback_eta_fn(overdue_minutes, eta_gap_minutes)
+    else:
+        total_gap = max(0, overdue_minutes) + max(0, eta_gap_minutes)
+        eta_score = max(0.0, 100.0 - total_gap / 2.0)
+        eta_exp = f"ETA variance: {total_gap}m total gap."
+
+    # ── Confidence — Phase 6: reflects freshness ──────────────────────
+    confidence = _compute_confidence_from_freshness(signal_freshness)
+
+    return ConditionSnapshot(
+        traffic_level=traffic_level,
+        traffic_delay_minutes=traffic_delay_min,
+        predicted_delay_hours=predicted_delay,
+        temperature=round(temp_c, 1) if temp_c is not None else None,
+        precipitation=round(precip, 2) if precip is not None else None,
+        visibility=round(vis, 1) if vis is not None else None,
+        weather_condition=condition,
+        traffic_score=traffic_score,
+        weather_score=weather_score,
+        delay_score=delay_score,
+        route_adherence_score=adherence_score,
+        eta_variance_score=eta_score,
+        confidence_score=confidence,
+        signal_sources=signal_sources,
+        signal_freshness=signal_freshness,
+        signals_refreshed_at=signals_refreshed_at,
+        traffic_explanation=traffic_exp_final,
+        weather_explanation=weather_exp_final,
+        delay_explanation=delay_exp_final,
+        adherence_explanation=adherence_exp,
+        eta_explanation=eta_exp,
+    )
     """
     Build a ConditionSnapshot, preferring real signals with graceful fallback
     to the existing deterministic heuristics.

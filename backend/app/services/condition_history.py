@@ -39,6 +39,9 @@ def append_condition_history(
         "congestion_score": condition_profile_dict.get("congestion_score"),
         "route_adherence_score": condition_profile_dict.get("route_adherence_score"),
         "eta_variance_score": condition_profile_dict.get("eta_variance_score"),
+        "confidence_score": condition_profile_dict.get("confidence_score"),
+        "signal_freshness": condition_profile_dict.get("signal_freshness", {}),
+        "signals_refreshed_at": condition_profile_dict.get("signals_refreshed_at"),
     }
 
     history.append(entry)

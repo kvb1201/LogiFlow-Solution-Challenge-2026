@@ -92,6 +92,14 @@ export interface RouteHealthResponse {
     eta_variance_score: number;
     confidence_score: number;
     signal_sources: string[];
+    /** Freshness per signal: "live" | "stored" | "heuristic" | "unavailable" */
+    signal_freshness: {
+      traffic: string;
+      weather: string;
+      delay: string;
+    };
+    /** ISO timestamp of last live refresh (null when no live refresh ran) */
+    signals_refreshed_at: string | null;
     explanations: {
       traffic: string;
       weather: string;
@@ -102,6 +110,14 @@ export interface RouteHealthResponse {
   } | null;
   /** Real-signal source badges e.g. ["tomtom", "weather_api", "ml_delay_model"] */
   signal_sources: string[];
+  /** Per-signal freshness for badge display */
+  signal_freshness: {
+    traffic: string;
+    weather: string;
+    delay: string;
+  } | null;
+  /** ISO timestamp of the last live signal refresh */
+  signals_refreshed_at: string | null;
   health_breakdown: {
     adherence: { points: number; max: number; delta: number; why: string };
     eta:       { points: number; max: number; delta: number; why: string };
@@ -120,6 +136,9 @@ export interface RouteHealthResponse {
     congestion_score: number | null;
     route_adherence_score: number | null;
     eta_variance_score: number | null;
+    confidence_score: number | null;
+    signal_freshness: { traffic: string; weather: string; delay: string } | null;
+    signals_refreshed_at: string | null;
   }>;
   recommendation: {
     action: string;

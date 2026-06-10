@@ -321,24 +321,55 @@ function RouteCorridor({
 
 // ── Signal Source Badges ──────────────────────────────────────────────────
 
-const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  tomtom:        { label: 'TomTom',      color: 'bg-blue-500/15 text-blue-300 border-blue-500/25' },
-  weather_api:   { label: 'Weather API', color: 'bg-sky-500/15 text-sky-300 border-sky-500/25' },
-  ml_delay_model:{ label: 'ML Delay',    color: 'bg-violet-500/15 text-violet-300 border-violet-500/25' },
+const FRESHNESS_META: Record<string, { label: string; color: string }> = {
+  live:        { label: 'Live',    color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25' },
+  stored:      { label: 'Stored', color: 'bg-amber-500/12 text-amber-300 border-amber-500/20' },
+  heuristic:   { label: 'Est.',   color: 'bg-surface-container/40 text-outline border-border/20' },
+  fallback:    { label: 'Fallback', color: 'bg-surface-container/40 text-outline border-border/20' },
+  unavailable: { label: 'N/A',    color: 'bg-surface-container/20 text-outline/50 border-border/10' },
 };
 
-function SignalBadges({ sources }: { sources: string[] }) {
-  if (!sources.length) return null;
+const SIGNAL_LABELS: Record<string, string> = {
+  traffic: 'Traffic',
+  weather: 'Weather',
+  delay:   'Delay',
+};
+
+function SignalBadges({
+  signalFreshness,
+  refreshedAt,
+}: {
+  signalFreshness: RouteHealthResponse['signal_freshness'];
+  refreshedAt: string | null;
+}) {
+  if (!signalFreshness) return null;
+
+  const signals = Object.entries(signalFreshness) as [string, string][];
+  const liveCount = signals.filter(([, f]) => f === 'live').length;
+
+  const refreshAgo = refreshedAt
+    ? Math.round((Date.now() - new Date(refreshedAt).getTime()) / 1000)
+    : null;
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {sources.map(src => {
-        const meta = SOURCE_LABELS[src.toLowerCase()] ?? { label: src, color: 'bg-surface-container/40 text-outline border-border/20' };
+    <div className="flex flex-wrap items-center gap-2">
+      {signals.map(([key, freshness]) => {
+        const meta = FRESHNESS_META[freshness] ?? FRESHNESS_META.unavailable;
         return (
-          <span key={src} className={`text-[8px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide ${meta.color}`}>
-            {meta.label}
+          <span
+            key={key}
+            className={`text-[8px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide ${meta.color}`}
+            title={`${SIGNAL_LABELS[key] ?? key}: ${freshness}`}
+          >
+            {meta.label} {SIGNAL_LABELS[key] ?? key}
           </span>
         );
       })}
+      {refreshAgo !== null && liveCount > 0 && (
+        <span className="text-[8px] text-outline">
+          refreshed {refreshAgo < 60 ? `${refreshAgo}s` : `${Math.round(refreshAgo / 60)}m`} ago
+        </span>
+      )}
     </div>
   );
 }
@@ -549,6 +580,14 @@ function ConditionHistoryPanel({
                   )}
                   {entry.weather_score != null && (
                     <span title="Weather">W:{Math.round(entry.weather_score)}</span>
+                  )}
+                  {entry.confidence_score != null && (
+                    <span title={`Confidence: ${entry.confidence_score}%`} className="text-outline/70">
+                      {entry.confidence_score}%
+                    </span>
+                  )}
+                  {entry.signal_freshness && Object.values(entry.signal_freshness).some(f => f === 'live') && (
+                    <span className="text-emerald-400/70 font-bold">Live</span>
                   )}
                   <span>
                     {new Date(entry.evaluated_at).toLocaleTimeString('en-IN', {
@@ -1004,10 +1043,13 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       </div>
 
       {/* ── Signal source badges ── */}
-      {routeHealth.signal_sources && routeHealth.signal_sources.length > 0 && (
+      {routeHealth.signal_freshness && (
         <div className="mb-4 flex items-center gap-2">
-          <span className="text-[9px] text-outline uppercase font-bold">Live signals:</span>
-          <SignalBadges sources={routeHealth.signal_sources} />
+          <span className="text-[9px] text-outline uppercase font-bold shrink-0">Signals:</span>
+          <SignalBadges
+            signalFreshness={routeHealth.signal_freshness}
+            refreshedAt={routeHealth.signals_refreshed_at ?? null}
+          />
         </div>
       )}
 

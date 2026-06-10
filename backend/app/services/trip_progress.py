@@ -1515,7 +1515,23 @@ def evaluate_route_health(
         float(opt_result.get("route_intelligence", {}).get("total_km_estimate") or 0)
     )
 
-    # Build snapshot — real signals preferred, heuristic fallback
+    # ── Phase 7: Live signal refresh for remaining journey ────────────
+    # Fetch fresh TomTom + Weather + ML for current_location → destination.
+    # Only for active trips with a known current location.
+    live_signals = None
+    if driver_city and driver_city != report.source and report.status == "active":
+        try:
+            from app.services.live_signal_refresh import refresh_condition_signals
+            live_signals = refresh_condition_signals(
+                current_location=driver_city,
+                destination=report.destination,
+                mode=report.mode or "road",
+                cargo_type=report.cargo_type or "General",
+            )
+        except Exception as _live_exc:
+            print(f"[LiveRefresh] Skipped: {_live_exc}")
+
+    # Build snapshot — live signals > stored signals > heuristic
     snapshot = build_condition_snapshot(
         optimization_result=opt_result,
         corridor_status=corridor_status,
@@ -1531,6 +1547,7 @@ def evaluate_route_health(
         fallback_weather_fn=build_weather_condition,
         fallback_adherence_fn=build_adherence_score,
         fallback_eta_fn=build_eta_variance_score,
+        live_signals=live_signals,
     )
 
     # Phase 6 — compute health from real signals
@@ -1631,6 +1648,8 @@ def evaluate_route_health(
         "health_breakdown": health_breakdown,
         "condition_history": condition_history,
         "signal_sources": snapshot.signal_sources,
+        "signal_freshness": snapshot.signal_freshness,
+        "signals_refreshed_at": snapshot.signals_refreshed_at,
         # Recommendation
         "recommended_action": recommended_action,
         "reoptimization_recommended": reopt_recommended,
