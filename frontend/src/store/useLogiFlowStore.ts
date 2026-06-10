@@ -220,6 +220,8 @@ export interface LogiFlowState {
     };
     water?: {
       max_transshipments?: number | null;
+      source_port_id?: string | null;
+      destination_port_id?: string | null;
     };
     /** Rail-only simulation knobs */
     rail_simulation?: RailSimulationParams;
@@ -578,6 +580,8 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
         const raw = await fetchWaterRoutes({
           source: source.trim(),
           destination: destination.trim(),
+          source_port_id: opts?.water?.source_port_id ?? null,
+          destination_port_id: opts?.water?.destination_port_id ?? null,
           priority,
           departure_date: departureDate,
           cargo_weight_kg: cargoWeight,

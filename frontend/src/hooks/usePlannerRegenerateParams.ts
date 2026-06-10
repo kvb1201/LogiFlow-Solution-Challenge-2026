@@ -16,8 +16,8 @@ export function usePlannerRegenerateParams(mode: string) {
   useEffect(() => {
     if (appliedRef.current) return;
 
-    const source = searchParams.get('source')?.trim();
-    const destination = searchParams.get('destination')?.trim();
+    const source = searchParams?.get('source')?.trim();
+    const destination = searchParams?.get('destination')?.trim();
     if (!source || !destination) return;
 
     appliedRef.current = true;
@@ -27,7 +27,7 @@ export function usePlannerRegenerateParams(mode: string) {
     store.setSource(source);
     store.setDestination(destination);
 
-    const stopsRaw = searchParams.get('stops');
+    const stopsRaw = searchParams?.get('stops');
     if (stopsRaw && mode === 'road') {
       const stops = stopsRaw.split(',').map((s) => s.trim()).filter(Boolean);
       store.setRoadStops(stops);

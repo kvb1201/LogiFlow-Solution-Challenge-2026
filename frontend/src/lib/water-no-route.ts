@@ -2,7 +2,9 @@ export type WaterNoRouteKind = 'no_network' | 'constraints' | 'unknown';
 
 export function classifyWaterNoRoute(message: string | null | undefined): WaterNoRouteKind {
   if (!message) return 'unknown';
-  if (/no maritime routes found/i.test(message)) return 'no_network';
+  if (/no maritime routes found|too far from the coastline|not close enough to the coastline/i.test(message)) {
+    return 'no_network';
+  }
   if (/no water routes.*satisfy/i.test(message)) return 'constraints';
   return 'unknown';
 }

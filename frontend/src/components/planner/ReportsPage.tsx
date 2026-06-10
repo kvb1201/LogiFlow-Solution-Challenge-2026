@@ -28,13 +28,13 @@ export function ReportsPage() {
   const searchParams = useSearchParams();
   const { reports, loading, error, fetchReports } = usePlannerStore();
   const [filter, setFilter] = useState<ReportStatus | 'all' | 'expired'>(() =>
-    parseStatusFilter(searchParams.get('status'))
+    parseStatusFilter(searchParams?.get('status') ?? null)
   );
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
   useEffect(() => {
-    setFilter(parseStatusFilter(searchParams.get('status')));
+    setFilter(parseStatusFilter(searchParams?.get('status') ?? null));
   }, [searchParams]);
 
   const filtered = reports.filter(r => {

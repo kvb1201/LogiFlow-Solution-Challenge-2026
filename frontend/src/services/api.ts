@@ -20,7 +20,7 @@ const BACKEND_SERVER =
   'http://127.0.0.1:8000';
 
 /** Browser calls use same-origin proxy; SSR uses direct backend URL. */
-const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
+export const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -384,6 +384,12 @@ export interface HybridPayload {
   };
 }
 
+/** Canonical shape for a mode that couldn't produce a route. */
+export interface UnavailableMode {
+  mode: string;
+  reason: string;
+}
+
 export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
@@ -392,10 +398,9 @@ export interface HybridOptimizeResult {
   demo_mode?: boolean;
   /**
    * Modes that have no route for this corridor.
-   * May be plain mode names ("road") or "mode: reason" strings
-   * e.g. "road: No drivable road route between Europe and North America."
+   * Each entry contains the mode name and a human-readable reason.
    */
-  unavailable_modes?: string[];
+  unavailable_modes?: UnavailableMode[];
   comparison?: HybridComparisonRow[] | null;
   best_per_mode?: {
     road?: HybridModeRoute | null;
@@ -739,23 +744,30 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
-  const corridor =
-    payload.source && payload.destination
-      ? `${payload.source} → ${payload.destination}`
-      : undefined;
-  const res = await fetchBackend(
-    '/optimize',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-    {
-      retries: 2,
-      retryDelayMs: 5000,
-      waitingRoom: { corridor, autorunMode: 'comparator' },
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  let res: Response;
+  try {
+    res = await fetchBackend(
+      '/optimize',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      },
+      { retries: 2, retryDelayMs: 5000 }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Comparison took too long. Wait a moment and retry — the backend may still be waking up.'
+      );
     }
-  );
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 502 || res.status === 504) {
@@ -830,9 +842,28 @@ export type WaterRoute = {
   departure_date?: string;
 };
 
+export type WaterPortRecord = {
+  id: string;
+  name: string;
+  country: string;
+  region: string;
+  routable: boolean;
+  lat: number;
+  lng: number;
+};
+
+export type WaterPortCatalogResponse = {
+  ports: WaterPortRecord[];
+  total: number;
+  routable: number;
+  regions: number;
+};
+
 export type WaterPayload = {
   source: string;
   destination: string;
+  source_port_id?: string | null;
+  destination_port_id?: string | null;
   cargo_weight_kg?: number;
   cargo_type?: string;
   priority?: string;

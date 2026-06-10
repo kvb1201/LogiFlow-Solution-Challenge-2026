@@ -65,6 +65,15 @@ def _load_models() -> tuple[object | None, object | None]:
 
     return _delay_model, _eta_model
 
+
+def reload_models() -> tuple[object | None, object | None]:
+    """Clear cached pkls and reload from disk (after training)."""
+    global _delay_model, _eta_model
+    _delay_model = None
+    _eta_model = None
+    return _load_models()
+
+
 # ── Lazy import guard — data_loader may not have congestion data in dev ───────
 
 def _get_congestion_index() -> dict[str, float]:

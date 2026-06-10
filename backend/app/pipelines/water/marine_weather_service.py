@@ -83,12 +83,21 @@ class WindConditions:
 
 # ── Fallbacks (used when API is unavailable) ──────────────────────────────────
 
-def _marine_fallback(lat: float, lon: float, reason: str) -> MarineConditions:
+def _month_from_iso_date(value: str | None) -> int:
+    if not value:
+        return date.today().month
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).month
+    except ValueError:
+        return date.today().month
+
+
+def _marine_fallback(lat: float, lon: float, reason: str, departure_date: str | None = None) -> MarineConditions:
     """
     Calendar-based fallback — exactly what we're replacing, kept as safety net.
     Returns a moderate risk for any location rather than crashing.
     """
-    month = datetime.utcnow().month
+    month = _month_from_iso_date(departure_date)
     # Monsoon season risk heuristic by region
     if 6 <= month <= 9:
         wave_h = 2.0   # moderate
@@ -111,7 +120,7 @@ def _marine_fallback(lat: float, lon: float, reason: str) -> MarineConditions:
 
 
 def _wind_fallback(lat: float, lon: float, departure_date: str, reason: str) -> WindConditions:
-    month = datetime.utcnow().month
+    month = _month_from_iso_date(departure_date)
     wind_kn = 18.0 if 6 <= month <= 9 else 12.0
     return WindConditions(
         lat=lat, lon=lon,
@@ -262,7 +271,7 @@ def get_departure_wind_conditions(
         return cached  # type: ignore
 
     try:
-        dep_dt = datetime.strptime(dep_str, "%Y-%m-%d").date()
+        dep_dt = datetime.fromisoformat(dep_str.replace("Z", "+00:00")).date()
     except ValueError:
         dep_dt = date.today()
 

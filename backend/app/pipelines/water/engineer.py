@@ -148,6 +148,16 @@ def _get_city_coords(city: str) -> tuple[float, float] | None:
     return coords
 
 
+def _parse_departure_datetime(value: str | None) -> datetime:
+    if not value:
+        return datetime.now()
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        log.warning("[engineer] Invalid departure_date '%s' — using current date", value)
+        return datetime.now()
+
+
 def _disruption_risk_score(port_ids: list[str]) -> tuple[float, list[dict]]:
     """
     Compute a disruption risk score across all ports on the path.
@@ -258,8 +268,16 @@ def engineer_routes(
         dest_meta   = _port_meta(dest_port)
 
         # ── Road legs ─────────────────────────────────────────────────────
-        pre_km,  pre_hr  = _road_leg(source,      o_lat, o_lng)
-        post_km, post_hr = _road_leg(destination, d_lat, d_lng)
+        source_port_id = str(payload.get("source_port_id") or "").strip()
+        destination_port_id = str(payload.get("destination_port_id") or "").strip()
+        if source_port_id == origin_port:
+            pre_km, pre_hr = 0.0, 0.0
+        else:
+            pre_km, pre_hr = _road_leg(source, o_lat, o_lng)
+        if destination_port_id == dest_port:
+            post_km, post_hr = 0.0, 0.0
+        else:
+            post_km, post_hr = _road_leg(destination, d_lat, d_lng)
 
         # ── Sea distance ──────────────────────────────────────────────────
         sea_km = sea_distance_km(path)
@@ -308,7 +326,7 @@ def engineer_routes(
         eta_mult, expected_delay_hr, transit_source = predict_eta_adjustment(
             sea_distance_nm=sea_nm,
             transshipments=transshipments,
-            departure_dt=datetime.now(),
+            departure_dt=_parse_departure_datetime(departure_dt),
             from_portid=origin_port,
             to_portid=dest_port,
             chokepoint_ids=chokepoint_ids,
@@ -349,10 +367,10 @@ def engineer_routes(
         surcharge    = 1.05 if cross_region else 1.0
 
         tons = max(weight_kg, 0.0) / 1000.0
-        road_cost = (
-            (pre_km + post_km) * ROAD_COST_PER_KM_PER_TON_INR * tons
-            + ROAD_HANDLING_BASE_INR
-        )
+        road_distance_km = pre_km + post_km
+        road_cost = road_distance_km * ROAD_COST_PER_KM_PER_TON_INR * tons
+        if road_distance_km > 0:
+            road_cost += ROAD_HANDLING_BASE_INR
         sea_cost = (
             (SEA_COST_BASE_PER_KG_INR + SEA_COST_PER_KG_PER_NM_INR * sea_nm)
             * max(weight_kg, 0.0)
@@ -426,13 +444,16 @@ def engineer_routes(
         reliability = _clamp01(1.0 - (0.65 * risk + 0.35 * delay_prob))
 
         # ── Segments ──────────────────────────────────────────────────────
-        segments: list[dict] = [{"mode": "Road", "from": source, "to": origin_name}]
+        segments: list[dict] = []
+        if pre_km > 0:
+            segments.append({"mode": "Road", "from": source, "to": origin_name})
         if len(path) >= 2:
             for a, b in zip(path, path[1:]):
                 segments.append({"mode": "Water", "from": port_name(a), "to": port_name(b)})
         else:
             segments.append({"mode": "Water", "from": origin_name, "to": dest_name})
-        segments.append({"mode": "Road", "from": dest_name, "to": destination})
+        if post_km > 0:
+            segments.append({"mode": "Road", "from": dest_name, "to": destination})
 
         # ── Key factors / insight ─────────────────────────────────────────
         regions_in_path = sorted(set(_port_meta(pid).get("region", "india") for pid in path))

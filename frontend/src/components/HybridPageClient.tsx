@@ -23,6 +23,7 @@ import {
 import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 
 const DEMO_SOURCE = 'Lucknow, India';
 const DEMO_DEST = 'Delhi, India';
@@ -88,7 +89,7 @@ export default function HybridPageClient() {
     setAutoTriggered(true);
 
     try {
-      const warm = await ensureBackendWarm(25_000);
+      const warm = await ensureBackendWarm(90_000);
       if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
 
       const data = await composeMultimodalRoute({
@@ -127,9 +128,11 @@ export default function HybridPageClient() {
       setResult(null);
       setRoadUnavailableReason(null);
       setError(
-        err instanceof Error
-          ? err.message
-          : 'Could not compose a route. Try the demo corridor.'
+        sanitizeUserMessage(
+          err instanceof Error
+            ? err.message
+            : 'Could not compose a route. Try the demo corridor.'
+        )
       );
     } finally {
       setLoading(false);

@@ -18,7 +18,8 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
-import { BACKEND_UNAVAILABLE_MSG, TrafficQueueError } from '@/services/api';
+import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
@@ -321,9 +322,11 @@ export default function ComparatorPageClient() {
       if (err instanceof TrafficQueueError) return;
       setResult(null);
       setError(
-        err instanceof Error
-          ? err.message
-          : 'Optimization failed. Try the demo corridor or simplify constraints.'
+        sanitizeUserMessage(
+          err instanceof Error
+            ? err.message
+            : 'Optimization failed. Try the demo corridor or simplify constraints.'
+        )
       );
     } finally {
       setLoading(false);
@@ -702,26 +705,33 @@ export default function ComparatorPageClient() {
 
             <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
 
-            {result.unavailable_modes && result.unavailable_modes.length > 0 && (
-              <div className="rounded-xl border border-outline-variant/15 bg-surface-container/20 px-4 py-3 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-outline mb-1">
-                  Unavailable modes
-                </p>
-                {result.unavailable_modes.map((entry) => {
-                  // Entry may be a plain mode name "road" or a "mode: reason" string
-                  const colonIdx = entry.indexOf(':');
-                  const modeRaw = colonIdx > -1 ? entry.slice(0, colonIdx).trim() : entry.trim();
-                  const reasonRaw = colonIdx > -1 ? entry.slice(colonIdx + 1).trim() : 'Not available for this corridor.';
-                  return (
-                    <InvalidCorridorInline
-                      key={modeRaw}
-                      mode={modeRaw}
-                      reason={reasonRaw}
-                    />
-                  );
-                })}
-              </div>
-            )}
+            {(() => {
+              const unavailableModes = Array.isArray(result.unavailable_modes)
+                ? result.unavailable_modes
+                : [];
+              return unavailableModes.length > 0 ? (
+                <div className="rounded-xl border border-outline-variant/15 bg-surface-container/20 px-4 py-3 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-outline mb-1">
+                    Unavailable modes
+                  </p>
+                  {unavailableModes.map((entry) => {
+                    const modeRaw = typeof entry === 'object' && entry !== null
+                      ? String(entry.mode ?? '')
+                      : String(entry ?? '');
+                    const reasonRaw = typeof entry === 'object' && entry !== null
+                      ? String(entry.reason ?? 'Not available for this corridor.')
+                      : 'Not available for this corridor.';
+                    return (
+                      <InvalidCorridorInline
+                        key={modeRaw || Math.random()}
+                        mode={modeRaw}
+                        reason={reasonRaw}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null;
+            })()}
 
             {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
               <div className="rounded-2xl border border-white/[0.06] bg-[#0a0e16]/60 p-5">
@@ -741,13 +751,19 @@ export default function ComparatorPageClient() {
               {ALL_MODES.map((mode) => {
                 const data = result.best_per_mode?.[mode];
                 const won = mode === recommendedMode;
-                // Check if this mode is listed as unavailable
-                const unavailableEntry = (result.unavailable_modes ?? []).find(
-                  e => e.toLowerCase().startsWith(mode)
+                // Check if this mode is listed as unavailable (defensive: handle both old and new shapes)
+                const safeUnavailable = Array.isArray(result.unavailable_modes)
+                  ? result.unavailable_modes
+                  : [];
+                const unavailableEntry = safeUnavailable.find(
+                  (e) => {
+                    if (typeof e === 'object' && e !== null) return String(e.mode ?? '').toLowerCase() === mode;
+                    return String(e ?? '').toLowerCase().startsWith(mode);
+                  }
                 );
                 const unavailableReason = unavailableEntry
-                  ? (unavailableEntry.includes(':')
-                      ? unavailableEntry.slice(unavailableEntry.indexOf(':') + 1).trim()
+                  ? (typeof unavailableEntry === 'object' && unavailableEntry !== null
+                      ? String((unavailableEntry as { reason?: string }).reason ?? 'Not available for this corridor.')
                       : 'Not available for this corridor.')
                   : null;
                 return (

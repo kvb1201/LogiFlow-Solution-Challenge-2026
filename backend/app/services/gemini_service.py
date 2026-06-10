@@ -9,9 +9,10 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import requests
+import re
 from dotenv import load_dotenv
 
 # gemini_service.py -> backend/app/services -> parents[2] = backend/
@@ -29,8 +30,19 @@ _MODEL_FALLBACKS = (
     "gemini-2.0-flash",
 )
 
+# After quota/auth failures, skip Gemini for a cooldown window (avoids 4× timeout chains).
+_QUOTA_COOLDOWN_S = max(30, int(os.getenv("GEMINI_QUOTA_COOLDOWN_S", "120")))
+_quota_blocked_until: float = 0.0
 
-def _gemini_config() -> Tuple[Optional[str], str]:
+
+def _gemini_enabled() -> bool:
+    if os.getenv("GEMINI_ENABLED", "true").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    key, _ = _gemini_config()
+    return bool(key)
+
+
+def _gemini_config() -> tuple[Optional[str], str]:
     key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
     return key, model
@@ -122,12 +134,51 @@ def _extract_text(data: dict[str, Any]) -> str:
     ).strip()
 
 
-def _should_retry_model(status_code: int, body: dict[str, Any]) -> bool:
-    if status_code in (404, 429, 503):
-        return True
+def _error_status(body: dict[str, Any]) -> str:
     err = body.get("error") or {}
-    status = str(err.get("status") or "").upper()
-    return status in ("NOT_FOUND", "RESOURCE_EXHAUSTED", "UNAVAILABLE")
+    return str(err.get("status") or "").upper()
+
+
+def _is_quota_error(status_code: int, body: dict[str, Any]) -> bool:
+    if status_code == 429:
+        return True
+    return _error_status(body) == "RESOURCE_EXHAUSTED"
+
+
+def _is_auth_error(status_code: int, body: dict[str, Any]) -> bool:
+    if status_code in (401, 403):
+        return True
+    return _error_status(body) in ("UNAUTHENTICATED", "PERMISSION_DENIED")
+
+
+def _parse_retry_after_s(body: dict[str, Any], message: str) -> int | None:
+    err = body.get("error") or {}
+    details = err.get("details") or []
+    for item in details:
+        if not isinstance(item, dict):
+            continue
+        if item.get("@type") == "type.googleapis.com/google.rpc.RetryInfo":
+            delay = (item.get("retryDelay") or "").strip()
+            if delay.endswith("s"):
+                try:
+                    return max(1, int(float(delay[:-1])))
+                except ValueError:
+                    pass
+    match = re.search(r"retry in\s+([\d.]+)s", message, re.I)
+    if match:
+        try:
+            return max(1, int(float(match.group(1))))
+        except ValueError:
+            pass
+    return None
+
+
+def _should_retry_model(status_code: int, body: dict[str, Any]) -> bool:
+    if _is_quota_error(status_code, body) or _is_auth_error(status_code, body):
+        return False
+    if status_code in (404, 503):
+        return True
+    return _error_status(body) in ("NOT_FOUND", "UNAVAILABLE")
 
 
 def gemini_generate_content(
@@ -143,9 +194,17 @@ def gemini_generate_content(
     Call Gemini generateContent. Returns (text, error_message).
     Tries fallback models when the preferred one is quota-blocked or unavailable.
     """
+    global _quota_blocked_until
+
+    if not _gemini_enabled():
+        return None, "Gemini disabled"
+
     api_key, configured = _gemini_config()
     if not api_key:
         return None, "Gemini API key not configured"
+
+    if time.time() < _quota_blocked_until:
+        return None, "Gemini quota cooldown active"
 
     preferred = model or configured
     errors: list[str] = []
@@ -162,6 +221,8 @@ def gemini_generate_content(
         "generationConfig": generation_config,
     }
 
+    per_model_timeout = max(4, min(timeout_s, 10))
+
     for model_id in _model_try_order(preferred):
         resource = _model_resource(model_id)
         url = f"{_API_BASE}/{resource}:generateContent"
@@ -170,7 +231,7 @@ def gemini_generate_content(
                 url,
                 headers=_gemini_headers(api_key),
                 json=payload,
-                timeout=timeout_s,
+                timeout=per_model_timeout,
             )
             body = resp.json() if resp.content else {}
             if resp.ok:
@@ -189,6 +250,12 @@ def gemini_generate_content(
 
             detail = (body.get("error") or {}).get("message") or resp.text[:160]
             errors.append(f"{model_id}: HTTP {resp.status_code} — {detail}")
+            if _is_quota_error(resp.status_code, body):
+                retry_s = _parse_retry_after_s(body, detail) or _QUOTA_COOLDOWN_S
+                _quota_blocked_until = time.time() + retry_s
+                break
+            if _is_auth_error(resp.status_code, body):
+                break
             if _should_retry_model(resp.status_code, body):
                 continue
             break
@@ -196,7 +263,7 @@ def gemini_generate_content(
             errors.append(f"{model_id}: {exc}")
             continue
 
-    return None, "; ".join(errors[:3])
+    return None, "; ".join(errors[:2])
 
 
 def generate_train_explanation(
@@ -268,3 +335,62 @@ def generate_generic_explanation(
     if not text and err:
         print(f"[GeminiService] generic explanation error: {err}")
     return text
+
+
+def generate_transport_followup_response(
+    question: str,
+    context: dict[str, Any] | None = None,
+    history: list[dict[str, Any]] | None = None,
+    timeout_s: int = 8,
+) -> dict[str, Any]:
+    """
+    Conversational follow-up for hybrid comparator context.
+    Returns {answer, error_kind?, retry_after_s?, provider_message?}.
+    """
+    ctx = context or {}
+    hist = history or []
+    hist_lines = []
+    for msg in hist[-6:]:
+        role = str((msg or {}).get("role") or "user")
+        content = str((msg or {}).get("content") or "").strip()
+        if content:
+            hist_lines.append(f"{role}: {content}")
+
+    prompt = (
+        "You are LogiFlow, a multimodal cargo planning assistant.\n"
+        "Answer the user's question using ONLY the route comparison context below.\n"
+        "Be concise (under 120 words). Do not mention Gemini or AI.\n\n"
+        f"Context JSON: {ctx}\n"
+        f"Recent chat:\n" + "\n".join(hist_lines) + "\n\n"
+        f"User question: {question.strip()}\n"
+    )
+
+    text, err = gemini_generate_content(
+        prompt,
+        temperature=0.35,
+        max_output_tokens=400,
+        timeout_s=timeout_s,
+    )
+    if text:
+        return {"answer": text.strip()}
+
+    if not err:
+        return {"answer": None, "error_kind": "provider_unavailable"}
+
+    err_l = err.lower()
+    if "quota" in err_l or "429" in err_l or "resource_exhausted" in err_l:
+        retry_s = _parse_retry_after_s({}, err)
+        return {
+            "answer": None,
+            "error_kind": "quota_exceeded",
+            "retry_after_s": retry_s,
+            "provider_message": err,
+        }
+    if "disabled" in err_l or "not configured" in err_l:
+        return {"answer": None, "error_kind": "disabled", "provider_message": err}
+    if "auth" in err_l or "401" in err_l or "403" in err_l:
+        return {"answer": None, "error_kind": "auth_failed", "provider_message": err}
+    if "timeout" in err_l or "timed out" in err_l:
+        return {"answer": None, "error_kind": "timeout", "provider_message": err}
+
+    return {"answer": None, "error_kind": "provider_unavailable", "provider_message": err}

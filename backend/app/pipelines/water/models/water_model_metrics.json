@@ -2,8 +2,8 @@
   "train_rows": 35659,
   "test_rows": 6293,
   "delay_model": {
-    "mae_hours": 2.421,
-    "r2": 0.843
+    "mae_hours": 2.415,
+    "r2": 0.844
   },
   "eta_model": {
     "mae": 0.0043,
@@ -15,17 +15,17 @@
     "learning_rate": 0.05
   },
   "feature_importance": {
-    "origin_congestion_index": 0.48353856874543866,
-    "dest_congestion_index": 0.22846274139379125,
-    "sea_distance_nm": 0.17943400760179834,
-    "infrastructure_quality_avg": 0.040208218821857954,
-    "dest_vessel_count": 0.02484968453398575,
-    "origin_vessel_count": 0.016819123319569293,
-    "disruption_severity": 0.013482684384772388,
-    "has_disruption": 0.011788359187448793,
-    "cross_region_flag": 0.0013294188284024323,
-    "month": 8.719318293513842e-05,
-    "chokepoint_stress_max": 0.0,
+    "origin_congestion_index": 0.48300346604227723,
+    "dest_congestion_index": 0.22873736969255848,
+    "sea_distance_nm": 0.18046535478911366,
+    "infrastructure_quality_avg": 0.040365930646272793,
+    "dest_vessel_count": 0.024134626214266597,
+    "has_disruption": 0.017415569796408757,
+    "origin_vessel_count": 0.016759041612653413,
+    "disruption_severity": 0.007697190609813125,
+    "cross_region_flag": 0.0013491430742745248,
+    "month": 4.9246936506550574e-05,
+    "chokepoint_stress_max": 2.3060585854829655e-05,
     "wave_height_m": 0.0,
     "wind_speed_kn": 0.0,
     "storm_flag": 0.0,
