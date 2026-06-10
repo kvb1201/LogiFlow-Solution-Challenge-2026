@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "LOGIFLOW_DEV_FRESH=1 node scripts/ensure-dev-cache.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """Audit: independent train schedule halts vs Supabase map geometry."""
 from __future__ import annotations

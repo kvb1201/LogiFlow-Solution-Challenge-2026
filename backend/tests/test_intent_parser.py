@@ -35,3 +35,27 @@ def test_parse_shipment_intent_returns_without_crash():
     assert "source" in result
     assert "destination" in result
     assert result.get("cargo_weight_kg") == 1000
+
+
+def test_heuristic_extracts_weight_and_departure_date():
+    brief = "Ship 250 kg medicines from Delhi to Mumbai on 15 June 2026 by train"
+    heuristic = _parse_heuristic(brief, "rail")
+    assert heuristic["cargo_weight_kg"] == 250
+    assert heuristic["departure_date"] == "2026-06-15"
+    assert heuristic["applied"] is True
+
+
+USER_SILVER_BRIEF = (
+    "I want to take 100000 kilograms of silver from Delhi to Prayagraj "
+    "how do I do it on 15th of June 2026 via a train"
+)
+
+
+def test_silver_delhi_prayagraj_june_15_2026():
+    result = parse_shipment_intent(USER_SILVER_BRIEF, "rail")
+    assert result["applied"] is True
+    assert "Delhi" in (result.get("source") or "")
+    assert "Prayagraj" in (result.get("destination") or "")
+    assert result.get("cargo_weight_kg") == 100000
+    assert result.get("departure_date") == "2026-06-15"
+    assert result.get("suggested_mode") == "rail"

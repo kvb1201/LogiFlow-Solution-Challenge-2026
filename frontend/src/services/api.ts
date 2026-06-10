@@ -3,14 +3,24 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const backendUrl =
-  (typeof process !== 'undefined' && process.env.BACKEND_URL?.trim()) ||
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL?.trim()) ||
+import {
+  getCurrentReturnPath,
+  inferAutorunModeFromPath,
+  isQueueStatus,
+  parseRetryAfter,
+  redirectToWaitingRoom,
+  TrafficQueueError,
+} from '@/lib/traffic-queue';
+
+export { TrafficQueueError } from '@/lib/traffic-queue';
+
+const BACKEND_SERVER =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
 
-const BACKEND_BASE =
-  typeof window !== 'undefined' ? '/api' : backendUrl.replace(/\/$/, '');
+/** Browser calls use same-origin proxy; SSR uses direct backend URL. */
+const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -380,6 +390,11 @@ export interface HybridOptimizeResult {
   tradeoffs?: string[] | null;
   ai_constraints?: AiConstraintsApplied | null;
   demo_mode?: boolean;
+  /**
+   * Modes that have no route for this corridor.
+   * May be plain mode names ("road") or "mode: reason" strings
+   * e.g. "road: No drivable road route between Europe and North America."
+   */
   unavailable_modes?: string[];
   comparison?: HybridComparisonRow[] | null;
   best_per_mode?: {
@@ -423,22 +438,52 @@ export interface HybridAssistantResponse {
 export const BACKEND_UNAVAILABLE_MSG =
   'LogiFlow is starting up. Please wait about 30 seconds and try again.';
 
+type FetchBackendOptions = {
+  retries?: number;
+  retryDelayMs?: number;
+  waitingRoom?: boolean | { corridor?: string; autorunMode?: string };
+};
+
 async function fetchBackend(
   path: string,
   init: RequestInit,
-  options?: { retries?: number; retryDelayMs?: number }
+  options?: FetchBackendOptions
 ): Promise<Response> {
   const retries = options?.retries ?? 2;
   const retryDelayMs = options?.retryDelayMs ?? 4000;
-  const retryStatuses = new Set([502, 503, 504]);
+  /** Gateway cold-start only — 429/503 go to the traffic waiting room. */
+  const coldStartStatuses = new Set([502, 504]);
 
   let lastRes: Response | null = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const res = await fetch(`${BACKEND_BASE}${path}`, init);
-    if (res.ok || !retryStatuses.has(res.status) || attempt === retries) {
+    lastRes = res;
+
+    if (res.ok) return res;
+
+    if (
+      typeof window !== 'undefined' &&
+      isQueueStatus(res.status) &&
+      options?.waitingRoom !== false
+    ) {
+      const wr =
+        typeof options?.waitingRoom === 'object' && options.waitingRoom
+          ? options.waitingRoom
+          : {};
+      const returnPath = getCurrentReturnPath();
+      redirectToWaitingRoom({
+        retryAfter: parseRetryAfter(res),
+        reason: res.status === 429 ? 'rate_limit' : 'capacity',
+        returnPath,
+        autorunMode: wr.autorunMode ?? inferAutorunModeFromPath(returnPath),
+        corridor: wr.corridor,
+      });
+      throw new TrafficQueueError('redirecting', true);
+    }
+
+    if (!coldStartStatuses.has(res.status) || attempt === retries) {
       return res;
     }
-    lastRes = res;
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
   }
   return lastRes!;
@@ -620,6 +665,11 @@ export interface ComposeResult {
     label?: string;
   }>;
   rural_corridor?: boolean;
+  /**
+   * Templates that could not be evaluated for this corridor.
+   * Key is the template/mode name (e.g. "road"), value is the rejection reason.
+   * Populated when a mode like road is rejected as an invalid corridor.
+   */
   unavailable_templates?: Record<string, string>;
   total_candidates?: number;
   multimodal_count?: number;
@@ -658,6 +708,20 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
     clearTimeout(timeout);
   }
   if (!res.ok) {
+    if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
+      const corridor =
+        payload.source && payload.destination
+          ? `${payload.source} → ${payload.destination}`
+          : undefined;
+      redirectToWaitingRoom({
+        retryAfter: parseRetryAfter(res),
+        reason: res.status === 429 ? 'rate_limit' : 'capacity',
+        returnPath: getCurrentReturnPath(),
+        autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
+        corridor,
+      });
+      throw new TrafficQueueError('redirecting', true);
+    }
     const text = await res.text();
     let message = text;
     try {
@@ -666,7 +730,7 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
     } catch {
       /* use raw body */
     }
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(message || BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Compose failed (${res.status}): ${message}`);
@@ -675,6 +739,10 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
+  const corridor =
+    payload.source && payload.destination
+      ? `${payload.source} → ${payload.destination}`
+      : undefined;
   const res = await fetchBackend(
     '/optimize',
     {
@@ -682,11 +750,15 @@ export async function optimizeHybridRoute(payload: HybridPayload): Promise<Hybri
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     },
-    { retries: 2, retryDelayMs: 5000 }
+    {
+      retries: 2,
+      retryDelayMs: 5000,
+      waitingRoom: { corridor, autorunMode: 'comparator' },
+    }
   );
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
@@ -779,20 +851,30 @@ export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRout
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const rawBody = await res.text();
+  let data: unknown = null;
+  try {
+    data = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    data = null;
+  }
+
   if (!res.ok) {
     let detail = '';
-    const rawBody = await res.text();
-    try {
-      const data = rawBody ? JSON.parse(rawBody) : null;
-      if (data && typeof data === 'object' && 'detail' in data) {
-        detail = String((data as { detail?: unknown }).detail ?? '').trim();
-      }
-    } catch {
+    if (data && typeof data === 'object' && 'detail' in data) {
+      detail = String((data as { detail?: unknown }).detail ?? '').trim();
+    } else {
       detail = rawBody.trim();
     }
     throw new Error(detail || `Water optimize failed (${res.status})`);
   }
-  return res.json();
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const obj = data as { status?: string; routes?: WaterRoute[] };
+    if (obj.status === 'no_routes') return [];
+    if (Array.isArray(obj.routes)) return obj.routes;
+  }
+  return Array.isArray(data) ? data : [];
 }
 
 export interface RailMlQuantifier {
@@ -1594,7 +1676,7 @@ export async function parseShipmentIntent(
     );
   }
   if (!res.ok) {
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     const err = parsed as { detail?: string; error?: string };

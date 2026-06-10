@@ -4,6 +4,18 @@ const AUTORUN_KEY = 'logiflow_autorun_mode';
 let pendingMode: string | null = null;
 let runStartedFor: string | null = null;
 
+type AutorunListener = () => void;
+const listeners = new Set<AutorunListener>();
+
+export function subscribeShipmentAutorun(listener: AutorunListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifyAutorunListeners() {
+  listeners.forEach((listener) => listener());
+}
+
 export function hasShipmentAutorunPending(mode: string): boolean {
   syncAutorunFromSession();
   return pendingMode === mode && runStartedFor !== mode;
@@ -15,6 +27,7 @@ export function setShipmentAutorun(mode: string) {
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem(AUTORUN_KEY, mode);
   }
+  notifyAutorunListeners();
 }
 
 export function syncAutorunFromSession(): string | null {

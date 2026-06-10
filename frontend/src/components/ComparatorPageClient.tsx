@@ -18,9 +18,12 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
-import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { BACKEND_UNAVAILABLE_MSG, TrafficQueueError } from '@/services/api';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
+import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
+import AiBriefPanel from '@/components/AiBriefPanel';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -229,6 +232,8 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
 }
 
 export default function ComparatorPageClient() {
+  usePlannerRegenerateParams('comparator');
+
   const source = useLogiFlowStore((s) => s.source);
   const setSource = useLogiFlowStore((s) => s.setSource);
   const destination = useLogiFlowStore((s) => s.destination);
@@ -313,6 +318,7 @@ export default function ComparatorPageClient() {
       }
       setResult(data);
     } catch (err: unknown) {
+      if (err instanceof TrafficQueueError) return;
       setResult(null);
       setError(
         err instanceof Error
@@ -462,7 +468,11 @@ export default function ComparatorPageClient() {
           </div>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-6">
+        {!skipWizard && (
+          <AiBriefPanel contextMode="comparator" className="mb-6" />
+        )}
+
+        <form id="logiflow-pipeline-form" onSubmit={onSubmit} className="space-y-6">
           {!skipWizard && step === 1 && (
             <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
               <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>
@@ -693,9 +703,24 @@ export default function ComparatorPageClient() {
             <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
 
             {result.unavailable_modes && result.unavailable_modes.length > 0 && (
-              <p className="text-xs text-on-surface-variant">
-                No live route for: {result.unavailable_modes.join(', ')} (shown honestly — not fabricated).
-              </p>
+              <div className="rounded-xl border border-outline-variant/15 bg-surface-container/20 px-4 py-3 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-outline mb-1">
+                  Unavailable modes
+                </p>
+                {result.unavailable_modes.map((entry) => {
+                  // Entry may be a plain mode name "road" or a "mode: reason" string
+                  const colonIdx = entry.indexOf(':');
+                  const modeRaw = colonIdx > -1 ? entry.slice(0, colonIdx).trim() : entry.trim();
+                  const reasonRaw = colonIdx > -1 ? entry.slice(colonIdx + 1).trim() : 'Not available for this corridor.';
+                  return (
+                    <InvalidCorridorInline
+                      key={modeRaw}
+                      mode={modeRaw}
+                      reason={reasonRaw}
+                    />
+                  );
+                })}
+              </div>
             )}
 
             {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
@@ -716,6 +741,15 @@ export default function ComparatorPageClient() {
               {ALL_MODES.map((mode) => {
                 const data = result.best_per_mode?.[mode];
                 const won = mode === recommendedMode;
+                // Check if this mode is listed as unavailable
+                const unavailableEntry = (result.unavailable_modes ?? []).find(
+                  e => e.toLowerCase().startsWith(mode)
+                );
+                const unavailableReason = unavailableEntry
+                  ? (unavailableEntry.includes(':')
+                      ? unavailableEntry.slice(unavailableEntry.indexOf(':') + 1).trim()
+                      : 'Not available for this corridor.')
+                  : null;
                 return (
                   <div
                     key={mode}
@@ -738,7 +772,9 @@ export default function ComparatorPageClient() {
                           Save Report
                         </button>
                       </>
-                  ) : (
+                    ) : unavailableReason ? (
+                      <InvalidCorridorInline mode={mode} reason={unavailableReason} />
+                    ) : (
                       <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
                     )}
                   </div>

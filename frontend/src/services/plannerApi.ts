@@ -76,6 +76,70 @@ export interface RouteHealthResponse {
     weather: number;
     risk: number;
   };
+  // Condition Intelligence V2
+  condition_profile: {
+    traffic_level: number | null;
+    traffic_delay_minutes: number;
+    predicted_delay_hours: number | null;
+    temperature: number | null;
+    precipitation: number | null;
+    visibility: number | null;
+    weather_condition: string | null;
+    traffic_score: number;
+    weather_score: number;
+    delay_score: number;
+    route_adherence_score: number;
+    eta_variance_score: number;
+    confidence_score: number;
+    signal_sources: string[];
+    /** Freshness per signal: "live" | "stored" | "heuristic" | "unavailable" */
+    signal_freshness: {
+      traffic: string;
+      weather: string;
+      delay: string;
+    };
+    /** ISO timestamp of last live refresh (null when no live refresh ran) */
+    signals_refreshed_at: string | null;
+    explanations: {
+      traffic: string;
+      weather: string;
+      delay: string;
+      adherence: string;
+      eta: string;
+    };
+  } | null;
+  /** Real-signal source badges e.g. ["tomtom", "weather_api", "ml_delay_model"] */
+  signal_sources: string[];
+  /** Per-signal freshness for badge display */
+  signal_freshness: {
+    traffic: string;
+    weather: string;
+    delay: string;
+  } | null;
+  /** ISO timestamp of the last live signal refresh */
+  signals_refreshed_at: string | null;
+  health_breakdown: {
+    adherence: { points: number; max: number; delta: number; why: string };
+    eta:       { points: number; max: number; delta: number; why: string };
+    traffic:   { points: number; max: number; delta: number; why: string; source?: string };
+    weather:   { points: number; max: number; delta: number; why: string; source?: string };
+    delay:     { points: number; max: number; delta: number; why: string; source?: string };
+    risk?:     { points: number; max: number; delta: number; why: string };
+    summary:   string;
+  } | null;
+  condition_history: Array<{
+    evaluated_at: string;
+    health_score: number;
+    health_level: string;
+    traffic_score: number | null;
+    weather_score: number | null;
+    congestion_score: number | null;
+    route_adherence_score: number | null;
+    eta_variance_score: number | null;
+    confidence_score: number | null;
+    signal_freshness: { traffic: string; weather: string; delay: string } | null;
+    signals_refreshed_at: string | null;
+  }>;
   recommendation: {
     action: string;
     label: string;
@@ -170,6 +234,48 @@ export interface ReoptimizationResponse {
   report_id: string;
   status: string;
   recommendation: ReoptimizationRecommendation;
+}
+
+// ── Reoptimization V1 ────────────────────────────────────────────────
+
+export interface ReoptimizationV1RouteMetrics {
+  eta_minutes: number;
+  cost: number | null;
+  risk: number | null;
+}
+
+export interface ReoptimizationV1Response {
+  generated_at: string;
+  report_id: string;
+  mode: string;
+  current_location: string;
+  remaining_stops: string[];
+  destination: string;
+  current_route: {
+    source: string;
+    destination: string;
+    metrics: ReoptimizationV1RouteMetrics;
+  };
+  alternative_route: {
+    source: string;
+    destination: string;
+    metrics: ReoptimizationV1RouteMetrics;
+    optimization_result: Record<string, unknown>;
+  };
+  improvement: {
+    time_saved_minutes: number | null;
+    cost_difference: number | null;
+    cost_pct_change: number | null;
+    risk_difference: number | null;
+    risk_pct_change: number | null;
+  };
+  recommend_switch: boolean;
+  recommendation_reason: string;
+  thresholds: {
+    time_minutes: number;
+    cost_pct: number;
+    risk_pct: number;
+  };
 }
 
 export interface ShipmentNotification {
@@ -336,6 +442,31 @@ export async function saveRevision(
 }
 
 // ── Notifications ─────────────────────────────────────────────────────
+
+export async function reoptimizeTripV1(id: string): Promise<ReoptimizationV1Response> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/reoptimize-v1`, {
+    method: 'POST',
+    requireAuth: true,
+  });
+  return parseJson<ReoptimizationV1Response>(res);
+}
+
+export async function acceptReoptimization(
+  id: string,
+  payload: {
+    optimization_result: Record<string, unknown>;
+    estimated_cost?: number | null;
+    estimated_time?: number | null;
+    risk_score?: number | null;
+  }
+): Promise<ShipmentReport> {
+  const res = await apiClient(`/api/planner/reports/${encodeURIComponent(id)}/accept-reoptimization`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    requireAuth: true,
+  });
+  return parseJson<ShipmentReport>(res);
+}
 
 export async function listNotifications(): Promise<ShipmentNotification[]> {
   const res = await apiClient('/api/planner/notifications', {

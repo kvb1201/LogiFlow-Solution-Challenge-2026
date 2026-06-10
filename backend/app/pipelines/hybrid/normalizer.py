@@ -20,12 +20,21 @@ def normalize_road(route):
     delay_ratio = clamp(delay_ratio)
 
     weather_penalty = max(0, weather_factor - 1)
+
+    # Reject invalid (undrivable) routes outright
+    if not route.get("valid", True):
+        return None
+
     confidence = (
         0.4 * (1 - risk) +
         0.3 * (1 - delay_ratio) +
         0.2 * highway_ratio +
         0.1 * (1 - weather_penalty)
     )
+
+    # Heavily penalize fallback routes — their metrics are haversine estimates only
+    if route.get("is_fallback", False):
+        confidence = clamp(confidence * 0.35)  # cap at ~35% of normal confidence
 
     return {
         "mode": "road",
@@ -34,6 +43,8 @@ def normalize_road(route):
         "risk": clamp(risk),
         "delay_hr": delay,
         "confidence": clamp(confidence),
+        "is_fallback": route.get("is_fallback", False),
+        "valid": route.get("valid", True),
         "meta": {
             "reliability": 1 - risk,
             "weather_risk": max(0, weather_factor - 1),

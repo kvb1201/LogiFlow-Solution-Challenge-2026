@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   markShipmentAutorunStarted,
   shouldRunShipmentAutorun,
+  subscribeShipmentAutorun,
 } from '@/lib/shipmentAutorun';
 
 /**
@@ -15,15 +16,18 @@ export function useShipmentAutorun(
   ready: boolean
 ) {
   const runRef = useRef(run);
+  const [autorunTick, setAutorunTick] = useState(0);
 
   useEffect(() => {
     runRef.current = run;
   }, [run]);
+
+  useEffect(() => subscribeShipmentAutorun(() => setAutorunTick((t) => t + 1)), []);
 
   useEffect(() => {
     if (!ready) return;
     if (!shouldRunShipmentAutorun(mode)) return;
     markShipmentAutorunStarted(mode);
     runRef.current();
-  }, [mode, ready]);
+  }, [mode, ready, autorunTick]);
 }

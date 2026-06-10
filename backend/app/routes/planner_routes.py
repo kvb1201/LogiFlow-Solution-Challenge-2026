@@ -13,11 +13,17 @@ from app.models.report import (
     ReoptimizeRequest,
     ReoptimizationSaveRequest,
     ShipmentLocationUpdateRequest,
+    AcceptReoptimizationRequest,
     MAX_REPORTS_PER_USER,
 )
 from app.config.database import get_db
 from app.dependencies import get_current_user
-from app.services.reoptimization_service import build_reoptimization_recommendation, extract_plan_metrics
+from app.services.reoptimization_service import (
+    build_reoptimization_recommendation,
+    extract_plan_metrics,
+    build_reoptimization_v1,
+    apply_reoptimization_v1,
+)
 from app.services.trip_progress import (
     evaluate_route_health,
     enrich_optimization_result_with_intelligence,
@@ -423,6 +429,11 @@ async def get_route_health(
     driver_location = actual_location or current_location
     health = evaluate_route_health(report, driver_location)
 
+    # Commit any optimization_result changes (e.g. condition_history) written
+    # inside evaluate_route_health
+    await db.commit()
+    await db.refresh(report)
+
     if health["health_level"] in {"moderate", "at_risk"}:
         existing_result = await db.execute(
             select(ShipmentNotification).where(
@@ -508,6 +519,101 @@ async def update_shipment_location(
         f"Shipment '{report.name}' — current location confirmed: {current_location}.",
     )
 
+    await db.commit()
+    await db.refresh(report)
+    return _report_to_response(report)
+
+
+# ── Reoptimization V1 ─────────────────────────────────────────────────────
+
+@router.post("/reports/{report_id}/reoptimize-v1")
+async def reoptimize_trip_v1(
+    report_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Reoptimization V1 — no body required.
+
+    Reads current_location from the shipment's optimization_result and
+    generates an alternative route for the REMAINING journey only
+    (current_location → destination, not source → destination).
+
+    Returns:
+      - current_route metrics (remaining journey on original plan)
+      - alternative_route metrics (new pipeline result)
+      - improvement deltas
+      - recommendation (switch / stay)
+    """
+    report = await _get_owned_report(report_id, db, current_user)
+
+    reopt = build_reoptimization_v1(report)
+
+    await _create_notification(
+        db,
+        current_user.id,
+        report.id,
+        "reoptimization_v1_generated",
+        f"Reoptimization generated for '{report.name}' from {reopt['current_location']} "
+        f"to {reopt['destination']}. "
+        + ("Switch recommended." if reopt["recommend_switch"] else "Current route is optimal."),
+    )
+    await db.commit()
+
+    return reopt
+
+
+@router.post("/reports/{report_id}/accept-reoptimization", response_model=ReportResponse)
+async def accept_reoptimization_v1(
+    report_id: str,
+    body: AcceptReoptimizationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Accept the alternative route from Reoptimization V1.
+
+    Updates the shipment's optimization_result with the alternative route
+    intelligence (new route_cities, checkpoints) while preserving:
+      - current_location
+      - progression_base_location / progression_base_time
+      - completed journey history
+
+    Also updates estimated_cost, estimated_time, risk_score with the
+    alternative route metrics.
+    """
+    report = await _get_owned_report(report_id, db, current_user)
+    now = datetime.utcnow()
+
+    new_opt_result = apply_reoptimization_v1(
+        report=report,
+        alternative_optimization_result=body.optimization_result,
+        estimated_cost=body.estimated_cost,
+        estimated_time=body.estimated_time,
+        risk_score=body.risk_score,
+        now=now,
+    )
+
+    report.optimization_result = new_opt_result
+
+    if body.estimated_cost is not None:
+        report.estimated_cost = round(body.estimated_cost, 2)
+    if body.estimated_time is not None:
+        report.estimated_time = round(body.estimated_time, 4)
+        buffer = report.buffer_minutes or 30
+        report.expected_end_time = now + timedelta(hours=body.estimated_time, minutes=buffer)
+    if body.risk_score is not None:
+        report.risk_score = round(max(0.0, min(1.0, body.risk_score)), 4)
+
+    report.updated_at = now
+
+    await _create_notification(
+        db,
+        current_user.id,
+        report.id,
+        "reoptimization_accepted",
+        f"Shipment '{report.name}' switched to optimized route.",
+    )
     await db.commit()
     await db.refresh(report)
     return _report_to_response(report)

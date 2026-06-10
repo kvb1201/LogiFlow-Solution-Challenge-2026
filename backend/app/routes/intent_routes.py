@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.services.intent_parser import parse_shipment_intent
+from app.middleware.rate_limit import rate_limit, INTENT_LIMIT
 
 intent_router = APIRouter(prefix="/intent", tags=["intent"])
 
@@ -12,7 +13,8 @@ class IntentParsePayload(BaseModel):
 
 
 @intent_router.post("/parse")
-def parse_intent(payload: IntentParsePayload):
+@rate_limit(INTENT_LIMIT)
+def parse_intent(request: Request, payload: IntentParsePayload):
     try:
         result = parse_shipment_intent(payload.user_brief, payload.context_mode)
         if result.get("error") and not result.get("applied"):

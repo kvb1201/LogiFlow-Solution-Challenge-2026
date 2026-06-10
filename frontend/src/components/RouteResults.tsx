@@ -12,6 +12,7 @@ import {
 } from '@/lib/routeNavigation';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import type { ReportMode } from '@/services/plannerApi';
+import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -1255,6 +1256,7 @@ export default function RouteResults() {
   const priority       = useLogiFlowStore(s => s.priority);
   const source         = useLogiFlowStore(s => s.source);
   const destination    = useLogiFlowStore(s => s.destination);
+  const roadNoRoutesReason = useLogiFlowStore(s => s.roadNoRoutesReason);
 
   // A. Single source of truth — computed once, used everywhere
   const indices = useMemo(
@@ -1272,6 +1274,20 @@ export default function RouteResults() {
   useEffect(() => {
     devValidate(routes, indices, priority);
   }, [routes, indices, priority]);
+
+  // ── Invalid corridor: backend rejected this route as physically undrivable ──
+  if (roadNoRoutesReason) {
+    return (
+      <section className="p-4 sm:p-6">
+        <InvalidCorridorCard
+          mode="road"
+          source={source}
+          destination={destination}
+          reason={roadNoRoutesReason}
+        />
+      </section>
+    );
+  }
 
   if (!routes || routes.length === 0) return null;
 
