@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired } from '@/services/plannerApi';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import AiBriefPanel from '@/components/AiBriefPanel';
 
 function formatShortDate(value: string | null) {
   if (!value) return '—';
@@ -64,14 +65,29 @@ export function Dashboard() {
       <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
 
         {/* Welcome */}
-        <div className="mb-10 sm:mb-12">
+        <div className="mb-8 sm:mb-10">
+          <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-1">
+            Shipment Planner
+          </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
             Welcome back, {firstName}
           </h1>
           <p className="text-muted-foreground">
-            Manage your shipments, monitor active trips, and optimize routes.
+            Describe a shipment in plain language, monitor active trips, and manage saved plans.
           </p>
         </div>
+
+        {/* Gemini AI brief — same flow as home / mode pages */}
+        <section className="mb-10">
+          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
+            <AiBriefPanel
+              contextMode="home"
+              navigateOnApply={false}
+              showRouteButton
+              className="border-0 bg-transparent p-0 shadow-none"
+            />
+          </div>
+        </section>
 
         {/* ── Smart AI Planner ─────────────────────────────────────────── */}
         <section className="mb-10">
@@ -177,13 +193,14 @@ export function Dashboard() {
               <span className="text-3xl block mb-3">📭</span>
               <p className="text-sm font-medium text-foreground mb-1">No plans yet</p>
               <p className="text-xs text-muted-foreground mb-4">
-                Optimize a route and click <strong>Save Report</strong> to save it here.
+                Use the AI brief above to start a route, or pick a mode below — then click{' '}
+                <strong>Save Report</strong> on results to store it here.
               </p>
               <Link
-                href="/road"
+                href="/hybrid"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
               >
-                Start planning
+                Plan a route
               </Link>
             </div>
           ) : null}

@@ -6,6 +6,7 @@ import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired, type ReportStatus } from '@/services/plannerApi';
 import { ReportCard } from './ReportCard';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import AiBriefPanel from '@/components/AiBriefPanel';
 
 const STATUS_FILTERS: { label: string; value: ReportStatus | 'all' | 'expired' }[] = [
   { label: 'All', value: 'all' },
@@ -53,6 +54,17 @@ export function ReportsPage() {
             New Plan
           </Link>
         </div>
+
+        <section className="mb-8">
+          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
+            <AiBriefPanel
+              contextMode="home"
+              navigateOnApply={false}
+              showRouteButton
+              className="border-0 bg-transparent p-0 shadow-none"
+            />
+          </div>
+        </section>
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-8">
@@ -118,13 +130,14 @@ export function ReportsPage() {
               {filter === 'all' ? 'No plans yet' : `No ${filter} plans`}
             </h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Optimize a route and click <strong>Save Report</strong> to save it here.
+              Use the AI brief above to plan a route, then click <strong>Save Report</strong> on
+              results to store it here.
             </p>
             <Link
-              href="/dashboard"
+              href="/hybrid"
               className="inline-flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
             >
-              Start planning
+              Plan a route
             </Link>
           </div>
         ) : (
