@@ -420,7 +420,15 @@
   }
 
   .pipeline-card {
-    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    border: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
+    background: color-mix(in oklab, var(--surface) 45%, transparent);
+    backdrop-filter: blur(10px);
+    border-radius: 0.75rem;
+    box-shadow: inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 5%, transparent);
+  }
+
+  .surface-card {
+    border: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
     background: color-mix(in oklab, var(--surface) 35%, transparent);
     backdrop-filter: blur(8px);
     border-radius: 0.75rem;

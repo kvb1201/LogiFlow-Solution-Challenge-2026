@@ -68,7 +68,7 @@ export default function RailwayLoading() {
         </div>
 
         {/* Progress */}
-        <div className="mb-5 rounded-2xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
+        <div className="mb-5 rounded-xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
             <span>Pipeline progress</span>
             <span className="font-mono text-rail">{progress}%</span>

@@ -149,7 +149,7 @@ export default function InputForm() {
   };
 
   return (
-    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24">
       <AiBriefPanel contextMode="rail" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="rail"

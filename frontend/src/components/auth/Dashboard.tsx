@@ -79,13 +79,8 @@ export function Dashboard() {
 
         {/* Gemini AI brief — same flow as home / mode pages */}
         <section className="mb-10">
-          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
-            <AiBriefPanel
-              contextMode="home"
-              navigateOnApply={false}
-              showRouteButton
-              className="border-0 bg-transparent p-0 shadow-none"
-            />
+          <div className="pipeline-card overflow-hidden p-5 sm:p-6">
+            <AiBriefPanel contextMode="home" navigateOnApply={false} showRouteButton embedded />
           </div>
         </section>
 
@@ -119,7 +114,7 @@ export function Dashboard() {
                 warn: expiredPlans > 0 },
             ].map(s => (
               <div key={s.label} className={[
-                'rounded-2xl border p-4 transition-all',
+                'rounded-xl border p-4 transition-all',
                 s.warn && s.value > 0
                   ? 'border-amber-500/20 bg-amber-500/5'
                   : s.highlight && s.value > 0
@@ -137,7 +132,7 @@ export function Dashboard() {
 
           {/* Recent plans */}
           {!reportsLoading && recentReports.length > 0 ? (
-            <div className="rounded-2xl border border-border/40 bg-surface/30 overflow-hidden">
+            <div className="rounded-xl border border-border/40 bg-surface/30 overflow-hidden">
               <div className="px-4 py-3 border-b border-border/20 flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Recent Plans
@@ -189,7 +184,7 @@ export function Dashboard() {
               </ul>
             </div>
           ) : !reportsLoading ? (
-            <div className="rounded-2xl border border-dashed border-border/40 bg-surface/20 p-8 text-center">
+            <div className="rounded-xl border border-dashed border-border/40 bg-surface/20 p-8 text-center">
               <span className="text-3xl block mb-3">📭</span>
               <p className="text-sm font-medium text-foreground mb-1">No plans yet</p>
               <p className="text-xs text-muted-foreground mb-4">
@@ -227,7 +222,7 @@ export function Dashboard() {
                 const progress = getProgress(report.started_at, report.expected_end_time);
                 const health = getHealthLevel(report.risk_score);
                 return (
-                  <div key={report.id} className="rounded-2xl border border-border/40 bg-surface/35 p-4">
+                  <div key={report.id} className="rounded-xl border border-border/40 bg-surface/35 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-foreground">{report.name}</p>

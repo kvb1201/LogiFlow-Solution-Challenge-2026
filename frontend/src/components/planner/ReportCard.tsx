@@ -57,7 +57,7 @@ export function ReportCard({ report }: Props) {
 
   return (
     <div className={[
-      'rounded-2xl border transition-all duration-200',
+      'rounded-xl border transition-all duration-200',
       expired
         ? 'border-amber-500/20 bg-amber-500/5'
         : 'border-border/40 bg-surface/40 hover:border-border/70 hover:bg-surface/60',

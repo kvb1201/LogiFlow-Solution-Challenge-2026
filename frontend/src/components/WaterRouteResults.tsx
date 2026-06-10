@@ -360,7 +360,7 @@ function WaterRouteCard({
       aria-pressed={isSelected}
       onClick={onSelect}
       className={[
-        'w-full rounded-2xl border text-left transition-all duration-200 overflow-hidden',
+        'w-full rounded-xl border text-left transition-all duration-200 overflow-hidden',
         isSelected
           ? 'border-teal-400/50 bg-teal-500/10 shadow-[0_0_0_2px_rgba(45,212,191,0.10)]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:border-teal-400/25 hover:bg-surface-container/30',
@@ -472,7 +472,7 @@ function DetailPanel({
   return (
     <div className="space-y-4">
       {/* Why this route */}
-      <div className="rounded-2xl border border-teal-400/15 bg-teal-500/5 p-4">
+      <div className="rounded-xl border border-teal-400/15 bg-teal-500/5 p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-teal-300">
@@ -674,8 +674,8 @@ function WaterNoRoutesEmpty({
   const isConstraints = kind === 'constraints';
   return (
     <section className="flex min-h-[min(70vh,520px)] items-center justify-center px-4 py-12 sm:px-8">
-      <div className="w-full max-w-lg rounded-2xl border border-teal-400/20 bg-surface-container-low/40 p-8 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/10 border border-teal-400/20">
+      <div className="w-full max-w-lg rounded-xl border border-teal-400/20 bg-surface-container-low/40 p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-teal-500/10 border border-teal-400/20">
           <span className="material-symbols-outlined text-teal-400" style={{ fontSize: '28px', fontVariationSettings: "'FILL' 1" }}>
             {isConstraints ? 'tune' : 'sailing'}
           </span>
@@ -775,7 +775,7 @@ export default function WaterRouteResults() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         {/* Route cards list */}
         <div className="space-y-3 lg:col-span-1 lg:max-h-[80vh] lg:overflow-y-auto lg:pr-1 [scrollbar-gutter:stable]">
-          <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4">
+          <div className="rounded-xl border border-outline-variant/12 bg-surface-container/20 p-4">
             <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline">Recommendation</div>
             <p className="mt-2 text-[12px] leading-relaxed text-on-surface-variant">
               Route {safeIndex + 1} selected — {stopsLabel(active)} via{' '}
@@ -801,7 +801,7 @@ export default function WaterRouteResults() {
         {/* Detail panel + map */}
         <div className="lg:col-span-2 space-y-4">
           {/* Sea map */}
-          <div className="h-[280px] sm:h-[340px] rounded-2xl overflow-hidden border border-teal-400/10">
+          <div className="h-[280px] sm:h-[340px] rounded-xl overflow-hidden border border-teal-400/10">
             <SeaMapView
               routes={routes}
               ports={ports}
@@ -812,7 +812,7 @@ export default function WaterRouteResults() {
           </div>
 
           {/* Detail panel */}
-          <div className="rounded-2xl border border-teal-400/10 bg-surface-container-lowest/25 p-5 shadow-sm">
+          <div className="rounded-xl border border-teal-400/10 bg-surface-container-lowest/25 p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2 border-b border-outline-variant/8 pb-3">
               <span className="material-symbols-outlined text-teal-400" style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}>anchor</span>
               <span className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline">Selected route</span>

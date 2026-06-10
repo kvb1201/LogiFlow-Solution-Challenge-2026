@@ -80,7 +80,7 @@ export function RailMlQuantifiers({
 
   return (
     <section
-      className={`rounded-2xl border border-rail/20 bg-rail/5 ${isCompact ? 'p-4' : 'p-5 sm:p-6'} ${className}`}
+      className={`rounded-xl border border-rail/20 bg-rail/5 ${isCompact ? 'p-4' : 'p-5 sm:p-6'} ${className}`}
       aria-label="Rail delay model validation metrics"
     >
       <div className={`flex flex-wrap items-start justify-between gap-3 ${isCompact ? 'mb-3' : 'mb-4'}`}>

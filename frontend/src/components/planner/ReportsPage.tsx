@@ -71,13 +71,8 @@ export function ReportsPage() {
         </div>
 
         <section className="mb-8">
-          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
-            <AiBriefPanel
-              contextMode="home"
-              navigateOnApply={false}
-              showRouteButton
-              className="border-0 bg-transparent p-0 shadow-none"
-            />
+          <div className="pipeline-card overflow-hidden p-5 sm:p-6">
+            <AiBriefPanel contextMode="home" navigateOnApply={false} showRouteButton embedded />
           </div>
         </section>
 
@@ -89,7 +84,7 @@ export function ReportsPage() {
             { label: 'Expired', value: expiredPlans, icon: '⏰', warn: expiredPlans > 0 },
           ].map(s => (
             <div key={s.label} className={[
-              'rounded-2xl border p-4 transition-all',
+              'rounded-xl border p-4 transition-all',
               s.warn && s.value > 0 ? 'border-amber-500/20 bg-amber-500/5' :
               s.highlight && s.value > 0 ? 'border-emerald-500/20 bg-emerald-500/5' :
               'border-border/40 bg-surface/40',
@@ -134,12 +129,12 @@ export function ReportsPage() {
             <p className="text-sm text-muted-foreground">Loading plans…</p>
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-risk/30 bg-risk/10 p-6 text-center">
+          <div className="rounded-xl border border-risk/30 bg-risk/10 p-6 text-center">
             <p className="text-sm text-foreground mb-3">{error}</p>
             <button onClick={fetchReports} className="text-sm text-primary hover:underline">Try again</button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-border/30 bg-surface/20 p-10 text-center">
+          <div className="rounded-xl border border-border/30 bg-surface/20 p-10 text-center">
             <span className="text-4xl block mb-4">📭</span>
             <h3 className="font-semibold text-foreground mb-2">
               {filter === 'all' ? 'No plans yet' : `No ${filter} plans`}

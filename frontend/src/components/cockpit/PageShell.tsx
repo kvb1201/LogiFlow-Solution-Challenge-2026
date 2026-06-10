@@ -1,3 +1,5 @@
+'use client';
+
 import type { ReactNode } from 'react';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { modeMeta } from '@/lib/mode-meta';
@@ -25,14 +27,13 @@ export function PageShell({
     <div className="relative w-full overflow-hidden">
       {mode ? <AmbientBackdrop variant={mode} className="opacity-50" /> : null}
 
-      <div className={`relative z-10 pointer-events-auto mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 ${contentClassName}`}>
-        <header
-          className="panel-hard mb-8 animate-slide-up overflow-hidden rounded-2xl p-5 sm:p-6"
-          style={{ boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 20%, transparent)` }}
-        >
+      <div
+        className={`relative z-10 pointer-events-auto mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 ${contentClassName}`}
+      >
+        <header className="pipeline-card mb-8 animate-slide-up overflow-hidden p-5 sm:p-6">
           <div
             aria-hidden
-            className="pointer-events-none mb-4 h-px w-full"
+            className="pointer-events-none mb-4 h-px w-full opacity-80"
             style={{
               background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
             }}
@@ -42,7 +43,7 @@ export function PageShell({
               {mode && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background/50"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/40"
                     style={{ color: accent }}
                   >
                     <ModeIcon mode={mode} className="h-4 w-4" />
@@ -63,7 +64,7 @@ export function PageShell({
                   </span>
                 </div>
               )}
-              <h1 className="text-balance font-display text-2xl font-black leading-tight text-gradient sm:text-[1.85rem]">
+              <h1 className="text-balance font-display text-2xl font-black leading-tight text-foreground sm:text-[1.85rem]">
                 {title}
               </h1>
               {description ? (

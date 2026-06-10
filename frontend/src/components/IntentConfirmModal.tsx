@@ -38,9 +38,14 @@ export default function IntentConfirmModal({
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-lg max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl border border-violet-400/30 bg-[#0c1018] shadow-[0_32px_120px_-24px_rgba(0,0,0,0.9)] animate-fade-in overflow-hidden pointer-events-auto flex flex-col">
-        <div className="px-5 sm:px-6 py-5 border-b border-outline-variant/15 bg-gradient-to-r from-violet-500/10 to-primary/5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
+      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border/60 bg-surface/95 shadow-[0_32px_120px_-24px_rgba(0,0,0,0.85)] animate-fade-in pointer-events-auto sm:max-h-[88dvh] backdrop-blur-xl">
+        <div
+          className="border-b border-border/50 px-5 py-5 sm:px-6"
+          style={{
+            background: `linear-gradient(90deg, color-mix(in oklab, var(--hybrid) 12%, transparent), color-mix(in oklab, var(--primary) 6%, transparent))`,
+          }}
+        >
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--hybrid)' }}>
             Confirm your shipment
           </p>
           <h2 id="intent-confirm-title" className="text-lg font-bold text-on-surface leading-snug">

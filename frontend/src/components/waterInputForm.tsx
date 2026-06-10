@@ -346,7 +346,7 @@ export default function WaterInputForm() {
   }, [ports]);
 
   return (
-    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24">
       <AiBriefPanel contextMode="water" onIntentApplied={onIntentApplied} />
       {autorunWaitingForPorts && (
         <p className="text-xs text-amber-200/90 border border-amber-400/25 bg-amber-500/10 rounded-lg px-3 py-2">

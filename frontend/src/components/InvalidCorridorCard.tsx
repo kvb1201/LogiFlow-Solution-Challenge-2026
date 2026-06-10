@@ -103,7 +103,7 @@ export function InvalidCorridorCard({
     <div
       role="status"
       aria-label={`${modeLabel} route unavailable`}
-      className="rounded-2xl border border-red-500/25 bg-red-500/5 p-6 sm:p-8"
+      className="rounded-xl border border-red-500/25 bg-red-500/5 p-5 sm:p-6"
     >
       {/* Header */}
       <div className="flex items-start gap-4 mb-5">

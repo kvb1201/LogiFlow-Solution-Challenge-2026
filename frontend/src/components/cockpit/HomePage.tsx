@@ -58,7 +58,7 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
         />
       </div>
 
-      <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-[920px] px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
+      <div className="relative z-10 mx-auto w-full max-w-[860px] px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
         {/* ── Hero ── */}
         <section className="mb-14 text-center animate-slide-up">
           <div className="mb-8 flex flex-wrap items-center justify-center gap-2.5">
@@ -210,7 +210,7 @@ function ModeCard({
     >
       <Link
         href={meta.href}
-        className="group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border/45 bg-surface/20 p-4 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border/80 hover:bg-surface/35"
+        className="group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border/45 bg-surface/20 p-4 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border/70 hover:bg-surface/30"
         style={{
           boxShadow: featured
             ? `inset 0 1px 0 0 ${accentMix(mode, 18, 'transparent')}, 0 20px 50px -40px ${accentVar(mode)}`

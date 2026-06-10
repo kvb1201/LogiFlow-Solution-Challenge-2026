@@ -6,9 +6,11 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
-import { RAIL_CAPABILITY_BADGES, RAIL_HERO_METRICS, RAIL_METRICS, RAIL_SECONDARY_METRICS } from '@/lib/rail-metrics';
-import { CapabilityStrip } from '@/components/cockpit/CapabilityStrip';
+import { RailMetricsStrip } from '@/components/rail/RailMetricsStrip';
+import { RAIL_CAPABILITY_BADGES } from '@/lib/rail-metrics';
+import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
+import { accentVar } from '@/lib/pipeline-theme';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import {
@@ -30,52 +32,6 @@ import {
 } from '@/lib/rail-branding';
 
 const RailwayMap = dynamic(() => import('@/components/Map'), { ssr: false });
-
-function RailMetricItem({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center">
-      <div className="text-xl sm:text-2xl font-black text-rail">{value}</div>
-      <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function RailMetricsStrip({ compact = false }: { compact?: boolean }) {
-  if (compact) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] sm:text-xs font-medium text-rail/70 uppercase tracking-wider">
-        {RAIL_METRICS.map((m, i) => (
-          <span key={m.label} className="flex items-center gap-3 whitespace-nowrap">
-            {i > 0 && <span className="w-1 h-1 rounded-full bg-rail/40 shrink-0" aria-hidden />}
-            <span>
-              <strong className="text-rail/95 font-bold text-[11px] sm:text-[13px]">{m.value}</strong>{' '}
-              {m.label}
-            </span>
-          </span>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
-        {RAIL_HERO_METRICS.map((m) => (
-          <RailMetricItem key={m.label} value={m.value} label={m.label} />
-        ))}
-      </div>
-      <div className="flex flex-wrap justify-center gap-5 sm:gap-7">
-        {RAIL_SECONDARY_METRICS.map((m) => (
-          <RailMetricItem key={m.label} value={m.value} label={m.label} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Metric Chip ──────────────────────────────────────────────────────
 
 function MetricChip({
   label,
@@ -777,77 +733,41 @@ export default function RailwayDashboard() {
   // ── Landing ───────────────────────────────────────────────────────
   if (!hasSearched) {
     return (
-      <div className="relative overflow-x-clip" style={{ background: '#06080d' }}>
+      <>
         {showRailLoading && <RailwayLoading />}
-        <div className="pointer-events-none absolute inset-0 z-0">
-          <div className="absolute w-[680px] h-[680px] rounded-full opacity-[0.10] blur-[130px] bg-rail animate-mesh-1 top-[-20%] left-[-10%]" />
-          <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-primary animate-mesh-2 bottom-[-10%] right-[-8%]" />
-          <div className="absolute w-[380px] h-[380px] rounded-full opacity-[0.05] blur-[90px] bg-water animate-mesh-3 top-[50%] left-[55%]" />
-          <div className="absolute inset-0 hero-dot-grid opacity-[0.28]" />
-          <div
-            className="absolute inset-0"
-            style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #06080d 75%)' }}
-          />
-        </div>
-
-        <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4rem)] w-full flex-col items-center justify-center px-4 py-10 sm:py-12">
-          <div className="w-full max-w-[860px] animate-slide-up">
-            <div className="flex justify-center mb-8">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-rail/10 border border-rail/20 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-rail animate-pulse" />
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-rail/90">
-                  Railway Intelligence · Live Indian Railways data
-                </span>
-              </div>
-            </div>
-
-            <div className="text-center mb-10">
-              <h1 className="text-[2.5rem] xs:text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
-                <span
-                  className="bg-gradient-to-r from-rail via-primary to-water bg-clip-text text-transparent animate-gradient-shift"
-                  style={{ backgroundSize: '200% auto' }}
-                >
-                  Logi
-                </span>
-                <span className="text-on-surface">Flow</span>
-              </h1>
-              <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-lg mx-auto leading-relaxed">
-                AI-powered parcel routing across{' '}
-                <span className="text-rail font-medium">Indian Railways</span> — live schedules,
-                ML delay prediction, IRCA tariffs, and all-India track geometry.
-              </p>
-
-              <div
-                className="mt-6 animate-fade-in"
-                style={{ animationDelay: '0.3s', animationFillMode: 'backwards' }}
-              >
-                <RailMetricsStrip />
-              </div>
-            </div>
-
-            <CapabilityStrip badges={RAIL_CAPABILITY_BADGES} mode="rail" className="mb-8" />
-
-            <InputForm />
-
-            <div
-              className="mt-8 flex flex-col items-center gap-4 animate-fade-in"
-              style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}
-            >
-              <RailMlQuantifiers variant="inline" className="justify-center" />
-              <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label text-center">
+        <PipelineLogiLanding
+          mode="rail"
+          badge="Railway Intelligence · Live Indian Railways data"
+          description={
+            <>
+              AI-powered parcel routing across{' '}
+              <span style={{ color: accentVar('rail') }} className="font-medium">
+                Indian Railways
+              </span>{' '}
+              — live schedules, ML delay prediction, IRCA tariffs, and all-India track geometry.
+            </>
+          }
+          metrics={<RailMetricsStrip />}
+          badges={RAIL_CAPABILITY_BADGES}
+          footer={
+            <>
+              <RailMlQuantifiers variant="inline" className="justify-center mb-4" />
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-[0.2em]">
                 Powered by live Indian Railways data · ML delay prediction · IRCA tariffs
               </p>
-            </div>
-          </div>
-        </div>
-      </div>
+            </>
+          }
+        >
+          <InputForm />
+        </PipelineLogiLanding>
+      </>
     );
   }
 
   if (!loading && showNoRoutePage) {
     return (
       <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center px-6 py-12 bg-(--color-background)">
-          <div className="max-w-xl w-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/40 p-8 text-center">
+          <div className="pipeline-card mx-auto w-full max-w-xl p-6 text-center sm:p-8">
             <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
               <span className="material-symbols-outlined text-primary">train</span>
             </div>
@@ -874,7 +794,7 @@ export default function RailwayDashboard() {
 
       <PipelineResultsChrome mode="rail" />
 
-      <div className="border-b border-outline-variant/10 bg-[#06080d]/80 px-4 py-2.5 shrink-0 overflow-x-auto">
+      <div className="shrink-0 overflow-x-auto border-b border-border/50 bg-surface/60 px-4 py-2 backdrop-blur-sm">
         <RailMetricsStrip compact />
       </div>
 
