@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from app.pipelines.water.config import PORTS as ROUTABLE_PORTS
 from app.pipelines.water.data_loader import PORTWATCH_PORTS, PortMeta
+from app.pipelines.water.sea_graph import ROUTABLE_PORT_IDS
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ def _config_to_catalog(port: dict, routable: bool = True) -> CatalogPort:
     )
 
 
-ROUTABLE_IDS: frozenset[str] = frozenset(str(p["id"]) for p in ROUTABLE_PORTS)
+ROUTABLE_IDS: frozenset[str] = ROUTABLE_PORT_IDS
 
 _CATALOG_BY_ID: dict[str, CatalogPort] = {}
 _CATALOG_BY_NAME: dict[str, CatalogPort] = {}
@@ -89,24 +89,30 @@ def _build_catalog() -> None:
         _CATALOG_BY_ID[entry.id] = entry
         _CATALOG_BY_NAME[entry.name.lower()] = entry
 
-    for port in ROUTABLE_PORTS:
+    # Refresh routable flags from expanded sea graph.
+    for port_id in list(_CATALOG_BY_ID.keys()):
+        existing = _CATALOG_BY_ID[port_id]
+        routable = port_id in ROUTABLE_IDS
+        if existing.routable == routable:
+            continue
+        updated = CatalogPort(
+            id=existing.id,
+            name=existing.name,
+            country=existing.country,
+            region=existing.region,
+            routable=routable,
+            locode=existing.locode,
+        )
+        _CATALOG_BY_ID[port_id] = updated
+        _CATALOG_BY_NAME[updated.name.lower()] = updated
+
+    from app.pipelines.water.legacy_sea_graph import LEGACY_PORT_SUPPLEMENTS
+
+    for port in LEGACY_PORT_SUPPLEMENTS:
         port_id = str(port["id"])
         if port_id in _CATALOG_BY_ID:
-            # Ensure routable flag is set even if already present from PortWatch.
-            existing = _CATALOG_BY_ID[port_id]
-            if not existing.routable:
-                updated = CatalogPort(
-                    id=existing.id,
-                    name=existing.name,
-                    country=existing.country,
-                    region=existing.region,
-                    routable=True,
-                    locode=existing.locode,
-                )
-                _CATALOG_BY_ID[port_id] = updated
-                _CATALOG_BY_NAME[updated.name.lower()] = updated
             continue
-        entry = _config_to_catalog(port, routable=True)
+        entry = _config_to_catalog(port, routable=port_id in ROUTABLE_IDS)
         _CATALOG_BY_ID[entry.id] = entry
         _CATALOG_BY_NAME[entry.name.lower()] = entry
 

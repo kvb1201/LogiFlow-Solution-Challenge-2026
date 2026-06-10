@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import heapq
 
 from app.pipelines.water.config import PORTS, SEA_LANES
-from app.pipelines.water.ports import haversine_km
+from app.pipelines.water.geo import haversine_km
 
 
 @dataclass(frozen=True)
@@ -29,12 +29,21 @@ def _port_index() -> dict[str, PortNode]:
     return idx
 
 
-_PORT_IDX = _port_index()
+_PORT_IDX: dict[str, PortNode] | None = None
+_MAX_BFS_EXPANSIONS = 8000
+
+
+def _get_port_index() -> dict[str, PortNode]:
+    global _PORT_IDX
+    if _PORT_IDX is None:
+        _PORT_IDX = _port_index()
+    return _PORT_IDX
 
 
 def _edge_distance_km(a: str, b: str) -> float:
-    pa = _PORT_IDX[a]
-    pb = _PORT_IDX[b]
+    port_idx = _get_port_index()
+    pa = port_idx[a]
+    pb = port_idx[b]
     return haversine_km(pa.lat, pa.lng, pb.lat, pb.lng)
 
 
@@ -60,25 +69,35 @@ def generate_port_paths(
         # A "water route" with no sea leg is not meaningful; caller can try other port pairs.
         return []
 
-    if origin_port_id not in _PORT_IDX or dest_port_id not in _PORT_IDX:
+    port_idx = _get_port_index()
+    if origin_port_id not in port_idx or dest_port_id not in port_idx:
         print(f"[WATER BFS] Input ports not found in index")
         return []
-    
+
     if origin_port_id not in SEA_LANES and not any(origin_port_id in lanes for lanes in SEA_LANES.values()):
         print(f"[WATER BFS] origin_port_id '{origin_port_id}' not in SEA_LANES network")
         return []
 
-    # (score, path)
-    heap: list[tuple[float, list[str]]] = [(0.0, [origin_port_id])]
+    dest_node = port_idx[dest_port_id]
+
+    def _heuristic(port_id: str) -> float:
+        node = port_idx[port_id]
+        return haversine_km(node.lat, node.lng, dest_node.lat, dest_node.lng)
+
+    # A*: (f_score, g_score, path)
+    start_h = _heuristic(origin_port_id)
+    heap: list[tuple[float, float, list[str]]] = [(start_h, 0.0, [origin_port_id])]
     seen_best: dict[tuple[str, ...], float] = {}
     out: list[list[str]] = []
+    expansions = 0
 
-    while heap and len(out) < k:
-        score, path = heapq.heappop(heap)
+    while heap and len(out) < k and expansions < _MAX_BFS_EXPANSIONS:
+        _f_score, score, path = heapq.heappop(heap)
         key = tuple(path)
         if key in seen_best and score > seen_best[key]:
             continue
         seen_best[key] = score
+        expansions += 1
 
         last = path[-1]
         if last == dest_port_id:
@@ -92,29 +111,31 @@ def generate_port_paths(
         for nxt in SEA_LANES.get(last, []):
             if nxt in path:
                 continue  # avoid cycles
+            if nxt not in port_idx:
+                continue
             try:
                 d_km = _edge_distance_km(last, nxt)
             except KeyError:
                 continue
 
             # Quality-based adjustment factor (prefers high-quality ports)
-            target_infra = _PORT_IDX[nxt].infrastructure_quality
+            target_infra = port_idx[nxt].infrastructure_quality
             quality_factor = 1.0 - 0.15 * (target_infra - 0.8)
 
             # Convert penalty to "distance-like" score component
             penalty = port_call_penalty_km if len(path) > 1 else 0.0
             new_score = score + (d_km * quality_factor) + penalty
-            heapq.heappush(heap, (new_score, path + [nxt]))
+            heapq.heappush(heap, (new_score + _heuristic(nxt), new_score, path + [nxt]))
 
     return out
 
 
 def port_name(port_id: str) -> str:
-    return _PORT_IDX[port_id].name
+    return _get_port_index()[port_id].name
 
 
 def port_coords(port_id: str) -> tuple[float, float]:
-    p = _PORT_IDX[port_id]
+    p = _get_port_index()[port_id]
     return p.lat, p.lng
 
 
