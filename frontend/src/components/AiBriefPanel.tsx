@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   parseShipmentIntent,
+  TrafficQueueError,
   type IntentContextMode,
   type ParsedIntent,
 } from '@/services/api';
@@ -188,6 +189,7 @@ export default function AiBriefPanel({
         scrollToPipelineForm();
       }
     } catch (e: unknown) {
+      if (e instanceof TrafficQueueError) return;
       setError(
         sanitizeUserMessage(e instanceof Error ? e.message : 'Could not understand that brief.')
       );
