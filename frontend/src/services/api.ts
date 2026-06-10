@@ -3,6 +3,17 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
+import {
+  getCurrentReturnPath,
+  inferAutorunModeFromPath,
+  isQueueStatus,
+  parseRetryAfter,
+  redirectToWaitingRoom,
+  TrafficQueueError,
+} from '@/lib/traffic-queue';
+
+export { TrafficQueueError } from '@/lib/traffic-queue';
+
 const BACKEND_SERVER =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
@@ -432,22 +443,52 @@ export interface HybridAssistantResponse {
 export const BACKEND_UNAVAILABLE_MSG =
   'LogiFlow is starting up. Please wait about 30 seconds and try again.';
 
+type FetchBackendOptions = {
+  retries?: number;
+  retryDelayMs?: number;
+  waitingRoom?: boolean | { corridor?: string; autorunMode?: string };
+};
+
 async function fetchBackend(
   path: string,
   init: RequestInit,
-  options?: { retries?: number; retryDelayMs?: number }
+  options?: FetchBackendOptions
 ): Promise<Response> {
   const retries = options?.retries ?? 2;
   const retryDelayMs = options?.retryDelayMs ?? 4000;
-  const retryStatuses = new Set([502, 503, 504]);
+  /** Gateway cold-start only — 429/503 go to the traffic waiting room. */
+  const coldStartStatuses = new Set([502, 504]);
 
   let lastRes: Response | null = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const res = await fetch(`${BACKEND_BASE}${path}`, init);
-    if (res.ok || !retryStatuses.has(res.status) || attempt === retries) {
+    lastRes = res;
+
+    if (res.ok) return res;
+
+    if (
+      typeof window !== 'undefined' &&
+      isQueueStatus(res.status) &&
+      options?.waitingRoom !== false
+    ) {
+      const wr =
+        typeof options?.waitingRoom === 'object' && options.waitingRoom
+          ? options.waitingRoom
+          : {};
+      const returnPath = getCurrentReturnPath();
+      redirectToWaitingRoom({
+        retryAfter: parseRetryAfter(res),
+        reason: res.status === 429 ? 'rate_limit' : 'capacity',
+        returnPath,
+        autorunMode: wr.autorunMode ?? inferAutorunModeFromPath(returnPath),
+        corridor: wr.corridor,
+      });
+      throw new TrafficQueueError('redirecting', true);
+    }
+
+    if (!coldStartStatuses.has(res.status) || attempt === retries) {
       return res;
     }
-    lastRes = res;
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
   }
   return lastRes!;
@@ -672,6 +713,20 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
     clearTimeout(timeout);
   }
   if (!res.ok) {
+    if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
+      const corridor =
+        payload.source && payload.destination
+          ? `${payload.source} → ${payload.destination}`
+          : undefined;
+      redirectToWaitingRoom({
+        retryAfter: parseRetryAfter(res),
+        reason: res.status === 429 ? 'rate_limit' : 'capacity',
+        returnPath: getCurrentReturnPath(),
+        autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
+        corridor,
+      });
+      throw new TrafficQueueError('redirecting', true);
+    }
     const text = await res.text();
     let message = text;
     try {
@@ -680,7 +735,7 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
     } catch {
       /* use raw body */
     }
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(message || BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Compose failed (${res.status}): ${message}`);
@@ -715,7 +770,7 @@ export async function optimizeHybridRoute(payload: HybridPayload): Promise<Hybri
   }
   if (!res.ok) {
     const text = await res.text();
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     throw new Error(`Hybrid optimize failed (${res.status}): ${text}`);
@@ -1652,7 +1707,7 @@ export async function parseShipmentIntent(
     );
   }
   if (!res.ok) {
-    if (res.status === 503 || res.status === 502 || res.status === 504) {
+    if (res.status === 502 || res.status === 504) {
       throw new Error(BACKEND_UNAVAILABLE_MSG);
     }
     const err = parsed as { detail?: string; error?: string };

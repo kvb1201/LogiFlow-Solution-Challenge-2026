@@ -319,6 +319,7 @@ export default function ComparatorPageClient() {
       }
       setResult(data);
     } catch (err: unknown) {
+      if (err instanceof TrafficQueueError) return;
       setResult(null);
       setError(
         sanitizeUserMessage(
