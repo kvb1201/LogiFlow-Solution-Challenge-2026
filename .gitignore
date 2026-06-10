@@ -73,5 +73,6 @@ build/
 # =========================
 *.tmp
 *.bak
+*-logiflow.md
 backend/.env
 backend/test_irctc.mjs
