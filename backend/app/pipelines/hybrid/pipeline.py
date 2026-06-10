@@ -221,18 +221,18 @@ class HybridPipeline:
 
         if not normalized:
             # Step 7: available_modes will be empty
-            unavailable = {}
+            unavailable = []
             if road_no_routes or not road_best:
                 road_msg = "Road transport not available for this route"
                 if isinstance(road_res, dict) and road_res.get("status") == "no_routes":
                     road_msg = road_res.get("message", road_msg)
-                unavailable["road"] = road_msg
+                unavailable.append({"mode": "road", "reason": road_msg})
             if rail_no_routes or not rail_best:
-                unavailable["rail"] = "Rail transport not available for this route"
+                unavailable.append({"mode": "rail", "reason": "Rail transport not available for this route"})
             if air_no_routes or not air_best:
-                unavailable["air"] = "Air transport not available for this route"
+                unavailable.append({"mode": "air", "reason": "Air transport not available for this route"})
             if water_no_routes or not water_best:
-                unavailable["water"] = "Water transport not available for this route"
+                unavailable.append({"mode": "water", "reason": "Water transport not available for this route"})
             return {
                 "error": "No routes available for any transport mode",
                 "available_modes": [],
@@ -332,19 +332,19 @@ class HybridPipeline:
         route_explanations = explanations["route_explanations"]
 
         # --- Step 2+7: unavailable modes ---
-        unavailable_modes = {}
+        unavailable_modes = []
         if air_no_routes or air_best is None:
-            unavailable_modes["air"] = "Air transport not available for this route"
+            unavailable_modes.append({"mode": "air", "reason": "Air transport not available for this route"})
         if rail_no_routes or rail_best is None:
-            unavailable_modes["rail"] = "Rail transport not available for this route"
+            unavailable_modes.append({"mode": "rail", "reason": "Rail transport not available for this route"})
         if water_no_routes or water_best is None:
-            unavailable_modes["water"] = "Water transport not available for this route"
+            unavailable_modes.append({"mode": "water", "reason": "Water transport not available for this route"})
         if road_no_routes or not road_best:
             # Include the specific reason if road was rejected due to invalid corridor
             road_msg = "Road transport not available for this route"
             if isinstance(road_res, dict) and road_res.get("status") == "no_routes":
                 road_msg = road_res.get("message", road_msg)
-            unavailable_modes["road"] = road_msg
+            unavailable_modes.append({"mode": "road", "reason": road_msg})
 
         result = {
             "priority": priority,

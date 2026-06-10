@@ -373,6 +373,12 @@ export interface HybridPayload {
   };
 }
 
+/** Canonical shape for a mode that couldn't produce a route. */
+export interface UnavailableMode {
+  mode: string;
+  reason: string;
+}
+
 export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
@@ -381,10 +387,9 @@ export interface HybridOptimizeResult {
   demo_mode?: boolean;
   /**
    * Modes that have no route for this corridor.
-   * May be plain mode names ("road") or "mode: reason" strings
-   * e.g. "road: No drivable road route between Europe and North America."
+   * Each entry contains the mode name and a human-readable reason.
    */
-  unavailable_modes?: string[];
+  unavailable_modes?: UnavailableMode[];
   comparison?: HybridComparisonRow[] | null;
   best_per_mode?: {
     road?: HybridModeRoute | null;
