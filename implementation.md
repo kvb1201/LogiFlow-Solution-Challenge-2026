@@ -1,205 +1,127 @@
-# Live Signal Refresh Upgrade
+# Google OAuth Audience Mismatch — Fix Implementation
 
-## Architecture
+## Root Cause
 
-Route Health now evaluates CURRENT conditions. The evaluation sequence is:
-
-```
-evaluate_route_health(report, location)
-  ↓
-Resolve Current Location (automatic / manual)
-  ↓
-refresh_condition_signals(current_location → destination)   ← NEW
-  ↓ live TomTom + live Weather + fresh ML
-build_condition_snapshot(live_signals > stored > heuristic)  ← UPGRADED
-  ↓
-compute_health_from_snapshot()
-  ↓
-build_snapshot_breakdown()
-  ↓
-append_condition_history()                                   ← includes freshness
-  ↓
-RouteHealthResponse (signal_freshness, signals_refreshed_at) ← NEW fields
-```
-
-Shipment state (current_location, route_intelligence, progression) is unchanged.
-
----
-
-## Phase 1 — LiveSignals dataclass
+`backend/app/services/auth_service.py` previously resolved `GOOGLE_CLIENT_ID` at
+**module import time** using a module-level constant:
 
 ```python
-@dataclass
-class LiveSignals:
-    traffic_level:         Optional[float]   # 0–1 live TomTom
-    traffic_delay_hr:      Optional[float]
-    traffic_distance_km:   Optional[float]
-    temperature:           Optional[float]   # live OpenWeather
-    precipitation:         Optional[float]
-    weather_condition:     Optional[str]
-    predicted_delay_hours: Optional[float]   # fresh ML prediction
-    refreshed_at:          Optional[str]     # ISO timestamp
-    traffic_freshness:     str               # "live"|"fallback"|"unavailable"
-    weather_freshness:     str               # "live"|"unavailable"
-    delay_freshness:       str               # "live"|"heuristic"|"unavailable"
+# OLD — resolved once at import, before load_dotenv() could fire in some paths
+GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", dev_default="local-dev.apps.googleusercontent.com")
+```
+
+When anything (tests, hot-reload, direct module import) caused `auth_service` to be
+imported before `main.py` had called `load_dotenv()`, `os.getenv("GOOGLE_CLIENT_ID")`
+returned `None` and the placeholder `local-dev.apps.googleusercontent.com` was baked
+in permanently for the lifetime of that Python process.
+
+Google was issuing tokens for the **real** client ID
+`1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com`, so every
+verification call failed with:
+
+```
+Token has wrong audience 1007508154155-... expected one of ['local-dev.apps.googleusercontent.com']
 ```
 
 ---
 
-## Phase 2 — Fresh TomTom Traffic
+## Configuration Source (before fix)
 
-`refresh_condition_signals` calls `route_provider.get_routes(current_location, destination)` — the same function used by the planning pipeline. No new routing code.
+| Location | Key | Value |
+|---|---|---|
+| `backend/.env` | `GOOGLE_CLIENT_ID` | `1007508154155-...` (correct) |
+| `frontend/.env.local` | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | `1007508154155-...` (correct) |
+| `auth_service.py` module-level | `GOOGLE_CLIENT_ID` | `local-dev.apps.googleusercontent.com` (wrong — placeholder fallback) |
 
-```python
-routes = get_routes(current_location, destination, payload={}, context=context)
-live.traffic_level    = routes[0]["traffic_level"]
-live.traffic_delay_hr = routes[0]["traffic_delay_hr"]
-live.traffic_freshness = "live" if not is_fallback_route else "fallback"
-```
-
-Only runs for `road` and `hybrid` modes.
+The `.env` value was correct all along. The bug was in when the env var was read.
 
 ---
 
-## Phase 3 — Fresh Weather
+## Audience Validation Flow (after fix)
 
-Calls `get_weather(current_location)` (OpenWeather API), keyed on `current_location` (not source). Only makes the API call if `OPENWEATHER_API_KEY` is present.
-
-```python
-weather = get_weather(current_location)
-live.temperature       = weather["temp"]
-live.precipitation     = weather["rain"]
-live.weather_condition = weather["condition"]
-live.weather_freshness = "live"
 ```
-
----
-
-## Phase 4 — Fresh ML Delay
-
-Re-runs `predict_delay()` with fresh `traffic_level` and weather:
-
-```python
-adjusted_time, _, _ = predict_delay(
-    base_time_hours=route_km / speed_kmh,
-    weather={"temp": live.temperature, "rain": live.precipitation, ...},
-    traffic_level=live.traffic_level,
-)
-live.predicted_delay_hours = adjusted_time - base_time_hr
-live.delay_freshness = "live" if we had real inputs else "heuristic"
+POST /auth/login  {credential: "<google JWT>"}
+        │
+        ▼
+verify_google_token(credential)
+        │
+        ├─ _get_allowed_audiences()          ← called at request time, not import time
+        │     1. GOOGLE_ALLOWED_CLIENT_IDS   (comma-separated list, takes priority)
+        │     2. GOOGLE_CLIENT_ID            (single ID, backward compat)
+        │     3. [] + actionable error       (dev: fails fast with helpful message)
+        │
+        ├─ for each audience in list:
+        │     google.oauth2.id_token.verify_oauth2_token(credential, Request(), audience)
+        │     → success: return id_info
+        │     → ValueError: log mismatch, try next
+        │
+        └─ all failed:
+              _extract_token_audience(credential)  ← decode without verifying signature
+              logger.warning(received_audience, allowed_count)
+              raise ValueError with actionable message
 ```
 
 ---
 
-## Phase 5 — Signal Priority in build_condition_snapshot
+## Environment Handling
 
+### Local development
 ```
-Priority 1: live_signals    (just fetched — seconds ago)
-Priority 2: stored signals  (optimization_result.best from pipeline run)
-Priority 3: heuristic       (deterministic city-hash fallback)
+backend/.env          → GOOGLE_CLIENT_ID=1007508154155-...
+frontend/.env.local   → NEXT_PUBLIC_GOOGLE_CLIENT_ID=1007508154155-...
 ```
+Both sides use the same real client ID. No placeholder.
 
-Each signal is resolved independently. Traffic can be live while weather is stored, etc.
-
----
-
-## Phase 6 — Confidence from Freshness
-
-```python
-confidence = 15                                    # base: always
-conf += {"live":35, "stored":20, "fallback":5}[traffic_freshness]
-conf += {"live":25, "stored":15}[weather_freshness]
-conf += {"live":25, "heuristic":12, "stored":12}[delay_freshness]
+### Multi-environment (optional)
+If separate OAuth clients are needed per environment:
 ```
-
-| Scenario | Confidence |
-|---|---|
-| All live signals | 100 |
-| All stored signals | 62 |
-| Fallback heuristics only | 15–27 |
-
----
-
-## Phase 7 — Health Evaluation Sequence
-
-When `GET /route-health` is called on an active trip with a known current location, the full sequence runs:
-
-1. Resolve current_location (automatic progression / confirmed manual)
-2. `refresh_condition_signals(current_location, destination)` — fetches live TomTom + weather + ML
-3. `build_condition_snapshot(live_signals=live, optimization_result=opt)` — uses live first
-4. `compute_health_from_snapshot()` — deterministic scoring from fresh data
-5. `build_snapshot_breakdown()` — explainable per-factor breakdown with source
-6. `append_condition_history()` — stores freshness metadata in history entry
-
-Live refresh is skipped for: preview mode (explicit location passed), non-active trips, and trips at source (not yet moving).
-
----
-
-## Phase 8 — Reoptimization upgrade
-
-`build_reoptimization_v1` runs `_run_pipeline(current_location → destination)` which internally calls `route_provider.get_routes()` and `get_weather()` — the same live sources. The alternative route automatically benefits from live signals. The condition snapshot for comparison (`build_condition_snapshot`) will also use the freshest available data.
-
----
-
-## Phase 9 — Signal Freshness UI
-
-`SignalBadges` component updated:
-- Shows per-signal freshness: `[Live Traffic]`, `[Stored Weather]`, `[Est. Delay]`
-- Color coding: emerald = live, amber = stored, grey = fallback/unavailable
-- Shows "refreshed Xs ago" timestamp when live signals are present
-
-`ConditionHistoryPanel` updated:
-- Each history row shows confidence% and a `Live` green badge when any live signal was present
-
----
-
-## Phase 10 — History entries include freshness
-
-```json
-{
-  "evaluated_at": "2026-06-10T12:00:00",
-  "health_score": 71,
-  "health_level": "moderate",
-  "confidence_score": 100,
-  "signal_freshness": {
-    "traffic": "live",
-    "weather": "live",
-    "delay": "live"
-  },
-  "signals_refreshed_at": "2026-06-10T12:00:00"
-}
+# backend/.env or Render env vars
+GOOGLE_ALLOWED_CLIENT_IDS=<local-client-id>,<prod-client-id>
 ```
+`_get_allowed_audiences()` splits by comma and tries each in order.
 
-No new database tables. Stored inside `optimization_result.condition_history`.
+### Production (Render)
+`RENDER=true` is set automatically by Render. If neither `GOOGLE_ALLOWED_CLIENT_IDS`
+nor `GOOGLE_CLIENT_ID` is set, the app raises `RuntimeError` at startup to prevent a
+silently broken OAuth flow from reaching users.
 
 ---
 
-## Files Modified / Created
+## Changes Made
 
-| File | Change |
-|---|---|
-| `backend/app/services/live_signal_refresh.py` | **New** — `LiveSignals`, `refresh_condition_signals()` |
-| `backend/app/services/condition_snapshot.py` | Added `signal_freshness`, `signals_refreshed_at` to `ConditionSnapshot`; rewrote `build_condition_snapshot` with `live_signals` param + priority chain; added `_compute_confidence_from_freshness()` |
-| `backend/app/services/condition_history.py` | History entries now include `confidence_score`, `signal_freshness`, `signals_refreshed_at` |
-| `backend/app/services/trip_progress.py` | Added live refresh call before snapshot build; added `signal_freshness` and `signals_refreshed_at` to response |
-| `frontend/src/services/plannerApi.ts` | Updated `condition_profile` type with freshness fields; added `signal_freshness`, `signals_refreshed_at` to `RouteHealthResponse`; updated `condition_history` entry type |
-| `frontend/src/components/planner/RouteHealthCard.tsx` | `SignalBadges` redesigned for freshness display; `ConditionHistoryPanel` shows confidence + live badge |
+### `backend/app/services/auth_service.py`
+
+1. **Removed module-level `GOOGLE_CLIENT_ID` constant** — audience is now resolved
+   inside `verify_google_token()` on every request via `_get_allowed_audiences()`.
+
+2. **Added `_get_allowed_audiences() -> list[str]`** — reads env vars at call time,
+   supports comma-separated `GOOGLE_ALLOWED_CLIENT_IDS` as the primary source and
+   falls back to `GOOGLE_CLIENT_ID` for backward compatibility.
+
+3. **Multi-audience loop** — iterates over all allowed audiences and returns on first
+   successful verification. This prevents future mismatch issues when running multiple
+   OAuth clients.
+
+4. **Structured logging** — `logger.warning` on rejection includes `received_audience`
+   (extracted without trusting the unverified payload for auth) and `allowed_count`.
+   Audience values are truncated to 20 chars in debug logs to avoid secret leakage.
+
+5. **`_extract_token_audience(credential)`** — safely decodes the JWT payload without
+   signature verification, used only for diagnostic logging on failure.
+
+6. **Actionable error messages** — `ValueError` now names both env files to check, so
+   any future mismatch can be resolved without reading source code.
 
 ---
 
 ## Validation Results
 
-| Scenario | Expected | Result |
-|---|---|---|
-| A — Live traffic=0.70 overrides stored=0.15 | health drops from 94→71 | ✅ |
-| B — Weather from live OpenWeather | weather_freshness="live" | ✅ (when API key present) |
-| C — No live TomTom, stored signals used | traffic_freshness="stored", confidence=72 | ✅ |
-| D — No signals at all → heuristics | confidence=15 | ✅ |
-| E — Live all three → confidence=100 | confidence=100 | ✅ |
-| F — Confidence grades: live > stored > fallback | 100 > 62 > 27 | ✅ |
-| G — Shipment tracking (progress/ETA/backtrack) unchanged | bharuch=47.2% correct | ✅ |
-| signal_freshness() method on LiveSignals | correct dict | ✅ |
-| to_dict() includes signal_freshness + refreshed_at | present | ✅ |
-| `npx tsc --noEmit` | 0 errors | ✅ |
-| `npm run build` | 16/16 pages | ✅ |
-| Backend `py_compile` | all OK | ✅ |
+| Check | Result |
+|---|---|
+| `backend/.env` `GOOGLE_CLIENT_ID` | ✅ matches frontend client ID |
+| `frontend/.env.local` `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ matches backend client ID |
+| Python syntax check | ✅ `Syntax OK` |
+| `npx tsc --noEmit` | ✅ No errors |
+| No hardcoded client IDs in business logic | ✅ All env-driven |
+| Email/password auth unchanged | ✅ `create_access_token` / `decode_access_token` untouched |
+| Production guard | ✅ `RuntimeError` raised if no client ID in production |
