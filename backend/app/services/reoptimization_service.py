@@ -7,6 +7,14 @@ from app.models.domain import ShipmentReport
 from app.utils.coordinates import get_coords
 
 
+# ---------------------------------------------------------------------------
+# Thresholds for reoptimization recommendation
+# ---------------------------------------------------------------------------
+_TIME_THRESHOLD_MINUTES = 15    # must save > 15 min
+_COST_THRESHOLD_PCT     = 5.0   # must save > 5%
+_RISK_THRESHOLD_PCT     = 5.0   # must reduce > 5%
+
+
 def _number(value: Any) -> Optional[float]:
     try:
         if value is None:
@@ -196,3 +204,270 @@ def build_reoptimization_recommendation(
         "eta_delta_minutes": eta_delta,
         "recommended_action": "save_revision",
     }
+
+
+# ---------------------------------------------------------------------------
+# Reoptimization V1 — starts from current_location (not source)
+# ---------------------------------------------------------------------------
+
+def _resolve_current_location_for_reopt(report: ShipmentReport) -> str:
+    """
+    Get the confirmed current location from optimization_result.
+    Falls back to source if none set.
+    """
+    opt = report.optimization_result or {}
+    loc = (opt.get("current_location") or "").strip()
+    return loc or report.source
+
+
+def _compute_improvement(
+    current: dict[str, Optional[float]],
+    alternative: dict[str, Optional[float]],
+) -> dict[str, Any]:
+    """
+    Compute improvement metrics between current and alternative routes.
+    Returns structured comparison dict.
+    """
+    time_saved_minutes: Optional[int] = None
+    cost_difference: Optional[float] = None
+    risk_difference: Optional[float] = None
+    cost_pct_change: Optional[float] = None
+    risk_pct_change: Optional[float] = None
+
+    cur_time = current.get("time")
+    alt_time = alternative.get("time")
+    if cur_time is not None and alt_time is not None:
+        time_saved_minutes = int(round((cur_time - alt_time) * 60))
+
+    cur_cost = current.get("cost")
+    alt_cost = alternative.get("cost")
+    if cur_cost is not None and alt_cost is not None:
+        cost_difference = round(cur_cost - alt_cost, 2)
+        if cur_cost > 0:
+            cost_pct_change = round((cur_cost - alt_cost) / cur_cost * 100, 1)
+
+    cur_risk = current.get("risk")
+    alt_risk = alternative.get("risk")
+    if cur_risk is not None and alt_risk is not None:
+        risk_difference = round(cur_risk - alt_risk, 4)
+        if cur_risk > 0:
+            risk_pct_change = round((cur_risk - alt_risk) / cur_risk * 100, 1)
+
+    return {
+        "time_saved_minutes": time_saved_minutes,
+        "cost_difference": cost_difference,
+        "cost_pct_change": cost_pct_change,
+        "risk_difference": risk_difference,
+        "risk_pct_change": risk_pct_change,
+    }
+
+
+def _should_recommend_switch(improvement: dict[str, Any]) -> tuple[bool, str]:
+    """
+    Apply thresholds to determine whether to recommend switching routes.
+    Recommendation requires at least ONE threshold to be exceeded.
+    """
+    reasons: list[str] = []
+
+    tsm = improvement.get("time_saved_minutes") or 0
+    if tsm > _TIME_THRESHOLD_MINUTES:
+        reasons.append(f"Saves {tsm}m")
+
+    cpc = improvement.get("cost_pct_change") or 0
+    if cpc > _COST_THRESHOLD_PCT:
+        reasons.append(f"Reduces cost by {cpc:.1f}%")
+
+    rpc = improvement.get("risk_pct_change") or 0
+    if rpc > _RISK_THRESHOLD_PCT:
+        reasons.append(f"Reduces risk by {rpc:.1f}%")
+
+    if reasons:
+        return True, "; ".join(reasons)
+    return False, "Alternative route does not meet improvement thresholds"
+
+
+def build_reoptimization_v1(report: ShipmentReport) -> dict[str, Any]:
+    """
+    Reoptimization V1 — generates an alternative for the REMAINING journey.
+
+    Reads current_location from optimization_result (not from user input).
+    Starts pipeline from current_location → destination.
+
+    Returns a structured comparison + recommendation.
+    """
+    current_location = _resolve_current_location_for_reopt(report)
+    destination = report.destination
+
+    # Remaining stops: waypoints after current_location in the full route
+    from app.services.trip_progress import (
+        _cumulative_distances,
+        _distance_along_route,
+        split_route_at_location,
+    )
+
+    opt_result = report.optimization_result or {}
+    ri = opt_result.get("route_intelligence") or {}
+    route_cities: list[str] = ri.get("route_cities") or []
+
+    # Use route_cities to determine remaining stops
+    if route_cities:
+        _, remaining_after = split_route_at_location(route_cities, current_location)
+        # remaining stops = route cities after current_location, excluding destination
+        remaining_stops = [
+            c for c in remaining_after
+            if c.lower() != destination.lower()
+        ]
+    else:
+        # Fallback: use declared stops
+        all_waypoints = [report.source, *(report.stops or []), destination]
+        current_norm = current_location.lower()
+        split_idx = next(
+            (i for i, wp in enumerate(all_waypoints) if wp.lower() == current_norm), 0
+        )
+        remaining_stops = [
+            wp for wp in all_waypoints[split_idx + 1:]
+            if wp.lower() != destination.lower()
+        ]
+
+    # Run the pipeline from current_location
+    pipeline_result = _run_pipeline(report, current_location, remaining_stops, destination)
+    if not pipeline_result:
+        pipeline_result = _fallback_result(
+            report, current_location, remaining_stops, destination, "Pipeline returned empty result"
+        )
+
+    # Extract metrics
+    alternative_metrics = extract_plan_metrics(pipeline_result)
+
+    # Current metrics: use report's stored values (represent remaining journey from progress)
+    # These are what the original plan expected for the full remaining journey
+    from app.services.trip_progress import derive_progress_and_eta
+    current_remaining: dict[str, Optional[float]] = {}
+    if route_cities:
+        dyn = derive_progress_and_eta(
+            current_location=current_location,
+            route_cities=route_cities,
+            mode=report.mode or "road",
+            original_estimated_time_hours=report.estimated_time,
+        )
+        remaining_km = dyn.get("remaining_distance_km") or 0.0
+        total_km = dyn.get("total_route_km") or 1.0
+        if total_km > 0 and report.estimated_time:
+            remaining_ratio = remaining_km / total_km
+            current_remaining = {
+                "time": round(report.estimated_time * remaining_ratio, 4),
+                "cost": round((report.estimated_cost or 0) * remaining_ratio, 2),
+                "risk": report.risk_score,
+            }
+        else:
+            current_remaining = {
+                "time": report.estimated_time,
+                "cost": report.estimated_cost,
+                "risk": report.risk_score,
+            }
+    else:
+        current_remaining = {
+            "time": report.estimated_time,
+            "cost": report.estimated_cost,
+            "risk": report.risk_score,
+        }
+
+    # Compute improvement
+    improvement = _compute_improvement(current_remaining, alternative_metrics)
+
+    # Apply thresholds to generate recommendation
+    should_switch, recommendation_reason = _should_recommend_switch(improvement)
+
+    # Route intelligence for the alternative
+    from app.services.trip_progress import (
+        enrich_optimization_result_with_intelligence,
+    )
+    enriched_pipeline = enrich_optimization_result_with_intelligence(
+        pipeline_result, current_location, destination, remaining_stops,
+        estimated_time_hours=alternative_metrics.get("time"),
+    )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "report_id": report.id,
+        "mode": report.mode,
+        "current_location": current_location,
+        "remaining_stops": remaining_stops,
+        "destination": destination,
+        # Current route metrics (remaining journey)
+        "current_route": {
+            "source": current_location,
+            "destination": destination,
+            "metrics": {
+                "eta_minutes": int(round((current_remaining.get("time") or 0) * 60)),
+                "cost": current_remaining.get("cost"),
+                "risk": current_remaining.get("risk"),
+            },
+        },
+        # Alternative route metrics
+        "alternative_route": {
+            "source": current_location,
+            "destination": destination,
+            "metrics": {
+                "eta_minutes": int(round((alternative_metrics.get("time") or 0) * 60)),
+                "cost": alternative_metrics.get("cost"),
+                "risk": alternative_metrics.get("risk"),
+            },
+            "optimization_result": enriched_pipeline,
+        },
+        # Improvement deltas
+        "improvement": improvement,
+        # Recommendation
+        "recommend_switch": should_switch,
+        "recommendation_reason": recommendation_reason,
+        "thresholds": {
+            "time_minutes": _TIME_THRESHOLD_MINUTES,
+            "cost_pct": _COST_THRESHOLD_PCT,
+            "risk_pct": _RISK_THRESHOLD_PCT,
+        },
+    }
+
+
+def apply_reoptimization_v1(
+    report: ShipmentReport,
+    alternative_optimization_result: dict[str, Any],
+    estimated_cost: Optional[float],
+    estimated_time: Optional[float],
+    risk_score: Optional[float],
+    now: datetime,
+) -> dict[str, Any]:
+    """
+    Apply the accepted alternative route to the shipment.
+
+    Replaces:
+      - optimization_result.route_intelligence (new remaining route)
+      - optimization_result.best / all (new pipeline result)
+    
+    Preserves:
+      - optimization_result.current_location
+      - optimization_result.progression_base_location
+      - optimization_result.progression_base_time
+      - original source / destination on the report
+
+    Returns the new optimization_result dict to store.
+    """
+    existing = dict(report.optimization_result or {})
+
+    # Preserve progression rebasing metadata
+    preserved = {
+        k: existing[k]
+        for k in (
+            "current_location",
+            "current_location_updated_at",
+            "progression_base_location",
+            "progression_base_time",
+        )
+        if k in existing
+    }
+
+    # Build new optimization_result from the alternative
+    new_result = dict(alternative_optimization_result)
+    new_result.update(preserved)
+    new_result["reoptimized_at"] = now.isoformat()
+
+    return new_result

@@ -82,6 +82,15 @@ export type RoadRoute = {
    * for future Shipment Health, Route Lock, and Live Monitoring integration.
    */
   route_id?: string;
+  /**
+   * Validity flags from the backend.
+   * valid=false means the corridor is physically undrivable (trans-oceanic, etc.)
+   * is_fallback=true means TomTom was unavailable and haversine estimates were used.
+   */
+  valid?: boolean;
+  is_fallback?: boolean;
+  data_source?: string;
+  fallback_reason?: string;
 };
 
 type RoadOptimizeResponse = {
@@ -123,6 +132,8 @@ export interface LogiFlowState {
   // Road results
   routes: RoadRoute[];
   selectedRoute: number;
+  /** Set when the backend returns status='no_routes' for road (invalid corridor, etc.) */
+  roadNoRoutesReason: string | null;
 
   // Water results
   waterRoutes: WaterRoute[];
@@ -218,7 +229,10 @@ export interface LogiFlowState {
   /** Load live delay + status for a train (route card or map) */
   fetchTrainDelayAndLive: (trainNumber: string) => Promise<void>;
   setMapFocusedTrain: (trainNumber: string | null) => void;
+  /** Full reset (logo / new session) — clears corridor + results */
   resetSearch: () => void;
+  /** Back to form from results — keeps corridor, brief, and parsed intent */
+  resetResults: () => void;
 }
 
 export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
@@ -246,6 +260,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
   routes: [],
   selectedRoute: 0,
+  roadNoRoutesReason: null,
 
   waterRoutes: [],
   selectedWaterRoute: 0,
@@ -290,6 +305,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setScenarioBrief: (val) => set({ scenarioBrief: val }),
   applyParsedIntent: (parsed) => {
+    get().resetResults();
     const state = get();
     buildIntentPatch(parsed, set, state);
   },
@@ -316,35 +332,51 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   reorderRoadStops: (stops) => set({ roadStops: stops }),
   setOptimizeStopOrder: (val) => set({ optimizeStopOrder: val }),
 
-  resetSearch: () => set({
-    hasSearched: false,
-    loading: false,
-    loadingMode: null,
-    railLoadingStep: -1,
-    railLoadingDetail: '',
-    railLoadingStartedAt: null,
-    recommendations: { cheapest: null, fastest: null, safest: null },
-    allOptions: [],
-    airRoutes: [],
-    selectedAirRouteIndex: 0,
-    airConstraintsApplied: null,
-    selectedOptionIndex: 0,
-    routes: [],
-    selectedRoute: 0,
-    searchMode: 'rail',
-    error: null,
-    trainDelayDetail: null,
-    selectedTrainLive: null,
-    detailTrainNumber: null,
-    mapFocusedTrainNumber: null,
-    stationSuggestions: [],
-    waterRoutes: [],
-    selectedWaterRoute: 0,
-    scenarioBrief: '',
-    lastParsedIntent: null,
-    roadStops: [],
-    optimizeStopOrder: false,
-  }),
+  resetResults: () =>
+    set({
+      hasSearched: false,
+      loading: false,
+      loadingMode: null,
+      railLoadingStep: -1,
+      railLoadingDetail: '',
+      railLoadingStartedAt: null,
+      recommendations: { cheapest: null, fastest: null, safest: null },
+      allOptions: [],
+      airRoutes: [],
+      selectedAirRouteIndex: 0,
+      airConstraintsApplied: null,
+      selectedOptionIndex: 0,
+      routes: [],
+      selectedRoute: 0,
+      roadNoRoutesReason: null,
+      error: null,
+      trainDelayDetail: null,
+      selectedTrainLive: null,
+      detailTrainNumber: null,
+      mapFocusedTrainNumber: null,
+      stationSuggestions: [],
+      waterRoutes: [],
+      selectedWaterRoute: 0,
+      roadStops: [],
+      optimizeStopOrder: false,
+    }),
+
+  resetSearch: () => {
+    get().resetResults();
+    set({
+      source: '',
+      destination: '',
+      priority: 'cost',
+      cargoWeight: 100,
+      cargoType: 'General',
+      departureDate: new Date().toISOString().split('T')[0],
+      budgetMax: 50000,
+      deadlineHours: 48,
+      scenarioBrief: '',
+      lastParsedIntent: null,
+      searchMode: 'rail',
+    });
+  },
 
   // ── Main optimize call ─────────────────────────────────────────────
   handleOptimize: async (opts) => {
@@ -492,6 +524,34 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
 
         console.log("[LogiFlow] RESPONSE →", raw?.all?.[0]?.time, raw?.all?.[0]?.risk);
 
+        // ── Detect invalid corridor (no_routes with valid=false) ───────────────
+        // Backend returns { status: 'no_routes', valid: false, message: '...' }
+        // for physically undrivable corridors (trans-oceanic, etc.).
+        // Store the reason for the UI to render <InvalidCorridorCard> instead of
+        // an empty result set or a generic error banner.
+        const rawAny = raw as Record<string, unknown>;
+        if (rawAny?.status === 'no_routes') {
+          const noRouteReason =
+            (rawAny?.message as string | undefined) ||
+            (rawAny?.reason as string | undefined) ||
+            'No drivable road route available for this corridor.';
+          console.log("[LogiFlow] ROAD no_routes →", noRouteReason);
+          set({
+            searchMode: 'road',
+            routes: [],
+            selectedRoute: 0,
+            roadNoRoutesReason: noRouteReason,
+            recommendations: { cheapest: null, fastest: null, safest: null },
+            allOptions: [],
+            airRoutes: [],
+            selectedAirRouteIndex: 0,
+            airConstraintsApplied: null,
+            // Do NOT set error — this is a valid planning outcome, not an API failure.
+            // The UI will render InvalidCorridorCard instead of an error banner.
+          });
+          return;
+        }
+
         const all = Array.isArray(raw?.all) ? raw.all : [];
 
         console.log("[LogiFlow] ZUSTAND SET →", {
@@ -504,6 +564,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           searchMode: 'road',
           routes: all.map(r => ({ ...r })),
           selectedRoute: 0,
+          roadNoRoutesReason: null,
           recommendations: { cheapest: null, fastest: null, safest: null },
           allOptions: [],
           airRoutes: [],

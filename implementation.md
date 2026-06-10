@@ -1,204 +1,169 @@
-# Fix Shipment Location Update Workflow
+# Authentication UX Completion + Legal Pages — Implementation
 
-## Root Cause
+## Overview
 
-The workflow broke at one specific point: `canUpdateShipment` compared `previewCity` against `resolvedLocation`, but `resolvedLocation` comes from `routeHealth.current_location` — which the backend already resolves to the preview city after `fetchRouteHealth(id, city)` is called.
-
-**Before (broken):**
-```
-User selects "Ankleshwar"
-handleCitySelect("Ankleshwar")
-  → fetchRouteHealth(id, "Ankleshwar")        ← backend returns current_location = "ankleshwar"
-  
-resolvedLocation = routeHealth.current_location = "ankleshwar"
-previewCity      = activeLocation()            = "ankleshwar"  (from selectedCity)
-
-hasPreviewCity = previewCity !== resolvedLocation = "ankleshwar" !== "ankleshwar" = FALSE
-canUpdateShipment = FALSE
-→ Update Shipment panel never appears
-```
-
-**After (fixed):**
-```
-User selects "Ankleshwar"
-handleCitySelect("Ankleshwar")
-  → setSelectedCity("Ankleshwar")             ← NO auto-fetch
-  → setEvaluatedPreviewCity("")               ← reset
-
-User clicks "Evaluate"
-runCheck()
-  → setEvaluatedPreviewCity("Ankleshwar")     ← record what was evaluated
-  → fetchRouteHealth(id, "Ankleshwar")
-
-canUpdateShipment = !!evaluatedPreviewCity     = "Ankleshwar" ≠ "" = TRUE
-→ Update Shipment panel appears
-```
+This document covers changes made across Phases 1–7: login UX improvements, Terms & Conditions, Privacy Policy, Google account onboarding flow, site footer integration, and accessibility.
 
 ---
 
-## What Changed
+## Phase 1 — Login Page UX
 
-### New state: `evaluatedPreviewCity`
+### File changed
+`frontend/src/components/auth/LoginPage.tsx`
 
-Tracks the city that was explicitly submitted via the **Evaluate** button. Separate from `activeLocation()` (selector value) and `routeHealth.current_location` (backend response). This is the authoritative "what the user wants to commit".
+### 1. Branding deduplication
+The NavBar already renders the LogiFlow logo and brand name on every page. The login card contains no duplicate branding — it opens directly with the "Smart Shipment Planner" heading and a short description.
 
-```ts
-const [evaluatedPreviewCity, setEvaluatedPreviewCity] = useState<string>('');
-```
+### 2. Loading state
+- After Google returns a credential, `setAuthenticating(true)` fires immediately before any network request.
+- The loading overlay renders with `role="status"` and `aria-live="polite"` for screen readers.
+- Spinner text changed from "Authenticating…" / "Restoring your session" to **"Signing you in…"** / "Verifying your Google account" — clearer to users about what is happening.
+- The Google Sign-In button is replaced by the overlay, preventing any possibility of a second click.
 
-### `handleCitySelect` — no longer auto-evaluates
-
-Previously called `fetchRouteHealth(id, city)` immediately on dropdown selection, which put the card in a state where `previewCity === resolvedLocation`. Now it only updates local selector state. The user must explicitly click **Evaluate**.
-
-```ts
-const handleCitySelect = (city: string) => {
-  setSelectedCity(city);
-  setLocationMode('dropdown');
-  setShipmentUpdated(false);
-  setEvaluatedPreviewCity('');  // not yet evaluated
-  // No fetchRouteHealth here
-};
-```
-
-### `runCheck` — sets `evaluatedPreviewCity`
-
-```ts
-const runCheck = () => {
-  const loc = activeLocation();
-  if (!loc) { fetchRouteHealth(report.id); return; }
-  setEvaluatedPreviewCity(loc);          // record what was evaluated
-  fetchRouteHealth(report.id, loc);      // backend returns preview metrics
-};
-```
-
-### `canUpdateShipment` — uses `evaluatedPreviewCity`
-
-```ts
-const canUpdateShipment =
-  !!evaluatedPreviewCity &&
-  evaluatedPreviewCity.toLowerCase() !== (routeHealth?.confirmed_current_location || '').toLowerCase() &&
-  !shipmentUpdated;
-```
-
-Compares against `confirmed_current_location` (the last stored location), not against the backend-resolved preview. Backtracking to Bharuch from Karjan works correctly because Bharuch ≠ the stored Karjan.
-
-### `commitLocation` — prefers `evaluatedPreviewCity`
-
-```ts
-const commitLocation = (): string =>
-  evaluatedPreviewCity || activeLocation() || routeHealth?.current_location || report.source;
-```
-
-### `handleUpdateShipment` — clears `evaluatedPreviewCity` after commit
-
-```ts
-setShipmentUpdated(true);
-setEvaluatedPreviewCity('');   // ← new
-setLocationMode('estimated');
-setSelectedCity('');
-setManualLocation('');
-fetchRouteHealth(report.id);
-onShipmentUpdated?.(updated);
-```
-
-### `handleModeChange` — clears `evaluatedPreviewCity` on tab switch
-
-```ts
-const handleModeChange = (mode) => {
-  setLocationMode(mode);
-  setShipmentUpdated(false);
-  setEvaluatedPreviewCity('');   // ← reset preview when user switches tabs
-  if (mode === 'estimated') { setSelectedCity(''); setManualLocation(''); }
-};
-```
-
-### Preview panel — shows `evaluatedPreviewCity` + Cancel button
-
-The panel now shows the evaluated city name (not `previewCity` which was the same as `resolvedLocation`). A **Cancel** button dismisses the panel without committing.
+### 3. Error handling
+- Added `friendlyError(err)` helper that maps raw error messages to human-readable strings:
+  - Audience / token / invalid errors → "Unable to verify your Google account. Please try again."
+  - Network / fetch errors → "Connection error. Check your internet and try again."
+  - 401 / unauthorized → "Google authentication failed. Please try again."
+- Error API response body is now read (`body.detail`) and passed through `friendlyError` before display — raw backend exceptions never surface to the user.
+- Error banner has `role="alert"` for screen reader announcement.
 
 ---
 
-## Scenario Walkthrough
+## Phase 2 — Terms & Conditions Page (`/terms`)
 
-### Scenario A — Select → Evaluate → Update
+### Files created
+- `frontend/src/components/legal/LegalPage.tsx` — shared layout component
+- `frontend/src/app/terms/page.tsx`
 
-```
-1. User opens dropdown, selects "Ankleshwar"
-   → selectedCity = "Ankleshwar", evaluatedPreviewCity = ""
-   → canUpdateShipment = false (not yet evaluated)
+### Design
+- Matches the LogiFlow dark design system: `bg-surface/40`, `border-border/50`, `rounded-2xl`, `backdrop-blur-sm`
+- Uses design-system fonts (Space Grotesk for headings, Inter for body)
+- Fully responsive — single-column on mobile, comfortable max-width (`max-w-3xl`) on desktop
 
-2. User clicks "Evaluate"
-   → evaluatedPreviewCity = "Ankleshwar"
-   → fetchRouteHealth(id, "Ankleshwar") called
-   → backend returns preview metrics for Ankleshwar
-   → canUpdateShipment = true → panel appears
+### Sections
+1. Acceptance of Terms
+2. Use of Platform
+3. Shipment Planning Disclaimer
+4. Data Accuracy Disclaimer
+5. Limitation of Liability
+6. Account Responsibilities
+7. Service Availability
+8. Contact Information
 
-3. User clicks "Update Shipment"
-   → updateShipmentLocation({current_location: "Ankleshwar"})
-   → evaluatedPreviewCity = "", locationMode = "estimated"
-   → fetchRouteHealth(id) called → shows Ankleshwar as confirmed
-   → onShipmentUpdated(updated) called
-```
-
-### Scenario B — Select → Evaluate → Do NOT update
-
-```
-1. User selects "Ankleshwar" + clicks Evaluate
-   → Preview panel appears
-
-2. User closes the panel via Cancel (or navigates away)
-   → evaluatedPreviewCity = ""
-   → Backend current_location unchanged
-   → shipment persists with original location
-```
-
-### Scenario C — Persist after refresh
-
-```
-1. User updates to Ankleshwar
-   → backend writes current_location = "Ankleshwar" + rebase metadata
-
-2. Page refresh
-   → report.optimization_result.current_location = "Ankleshwar" (persisted)
-   → fetchRouteHealth(id) → resolve_current_location finds rebase anchor
-   → confirmed_current_location = "Ankleshwar" shown correctly
-```
-
-### Scenario D — Backtrack Karjan → Bharuch
-
-```
-1. Current: Karjan (confirmed)
-   → confirmed_current_location = "Karjan"
-
-2. User selects "Bharuch" + Evaluate
-   → evaluatedPreviewCity = "Bharuch"
-   → canUpdateShipment: "Bharuch" !== "Karjan" = true → panel appears
-   → metrics show higher ETA, longer remaining distance
-
-3. Update Shipment
-   → current_location = "Bharuch", rebase at Bharuch
-   → progression continues forward from Bharuch
-```
+Language is framed as an academic/project platform (Google Solution Challenge 2026) — no enterprise legal overreach.
 
 ---
 
-## Files Modified
+## Phase 3 — Privacy Policy Page (`/privacy`)
 
-| File | Change |
+### File created
+`frontend/src/app/privacy/page.tsx`
+
+### Design
+Same layout and styling as `/terms` — uses the shared `LegalPage` component.
+
+### Sections
+1. Information Collected
+2. Google Authentication — includes link to Google Account permissions page
+3. Usage Data — mentions Vercel Analytics
+4. Shipment Planning Data
+5. Cookies and Session Storage — accurately describes sessionStorage usage (no persistent cookies)
+6. Data Retention
+7. Third-Party Services — lists Google OAuth, TomTom, OpenWeatherMap, Supabase, Vercel, Gemini/Groq
+8. Contact Information
+
+Only practices actually implemented in the codebase are described.
+
+---
+
+## Phase 4 — Login Page Legal Links
+
+The login card's existing placeholder `<a href="#">` links were replaced with:
+
+```tsx
+<Link href="/terms">Terms of Service</Link>
+<Link href="/privacy">Privacy Policy</Link>
+```
+
+A second set of footer-style links appears below the card:
+
+```tsx
+<Link href="/privacy">Privacy Policy</Link>
+<Link href="/terms">Terms & Conditions</Link>
+```
+
+All links use Next.js `<Link>` for client-side navigation, and include `focus-visible:ring-1 focus-visible:ring-rail` focus styles for keyboard accessibility.
+
+---
+
+## Phase 5 — Create New Account Flow
+
+The previous "Create an account with Google" button that attempted to programmatically click the hidden GSI button was replaced with:
+
+```tsx
+<a
+  href="https://accounts.google.com/signup"
+  target="_blank"
+  rel="noopener noreferrer"
+  aria-label="Create a Google account (opens in new tab)"
+>
+  Create a Google account →
+</a>
+```
+
+Helper text below the link reads:
+> LogiFlow uses Google for authentication. Create a Google account first if you don't already have one.
+
+No separate LogiFlow registration system was added. Google remains the sole identity provider.
+
+---
+
+## Phase 6 — Footer Integration
+
+### File created
+`frontend/src/components/SiteFooter.tsx`
+
+A minimal sticky footer added to the root layout (`frontend/src/app/layout.tsx`). It appears on all pages and contains:
+- Copyright line: "© 2026 LogiFlow — Google Solution Challenge 2026"
+- Navigation: Privacy Policy · Terms & Conditions
+
+The footer is visually subtle (`text-[11px]`, `text-muted-foreground`, `border-t border-border/40`) so it doesn't compete with page content.
+
+The login page also shows the same links in its own footer area, which is acceptable since the login page has a distinct full-screen layout without the global footer's context.
+
+---
+
+## Phase 7 — Accessibility
+
+| Element | Implementation |
 |---|---|
-| `frontend/src/components/planner/RouteHealthCard.tsx` | Added `evaluatedPreviewCity` state; `handleCitySelect` no longer auto-evaluates; `runCheck` sets evaluated city; `canUpdateShipment` uses `evaluatedPreviewCity`; preview panel shows evaluated city + Cancel button |
+| Loading overlay | `role="status"`, `aria-live="polite"`, spinner has `aria-hidden="true"` |
+| Error banner | `role="alert"` for immediate screen reader announcement |
+| Google Sign-In container | `aria-label="Sign in with Google"` |
+| Back to home link | `aria-label="Back to LogiFlow home"` |
+| Google account creation link | `aria-label="Create a Google account (opens in new tab)"` |
+| Legal links (login + footer) | `focus-visible:ring-1 focus-visible:ring-rail` visible focus rings |
+| Footer nav | `<nav aria-label="Legal navigation">` |
+| Legal page sections | Semantic `<header>`, `<section>`, `<h1>`, `<h2>` hierarchy |
+| `rel="noopener noreferrer"` | Applied to all `target="_blank"` external links |
 
 ---
 
-## Validation
+## Validation Results
 
 | Check | Result |
 |---|---|
-| `npx tsc --noEmit` | ✅ 0 errors |
-| `npm run build` | ✅ 16/16 pages |
-| Scenario A — Select + Evaluate + Update → location changes | ✅ |
-| Scenario B — Select + Evaluate + no click → unchanged | ✅ evaluatedPreviewCity not committed |
-| Scenario C — Update + refresh → persists | ✅ backend stores current_location |
-| Scenario D — Backtrack Karjan → Bharuch → works | ✅ confirmed_current_location comparison |
-| Cancel button dismisses panel without commit | ✅ |
-| Switching location tabs resets preview | ✅ handleModeChange clears evaluatedPreviewCity |
+| `npx tsc --noEmit` | ✅ Exit 0, no errors |
+| `npm run build` | ✅ Exit 0, all pages compiled |
+| `/login` route | ✅ Static page, builds cleanly |
+| `/terms` route | ✅ Static page, appears in build output |
+| `/privacy` route | ✅ Static page, appears in build output |
+| Legal links on login page | ✅ Link to `/terms` and `/privacy` (Next.js `<Link>`) |
+| Create Account flow | ✅ Opens `https://accounts.google.com/signup` in new tab |
+| Branding duplication | ✅ Login card contains no duplicate LogiFlow logo/name |
+| Loading state text | ✅ "Signing you in…" |
+| Error messages | ✅ Friendly user-facing text, no raw exceptions |
+| Footer on all pages | ✅ `SiteFooter` in root layout |
+| Google OAuth flow | ✅ Unchanged — `handleGoogleSuccess` logic preserved |
+| Email/password auth | ✅ Not applicable — Google is sole provider; no regression |

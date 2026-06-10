@@ -1486,6 +1486,96 @@ def evaluate_route_health(
     health_score = score_result["health_score"]
     health_level = score_result["health_level"]
     confidence   = score_result["confidence"]
+    component_scores = score_result["component_scores"]
+
+    # ── Condition Intelligence V2 (real signals + fallback) ─────────
+    from app.services.condition_snapshot import (
+        build_condition_snapshot,
+        compute_health_from_snapshot,
+        build_snapshot_breakdown,
+    )
+    from app.services.condition_intelligence import (
+        build_traffic_condition,
+        build_weather_condition,
+        build_adherence_score,
+        build_eta_variance_score,
+        build_health_breakdown,      # kept for backward-compat profile
+        ConditionProfile,
+    )
+    from app.services.condition_history import (
+        append_condition_history, get_condition_history,
+    )
+
+    # ETA gap for condition signals
+    _eta_gap_for_snapshot = 0
+    if final_eta_min is not None and original_remaining > 0:
+        _eta_gap_for_snapshot = max(0, final_eta_min - original_remaining)
+
+    _route_km_for_snapshot = total_route_km if total_route_km else (
+        float(opt_result.get("route_intelligence", {}).get("total_km_estimate") or 0)
+    )
+
+    # ── Phase 7: Live signal refresh for remaining journey ────────────
+    # Fetch fresh TomTom + Weather + ML for current_location → destination.
+    # Only for active trips with a known current location.
+    live_signals = None
+    if driver_city and driver_city != report.source and report.status == "active":
+        try:
+            from app.services.live_signal_refresh import refresh_condition_signals
+            live_signals = refresh_condition_signals(
+                current_location=driver_city,
+                destination=report.destination,
+                mode=report.mode or "road",
+                cargo_type=report.cargo_type or "General",
+            )
+        except Exception as _live_exc:
+            print(f"[LiveRefresh] Skipped: {_live_exc}")
+
+    # Build snapshot — live signals > stored signals > heuristic
+    snapshot = build_condition_snapshot(
+        optimization_result=opt_result,
+        corridor_status=corridor_status,
+        deviation_km=deviation_km,
+        overdue_minutes=overdue_minutes,
+        eta_gap_minutes=_eta_gap_for_snapshot,
+        route_km=_route_km_for_snapshot,
+        stop_count=len(report.stops or []),
+        mode=report.mode or "road",
+        source=report.source,
+        destination=report.destination,
+        fallback_traffic_fn=build_traffic_condition,
+        fallback_weather_fn=build_weather_condition,
+        fallback_adherence_fn=build_adherence_score,
+        fallback_eta_fn=build_eta_variance_score,
+        live_signals=live_signals,
+    )
+
+    # Phase 6 — compute health from real signals
+    health_score, health_level = compute_health_from_snapshot(snapshot)
+    confidence = snapshot.confidence_score
+
+    # Phase 7 — explainable breakdown
+    health_breakdown = build_snapshot_breakdown(snapshot)
+
+    # Build backward-compat condition_profile dict using snapshot data
+    condition_profile_dict = snapshot.to_dict()
+
+    # Build a minimal ConditionProfile for backward-compat build_health_breakdown call
+    # (used only when reverting to legacy path — keep in sync)
+    _legacy_profile = ConditionProfile(
+        traffic_score=snapshot.traffic_score,
+        weather_score=snapshot.weather_score,
+        congestion_score=snapshot.traffic_score,
+        route_adherence_score=snapshot.route_adherence_score,
+        eta_variance_score=snapshot.eta_variance_score,
+        traffic_delay_minutes=snapshot.traffic_delay_minutes,
+        weather_delay_minutes=0,
+        traffic_explanation=snapshot.traffic_explanation,
+        weather_explanation=snapshot.weather_explanation,
+        congestion_explanation=snapshot.traffic_explanation,
+        adherence_explanation=snapshot.adherence_explanation,
+        eta_explanation=snapshot.eta_explanation,
+    )
 
     # ── Recommendation ────────────────────────────────────────────────
     current_metrics = {
@@ -1525,13 +1615,41 @@ def evaluate_route_health(
         else "low"
     )
 
+    # ── Condition History (Phase 8) — only persist for real evaluations ─
+    condition_history: list[dict[str, Any]] = get_condition_history(opt_result)
+    if not actual_location_name:
+        try:
+            from sqlalchemy.orm.session import object_session
+            sess = object_session(report)
+            if sess is not None:
+                new_opt = append_condition_history(
+                    opt_result,
+                    health_score,
+                    health_level,
+                    condition_profile_dict,
+                    now,
+                )
+                report.optimization_result = new_opt
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(report, "optimization_result")
+                condition_history = get_condition_history(new_opt)
+        except Exception:
+            pass
+
     return {
         "status": report.status,
         # Health
         "health_level": health_level,
         "shipment_health_score": health_score,
         "health_confidence": confidence,
-        "health_component_scores": score_result["component_scores"],
+        "health_component_scores": component_scores,
+        # Condition Intelligence V2
+        "condition_profile": condition_profile_dict,
+        "health_breakdown": health_breakdown,
+        "condition_history": condition_history,
+        "signal_sources": snapshot.signal_sources,
+        "signal_freshness": snapshot.signal_freshness,
+        "signals_refreshed_at": snapshot.signals_refreshed_at,
         # Recommendation
         "recommended_action": recommended_action,
         "reoptimization_recommended": reopt_recommended,
@@ -1539,15 +1657,15 @@ def evaluate_route_health(
         "recommendation": recommendation,
         # Resolved current location + origin
         "current_location": driver_city,
-        "location_source": location_source,       # "manual"|"automatic"|"preview"|"fallback"
+        "location_source": location_source,
         "confirmed_current_location": confirmed_location or None,
-        # Elapsed: Source → Current Location (Req 5)
+        # Elapsed: Source → Current Location
         "progress_percentage": progress_pct,
         "covered_distance_km": covered_km,
         "total_route_km": total_route_km,
         "progress_derived_from": progress_derived_from,
         "elapsed_minutes": time_prog.elapsed_minutes,
-        # Projected: Current Location → Destination (Req 6)
+        # Projected: Current Location → Destination
         "remaining_distance_km": remaining_km,
         "remaining_eta_minutes": final_eta_min,
         "remaining_minutes": time_prog.remaining_minutes,

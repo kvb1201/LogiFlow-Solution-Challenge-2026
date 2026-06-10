@@ -24,6 +24,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [token, user, loading, pathname, router]);
 
+  const publicPages = ['/', '/login', '/signup', '/landing'];
+  const isPublic = pathname
+    ? publicPages.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+    : true;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -33,6 +38,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  if (!token || !user) {
+    if (isPublic) return <>{children}</>;
+    return null;
   }
 
   return <>{children}</>;

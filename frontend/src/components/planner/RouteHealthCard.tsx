@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
-import type { ReoptimizationRecommendation, ShipmentReport } from '@/services/plannerApi';
+import type { ReoptimizationRecommendation, ReoptimizationV1Response, RouteHealthResponse, ShipmentReport } from '@/services/plannerApi';
+import { routeForMode } from '@/lib/applyParsedIntent';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 
@@ -319,6 +320,517 @@ function RouteCorridor({
   );
 }
 
+// ── Signal Source Badges ──────────────────────────────────────────────────
+
+const FRESHNESS_META: Record<string, { label: string; color: string }> = {
+  live:        { label: 'Live',    color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25' },
+  stored:      { label: 'Stored', color: 'bg-amber-500/12 text-amber-300 border-amber-500/20' },
+  heuristic:   { label: 'Est.',   color: 'bg-surface-container/40 text-outline border-border/20' },
+  fallback:    { label: 'Fallback', color: 'bg-surface-container/40 text-outline border-border/20' },
+  unavailable: { label: 'N/A',    color: 'bg-surface-container/20 text-outline/50 border-border/10' },
+};
+
+const SIGNAL_LABELS: Record<string, string> = {
+  traffic: 'Traffic',
+  weather: 'Weather',
+  delay:   'Delay',
+};
+
+function SignalBadges({
+  signalFreshness,
+  refreshedAt,
+}: {
+  signalFreshness: RouteHealthResponse['signal_freshness'];
+  refreshedAt: string | null;
+}) {
+  if (!signalFreshness) return null;
+
+  const signals = Object.entries(signalFreshness) as [string, string][];
+  const liveCount = signals.filter(([, f]) => f === 'live').length;
+
+  const refreshAgo = refreshedAt
+    ? Math.round((Date.now() - new Date(refreshedAt).getTime()) / 1000)
+    : null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {signals.map(([key, freshness]) => {
+        const meta = FRESHNESS_META[freshness] ?? FRESHNESS_META.unavailable;
+        return (
+          <span
+            key={key}
+            className={`text-[8px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wide ${meta.color}`}
+            title={`${SIGNAL_LABELS[key] ?? key}: ${freshness}`}
+          >
+            {meta.label} {SIGNAL_LABELS[key] ?? key}
+          </span>
+        );
+      })}
+      {refreshAgo !== null && liveCount > 0 && (
+        <span className="text-[8px] text-outline">
+          refreshed {refreshAgo < 60 ? `${refreshAgo}s` : `${Math.round(refreshAgo / 60)}m`} ago
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Health Breakdown Panel (Phase 7 — Why this score?) ───────────────────
+
+function HealthBreakdownPanel({
+  breakdown,
+  conditionProfile,
+}: {
+  breakdown: RouteHealthResponse['health_breakdown'];
+  conditionProfile: RouteHealthResponse['condition_profile'];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!breakdown) return null;
+
+  const factors = [
+    { key: 'traffic',  label: 'Traffic',         icon: 'traffic',    max: 35 },
+    { key: 'weather',  label: 'Weather',         icon: 'cloud',      max: 20 },
+    { key: 'delay',    label: 'ML Delay',        icon: 'schedule',   max: 20 },
+    { key: 'adherence',label: 'Route Adherence', icon: 'route',      max: 15 },
+    { key: 'eta',      label: 'ETA Variance',    icon: 'timer',      max: 10 },
+  ] as const;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between rounded-xl border border-outline-variant/15 bg-surface-container-low/20 px-3 py-2.5 text-left transition hover:border-outline-variant/30"
+      >
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
+            info
+          </span>
+          <span className="text-[9px] uppercase tracking-widest text-outline font-bold">
+            Why this score?
+          </span>
+        </div>
+        <span
+          className="material-symbols-outlined text-outline"
+          style={{ fontSize: '14px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-outline-variant/15 bg-surface-container-low/20 p-3 space-y-2">
+          {/* Summary */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed pb-2 border-b border-border/15">
+            {breakdown.summary}
+          </p>
+
+          {/* Factor rows */}
+          {factors.map(f => {
+            const data = breakdown[f.key];
+            const pct = Math.round((data.points / f.max) * 100);
+            const isGood = data.delta >= -2;
+            return (
+              <div key={f.key}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="material-symbols-outlined text-outline"
+                      style={{ fontSize: '12px', fontVariationSettings: "'FILL' 1" }}
+                    >
+                      {f.icon}
+                    </span>
+                    <span className="text-[10px] font-semibold text-foreground">{f.label}</span>
+                    {(() => {
+                      const src = (data as Record<string, unknown>).source as string | undefined;
+                      return src && !['heuristic','schedule','corridor'].includes(src) ? (
+                        <span className="text-[8px] px-1 py-0.5 rounded border bg-primary/10 text-primary border-primary/20 font-bold uppercase">
+                          {src}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-bold mono ${isGood ? 'text-emerald-300' : 'text-amber-300'}`}>
+                      {data.points}/{f.max}
+                    </span>
+                    {data.delta < 0 && (
+                      <span className="text-[9px] text-red-400 font-bold mono">{data.delta}</span>
+                    )}
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1 rounded-full bg-border/20 mb-1">
+                  <div
+                    className={`h-full rounded-full transition-all ${isGood ? 'bg-emerald-400/60' : 'bg-amber-400/60'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-outline leading-relaxed">{data.why}</p>
+              </div>
+            );
+          })}
+
+          {/* Condition snapshot detail */}
+          {conditionProfile && (
+            <div className="pt-2 border-t border-border/15 flex flex-wrap gap-4">
+              {conditionProfile.traffic_level != null && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Traffic</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">
+                    {Math.round(conditionProfile.traffic_level * 100)}% congestion
+                  </div>
+                </div>
+              )}
+              {conditionProfile.temperature != null && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Temp</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">{conditionProfile.temperature}°C</div>
+                </div>
+              )}
+              {conditionProfile.precipitation != null && conditionProfile.precipitation > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Rain</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">{conditionProfile.precipitation}mm/h</div>
+                </div>
+              )}
+              {conditionProfile.traffic_delay_minutes > 0 && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">Traffic delay</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">+{conditionProfile.traffic_delay_minutes}m</div>
+                </div>
+              )}
+              {conditionProfile.predicted_delay_hours != null && (
+                <div>
+                  <div className="text-[9px] text-outline uppercase font-bold">ML delay</div>
+                  <div className="text-[11px] font-semibold text-foreground mono">
+                    {conditionProfile.predicted_delay_hours < 1
+                      ? `${Math.round(conditionProfile.predicted_delay_hours * 60)}m`
+                      : `${conditionProfile.predicted_delay_hours.toFixed(1)}h`}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Condition History Panel (Phase 6) ─────────────────────────────────────
+
+function ConditionHistoryPanel({
+  history,
+}: {
+  history: RouteHealthResponse['condition_history'];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (!history || history.length === 0) return null;
+
+  const scoreColor = (s: number) =>
+    s >= 80 ? 'text-emerald-300' : s >= 60 ? 'text-amber-300' : 'text-red-400';
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between rounded-xl border border-outline-variant/15 bg-surface-container-low/20 px-3 py-2.5 text-left transition hover:border-outline-variant/30"
+      >
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
+            history
+          </span>
+          <span className="text-[9px] uppercase tracking-widest text-outline font-bold">
+            Recent Route Health ({history.length})
+          </span>
+        </div>
+        <span
+          className="material-symbols-outlined text-outline"
+          style={{ fontSize: '14px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}
+        >
+          expand_more
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-outline-variant/15 bg-surface-container-low/20 overflow-hidden">
+          <div className="divide-y divide-border/10">
+            {history.slice(0, 10).map((entry, i) => (
+              <div key={i} className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-sm font-bold mono shrink-0 ${scoreColor(entry.health_score)}`}>
+                    {entry.health_score}
+                  </span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold uppercase shrink-0 ${
+                    entry.health_level === 'healthy'
+                      ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20'
+                      : entry.health_level === 'moderate'
+                      ? 'bg-amber-500/12 text-amber-300 border-amber-500/20'
+                      : 'bg-red-500/12 text-red-400 border-red-500/20'
+                  }`}>
+                    {entry.health_level}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[9px] text-outline mono">
+                  {entry.traffic_score != null && (
+                    <span title="Traffic">T:{Math.round(entry.traffic_score)}</span>
+                  )}
+                  {entry.weather_score != null && (
+                    <span title="Weather">W:{Math.round(entry.weather_score)}</span>
+                  )}
+                  {entry.confidence_score != null && (
+                    <span title={`Confidence: ${entry.confidence_score}%`} className="text-outline/70">
+                      {entry.confidence_score}%
+                    </span>
+                  )}
+                  {entry.signal_freshness && Object.values(entry.signal_freshness).some(f => f === 'live') && (
+                    <span className="text-emerald-400/70 font-bold">Live</span>
+                  )}
+                  <span>
+                    {new Date(entry.evaluated_at).toLocaleTimeString('en-IN', {
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Reoptimization V1 Panel ───────────────────────────────────────────────
+
+function ReoptimizeV1Panel({
+  reportId,
+  onAccepted,
+}: {
+  reportId: string;
+  onAccepted: (updated: ShipmentReport) => void;
+}) {
+  const {
+    reoptimizationV1,
+    reoptimizationV1Loading,
+    saving,
+    runReoptimizationV1,
+    acceptReoptimizationV1,
+    dismissReoptimizationV1,
+  } = usePlannerStore();
+
+  const [accepting, setAccepting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  const handleRun = () => {
+    void runReoptimizationV1(reportId);
+  };
+
+  const handleAccept = async () => {
+    if (!reoptimizationV1) return;
+    setAccepting(true);
+    try {
+      const updated = await acceptReoptimizationV1(reportId, reoptimizationV1);
+      setAccepted(true);
+      onAccepted(updated);
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  const handleDismiss = () => {
+    dismissReoptimizationV1();
+    setAccepted(false);
+  };
+
+  if (accepted) {
+    return (
+      <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 flex items-center gap-2">
+        <span className="material-symbols-outlined text-emerald-300 shrink-0"
+          style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}>
+          check_circle
+        </span>
+        <p className="text-[11px] text-emerald-300 font-semibold flex-1">
+          Switched to optimized route. Progression continues from current location.
+        </p>
+      </div>
+    );
+  }
+
+  if (!reoptimizationV1) {
+    return (
+      <button
+        type="button"
+        onClick={handleRun}
+        disabled={reoptimizationV1Loading}
+        className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 px-4 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {reoptimizationV1Loading ? (
+          <>
+            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            Generating alternative…
+          </>
+        ) : (
+          <>
+            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>alt_route</span>
+            Reoptimize Route
+          </>
+        )}
+      </button>
+    );
+  }
+
+  const r = reoptimizationV1;
+  const imp = r.improvement;
+
+  // Colour helpers
+  const improvementColor = (val: number | null, higherIsBetter = false): string => {
+    if (val == null) return 'text-foreground';
+    const positive = higherIsBetter ? val > 0 : val < 0;
+    return positive ? 'text-emerald-300' : val === 0 ? 'text-foreground' : 'text-red-400';
+  };
+
+  const fmtDelta = (val: number | null, unit: string, higherIsBetter = false): string => {
+    if (val == null || val === 0) return '—';
+    const sign = val > 0 ? '+' : '';
+    return `${sign}${Math.round(val)}${unit}`;
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold">Route Reoptimization</div>
+          <div className="text-sm font-bold text-foreground">
+            {r.current_location} → {r.destination}
+          </div>
+        </div>
+        <button type="button" onClick={handleDismiss}
+          className="text-outline hover:text-foreground transition">
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+        </button>
+      </div>
+
+      {/* Comparison table */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {/* Current route */}
+        <div className="rounded-xl border border-border/30 bg-surface/40 p-3">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-2">Current Route</div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-outline">ETA</span>
+              <span className="font-semibold text-foreground mono">{r.current_route.metrics.eta_minutes}m</span>
+            </div>
+            {r.current_route.metrics.cost != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Cost</span>
+                <span className="font-semibold text-foreground mono">
+                  ₹{Math.round(r.current_route.metrics.cost).toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+            {r.current_route.metrics.risk != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Risk</span>
+                <span className="font-semibold text-foreground mono">
+                  {Math.round(r.current_route.metrics.risk * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Alternative route */}
+        <div className={`rounded-xl border p-3 ${r.recommend_switch ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border/30 bg-surface/40'}`}>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-2">Alternative Route</div>
+          <div className="space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-outline">ETA</span>
+              <span className={`font-semibold mono ${imp.time_saved_minutes != null && imp.time_saved_minutes > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                {r.alternative_route.metrics.eta_minutes}m
+              </span>
+            </div>
+            {r.alternative_route.metrics.cost != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Cost</span>
+                <span className={`font-semibold mono ${imp.cost_pct_change != null && imp.cost_pct_change > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                  ₹{Math.round(r.alternative_route.metrics.cost).toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+            {r.alternative_route.metrics.risk != null && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-outline">Risk</span>
+                <span className={`font-semibold mono ${imp.risk_pct_change != null && imp.risk_pct_change > 0 ? 'text-emerald-300' : 'text-foreground'}`}>
+                  {Math.round(r.alternative_route.metrics.risk * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Improvement summary */}
+      <div className="mb-3 rounded-lg bg-surface/30 border border-border/20 px-3 py-2">
+        <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1.5">Improvement</div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {imp.time_saved_minutes != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.time_saved_minutes)}`}>
+              ETA {fmtDelta(imp.time_saved_minutes, 'm')}
+            </span>
+          )}
+          {imp.cost_pct_change != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.cost_pct_change)}`}>
+              Cost {fmtDelta(imp.cost_pct_change, '%')}
+            </span>
+          )}
+          {imp.risk_pct_change != null && (
+            <span className={`text-[11px] font-semibold ${improvementColor(imp.risk_pct_change)}`}>
+              Risk {fmtDelta(imp.risk_pct_change, '%')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Recommendation */}
+      <div className={`mb-3 rounded-lg border px-3 py-2 ${r.recommend_switch ? 'border-emerald-500/25 bg-emerald-500/8' : 'border-border/20 bg-surface/30'}`}>
+        <div className="flex items-start gap-2">
+          <span className={`material-symbols-outlined shrink-0 mt-0.5 ${r.recommend_switch ? 'text-emerald-300' : 'text-outline'}`}
+            style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+            {r.recommend_switch ? 'recommend' : 'info'}
+          </span>
+          <p className={`text-[11px] leading-relaxed ${r.recommend_switch ? 'text-emerald-300' : 'text-muted-foreground'}`}>
+            {r.recommendation_reason}
+          </p>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        {r.recommend_switch && (
+          <button type="button" onClick={handleAccept} disabled={accepting || saving}
+            className="flex-1 rounded-lg border border-emerald-500/35 bg-emerald-500/12 py-2 text-sm font-bold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+            {accepting ? 'Switching…' : 'Switch To Optimized Route'}
+          </button>
+        )}
+        {!r.recommend_switch && (
+          <button type="button" onClick={handleAccept} disabled={accepting || saving}
+            className="flex-1 rounded-lg border border-border/30 py-2 text-sm font-semibold text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+            {accepting ? 'Switching…' : 'Switch Anyway'}
+          </button>
+        )}
+        <button type="button" onClick={handleRun} disabled={reoptimizationV1Loading}
+          className="rounded-lg border border-border/30 px-4 py-2 text-sm text-muted-foreground transition hover:text-foreground">
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────
 
@@ -340,7 +852,6 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
     saveRevision,
     updateShipmentLocation,
   } = usePlannerStore();
-
   const [locationMode, setLocationMode] = useState<'estimated' | 'dropdown' | 'manual'>('estimated');
   const [selectedCity, setSelectedCity] = useState('');
   const [manualLocation, setManualLocation] = useState('');
@@ -456,7 +967,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
     const remainingStops = afterCl.slice(0, -1);
     const params = new URLSearchParams({ source: currentLoc, destination: report.destination });
     if (remainingStops.length > 0) params.set('stops', remainingStops.join(','));
-    router.push(`/${report.mode}?${params.toString()}`);
+    router.push(`${routeForMode(report.mode)}?${params.toString()}`);
   };
 
   // ── Render ────────────────────────────────────────────────────────
@@ -531,6 +1042,17 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           </span>
         </div>
       </div>
+
+      {/* ── Signal source badges ── */}
+      {routeHealth.signal_freshness && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-[9px] text-outline uppercase font-bold shrink-0">Signals:</span>
+          <SignalBadges
+            signalFreshness={routeHealth.signal_freshness}
+            refreshedAt={routeHealth.signals_refreshed_at ?? null}
+          />
+        </div>
+      )}
 
       {/* ── Current Location row ── */}
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -803,6 +1325,15 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         </div>
       </div>
 
+      {/* ── Reoptimization V1 ── */}
+      <ReoptimizeV1Panel
+        reportId={report.id}
+        onAccepted={updated => {
+          onShipmentUpdated?.(updated);
+          fetchRouteHealth(report.id);
+        }}
+      />
+
       {/* ── Route Corridor (collapsible) ── */}
       {routeCities.length > 0 && (
         <div className="mt-4">
@@ -836,6 +1367,15 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           savedReportId={savedRevisionId}
         />
       )}
+
+      {/* ── Health Breakdown — Why this score? (Phase 5) ── */}
+      <HealthBreakdownPanel
+        breakdown={routeHealth.health_breakdown ?? null}
+        conditionProfile={routeHealth.condition_profile ?? null}
+      />
+
+      {/* ── Condition History (Phase 6) ── */}
+      <ConditionHistoryPanel history={routeHealth.condition_history ?? []} />
 
       {/* ── Footer ── */}
       <div className="mt-3 flex items-center gap-2 text-[9px] text-outline">

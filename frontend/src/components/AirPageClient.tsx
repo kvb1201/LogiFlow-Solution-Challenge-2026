@@ -1,11 +1,14 @@
 'use client';
 
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import Link from "next/link";
 
 export default function AirPageClient() {
+  usePlannerRegenerateParams('air');
+
   const error = useLogiFlowStore((state) => state.error);
   const loading = useLogiFlowStore((state) => state.loading);
   const loadingMode = useLogiFlowStore((state) => state.loadingMode);
@@ -13,7 +16,7 @@ export default function AirPageClient() {
   const source = useLogiFlowStore((state) => state.source);
   const destination = useLogiFlowStore((state) => state.destination);
   const hasSearched = useLogiFlowStore((state) => state.hasSearched);
-  const resetSearch = useLogiFlowStore((state) => state.resetSearch);
+  const resetResults = useLogiFlowStore((state) => state.resetResults);
   const searchMode = useLogiFlowStore((state) => state.searchMode);
   const hasResults = airRoutes.length > 0;
   const showAirLoading = loading && loadingMode === 'air';
@@ -159,7 +162,7 @@ export default function AirPageClient() {
             <div className="flex gap-2 shrink-0">
               <button
                 type="button"
-                onClick={resetSearch}
+                onClick={resetResults}
                 className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">restart_alt</span>

@@ -1,4 +1,6 @@
-const WARM_PATH = '/api/warm-backend';
+const IS_DEV = process.env.NODE_ENV === 'development';
+/** Local backend is already up — skip heavy rail preloads (stations dump) on every page load. */
+const WARM_PATH = IS_DEV ? '/api/warm-backend?lite=1' : '/api/warm-backend';
 const RETRY_DELAY_MS = 5000;
 /** Render free tier can take 30–90s to wake; must exceed /api/warm-backend server timeout. */
 const WARM_PING_TIMEOUT_MS = 120_000;
@@ -101,6 +103,13 @@ function startKeepAliveLoop(): void {
 
 /** Fire-and-forget warmup on load, tab focus, and periodic keep-alive. */
 export function warmBackendInBackground(): void {
+  if (IS_DEV) {
+    // Local `make dev`: backend is on :8000 — quick health ping only, no Render retry loop.
+    void pingHealthOnly(4_000).then((ok) => {
+      if (ok) sessionWarm = true;
+    });
+    return;
+  }
   void ensureBackendWarm(120_000);
   startKeepAliveLoop();
 }

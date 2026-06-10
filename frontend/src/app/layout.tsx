@@ -3,6 +3,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 import NavBar from '@/components/NavBar';
+import { SiteFooter } from '@/components/SiteFooter';
 import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 
@@ -40,6 +41,7 @@ export default function RootLayout({
           <AmbientBackdrop variant="subtle" className="opacity-60" />
           <div className="relative z-10 w-full pointer-events-auto">{children}</div>
         </main>
+        <SiteFooter />
         <Analytics />
         <SpeedInsights />
       </body>

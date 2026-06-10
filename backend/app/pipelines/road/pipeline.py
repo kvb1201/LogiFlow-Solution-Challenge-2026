@@ -4,6 +4,11 @@ from app.pipelines.base import BasePipeline
 from app.utils.request_context import RequestContext
 
 
+class _InvalidCorridorError(Exception):
+    """Raised when a road corridor is physically undrivable (trans-oceanic, etc.)."""
+    pass
+
+
 class RoadPipeline(BasePipeline):
     mode = "road"
     name = "Road Transport"
@@ -47,6 +52,13 @@ class RoadPipeline(BasePipeline):
             # ── Single-leg path (existing behaviour) ──────────────────
             from app.pipelines.road.route_provider import get_routes
             routes = get_routes(source, destination, payload, context=context)
+
+        # ── Handle invalid corridor sentinel from route_provider ──────
+        # route_provider returns a dict with "_invalid_corridor": True when the
+        # corridor is physically undrivable (trans-oceanic, etc.).
+        if isinstance(routes, dict) and routes.get("_invalid_corridor"):
+            reason = routes.get("reason", "No drivable road route available.")
+            raise _InvalidCorridorError(reason)
 
         if not routes or not isinstance(routes, list):
             raise Exception("Route provider returned no valid routes")
@@ -259,6 +271,11 @@ class RoadPipeline(BasePipeline):
                 "weather_level": sim.get("weather_level") if simulation_mode else None,
                 "incident_count": incident_count,
                 "highway_ratio": float(r.get("highway_ratio", 0.7)),
+                # ── Data source / validity flags ───────────────────────
+                "valid": r.get("valid", True),
+                "is_fallback": r.get("is_fallback", False),
+                "data_source": r.get("data_source", "tomtom"),
+                "fallback_reason": r.get("fallback_reason"),
             }
             print("FINAL ROUTE:",
                   route_out["distance_km"],
@@ -380,7 +397,26 @@ class RoadPipeline(BasePipeline):
         stops = [s for s in (payload.get("stops") or []) if s and s.strip()]
         is_multistop = bool(stops)
 
-        routes = self._get_routes(source, destination, payload, context=context)
+        try:
+            routes = self._get_routes(source, destination, payload, context=context)
+        except _InvalidCorridorError as e:
+            # Corridor is physically undrivable — return a clean no_routes response.
+            # Do NOT fabricate distances, highways, traffic, or confidence values.
+            print(f"[ROAD PIPELINE] Invalid corridor: {e}")
+            return {
+                "mode": "road",
+                "simulation": simulation_mode,
+                "status": "no_routes",
+                "valid": False,
+                "message": str(e),
+                "reason": "No drivable road route available.",
+                "best": None,
+                "alternatives": [],
+                "all": [],
+                "multistop": is_multistop,
+                "stops": stops if is_multistop else [],
+                "waypoints": ([source] + stops + [destination]) if is_multistop else [source, destination],
+            }
 
         # Defensive: ensure routes is always a non-empty list
         if not isinstance(routes, list) or len(routes) == 0:
@@ -561,6 +597,22 @@ class RoadPipeline(BasePipeline):
                 if text and text not in seen:
                     seen.add(text)
                     factors.append(text)
+
+            # ── Fallback mode disclosure ──────────────────────────────
+            is_fallback = route.get("is_fallback", False)
+            fallback_reason = route.get("fallback_reason")
+            if is_fallback:
+                fb_msg = "Estimated route (live routing unavailable"
+                if fallback_reason:
+                    reason_labels = {
+                        "tomtom_key_missing": "API key not configured",
+                        "tomtom_timeout": "routing service timed out",
+                        "tomtom_unavailable": "routing service unavailable",
+                        "geocode_failed": "geocoding failed",
+                    }
+                    fb_msg += f": {reason_labels.get(fallback_reason, fallback_reason)}"
+                fb_msg += "). Distances, times, and traffic are haversine estimates only."
+                add_factor(fb_msg)
 
             if label == "best" and constraint_note:
                 add_factor(constraint_note)

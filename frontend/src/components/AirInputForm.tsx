@@ -60,7 +60,7 @@ export default function AirInputForm() {
   useShipmentAutorun('air', runAirOptimize, Boolean(source.trim() && destination.trim()));
 
   return (
-    <div className="w-full space-y-4">
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
       <AiBriefPanel contextMode="air" />
       <FormShell
         mode="air"

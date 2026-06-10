@@ -11,7 +11,7 @@ export function PipelineResultsChrome({
 }) {
   const source = useLogiFlowStore((s) => s.source);
   const destination = useLogiFlowStore((s) => s.destination);
-  const resetSearch = useLogiFlowStore((s) => s.resetSearch);
+  const resetResults = useLogiFlowStore((s) => s.resetResults);
   const config = pipelinePageMeta[mode];
   const accent = `var(--${mode})`;
 
@@ -31,7 +31,7 @@ export function PipelineResultsChrome({
         <span className="truncate font-medium text-foreground">{destination}</span>
         <button
           type="button"
-          onClick={resetSearch}
+          onClick={resetResults}
           className="ml-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           title="Edit search"
         >
