@@ -19,6 +19,9 @@
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `JWT_SECRET` | ✅ (prod) | Secret for signing session tokens — **required on Render** |
+| `GOOGLE_CLIENT_ID` | ✅ (prod) | Google OAuth client ID (same app as frontend `NEXT_PUBLIC_GOOGLE_CLIENT_ID`) |
+| `DATABASE_URL` | ✅ (prod) | Postgres URL for planner reports (`postgresql+asyncpg://…`); omit for local SQLite |
 | `GEMINI_API_KEY` | ✅ | Google Gemini API key (intent parse, route explanations, hybrid compare) |
 | `GROQ_API_KEY` | ❌ | Groq fallback for intent parse + rail explanations if Gemini fails |
 | `TOMTOM_API_KEY` | ✅ | TomTom routing API key |
@@ -90,8 +93,9 @@ The built-in warmup reduces 503s for users but the **first visitor after a long 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites and warmup |
-| `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set |
+| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites (`/api/auth`, `/api/planner`, `/api/backend`) and warmup |
+| `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set; used for SSR |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ (prod) | Google Sign-In (must match backend `GOOGLE_CLIENT_ID`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | `https://mwvohdvtxwltzkyuboaz.supabase.co` — **map geometry** + ML metrics (browser → Supabase direct) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase **anon** key (same as `SUPABASE_KEY` in backend `.env`) |
 

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import type { CreateReportPayload, ReportMode } from '@/services/plannerApi';
@@ -29,8 +31,10 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
   const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const pathname = usePathname();
   const { saveReport, saving, error, clearError } = usePlannerStore();
   const user = useAuthStore(s => s.user);
+  const loginHref = `/login?returnUrl=${encodeURIComponent(pathname || '/hybrid')}`;
 
   // Auto-focus and generate default name when modal opens
   useEffect(() => {
@@ -115,7 +119,10 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
 
             {!user && (
               <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-                Sign in to save reports to your account.
+                <Link href={loginHref} className="font-semibold underline hover:text-amber-100">
+                  Sign in
+                </Link>{' '}
+                to save reports to your account.
               </div>
             )}
 

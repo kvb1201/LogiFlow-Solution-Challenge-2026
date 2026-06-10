@@ -20,6 +20,8 @@ import {
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
 import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
+import AiBriefPanel from '@/components/AiBriefPanel';
 
 const DEMO_SOURCE = 'Lucknow, India';
 const DEMO_DEST = 'Delhi, India';
@@ -29,6 +31,8 @@ const DEMO_SCENARIO =
 const STEPS = ['Corridor', 'Brief', 'Route'] as const;
 
 export default function HybridPageClient() {
+  usePlannerRegenerateParams('hybrid');
+
   const source = useLogiFlowStore((s) => s.source);
   const setSource = useLogiFlowStore((s) => s.setSource);
   const destination = useLogiFlowStore((s) => s.destination);
@@ -179,6 +183,8 @@ export default function HybridPageClient() {
           </p>
         </header>
 
+        <AiBriefPanel contextMode="hybrid" className="mb-6" />
+
         {/* Step dots — minimal */}
         {(showForm || loading) && (
           <div className="flex items-center gap-2 mb-6">
@@ -217,7 +223,7 @@ export default function HybridPageClient() {
           </p>
         )}
 
-        <form onSubmit={onSubmit}>
+        <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
           {showForm && step === 0 && (
             <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
               <CorridorRow

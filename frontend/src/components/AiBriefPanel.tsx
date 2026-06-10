@@ -131,29 +131,35 @@ export default function AiBriefPanel({
       }
       result.scenario_brief = result.scenario_brief || brief;
       applyParsedIntent(result);
-      setScenarioBrief(result.scenario_brief);
-      setParsed(result);
+      const appliedIntent = useLogiFlowStore.getState().lastParsedIntent;
+      const mergedResult = appliedIntent
+        ? { ...result, ...appliedIntent, scenario_brief: result.scenario_brief || appliedIntent.scenario_brief }
+        : result;
+      setScenarioBrief(mergedResult.scenario_brief || brief);
+      setParsed(mergedResult);
 
-      const corridorReady = Boolean(result.source?.trim() && result.destination?.trim());
+      const corridorReady = Boolean(
+        mergedResult.source?.trim() && mergedResult.destination?.trim()
+      );
 
       if (!corridorReady) {
         setError(
           sanitizeUserMessage(
-            result.parse_warning ||
+            mergedResult.parse_warning ||
               'Could not detect both origin and destination — we filled what we could; check the form.'
           )
         );
       }
 
       if (contextMode === 'home' && (andNavigate || navigateOnApply)) {
-        setPendingRouteIntent(result);
+        setPendingRouteIntent(mergedResult);
         setConfirmOpen(true);
         return;
       }
 
       if (andNavigate && corridorReady) {
-        const mode = resolveTargetMode(result);
-        const targetPath = getModePath(result);
+        const mode = resolveTargetMode(mergedResult);
+        const targetPath = getModePath(mergedResult);
         setShipmentAutorun(mode);
         setFillNotice('Form updated — running optimization…');
         if (pathname !== targetPath) {
@@ -164,12 +170,23 @@ export default function AiBriefPanel({
         return;
       }
 
-      if (corridorReady) {
-        setFillNotice('Form updated below — review origin, destination, weight, and date.');
-      } else {
-        setFillNotice('Partial fields applied — complete the form below.');
+      let notice =
+        contextMode === 'home'
+          ? corridorReady
+            ? 'Shipment understood — open a mode from the nav or use “Route me to the right tool”.'
+            : 'Partial fields saved — complete the corridor on a mode page.'
+          : corridorReady
+            ? 'Form updated below — review origin, destination, weight, and date.'
+            : 'Partial fields applied — complete the form below.';
+
+      if (mergedResult.parse_warning) {
+        notice = `${notice} ${sanitizeUserMessage(mergedResult.parse_warning)}`;
       }
-      scrollToPipelineForm();
+      setFillNotice(notice);
+
+      if (contextMode !== 'home') {
+        scrollToPipelineForm();
+      }
     } catch (e: unknown) {
       setError(
         sanitizeUserMessage(e instanceof Error ? e.message : 'Could not understand that brief.')

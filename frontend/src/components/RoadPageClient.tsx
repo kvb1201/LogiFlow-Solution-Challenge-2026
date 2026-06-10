@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import RoadInputForm from '@/components/roadInputForm';
 import RouteResults from '@/components/RouteResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
@@ -59,6 +60,8 @@ function ResultsMetricsStrip() {
 // ── Main client ───────────────────────────────────────────────────────
 
 export default function RoadPageClient() {
+  usePlannerRegenerateParams('road');
+
   const error      = useLogiFlowStore(s => s.error);
   const loading    = useLogiFlowStore(s => s.loading);
   const loadingMode = useLogiFlowStore(s => s.loadingMode);

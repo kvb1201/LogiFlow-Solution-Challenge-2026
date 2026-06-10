@@ -335,7 +335,7 @@ def _normalize_llm_intent(parsed: dict[str, Any], user_brief: str, engine: str) 
 
 
 _INTENT_JSON_SCHEMA = (
-    "source, destination, suggested_mode (rail|road|air|water|hybrid), priority (cost|time|safe|balanced),\n"
+    "source, destination, suggested_mode (rail|road|air|water|hybrid|comparator), priority (cost|time|safe|balanced),\n"
     "cargo_weight_kg, cargo_type (General|Fragile|Perishable), departure_date (ISO yyyy-mm-dd), budget_max_inr,\n"
     "deadline_hours, scenario_summary (one line), avoid_tolls, avoid_highways, traffic_aware, max_transshipments.\n"
     "Use null for unknown fields. suggested_mode should reflect explicit user preference when stated."

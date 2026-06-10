@@ -1,11 +1,14 @@
 'use client';
 
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import Link from "next/link";
 
 export default function AirPageClient() {
+  usePlannerRegenerateParams('air');
+
   const error = useLogiFlowStore((state) => state.error);
   const loading = useLogiFlowStore((state) => state.loading);
   const loadingMode = useLogiFlowStore((state) => state.loadingMode);

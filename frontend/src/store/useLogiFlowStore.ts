@@ -305,6 +305,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setScenarioBrief: (val) => set({ scenarioBrief: val }),
   applyParsedIntent: (parsed) => {
+    get().resetResults();
     const state = get();
     buildIntentPatch(parsed, set, state);
   },

@@ -21,7 +21,11 @@ def explain_route(payload: ExplainPayload):
             context=payload.context
         )
         if not explanation:
-            raise HTTPException(status_code=500, detail="Failed to generate explanation")
-        return {"explanation": explanation}
+            return {
+                "explanation": None,
+                "llm_available": False,
+                "message": "AI explanation unavailable — add GEMINI_API_KEY to enable.",
+            }
+        return {"explanation": explanation, "llm_available": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

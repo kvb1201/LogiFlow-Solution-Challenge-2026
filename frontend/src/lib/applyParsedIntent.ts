@@ -14,6 +14,21 @@ export function routeForMode(mode: string): string {
   return MODE_TO_PATH[mode] || '/hybrid';
 }
 
+export const MODE_WEIGHT_MAX_KG: Record<string, number> = {
+  rail: 500_000,
+  road: 5_000,
+  air: 2_000,
+  water: 500_000,
+  hybrid: 500_000,
+  comparator: 500_000,
+  home: 500_000,
+};
+
+export function clampWeightForMode(weightKg: number, mode: string): number {
+  const max = MODE_WEIGHT_MAX_KG[mode] ?? 500_000;
+  return Math.min(Math.max(1, Math.round(weightKg)), max);
+}
+
 function normalizePriority(priority: string | undefined | null): string | undefined {
   if (!priority) return undefined;
   const key = priority.toLowerCase();
@@ -24,7 +39,7 @@ function normalizePriority(priority: string | undefined | null): string | undefi
     fastest: 'time',
     safe: 'safe',
     safest: 'safe',
-    balanced: 'cost',
+    balanced: 'balanced',
   };
   return map[key] ?? priority;
 }
@@ -50,27 +65,41 @@ export function buildIntentPatch(
     | 'setScenarioBrief'
   >
 ): void {
-  if (parsed.source) setters.setSource(parsed.source);
-  if (parsed.destination) setters.setDestination(parsed.destination);
-  const priority = normalizePriority(parsed.priority);
+  let intent = parsed;
+
+  if (intent.source) setters.setSource(intent.source);
+  if (intent.destination) setters.setDestination(intent.destination);
+  const priority = normalizePriority(intent.priority);
   if (priority) setters.setPriority(priority);
-  if (parsed.cargo_weight_kg != null && parsed.cargo_weight_kg > 0) {
-    setters.setCargoWeight(Math.round(parsed.cargo_weight_kg));
+  if (intent.cargo_weight_kg != null && intent.cargo_weight_kg > 0) {
+    const mode = intent.suggested_mode || 'hybrid';
+    const raw = Math.round(intent.cargo_weight_kg);
+    const clamped = clampWeightForMode(raw, mode);
+    setters.setCargoWeight(clamped);
+    if (clamped < raw) {
+      intent = {
+        ...intent,
+        cargo_weight_kg: clamped,
+        parse_warning:
+          intent.parse_warning ||
+          `Weight capped to ${clamped.toLocaleString('en-IN')} kg for ${mode} (max ${MODE_WEIGHT_MAX_KG[mode]?.toLocaleString('en-IN') ?? 'limit'}).`,
+      };
+    }
   }
-  if (parsed.cargo_type) setters.setCargoType(parsed.cargo_type);
-  if (parsed.departure_date) setters.setDepartureDate(parsed.departure_date);
-  if (parsed.budget_max_inr != null) setters.setBudgetMax(parsed.budget_max_inr);
-  if (parsed.deadline_hours != null) setters.setDeadlineHours(parsed.deadline_hours);
-  if (parsed.avoid_tolls != null) setters.setAvoidTolls(parsed.avoid_tolls);
-  if (parsed.avoid_highways != null) setters.setAvoidHighways(parsed.avoid_highways);
-  if (parsed.traffic_aware != null) setters.setTrafficAware(parsed.traffic_aware);
+  if (intent.cargo_type) setters.setCargoType(intent.cargo_type);
+  if (intent.departure_date) setters.setDepartureDate(intent.departure_date);
+  if (intent.budget_max_inr != null) setters.setBudgetMax(intent.budget_max_inr);
+  if (intent.deadline_hours != null) setters.setDeadlineHours(intent.deadline_hours);
+  if (intent.avoid_tolls != null) setters.setAvoidTolls(intent.avoid_tolls);
+  if (intent.avoid_highways != null) setters.setAvoidHighways(intent.avoid_highways);
+  if (intent.traffic_aware != null) setters.setTrafficAware(intent.traffic_aware);
   if (
-    parsed.vehicle_type &&
-    ['mini_truck', 'truck', 'heavy_truck'].includes(parsed.vehicle_type)
+    intent.vehicle_type &&
+    ['mini_truck', 'truck', 'heavy_truck'].includes(intent.vehicle_type)
   ) {
-    setters.setVehicleType(parsed.vehicle_type);
+    setters.setVehicleType(intent.vehicle_type);
   }
-  const brief = parsed.scenario_brief?.trim();
+  const brief = intent.scenario_brief?.trim();
   if (brief) setters.setScenarioBrief(brief);
-  set({ lastParsedIntent: parsed });
+  set({ lastParsedIntent: intent });
 }

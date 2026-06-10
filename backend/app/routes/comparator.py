@@ -67,3 +67,12 @@ def compare_routes(data: CompareRequest):
         payload["constraints"] = data.constraints.dict()
     
     return comparator.generate(data.source, data.destination, payload=payload)
+
+
+# Legacy/docs alias: POST /comparator/routes → same handler as /compare/routes
+alias_router = APIRouter(prefix="/comparator", tags=["comparator"])
+
+
+@alias_router.post("/routes")
+def compare_routes_alias(data: CompareRequest):
+    return compare_routes(data)

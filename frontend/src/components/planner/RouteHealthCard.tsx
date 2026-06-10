@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import type { ReoptimizationRecommendation, ReoptimizationV1Response, RouteHealthResponse, ShipmentReport } from '@/services/plannerApi';
+import { routeForMode } from '@/lib/applyParsedIntent';
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 
@@ -966,7 +967,7 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
     const remainingStops = afterCl.slice(0, -1);
     const params = new URLSearchParams({ source: currentLoc, destination: report.destination });
     if (remainingStops.length > 0) params.set('stops', remainingStops.join(','));
-    router.push(`/${report.mode}?${params.toString()}`);
+    router.push(`${routeForMode(report.mode)}?${params.toString()}`);
   };
 
   // ── Render ────────────────────────────────────────────────────────

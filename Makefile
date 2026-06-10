@@ -1,4 +1,12 @@
-.PHONY: setup install dev dev-clean dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick
+.PHONY: setup install dev dev-clean dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick configure-cloudflare-api-domain verify-api-domain
+
+# Cloudflare → api.logiflow.in → Render (see scripts/configure_logiflow_in_cloudflare.py)
+configure-cloudflare-api-domain:
+	python3 scripts/configure_logiflow_in_cloudflare.py
+
+verify-api-domain:
+	@echo "Checking https://api.logiflow.in/health ..."
+	@curl -fsSI "https://api.logiflow.in/health" | head -20 || true
 
 # IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)

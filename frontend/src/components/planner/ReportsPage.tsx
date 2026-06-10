@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired, type ReportStatus } from '@/services/plannerApi';
 import { ReportCard } from './ReportCard';
@@ -16,11 +17,25 @@ const STATUS_FILTERS: { label: string; value: ReportStatus | 'all' | 'expired' }
   { label: 'Expired', value: 'expired' },
 ];
 
+function parseStatusFilter(raw: string | null): ReportStatus | 'all' | 'expired' {
+  if (!raw) return 'all';
+  return STATUS_FILTERS.some((f) => f.value === raw)
+    ? (raw as ReportStatus | 'all' | 'expired')
+    : 'all';
+}
+
 export function ReportsPage() {
+  const searchParams = useSearchParams();
   const { reports, loading, error, fetchReports } = usePlannerStore();
-  const [filter, setFilter] = useState<ReportStatus | 'all' | 'expired'>('all');
+  const [filter, setFilter] = useState<ReportStatus | 'all' | 'expired'>(() =>
+    parseStatusFilter(searchParams.get('status'))
+  );
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  useEffect(() => {
+    setFilter(parseStatusFilter(searchParams.get('status')));
+  }, [searchParams]);
 
   const filtered = reports.filter(r => {
     if (filter === 'all') return true;

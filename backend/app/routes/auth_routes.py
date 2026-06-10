@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -8,17 +8,19 @@ from app.models.domain import User, UserPreferences
 from app.config.database import get_db
 from app.services.auth_service import verify_google_token, create_access_token
 from app.dependencies import get_current_user
+from app.middleware.rate_limit import rate_limit, AUTH_LOGIN_LIMIT
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=SessionResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+@rate_limit(AUTH_LOGIN_LIMIT)
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Handle Google OAuth credential token exchange.
     Verifies token, creates/updates user, returns JWT session.
     """
     try:
-        id_info = verify_google_token(request.credential)
+        id_info = verify_google_token(body.credential)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -9,6 +9,7 @@ import { PipelineModeLanding } from '@/components/cockpit/PipelineModeLanding';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import {
   buildTrainCorridorGeometry,
   fetchExplanation,
@@ -643,6 +644,8 @@ function DetailPanel({
 // ── Main Dashboard ────────────────────────────────────────────────────
 
 export default function RailwayDashboard() {
+  usePlannerRegenerateParams('rail');
+
   const {
     source,
     destination,
