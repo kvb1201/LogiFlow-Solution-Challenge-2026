@@ -22,6 +22,8 @@ import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
+import AiBriefPanel from '@/components/AiBriefPanel';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -230,6 +232,8 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
 }
 
 export default function ComparatorPageClient() {
+  usePlannerRegenerateParams('comparator');
+
   const source = useLogiFlowStore((s) => s.source);
   const setSource = useLogiFlowStore((s) => s.setSource);
   const destination = useLogiFlowStore((s) => s.destination);
@@ -463,7 +467,11 @@ export default function ComparatorPageClient() {
           </div>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-6">
+        {!skipWizard && (
+          <AiBriefPanel contextMode="comparator" className="mb-6" />
+        )}
+
+        <form id="logiflow-pipeline-form" onSubmit={onSubmit} className="space-y-6">
           {!skipWizard && step === 1 && (
             <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
               <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>

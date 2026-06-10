@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date, timedelta
 from typing import Any
 
 import requests
@@ -49,6 +50,8 @@ _CITY_ALIASES: dict[str, str] = {
     "pathan": "Pathankot, India",
     "tundla": "Tundla, India",
     "kota": "Kota, India",
+    "prayagraj": "Prayagraj, India",
+    "allahabad": "Prayagraj, India",
 }
 
 _MODE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
@@ -107,6 +110,7 @@ _LLM_INTENT_FIELDS = (
     "priority",
     "cargo_weight_kg",
     "cargo_type",
+    "departure_date",
     "budget_max_inr",
     "deadline_hours",
     "scenario_summary",
@@ -115,6 +119,33 @@ _LLM_INTENT_FIELDS = (
     "traffic_aware",
     "max_transshipments",
 )
+
+_MONTH_NAME_TO_NUM = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
 
 
 def _find_cities(text: str) -> list[str]:
@@ -186,6 +217,97 @@ def _scale_inr_amount(value: float, suffix: str | None) -> float:
     return value
 
 
+def _safe_iso_date(year: int, month: int, day: int) -> str | None:
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _month_num(name: str) -> int | None:
+    return _MONTH_NAME_TO_NUM.get(name.strip().lower())
+
+
+def _parse_named_day_month_year(day_s: str, month_s: str, year_s: str | None) -> str | None:
+    month = _month_num(month_s)
+    if not month:
+        return None
+    year = int(year_s) if year_s else date.today().year
+    return _safe_iso_date(year, month, int(day_s))
+
+
+_DATE_HINT = re.compile(
+    r"\b(?:on|by|for|travel(?:ing)?\s+on)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?"
+    r"(?:\s+of)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"
+    r"|\b\d{1,2}(?:st|nd|rd|th)?\s+of\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
+    re.I,
+)
+
+
+def _text_mentions_travel_date(text: str) -> bool:
+    return bool(_DATE_HINT.search(text) or re.search(r"\b20\d{2}-\d{2}-\d{2}\b", text))
+
+
+def _parse_departure_date(text: str) -> str | None:
+    iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
+    if iso:
+        return iso.group(1)
+
+    dmy = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b", text)
+    if dmy:
+        return _safe_iso_date(int(dmy.group(3)), int(dmy.group(2)), int(dmy.group(1)))
+
+    # "on 15th of June 2026", "15th of June 2026", "on the 15th of June"
+    of_month = re.search(
+        r"\b(?:on|by|for|travel(?:ing)?\s+on)?\s*(?:the\s+)?"
+        r"(\d{1,2})(?:st|nd|rd|th)?\s+of\s+([A-Za-z]{3,9})(?:\s+(20\d{2}))?\b",
+        text,
+        re.I,
+    )
+    if of_month:
+        parsed = _parse_named_day_month_year(of_month.group(1), of_month.group(2), of_month.group(3))
+        if parsed:
+            return parsed
+
+    named = re.search(
+        r"\b(?:on|by|for)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})(?:\s+(20\d{2}))?\b",
+        text,
+        re.I,
+    )
+    if named:
+        parsed = _parse_named_day_month_year(named.group(1), named.group(2), named.group(3))
+        if parsed:
+            return parsed
+
+    # "15 June 2026" without "on"
+    bare = re.search(
+        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})(?:\s+(20\d{2}))\b",
+        text,
+        re.I,
+    )
+    if bare:
+        parsed = _parse_named_day_month_year(bare.group(1), bare.group(2), bare.group(3))
+        if parsed:
+            return parsed
+
+    named_rev = re.search(
+        r"\b([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(20\d{2}))?\b",
+        text,
+        re.I,
+    )
+    if named_rev:
+        parsed = _parse_named_day_month_year(named_rev.group(2), named_rev.group(1), named_rev.group(3))
+        if parsed:
+            return parsed
+
+    if re.search(r"\btomorrow\b", text, re.I):
+        return (date.today() + timedelta(days=1)).isoformat()
+    if re.search(r"\btoday\b", text, re.I):
+        return date.today().isoformat()
+    return None
+
+
 def _parse_budget_inr(text: str) -> float | None:
     patterns = (
         r"(?:max|under|budget|≤|<=|less than|upto|up to)\s*₹?\s*(\d[\d,]*(?:\.\d+)?)\s*([kK]|lakh|lakhs|lac|lacs|cr|crore)?\b",
@@ -213,9 +335,9 @@ def _normalize_llm_intent(parsed: dict[str, Any], user_brief: str, engine: str) 
 
 
 _INTENT_JSON_SCHEMA = (
-    "source, destination, suggested_mode (rail|road|air|water|hybrid), priority (cost|time|safe|balanced),\n"
-    "cargo_weight_kg, cargo_type (General|Fragile|Perishable), budget_max_inr, deadline_hours,\n"
-    "scenario_summary (one line), avoid_tolls, avoid_highways, traffic_aware, max_transshipments.\n"
+    "source, destination, suggested_mode (rail|road|air|water|hybrid|comparator), priority (cost|time|safe|balanced),\n"
+    "cargo_weight_kg, cargo_type (General|Fragile|Perishable), departure_date (ISO yyyy-mm-dd), budget_max_inr,\n"
+    "deadline_hours, scenario_summary (one line), avoid_tolls, avoid_highways, traffic_aware, max_transshipments.\n"
     "Use null for unknown fields. suggested_mode should reflect explicit user preference when stated."
 )
 
@@ -231,10 +353,14 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
     text = user_brief.strip()
     source, destination = _extract_from_to(text)
 
+    departure_date = _parse_departure_date(text)
+
     weight_kg: float | None = None
     for wpat, is_grams in (
         (r"(\d+(?:\.\d+)?)\s*(?:kg|kgs|kilograms?|kilogram|kilo)\b", False),
+        (r"(\d+(?:\.\d+)?)\s*kilo\b", False),
         (r"(\d+(?:\.\d+)?)\s*(?:gram|grams|g)\b", True),
+        (r"(\d+(?:\.\d+)?)kg\b", False),
     ):
         wm = re.search(wpat, text, re.I)
         if wm:
@@ -271,7 +397,11 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
             break
     if cargo_type is None and re.search(r"\b(medicine|medical|pharma|anar|pomegranate|fruit|fruits|perishable)\b", text, re.I):
         cargo_type = "Perishable"
-    if cargo_type is None and re.search(r"\b(wood|timber|lumber|sona|sone|gold)\b", text, re.I):
+    if cargo_type is None and re.search(
+        r"\b(wood|timber|lumber|sona|sone|gold|silver|copper|steel|metal|maal|samaan)\b",
+        text,
+        re.I,
+    ):
         cargo_type = "General"
 
     applied = bool(source and destination)
@@ -280,6 +410,8 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
         summary_parts.append(f"{source} → {destination}")
     if weight_kg:
         summary_parts.append(f"{int(weight_kg)} kg")
+    if departure_date:
+        summary_parts.append(f"depart {departure_date}")
     if cargo_type:
         summary_parts.append(cargo_type)
     if priority != "balanced":
@@ -299,6 +431,7 @@ def _parse_heuristic(user_brief: str, context_mode: str) -> dict[str, Any]:
         "priority": priority,
         "cargo_weight_kg": weight_kg,
         "cargo_type": cargo_type,
+        "departure_date": departure_date,
         "budget_max_inr": budget,
         "deadline_hours": deadline_hours,
         "scenario_brief": text,
@@ -322,6 +455,8 @@ def _place_label_tokens(place: str | None) -> list[str]:
 def _heuristic_needs_llm(text: str, result: dict[str, Any]) -> bool:
     """True when regex output is untrusted — call Gemini/Groq even if fields exist."""
     if not _intent_is_complete(result):
+        return True
+    if _text_mentions_travel_date(text) and not result.get("departure_date"):
         return True
     if _HINGLISH_MARKERS.search(text):
         return True

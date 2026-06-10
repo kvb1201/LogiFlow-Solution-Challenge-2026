@@ -3,10 +3,13 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const BACKEND_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
+const BACKEND_SERVER =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
+
+/** Browser calls use same-origin proxy; SSR uses direct backend URL. */
+const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */
@@ -785,20 +788,30 @@ export async function fetchWaterRoutes(payload: WaterPayload): Promise<WaterRout
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const rawBody = await res.text();
+  let data: unknown = null;
+  try {
+    data = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    data = null;
+  }
+
   if (!res.ok) {
     let detail = '';
-    const rawBody = await res.text();
-    try {
-      const data = rawBody ? JSON.parse(rawBody) : null;
-      if (data && typeof data === 'object' && 'detail' in data) {
-        detail = String((data as { detail?: unknown }).detail ?? '').trim();
-      }
-    } catch {
+    if (data && typeof data === 'object' && 'detail' in data) {
+      detail = String((data as { detail?: unknown }).detail ?? '').trim();
+    } else {
       detail = rawBody.trim();
     }
     throw new Error(detail || `Water optimize failed (${res.status})`);
   }
-  return res.json();
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const obj = data as { status?: string; routes?: WaterRoute[] };
+    if (obj.status === 'no_routes') return [];
+    if (Array.isArray(obj.routes)) return obj.routes;
+  }
+  return Array.isArray(data) ? data : [];
 }
 
 export interface RailMlQuantifier {

@@ -28,6 +28,10 @@ const nextConfig: NextConfig = {
         destination: `${backendBase}/planner/:path*`,
       },
       {
+        source: "/api/backend/:path*",
+        destination: `${backendBase}/:path*`,
+      },
+      {
         source: "/railradar/:path*",
         destination: "https://api.railradar.org/api/v1/:path*",
       },

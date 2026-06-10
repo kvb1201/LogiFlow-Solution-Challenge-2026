@@ -56,7 +56,8 @@ Each returns ranked options or `{status: "no_routes"}`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/comparator/routes` | Run road + rail + air + water in parallel, rank winner |
+| `POST` | `/compare/routes` | Run road + rail + air + water in parallel, rank winner (alias: `/comparator/routes`) |
+| `POST` | `/optimize` | Multimodal compare used by the Comparator UI |
 | `POST` | `/compose` | Chained multimodal itineraries via hub templates |
 | `POST` | `/explain` | Standalone explanation for a chosen route |
 

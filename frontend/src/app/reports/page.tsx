@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ReportsPage } from '@/components/planner/ReportsPage';
 
@@ -9,7 +10,9 @@ export const metadata = {
 export default function ReportsRoute() {
   return (
     <ProtectedRoute>
-      <ReportsPage />
+      <Suspense fallback={null}>
+        <ReportsPage />
+      </Suspense>
     </ProtectedRoute>
   );
 }

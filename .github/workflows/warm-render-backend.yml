@@ -1,5 +1,7 @@
 # Keeps the Render backend warm. Pings every 5 minutes (GitHub cron minimum granularity).
-# REQUIRED: repo secret BACKEND_URL = https://logiflow-solution-challenge-2026.onrender.com
+# REQUIRED: repo secret BACKEND_URL (pick one):
+#   Cloudflare Worker proxy: https://logiflow-render-proxy.ojas-logiflow.workers.dev
+#   Direct Render:           https://logiflow-solution-challenge-2026.onrender.com
 # Without that secret this workflow exits immediately and does nothing.
 name: Warm Render backend
 

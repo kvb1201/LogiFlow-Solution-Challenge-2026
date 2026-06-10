@@ -466,7 +466,7 @@ export default function RoadInputForm() {
   };
 
   return (
-    <div className="w-full space-y-4">
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
       <AiBriefPanel contextMode="road" />
       <FormShell
         mode="road"

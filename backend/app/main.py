@@ -5,9 +5,15 @@ from dotenv import load_dotenv
 # Always load backend/.env before route imports (auth, DB, etc.)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+from app.middleware.rate_limit import limiter
 from app.routes.optimize import router as optimize_router
+from app.routes.comparator import alias_router as comparator_alias_router
 from app.routes.comparator import router as comparator_router
 from app.routes.rail_routes import router as rail_router
 from app.routes.road_routes import road_router
@@ -21,6 +27,9 @@ from app.routes.location_routes import location_router
 from app.routes.auth_routes import router as auth_router
 from app.routes.planner_routes import router as planner_router
 app = FastAPI(title="LogiFlow — Multimodal Cargo Optimizer")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS — allow Vercel frontend, localhost dev, and Capacitor mobile apps
 app.add_middleware(
@@ -29,6 +38,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://logi-flow-solution-challenge-2026.vercel.app",
+        "https://logiflow.in",
+        "https://www.logiflow.in",
     ],
     allow_origin_regex=".*",  # for mobile apps (Capacitor sends no origin / origin=null)
     allow_credentials=True,
@@ -87,12 +98,14 @@ async def startup_event():
 
 
 @app.get("/health")
-def health_check():
+@limiter.exempt
+def health_check(request: Request):
     return {"status": "ok"}
 
 
 app.include_router(optimize_router)
 app.include_router(comparator_router)
+app.include_router(comparator_alias_router)
 app.include_router(rail_router)
 app.include_router(road_router)
 app.include_router(water_router)

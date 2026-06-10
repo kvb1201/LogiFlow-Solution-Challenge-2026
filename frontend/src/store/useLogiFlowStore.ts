@@ -229,7 +229,10 @@ export interface LogiFlowState {
   /** Load live delay + status for a train (route card or map) */
   fetchTrainDelayAndLive: (trainNumber: string) => Promise<void>;
   setMapFocusedTrain: (trainNumber: string | null) => void;
+  /** Full reset (logo / new session) — clears corridor + results */
   resetSearch: () => void;
+  /** Back to form from results — keeps corridor, brief, and parsed intent */
+  resetResults: () => void;
 }
 
 export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
@@ -302,6 +305,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   setDeadlineHours: (val) => set({ deadlineHours: val }),
   setScenarioBrief: (val) => set({ scenarioBrief: val }),
   applyParsedIntent: (parsed) => {
+    get().resetResults();
     const state = get();
     buildIntentPatch(parsed, set, state);
   },
@@ -328,36 +332,51 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
   reorderRoadStops: (stops) => set({ roadStops: stops }),
   setOptimizeStopOrder: (val) => set({ optimizeStopOrder: val }),
 
-  resetSearch: () => set({
-    hasSearched: false,
-    loading: false,
-    loadingMode: null,
-    railLoadingStep: -1,
-    railLoadingDetail: '',
-    railLoadingStartedAt: null,
-    recommendations: { cheapest: null, fastest: null, safest: null },
-    allOptions: [],
-    airRoutes: [],
-    selectedAirRouteIndex: 0,
-    airConstraintsApplied: null,
-    selectedOptionIndex: 0,
-    routes: [],
-    selectedRoute: 0,
-    roadNoRoutesReason: null,
-    searchMode: 'rail',
-    error: null,
-    trainDelayDetail: null,
-    selectedTrainLive: null,
-    detailTrainNumber: null,
-    mapFocusedTrainNumber: null,
-    stationSuggestions: [],
-    waterRoutes: [],
-    selectedWaterRoute: 0,
-    scenarioBrief: '',
-    lastParsedIntent: null,
-    roadStops: [],
-    optimizeStopOrder: false,
-  }),
+  resetResults: () =>
+    set({
+      hasSearched: false,
+      loading: false,
+      loadingMode: null,
+      railLoadingStep: -1,
+      railLoadingDetail: '',
+      railLoadingStartedAt: null,
+      recommendations: { cheapest: null, fastest: null, safest: null },
+      allOptions: [],
+      airRoutes: [],
+      selectedAirRouteIndex: 0,
+      airConstraintsApplied: null,
+      selectedOptionIndex: 0,
+      routes: [],
+      selectedRoute: 0,
+      roadNoRoutesReason: null,
+      error: null,
+      trainDelayDetail: null,
+      selectedTrainLive: null,
+      detailTrainNumber: null,
+      mapFocusedTrainNumber: null,
+      stationSuggestions: [],
+      waterRoutes: [],
+      selectedWaterRoute: 0,
+      roadStops: [],
+      optimizeStopOrder: false,
+    }),
+
+  resetSearch: () => {
+    get().resetResults();
+    set({
+      source: '',
+      destination: '',
+      priority: 'cost',
+      cargoWeight: 100,
+      cargoType: 'General',
+      departureDate: new Date().toISOString().split('T')[0],
+      budgetMax: 50000,
+      deadlineHours: 48,
+      scenarioBrief: '',
+      lastParsedIntent: null,
+      searchMode: 'rail',
+    });
+  },
 
   // ── Main optimize call ─────────────────────────────────────────────
   handleOptimize: async (opts) => {

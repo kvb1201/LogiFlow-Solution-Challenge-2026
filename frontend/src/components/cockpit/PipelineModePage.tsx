@@ -5,6 +5,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { pipelinePageMeta } from '@/lib/pipeline-page-meta';
 import { isWaterNoRouteMessage } from '@/lib/water-no-route';
+import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import { PipelineModeLanding } from './PipelineModeLanding';
 import { PipelineResultsChrome } from './PipelineResultsChrome';
 
@@ -19,11 +20,13 @@ export function PipelineModePage({
   form: ReactNode;
   results: ReactNode;
 }) {
+  const config = pipelinePageMeta[mode];
+  usePlannerRegenerateParams(config.storeMode);
+
   const hasSearched = useLogiFlowStore((s) => s.hasSearched);
   const loading = useLogiFlowStore((s) => s.loading);
   const loadingMode = useLogiFlowStore((s) => s.loadingMode);
   const error = useLogiFlowStore((s) => s.error);
-  const config = pipelinePageMeta[mode];
   const showLoading = loading && loadingMode === config.storeMode;
   const hideErrorBanner = mode === 'water' && isWaterNoRouteMessage(error);
 

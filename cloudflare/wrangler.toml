@@ -1,0 +1,5 @@
+name = "logiflow-render-proxy"
+main = "workers/logiflow-render-proxy.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+account_id = "00e6849a8c7cc94f5c597dd9c4feb6b5"
