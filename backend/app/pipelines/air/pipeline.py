@@ -1,4 +1,5 @@
 from copy import deepcopy
+import logging
 
 from app.pipelines.air.config import CITY_TO_AIRPORT
 from app.pipelines.air.engine import score_routes
@@ -8,6 +9,8 @@ from app.services.air_data_service import get_live_air_routes
 from app.services.airport_locator_service import resolve_city_to_airport
 from app.services.air_weather_service import get_route_weather_context
 from app.services.air_timezone_service import build_route_schedule
+
+logger = logging.getLogger(__name__)
 
 
 class AirPipeline(BasePipeline):
@@ -163,7 +166,14 @@ class AirPipeline(BasePipeline):
 
             stops = int(route.get("stops", 0))
             time = float(route.get("duration", 0))
-            cost_breakdown = self._build_cost_breakdown(route, payload, cargo_rule, weather_risk, congestion_risk, reliability)
+            cost_breakdown = self._build_cost_breakdown(
+                route,
+                payload,
+                cargo_rule,
+                weather_risk,
+                congestion_risk,
+                reliability,
+            )
             cost = cost_breakdown["finalCost"]
 
             # Apply simulation mode to cost
@@ -429,7 +439,7 @@ class AirPipeline(BasePipeline):
         route["eta"] = f"{route['time']} hrs"
         return route
 
-    def _build_cost_breakdown(self, route, payload, cargo_rule, weather_risk, congestion_score, otp_score):
+    def _build_cost_breakdown(self, route, payload, cargo_rule, weather_risk, congestion_risk, reliability):
         actual_weight = payload["cargo_weight"]
         volumetric_weight = payload["volumetric_weight"]
         chargeable_weight = payload["chargeable_weight"]
@@ -471,8 +481,8 @@ class AirPipeline(BasePipeline):
         
         cost_multiplier = 1.0
         weather_adj = weather_risk * 0.10
-        congestion_adj = congestion_score * 0.15
-        otp_adj = (1.0 - otp_score) * 0.10
+        congestion_adj = congestion_risk * 0.15
+        otp_adj = (1.0 - reliability) * 0.10
         
         cost_multiplier += weather_adj + congestion_adj + otp_adj
         cost_multiplier = max(1.0, min(cost_multiplier, 1.5))
@@ -582,6 +592,7 @@ class AirPipeline(BasePipeline):
         return "watch"
 
     def generate(self, source, destination, payload=None, context=None):
+        normalized = None
         try:
             normalized = self._get_payload(payload)
             mode = normalized.get("mode", "realtime")
@@ -659,7 +670,7 @@ class AirPipeline(BasePipeline):
             }
 
         except Exception as e:
-            print("[AIR PIPELINE ERROR]", str(e), type(e))
+            logger.exception("Air pipeline failed")
             return {
                 "mode": "air",
                 "simulation": normalized.get("mode") == "simulation" if normalized else False,

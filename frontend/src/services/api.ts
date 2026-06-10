@@ -3,10 +3,14 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const BACKEND_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
+const backendUrl =
+  (typeof process !== 'undefined' && process.env.BACKEND_URL?.trim()) ||
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL?.trim()) ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
+
+const BACKEND_BASE =
+  typeof window !== 'undefined' ? '/api' : backendUrl.replace(/\/$/, '');
 const RAILRADAR_BASE = '/railradar';
 
 /** Client-side key for RailRadar via Next rewrite. Must be set in `frontend/.env.local` as NEXT_PUBLIC_RAILRADAR_API_KEY. */

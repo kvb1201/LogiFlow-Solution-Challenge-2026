@@ -21,6 +21,7 @@ GLOBAL_AIRPORT_MATCH_THRESHOLD_KM = 150.0
 
 CITY_TO_AIRPORT = {
     "Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
+    "New Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
     "Mumbai": {"code": "BOM", "name": "Chhatrapati Shivaji Maharaj International Airport"},
     "Bengaluru": {"code": "BLR", "name": "Kempegowda International Airport"},
     "Bangalore": {"code": "BLR", "name": "Kempegowda International Airport"},
@@ -54,6 +55,7 @@ CITY_ALIASES = {
     "madras": "Chennai",
     "tirupati": "Tirupati",
     "delhi": "Delhi",
+    "new delhi": "New Delhi",
     "mumbai": "Mumbai",
     "hyderabad": "Hyderabad",
     "kolkata": "Kolkata",
