@@ -9,6 +9,11 @@ import {
   type ComposeResult,
 } from '@/services/api';
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
+import { HybridMetricsStrip } from '@/components/hybrid/HybridMetricItem';
+import { HYBRID_CAPABILITY_BADGES } from '@/lib/hybrid-metrics';
+import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
+import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
+import { PIPELINE_CARD_CLASS, accentVar } from '@/lib/pipeline-theme';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
@@ -63,12 +68,9 @@ export default function HybridPageClient() {
   const [result, setResult] = useState<ComposeResult | null>(null);
   const [failureContext, setFailureContext] = useState<ComposeResult | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  /** Reason string when road is rejected as an invalid corridor by the backend. */
   const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
-  const skipWizard = loading || Boolean(result?.recommended);
-  const showForm = !skipWizard;
-  const showBriefPanel = !skipWizard || Boolean(error || failureContext);
+  const inResultsView = loading || Boolean(result?.recommended) || Boolean(error && autoTriggered);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -128,9 +130,7 @@ export default function HybridPageClient() {
       }
 
       const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
-      if (roadUnavail) {
-        setRoadUnavailableReason(roadUnavail);
-      }
+      if (roadUnavail) setRoadUnavailableReason(roadUnavail);
 
       setFailureContext(null);
       setResult(data);
@@ -177,6 +177,7 @@ export default function HybridPageClient() {
     setFailureContext(null);
     setRoadUnavailableReason(null);
     setAutoTriggered(false);
+    setError(null);
     setStep(stepTarget);
   }
 
@@ -199,9 +200,7 @@ export default function HybridPageClient() {
     const state = useLogiFlowStore.getState();
     if (!state.source.trim() || !state.destination.trim()) return;
 
-    if (state.scenarioBrief?.trim()) {
-      setScenarioBrief(state.scenarioBrief);
-    }
+    if (state.scenarioBrief?.trim()) setScenarioBrief(state.scenarioBrief);
     markShipmentAutorunStarted('hybrid');
     beginComposeRun();
   }, [beginComposeRun]);
@@ -211,174 +210,187 @@ export default function HybridPageClient() {
     void runCompose();
   }
 
-  return (
-    <div className="relative min-h-full pb-16">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-        {/* Header — compact */}
-        <header className="mb-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-300/80 mb-1">
-            Hybrid
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-on-surface tracking-tight">
-            Multimodal routes
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            Chain trains, flights, and more through hub cities.{' '}
-            <Link href="/comparator" className="text-violet-300 hover:underline">
-              Compare single modes
-            </Link>
-          </p>
-        </header>
-
-        {showBriefPanel && (
-          <AiBriefPanel
-            contextMode="hybrid"
-            className="mb-6"
-            onIntentApplied={handleIntentApplied}
+  const stepDots = (
+    <div className="flex items-center gap-2 mb-6">
+      {STEPS.map((label, i) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => !loading && setStep(i)}
+          className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+            step === i ? 'text-foreground' : 'text-muted-foreground hover:text-on-surface-variant'
+          }`}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{
+              background: step >= i ? 'var(--hybrid)' : 'var(--border)',
+            }}
           />
-        )}
+          {label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={loadDemo}
+        className="ml-auto text-[11px] text-muted-foreground hover:brightness-110"
+      >
+        Demo
+      </button>
+    </div>
+  );
 
-        {/* Step dots — minimal */}
-        {(showForm || loading) && (
-          <div className="flex items-center gap-2 mb-6">
-            {STEPS.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => !loading && setStep(i)}
-                className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                  step === i ? 'text-violet-300' : 'text-muted-foreground hover:text-on-surface-variant'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    step >= i ? 'bg-violet-400' : 'bg-border'
-                  }`}
-                />
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={loadDemo}
-              className="ml-auto text-[11px] text-muted-foreground hover:text-violet-300"
-            >
-              Demo
-            </button>
-          </div>
-        )}
+  const corridorForm = (
+    <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+      <CorridorRow
+        accentVar="--hybrid"
+        swapDisabled={!source.trim() && !destination.trim()}
+        onSwap={() => {
+          const t = source;
+          setSource(destination);
+          setDestination(t);
+        }}
+      >
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="Lucknow"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--hybrid)_40%,transparent)]"
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">To</span>
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="Delhi"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--hybrid)_40%,transparent)]"
+          />
+        </label>
+      </CorridorRow>
+      <div className="grid grid-cols-3 gap-3">
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
+          <input
+            type="number"
+            value={cargoWeight}
+            onChange={(e) => setCargoWeight(Number(e.target.value))}
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+          />
+        </label>
+        <label className="block col-span-2">
+          <span className="text-xs text-muted-foreground mb-1.5 block">Priority</span>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+          >
+            <option value="balanced">Balanced</option>
+            <option value="time">Fastest</option>
+            <option value="cost">Cheapest</option>
+            <option value="safe">Safest</option>
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={() => setStep(1)}
+        disabled={!source.trim() || !destination.trim()}
+        className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold disabled:opacity-40"
+      >
+        Continue
+      </button>
+    </div>
+  );
 
-        {/* Status strip when autorunning */}
-        {autoTriggered && (loading || result?.recommended) && (
-          <p className="text-xs text-muted-foreground mb-4 font-mono truncate">
-            {source} → {destination}
-            {cargoWeight ? ` · ${cargoWeight} kg` : ''}
-          </p>
-        )}
+  const briefForm = (
+    <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+      <label className="block">
+        <span className="text-xs text-muted-foreground mb-1.5 block">
+          Brief <span className="text-outline">(optional)</span>
+        </span>
+        <ParagraphInputWithStt
+          value={scenarioBrief}
+          onChange={setScenarioBrief}
+          rows={3}
+          placeholder="Time-critical, OK with train then flight…"
+          className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm resize-none min-h-[80px]"
+          lang="en-IN"
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+          style={{ background: 'var(--hybrid)' }}
+        >
+          Find route
+        </button>
+        <button
+          type="button"
+          onClick={() => setStep(0)}
+          className="px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground"
+        >
+          Back
+        </button>
+      </div>
+    </div>
+  );
 
+  if (!inResultsView) {
+    return (
+      <PipelineLogiLanding
+        mode="hybrid"
+        badge="Hybrid · Multimodal route composer"
+        description={
+          <>
+            Chain{' '}
+            <span style={{ color: accentVar('hybrid') }} className="font-medium">
+              rail, road, and air
+            </span>{' '}
+            through hub cities — village feeder access, changeover scoring, and ranked itineraries.
+          </>
+        }
+        metrics={<HybridMetricsStrip />}
+        badges={HYBRID_CAPABILITY_BADGES}
+        footer={
+          <>
+            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">
+              9,524 mapped stations · 56 interchange hubs · 55s compose budget
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Or{' '}
+              <Link href="/comparator" className="hover:underline" style={{ color: accentVar('comparator') }}>
+                compare single modes
+              </Link>
+            </p>
+          </>
+        }
+      >
+        <AiBriefPanel contextMode="hybrid" className="mb-6" onIntentApplied={handleIntentApplied} />
+        {stepDots}
         <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
-          {showForm && step === 0 && (
-            <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
-              <CorridorRow
-                accentVar="--hybrid"
-                swapDisabled={!source.trim() && !destination.trim()}
-                onSwap={() => {
-                  const t = source;
-                  setSource(destination);
-                  setDestination(t);
-                }}
-              >
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
-                  <input
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    placeholder="Lucknow"
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-violet-400/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">To</span>
-                  <input
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="Delhi"
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-violet-400/40"
-                  />
-                </label>
-              </CorridorRow>
-              <div className="grid grid-cols-3 gap-3">
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
-                  <input
-                    type="number"
-                    value={cargoWeight}
-                    onChange={(e) => setCargoWeight(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
-                  />
-                </label>
-                <label className="block col-span-2">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">Priority</span>
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
-                  >
-                    <option value="balanced">Balanced</option>
-                    <option value="time">Fastest</option>
-                    <option value="cost">Cheapest</option>
-                    <option value="safe">Safest</option>
-                  </select>
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                disabled={!source.trim() || !destination.trim()}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold disabled:opacity-40"
-              >
-                Continue
-              </button>
-            </div>
-          )}
-
-          {showForm && step === 1 && (
-            <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
-              <label className="block">
-                <span className="text-xs text-muted-foreground mb-1.5 block">
-                  Brief <span className="text-outline">(optional)</span>
-                </span>
-                <ParagraphInputWithStt
-                  value={scenarioBrief}
-                  onChange={setScenarioBrief}
-                  rows={3}
-                  placeholder="Time-critical, OK with train then flight…"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm resize-none min-h-[80px]"
-                  lang="en-IN"
-                />
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg bg-violet-500 text-white text-sm font-semibold disabled:opacity-50"
-                >
-                  Find route
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep(0)}
-                  className="px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground"
-                >
-                  Back
-                </button>
-              </div>
-            </div>
-          )}
+          {step === 0 && corridorForm}
+          {step === 1 && briefForm}
         </form>
+      </PipelineLogiLanding>
+    );
+  }
 
+  return (
+    <>
+      <PipelineResultsLayout
+        mode="hybrid"
+        source={source}
+        destination={destination}
+        cargoWeight={cargoWeight}
+        onEdit={() => resetToEdit(0)}
+      >
         {error && (
-          <div className="mt-4 space-y-4">
+          <div className="mb-6 space-y-4">
             {failureContext ? (
               <ComposeFailurePanel
                 result={failureContext}
@@ -404,14 +416,14 @@ export default function HybridPageClient() {
 
         {loading && <MultimodalPipelineLoading variant="compose" />}
 
-        {/* Road segment unavailable — shown as an informational notice, not an error */}
         {roadUnavailableReason && !loading && (
-          <div className="mt-4">
+          <div className="mb-3">
             <InvalidCorridorCard
               mode="road"
               source={source}
               destination={destination}
               reason={roadUnavailableReason}
+              compact
             />
           </div>
         )}
@@ -423,7 +435,7 @@ export default function HybridPageClient() {
             onSave={() => setSaveModalOpen(true)}
           />
         )}
-      </div>
+      </PipelineResultsLayout>
 
       <SaveReportModal
         isOpen={saveModalOpen}
@@ -431,16 +443,18 @@ export default function HybridPageClient() {
         prefill={{
           source,
           destination,
-          stops: result?.recommended?.segments?.map(s => String(s.to_city)).slice(0, -1) || [],
+          stops: result?.recommended?.segments?.map((s) => String(s.to_city)).slice(0, -1) || [],
           mode: 'hybrid',
           cargoType,
           optimizationInput: { priority },
           optimizationResult: result?.recommended as unknown as Record<string, unknown>,
           estimatedCost: result?.recommended?.total_cost_inr,
           estimatedTime: result?.recommended?.total_time_hr,
-          riskScore: (result?.recommended as any)?.total_risk_score || (result?.recommended as any)?.risk_score,
+          riskScore:
+            (result?.recommended as { total_risk_score?: number; risk_score?: number })?.total_risk_score ||
+            (result?.recommended as { risk_score?: number })?.risk_score,
         }}
       />
-    </div>
+    </>
   );
 }

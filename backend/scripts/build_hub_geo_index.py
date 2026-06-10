@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build offline hub spatial index from PDF stations + station_coords_cache.json."""
+"""Build offline rail station spatial index from PDF stations + station_coords_cache.json."""
 from __future__ import annotations
 
 import json
@@ -41,6 +41,8 @@ def build_index() -> list[dict]:
         if not isinstance(row, dict):
             continue
         code = str(raw_code).upper()
+        if code in seen:
+            continue
         try:
             lat = float(row["lat"])
             lng = float(row["lng"])
@@ -53,9 +55,7 @@ def build_index() -> list[dict]:
         district = _title(meta.get("district") or meta.get("city") or "")
         station_name = str(row.get("name") or meta.get("name") or "").strip()
         label = district or _title(station_name) or code
-        if dedupe in seen:
-            continue
-        seen.add(dedupe)
+        seen.add(code)
 
         entries.append(
             {
@@ -79,11 +79,12 @@ def main() -> int:
     payload = {
         "version": 1,
         "count": len(entries),
+        "kind": "rail_station",
         "source": "stations_from_pdf_cache.json + station_coords_cache.json",
         "entries": entries,
     }
     OUT_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=0), encoding="utf-8")
-    print(f"Wrote {len(entries)} hub entries → {OUT_PATH}")
+    print(f"Wrote {len(entries)} station entries → {OUT_PATH}")
     return 0 if len(entries) >= 1000 else 1
 
 

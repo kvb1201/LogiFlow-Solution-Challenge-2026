@@ -14,6 +14,8 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import IntentConfirmModal from '@/components/IntentConfirmModal';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
+import type { LogisticsMode } from '@/lib/mode-meta';
+import { accentMix, accentVar } from '@/lib/pipeline-theme';
 
 type AiBriefPanelProps = {
   contextMode: IntentContextMode;
@@ -24,9 +26,16 @@ type AiBriefPanelProps = {
   /** Called after a successful parse — mode is fill-only vs run-optimize */
   onIntentApplied?: (parsed: ParsedIntent, action: 'fill' | 'run') => void;
   className?: string;
+  /** Nested inside another card (e.g. home) — no outer shell or duplicate header */
+  embedded?: boolean;
 };
 
-function IntentChips({ parsed }: { parsed: ParsedIntent }) {
+function contextAccentMode(contextMode: IntentContextMode): LogisticsMode {
+  if (contextMode === 'home') return 'hybrid';
+  return contextMode as LogisticsMode;
+}
+
+function IntentChips({ parsed, mode }: { parsed: ParsedIntent; mode: LogisticsMode }) {
   const chips: string[] = [];
   if (parsed.source && parsed.destination) chips.push(`${parsed.source} → ${parsed.destination}`);
   if (parsed.suggested_mode) chips.push(`Mode: ${parsed.suggested_mode}`);
@@ -41,7 +50,12 @@ function IntentChips({ parsed }: { parsed: ParsedIntent }) {
       {chips.map((c) => (
         <span
           key={c}
-          className="text-[10px] font-semibold px-2.5 py-1 rounded-full border border-violet-400/25 bg-violet-500/10 text-violet-100"
+          className="text-[10px] font-semibold px-2.5 py-1 rounded-full border"
+          style={{
+            borderColor: accentMix(mode, 28, 'transparent'),
+            background: accentMix(mode, 10, 'transparent'),
+            color: accentMix(mode, 85, 'white'),
+          }}
         >
           {c}
         </span>
@@ -56,6 +70,7 @@ export default function AiBriefPanel({
   showRouteButton = false,
   onIntentApplied,
   className = '',
+  embedded = false,
 }: AiBriefPanelProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -204,6 +219,9 @@ export default function AiBriefPanel({
     }
   }
 
+  const accentMode = contextAccentMode(contextMode);
+  const accent = accentVar(accentMode);
+
   const title =
     contextMode === 'home'
       ? 'Describe your shipment'
@@ -211,50 +229,78 @@ export default function AiBriefPanel({
 
   return (
     <div
-      className={`rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/[0.08] via-surface-container-low/60 to-transparent p-5 sm:p-6 ${className}`}
+      className={
+        embedded
+          ? className
+          : `pipeline-card p-4 sm:p-5 ${className}`
+      }
+      style={
+        embedded
+          ? undefined
+          : {
+              borderColor: accentMix(accentMode, 22, 'var(--border)'),
+              background: `linear-gradient(135deg, ${accentMix(accentMode, 7, 'transparent')} 0%, color-mix(in oklab, var(--surface) 40%, transparent) 100%)`,
+            }
+      }
     >
-      <div className="flex items-start gap-2 mb-3">
-        <span
-          className="material-symbols-outlined text-violet-300 shrink-0"
-          style={{ fontVariationSettings: "'FILL' 1" }}
-          aria-hidden
-        >
-          auto_awesome
-        </span>
-        <div>
-          <h3 className="text-sm font-bold text-on-surface">{title}</h3>
-          <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
-            Write in English, Hindi, or Hinglish. We extract origin, destination, weight, budget,
-            and preferred transport mode.
-          </p>
+      {!embedded && (
+        <div className="flex items-start gap-2 mb-3">
+          <span
+            className="material-symbols-outlined shrink-0"
+            style={{ color: accent, fontVariationSettings: "'FILL' 1" }}
+            aria-hidden
+          >
+            auto_awesome
+          </span>
+          <div>
+            <h3 className="text-sm font-bold text-on-surface">{title}</h3>
+            <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
+              Write in English, Hindi, or Hinglish. We extract origin, destination, weight, budget,
+              and preferred transport mode.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
-      <ParagraphInputWithStt
-        value={text}
-        onChange={(v) => {
-          setText(v);
-          if (
-            parsed &&
-            v.trim() !== (parsed.scenario_brief || scenarioBrief || '').trim()
-          ) {
-            setParsed(null);
-            setFillNotice(null);
-            setError(null);
-          }
-        }}
-        rows={contextMode === 'home' ? 5 : 4}
-        placeholder="e.g. I have 80kg medicines from Delhi to Chennai, max ₹12,000, need delivery within 2 days, prefer train not flight…"
-        className="px-4 py-3 rounded-xl border border-violet-400/25 bg-surface-container-lowest text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-violet-400/35 resize-y min-h-[100px]"
-        lang="en-IN"
-      />
+      {embedded && (
+        <p className="mb-3 text-xs text-muted-foreground leading-relaxed">
+          Write in English, Hindi, or Hinglish. We extract origin, destination, weight, budget, and
+          preferred transport mode.
+        </p>
+      )}
+
+      <div style={{ ['--brief-accent' as string]: accent }}>
+        <ParagraphInputWithStt
+          value={text}
+          onChange={(v) => {
+            setText(v);
+            if (
+              parsed &&
+              v.trim() !== (parsed.scenario_brief || scenarioBrief || '').trim()
+            ) {
+              setParsed(null);
+              setFillNotice(null);
+              setError(null);
+            }
+          }}
+          rows={contextMode === 'home' ? 5 : 4}
+          placeholder="e.g. I have 80kg medicines from Delhi to Chennai, max ₹12,000, need delivery within 2 days, prefer train not flight…"
+          className="px-4 py-3 rounded-lg border border-border/55 bg-surface-container-lowest/80 text-on-surface text-sm placeholder:text-outline/50 focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--brief-accent)_40%,transparent)] resize-y min-h-[100px]"
+          lang="en-IN"
+        />
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           disabled={loading}
           onClick={() => runParse(false)}
-          className="px-4 py-2.5 rounded-xl bg-violet-500/20 border border-violet-400/35 text-sm font-semibold text-violet-100 hover:bg-violet-500/30 disabled:opacity-50"
+          className="px-4 py-2.5 rounded-lg border text-sm font-semibold disabled:opacity-50 transition-colors hover:brightness-110"
+          style={{
+            borderColor: accentMix(accentMode, 35, 'transparent'),
+            background: accentMix(accentMode, 18, 'transparent'),
+            color: accentMix(accentMode, 90, 'white'),
+          }}
         >
           {loading ? 'Understanding…' : 'Understand & fill form'}
         </button>
@@ -285,11 +331,14 @@ export default function AiBriefPanel({
       )}
 
       {parsed?.scenario_summary && (
-        <p className="mt-3 text-xs text-on-surface-variant border-l-2 border-violet-400/40 pl-3">
+        <p
+          className="mt-3 text-xs text-on-surface-variant border-l-2 pl-3"
+          style={{ borderColor: accentMix(accentMode, 40, 'transparent') }}
+        >
           {parsed.scenario_summary}
         </p>
       )}
-      {parsed && <IntentChips parsed={parsed} />}
+      {parsed && <IntentChips parsed={parsed} mode={accentMode} />}
 
       <IntentConfirmModal
         open={confirmOpen}

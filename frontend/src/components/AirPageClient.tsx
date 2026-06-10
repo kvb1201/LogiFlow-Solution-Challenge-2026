@@ -5,6 +5,9 @@ import AirInputForm from '@/components/AirInputForm';
 import AirResults from '@/components/AirResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import Link from "next/link";
+import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
+import { CapabilityStrip } from '@/components/cockpit/CapabilityStrip';
+import { AIR_CAPABILITY_BADGES } from '@/lib/air-metrics';
 
 export default function AirPageClient() {
   usePlannerRegenerateParams('air');
@@ -81,23 +84,7 @@ export default function AirPageClient() {
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {[
-                { icon: 'flight_takeoff', label: 'Flight Support' },
-                { icon: 'inventory_2', label: 'Cargo Rules' },
-                { icon: 'monitoring', label: 'Confidence Scoring' },
-                { icon: 'route', label: 'Ranked Routes' },
-              ].map((feature, i) => (
-                <div
-                  key={feature.label}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{ animationDelay: `${0.5 + i * 0.15}s`, animationFillMode: 'backwards' }}
-                >
-                  <span className="material-symbols-outlined text-primary text-sm">{feature.icon}</span>
-                  {feature.label}
-                </div>
-              ))}
-            </div>
+            <CapabilityStrip badges={AIR_CAPABILITY_BADGES} mode="air" className="mb-8" />
 
             <AirInputForm />
 
@@ -113,81 +100,17 @@ export default function AirPageClient() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-x-hidden min-h-0 bg-[var(--color-background)] text-[var(--color-on-surface)]">
-      <div className="relative border-b border-outline-variant/10 overflow-hidden bg-[#06080d]">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute w-[520px] h-[520px] rounded-full opacity-[0.11] blur-[100px] bg-sky-500 -top-[40%] right-[-15%] animate-mesh-1" />
-          <div className="absolute w-[420px] h-[420px] rounded-full opacity-[0.07] blur-[90px] bg-primary bottom-[-35%] left-[-10%] animate-mesh-2" />
-        </div>
-        <div className="relative max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-11">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 mb-4">
-                <span
-                  className="material-symbols-outlined text-sky-300 leading-none"
-                  style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-                >
-                  flight_takeoff
-                </span>
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-sky-200/90">
-                  Air cargo
-                </span>
-              </div>
-              <h1 className="font-headline text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-on-surface mb-3">
-                Air route optimization
-              </h1>
-              <p className="text-[15px] text-on-surface-variant max-w-2xl leading-relaxed">
-                Rank direct and connecting airport pairs with cargo rules, cost breakdowns, and
-                confidence—alongside{' '}
-                <Link href="/railway" className="text-primary hover:underline underline-offset-2">
-                  rail
-                </Link>{' '}
-                and{' '}
-                <Link href="/road" className="text-secondary hover:underline underline-offset-2">
-                  road
-                </Link>{' '}
-                in one workflow.
-              </p>
-              <div className="flex flex-wrap items-center gap-4 mt-5 text-xs font-medium text-sky-200/70 uppercase tracking-wider">
-                <span><strong className="text-sky-100 font-bold text-[13px]">70</strong> Airports</span>
-                <span className="w-1 h-1 rounded-full bg-sky-500/50"></span>
-                <span><strong className="text-sky-100 font-bold text-[13px]">1,051</strong> Active Routes</span>
-                <span className="w-1 h-1 rounded-full bg-sky-500/50"></span>
-                <span><strong className="text-sky-100 font-bold text-[13px]">8</strong> Airlines</span>
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={resetResults}
-                className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">restart_alt</span>
-                Reset
-              </button>
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">home</span>
-                Home
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-8 sm:py-10 space-y-6">
+    <PipelineResultsLayout mode="air" source={source} destination={destination} onEdit={resetResults}>
         {error && showNoRoutePage ? (
-          <div className="rounded-2xl border border-outline-variant/12 bg-surface-container-low/40 p-6 text-sm text-on-surface-variant leading-relaxed">
+          <div className="pipeline-card p-4 text-sm text-on-surface-variant leading-relaxed">
             No route available right now. Try a different city pair, relax the cargo constraints, or switch to the hybrid optimizer.
           </div>
         ) : null}
 
         <AirInputForm />
 
-        {error && (
-          <div className="bg-error/10 border border-error/20 px-4 py-3 rounded-xl text-sm text-error flex items-center gap-2">
+        {error && !showNoRoutePage && (
+          <div className="bg-error/10 border border-error/20 px-4 py-3 rounded-lg text-sm text-error flex items-center gap-2 mt-4">
             <span className="material-symbols-outlined text-sm">error</span>
             {error}
           </div>
@@ -203,14 +126,14 @@ export default function AirPageClient() {
         )}
 
         {!loading && !hasResults && !hasSearched && (
-          <div className="rounded-2xl border border-outline-variant/12 bg-surface-container-low/35 p-6 text-sm text-on-surface-variant leading-relaxed">
+          <div className="pipeline-card p-4 text-sm text-on-surface-variant leading-relaxed mt-4">
             Enter origin and destination cities, set cargo and priority, then submit to see ranked air
             routes with airlines, stops, cost, and confidence.
           </div>
         )}
 
         {!loading && !hasResults && hasSearched && searchMode === 'air' && (
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex items-start gap-3">
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3 mt-4">
             <span
               className="material-symbols-outlined text-amber-400 mt-0.5"
               style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
@@ -235,7 +158,7 @@ export default function AirPageClient() {
 
         {!loading && hasResults && (
           <>
-            <p className="text-sm text-on-surface-variant px-0.5">
+            <p className="text-sm text-on-surface-variant px-0.5 mb-4">
               Showing {airRoutes.length} ranked route{airRoutes.length !== 1 ? 's' : ''} for{' '}
               <span className="text-on-surface font-medium">
                 {source || 'origin'} → {destination || 'destination'}
@@ -245,7 +168,6 @@ export default function AirPageClient() {
             <AirResults />
           </>
         )}
-      </div>
-    </div>
+    </PipelineResultsLayout>
   );
 }

@@ -49,16 +49,13 @@ export function FormShell({
   const accent = modeMeta[mode].accent;
 
   return (
-    <div
-      className="panel-hard scanline overflow-hidden rounded-2xl"
-      style={{ boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 18%, transparent)` }}
-    >
+    <div className="pipeline-card overflow-hidden">
       <div
         aria-hidden
-        className="h-px w-full"
+        className="h-px w-full opacity-70"
         style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
       />
-      <div className="p-4 sm:p-5 md:p-6">
+      <div className="p-4 sm:p-5">
         <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <span

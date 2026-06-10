@@ -242,6 +242,45 @@ def get_hubs(source: str, destination: str, max_hubs: int = 4) -> list[Hub]:
     return hubs
 
 
+# National / regional metros and major junction cities only — not every CITY_TO_STATION suburb.
+_TIER1_METROS = {
+    "Mumbai", "Delhi", "Bengaluru", "Chennai", "Kolkata", "Hyderabad",
+    "Ahmedabad", "Pune", "Jaipur", "Lucknow", "Kanpur", "Patna", "Bhopal",
+    "Nagpur", "Surat", "Kochi", "Varanasi", "Agra", "Indore", "Vadodara",
+    "Guwahati", "Bhubaneswar", "Visakhapatnam", "Vijayawada", "Coimbatore",
+    "Madurai", "Ranchi", "Raipur", "Amritsar", "Gorakhpur", "Prayagraj", "Allahabad",
+}
+
+
+def list_interchange_hub_cities() -> list[str]:
+    """
+    Major interchange cities for multimodal routing — tier-1 metros, hub-worthy
+    junctions, and MAJOR_JUNCTIONS cities. Not every mapped station or suburb.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for city in CITY_TO_STATION:
+        if city.isupper() or city.endswith(" JN"):
+            continue
+        key = _city_key(city)
+        if not key or key in seen:
+            continue
+        stations = CITY_TO_STATION.get(city, [])
+        if not (
+            city in _TIER1_METROS
+            or city in _HUB_WORTHY_CITIES
+            or any(s in MAJOR_JUNCTIONS for s in stations)
+        ):
+            continue
+        seen.add(key)
+        out.append(city)
+    return out
+
+
+def interchange_hub_count() -> int:
+    return len(list_interchange_hub_cities())
+
+
 def enrich_hub_airports(hubs: list[Hub]) -> list[Hub]:
     from app.services.geo_hub_finder import _attach_airport
 

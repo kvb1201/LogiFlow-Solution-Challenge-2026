@@ -7,6 +7,7 @@ import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
 import { RAIL_CAPABILITY_BADGES, RAIL_HERO_METRICS, RAIL_METRICS, RAIL_SECONDARY_METRICS } from '@/lib/rail-metrics';
+import { CapabilityStrip } from '@/components/cockpit/CapabilityStrip';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
@@ -824,26 +825,7 @@ export default function RailwayDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {RAIL_CAPABILITY_BADGES.map((badge, i) => (
-                <div
-                  key={badge.label}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{
-                    animationDelay: `${0.5 + i * 0.1}s`,
-                    animationFillMode: 'backwards',
-                  }}
-                >
-                  <span
-                    className="material-symbols-outlined text-rail"
-                    style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {badge.icon}
-                  </span>
-                  {badge.label}
-                </div>
-              ))}
-            </div>
+            <CapabilityStrip badges={RAIL_CAPABILITY_BADGES} mode="rail" className="mb-8" />
 
             <InputForm />
 

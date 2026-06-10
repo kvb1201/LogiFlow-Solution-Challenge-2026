@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { comparatorPageMeta, pipelinePageMeta } from '@/lib/pipeline-page-meta';
 import { AmbientBackdrop } from './AmbientBackdrop';
+import { CapabilityStrip } from './CapabilityStrip';
 
 type LandingConfig = {
   badge: string;
@@ -60,7 +61,7 @@ export function PipelineModeLanding({
         <div
           className="absolute inset-x-0 top-0 h-px"
           style={{
-              background: `linear-gradient(90deg, transparent, ${mode === 'comparator' ? 'var(--hybrid)' : `var(--${mode})`}, transparent)`,
+              background: `linear-gradient(90deg, transparent, var(--${mode}), transparent)`,
           }}
         />
       </div>
@@ -98,27 +99,13 @@ export function PipelineModeLanding({
               </p>
             </div>
 
-            <div className="mb-8 flex flex-wrap justify-center gap-2">
-              {config.pills.map((pill, i) => (
-                <div
-                  key={pill.label}
-                  className="flex animate-fade-in items-center gap-1.5 rounded-full border border-border bg-surface/50 px-3 py-1.5 text-[11px] text-muted-foreground backdrop-blur-sm"
-                  style={{ animationDelay: `${0.2 + i * 0.08}s`, animationFillMode: 'backwards' }}
-                >
-                  <span
-                    className="material-symbols-outlined"
-                    style={{
-                      fontSize: '14px',
-                      fontVariationSettings: "'FILL' 1",
-                      color: `var(--${mode})`,
-                    }}
-                  >
-                    {pill.icon}
-                  </span>
-                  {pill.label}
-                </div>
-              ))}
-            </div>
+            <CapabilityStrip
+              badges={config.pills}
+              mode={mode}
+              className="mb-8"
+              delayBase={0.2}
+              delayStep={0.08}
+            />
           </>
         )}
 

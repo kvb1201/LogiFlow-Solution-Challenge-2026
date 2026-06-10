@@ -14,54 +14,57 @@ import {
 } from '@/lib/hybrid-ui';
 
 function TransferBlock({ transfer }: { transfer: ComposedTransfer }) {
+  const [open, setOpen] = useState(false);
   const meta = transferSeverityMeta(transfer.severity);
   const place = transfer.at_display || transfer.at;
   const tips = transfer.warnings?.length
     ? transfer.warnings
     : [`Allow ${formatHours(transfer.buffer_hr)} to transfer cargo at ${place}`];
+  const summary = `Wait ~${formatHours(transfer.buffer_hr)}${
+    transfer.handling_fee_inr ? ` · ~${formatInr(transfer.handling_fee_inr)} handling` : ''
+  }`;
 
   return (
-    <div className={`rounded-xl border ${meta.chip} px-4 py-3.5 ml-8 sm:ml-10`}>
-      <div className="flex items-start gap-2.5">
-        <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5 opacity-90" aria-hidden>
+    <div className="ml-7 sm:ml-8 border-l border-dashed border-border/50 pl-4 py-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start gap-2.5 text-left group"
+      >
+        <span
+          className="material-symbols-outlined shrink-0 text-muted-foreground mt-0.5"
+          style={{ fontSize: 16 }}
+          aria-hidden
+        >
           {meta.icon}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-on-surface">
-            {meta.label} · <span className="text-amber-100/95">{place}</span>
-          </p>
-          <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
-            Wait ~{formatHours(transfer.buffer_hr)}
-            {transfer.scheduled_gap_hr != null &&
-              ` · trains ${formatHours(transfer.scheduled_gap_hr)} apart`}
-            {transfer.handling_fee_inr
-              ? ` · handling ~${formatInr(transfer.handling_fee_inr)}`
-              : ''}
-          </p>
-          <ul className="mt-2.5 space-y-1.5 border-t border-white/[0.06] pt-2.5">
-            {tips.map((tip, i) => (
-              <li key={i} className="text-xs leading-relaxed text-on-surface-variant/90">
-                {tip}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+        <span className="min-w-0 flex-1 text-sm text-muted-foreground leading-snug">
+          <span className="font-medium text-on-surface">{meta.label}</span>
+          {' · '}
+          <span style={{ color: 'var(--hybrid)' }}>{place}</span>
+          {' · '}
+          {summary}
+          {tips.length > 0 && (
+            <span className="ml-1.5 text-xs text-muted-foreground/70 group-hover:text-muted-foreground">
+              {open ? '(hide)' : '(details)'}
+            </span>
+          )}
+        </span>
+      </button>
+      {open && tips.length > 0 && (
+        <ul className="mt-2 ml-6 space-y-1">
+          {tips.map((tip, i) => (
+            <li key={i} className="text-xs leading-relaxed text-muted-foreground">
+              {tip}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function LegBlock({
-  leg,
-  step,
-  total,
-  rich,
-}: {
-  leg: ComposedLeg;
-  step: number;
-  total: number;
-  rich: boolean;
-}) {
+function LegBlock({ leg, step, total }: { leg: ComposedLeg; step: number; total: number }) {
   const [showStops, setShowStops] = useState(false);
   const m = modeMeta(leg.mode);
   const trainInfo = legDetailLine(leg);
@@ -71,83 +74,66 @@ function LegBlock({
 
   return (
     <div className="relative flex gap-3 sm:gap-4">
-      {/* Timeline rail */}
-      <div className="flex flex-col items-center shrink-0 w-8 sm:w-10">
-        <div
-          className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border-2 font-bold text-xs ${m.chip}`}
+      <div className="flex flex-col items-center shrink-0 w-6 pt-0.5">
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${m.chip}`}
         >
           {step}
-        </div>
-        {step < total && (
-          <div className="flex-1 w-px min-h-[1rem] bg-gradient-to-b from-border/80 to-border/30 mt-1" />
-        )}
+        </span>
+        {step < total && <div className="flex-1 w-px min-h-[0.75rem] bg-border/50 mt-1" />}
       </div>
 
-      <div className="flex-1 min-w-0 pb-1">
-        <div
-          className={
-            rich
-              ? 'rounded-xl border border-white/[0.08] bg-black/25 px-4 py-3.5'
-              : 'rounded-lg border border-white/[0.06] bg-black/15 px-3 py-2.5'
-          }
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${m.chip}`}
-                >
-                  <span className="material-symbols-outlined text-[14px]" aria-hidden>
-                    {m.icon}
-                  </span>
-                  {modeLabel(leg.mode)}
+      <div className="flex-1 min-w-0 pb-3 border-b border-border/30 last:pb-0 last:border-b-0">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className={`inline-flex items-center gap-1 text-xs font-semibold ${m.tint}`}>
+                <span className="material-symbols-outlined" style={{ fontSize: 15 }} aria-hidden>
+                  {m.icon}
                 </span>
-                <span className="text-sm font-semibold text-on-surface">
-                  {leg.source}
-                  <span className="text-muted-foreground font-normal mx-1.5">→</span>
-                  {leg.destination}
-                </span>
-              </div>
-              {trainInfo && (
-                <p className="text-xs text-on-surface-variant mt-2 font-medium">{trainInfo}</p>
-              )}
-              {board && <p className="text-xs text-muted-foreground mt-1.5">{board}</p>}
-              {alight && board !== alight && (
-                <p className="text-xs text-muted-foreground mt-0.5">{alight}</p>
-              )}
+                {modeLabel(leg.mode)}
+              </span>
+              <span className="text-sm font-semibold text-on-surface">
+                {leg.source}
+                <span className="text-muted-foreground/50 font-normal mx-1.5">→</span>
+                {leg.destination}
+              </span>
             </div>
-            <div className="text-right shrink-0">
-              <p className="text-sm font-semibold font-mono">{formatHours(leg.time_hr)}</p>
-              <p className="text-xs font-mono text-muted-foreground">{formatInr(leg.cost_inr)}</p>
-            </div>
+
+            {(trainInfo || board || alight) && (
+              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                {[trainInfo, board !== alight ? board : null, alight].filter(Boolean).join(' · ')}
+              </p>
+            )}
           </div>
 
-          {hasStops && rich && (
-            <button
-              type="button"
-              onClick={() => setShowStops((v) => !v)}
-              className="mt-3 text-xs font-medium text-violet-300/90 hover:text-violet-200"
-            >
-              {showStops ? 'Hide stops' : 'Show intermediate stops'}
-            </button>
-          )}
-
-          {showStops && leg.segments && (
-            <ul className="mt-2 space-y-2 text-xs text-muted-foreground border-t border-white/[0.06] pt-2">
-              {leg.segments.map((seg, i) => (
-                <li key={i} className="leading-relaxed">
-                  <span className="text-on-surface-variant font-medium">
-                    {[seg.train_no, seg.train_name].filter(Boolean).join(' · ')}
-                  </span>
-                  <br />
-                  {String(seg.from ?? '')} → {String(seg.to ?? '')}
-                  {seg.departure ? ` · dep ${String(seg.departure)}` : ''}
-                  {seg.arrival ? ` · arr ${String(seg.arrival)}` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="text-right shrink-0 font-mono text-sm leading-snug">
+            <div className="font-semibold text-on-surface">{formatHours(leg.time_hr)}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{formatInr(leg.cost_inr)}</div>
+          </div>
         </div>
+
+        {hasStops && (
+          <button
+            type="button"
+            onClick={() => setShowStops((v) => !v)}
+            className="mt-2 text-xs font-medium hover:underline"
+            style={{ color: 'var(--hybrid)' }}
+          >
+            {showStops ? 'Hide stops' : 'Show stops'}
+          </button>
+        )}
+
+        {showStops && leg.segments && (
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {leg.segments.map((seg, i) => (
+              <li key={i}>
+                {[seg.train_no, seg.train_name].filter(Boolean).join(' · ')}{' '}
+                {String(seg.from ?? '')} → {String(seg.to ?? '')}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -156,9 +142,11 @@ function LegBlock({
 export function LegTimeline({
   itinerary,
   rich = true,
+  showLabel = true,
 }: {
   itinerary: ComposedItinerary;
   rich?: boolean;
+  showLabel?: boolean;
 }) {
   const legs = itinerary.legs || [];
   const transfers = itinerary.transfers || [];
@@ -166,18 +154,18 @@ export function LegTimeline({
   if (!legs.length) return null;
 
   return (
-    <div className={rich ? '' : ''}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-4">
-        Itinerary detail
-      </p>
-      <div className="space-y-0">
+    <div>
+      {showLabel && rich && (
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+          Itinerary
+        </p>
+      )}
+      <div className="space-y-1">
         {legs.map((leg, i) => (
           <div key={`${leg.mode}-${leg.source}-${i}`}>
-            <LegBlock leg={leg} step={i + 1} total={legs.length} rich={rich} />
+            <LegBlock leg={leg} step={i + 1} total={legs.length} />
             {i < transfers.length && transfers[i] && (
-              <div className="py-3">
-                <TransferBlock transfer={transfers[i]} />
-              </div>
+              <TransferBlock transfer={transfers[i]} />
             )}
           </div>
         ))}
@@ -186,7 +174,6 @@ export function LegTimeline({
   );
 }
 
-/** Compact preview — same timeline, tighter spacing */
 export function LegPreview({ itinerary }: { itinerary: ComposedItinerary }) {
-  return <LegTimeline itinerary={itinerary} rich={false} />;
+  return <LegTimeline itinerary={itinerary} rich showLabel={false} />;
 }

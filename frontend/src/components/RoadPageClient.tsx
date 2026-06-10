@@ -1,34 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
+import { CapabilityStrip } from '@/components/cockpit/CapabilityStrip';
+import { ROAD_CAPABILITY_BADGES, ROAD_HERO_METRICS } from '@/lib/road-metrics';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import RoadInputForm from '@/components/roadInputForm';
 import RouteResults from '@/components/RouteResults';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 
-// ── Road capability metrics ───────────────────────────────────────────
-// These represent the three core differentiators of the road pipeline:
-//   1. Network reach — cities reachable via the routing engine
-//   2. Live signal sources — TomTom Traffic + Weather API + ML Delay Model
-//   3. AI Route Intelligence — health scoring, confidence, reoptimization
-
-const ROAD_METRICS = [
-  { value: '120+', label: 'Connected Cities' },
-  { value: '3',    label: 'Live Signal Sources' },
-  { value: 'AI',   label: 'Route Intelligence' },
-] as const;
-
-// ── Capability badges ────────────────────────────────────────────────
-
-const CAPABILITY_BADGES = [
-  { icon: 'traffic',          label: 'TomTom Traffic'    },
-  { icon: 'cloud',            label: 'Weather API'        },
-  { icon: 'psychology',       label: 'ML Delay Model'     },
-  { icon: 'favorite',         label: 'Route Health'       },
-  { icon: 'auto_awesome',     label: 'Reoptimization'     },
-] as const;
-
-// ── Metric item (shared between landing and results header) ──────────
+// ── Metric item ───────────────────────────────────────────────────────
 
 function MetricItem({ value, label }: { value: string; label: string }) {
   return (
@@ -37,22 +18,6 @@ function MetricItem({ value, label }: { value: string; label: string }) {
       <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
         {label}
       </div>
-    </div>
-  );
-}
-
-// ── Results header metrics (inline dot-separated, matching Air page) ─
-
-function ResultsMetricsStrip() {
-  return (
-    <div className="flex flex-wrap items-center gap-2 mt-5 text-xs font-medium text-secondary/70 uppercase tracking-wider">
-      {ROAD_METRICS.map((m, i) => (
-        <span key={m.label} className="flex items-center gap-2">
-          {i > 0 && <span className="w-1 h-1 rounded-full bg-secondary/50" />}
-          <strong className="text-secondary/90 font-bold text-[13px]">{m.value}</strong>{' '}
-          {m.label}
-        </span>
-      ))}
     </div>
   );
 }
@@ -129,33 +94,13 @@ export default function RoadPageClient() {
                 className="flex flex-wrap justify-center gap-6 mt-6 animate-fade-in"
                 style={{ animationDelay: '0.3s', animationFillMode: 'backwards' }}
               >
-                {ROAD_METRICS.map(m => (
+                {ROAD_HERO_METRICS.map((m) => (
                   <MetricItem key={m.label} value={m.value} label={m.label} />
                 ))}
               </div>
             </div>
 
-            {/* ── Capability badges ── */}
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {CAPABILITY_BADGES.map((badge, i) => (
-                <div
-                  key={badge.label}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{
-                    animationDelay: `${0.5 + i * 0.1}s`,
-                    animationFillMode: 'backwards',
-                  }}
-                >
-                  <span
-                    className="material-symbols-outlined text-secondary"
-                    style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {badge.icon}
-                  </span>
-                  {badge.label}
-                </div>
-              ))}
-            </div>
+            <CapabilityStrip badges={ROAD_CAPABILITY_BADGES} mode="road" className="mb-8" />
 
             {/* Form */}
             <RoadInputForm />
@@ -178,82 +123,14 @@ export default function RoadPageClient() {
   // ── Post-search results view ──────────────────────────────────────
 
   return (
-    <div className="flex-1 flex flex-col overflow-x-hidden min-h-0 bg-[var(--color-background)] text-[var(--color-on-surface)]">
-      {/* Results header — matches Air page structure */}
-      <div className="relative border-b border-outline-variant/10 overflow-hidden bg-[#06080d]">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute w-[520px] h-[520px] rounded-full opacity-[0.10] blur-[100px] bg-secondary -top-[40%] right-[-15%] animate-mesh-1" />
-          <div className="absolute w-[420px] h-[420px] rounded-full opacity-[0.06] blur-[90px] bg-primary bottom-[-35%] left-[-10%] animate-mesh-2" />
-        </div>
-        <div className="relative max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-11">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
-            <div>
-              {/* Mode badge */}
-              <div className="inline-flex items-center gap-2 rounded-full border border-secondary/25 bg-secondary/10 px-3 py-1.5 mb-4">
-                <span
-                  className="material-symbols-outlined text-secondary leading-none"
-                  style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-                >
-                  local_shipping
-                </span>
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-secondary/90">
-                  Road cargo
-                </span>
-              </div>
-
-              <h1 className="font-headline text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-on-surface mb-3">
-                Road route optimization
-              </h1>
-
-              <p className="text-[15px] text-on-surface-variant max-w-2xl leading-relaxed">
-                Traffic-aware highway routing with ML risk scoring and cost breakdowns — alongside{' '}
-                <Link href="/railway" className="text-primary hover:underline underline-offset-2">
-                  rail
-                </Link>{' '}
-                and{' '}
-                <Link href="/air" className="text-secondary hover:underline underline-offset-2">
-                  air
-                </Link>{' '}
-                in one workflow.
-              </p>
-
-              {/* ── Results metrics strip — matches Air page exactly ── */}
-              <ResultsMetricsStrip />
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={resetResults}
-                className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">restart_alt</span>
-                Reset
-              </button>
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">home</span>
-                Home
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-8 sm:py-10 space-y-6">
-        {/* Error banner — only for genuine API failures, not corridor rejections */}
+    <PipelineResultsLayout mode="road" source={source} destination={destination} onEdit={resetResults}>
         {error && !roadNoRoutesReason && (
-          <div className="bg-error/10 border border-error/20 px-4 py-3 rounded-xl text-sm text-error flex items-center gap-2">
+          <div className="bg-error/10 border border-error/20 px-4 py-3 rounded-lg text-sm text-error flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-sm">error</span>
             {error}
           </div>
         )}
 
-        {/* Loading state */}
         {showRoadLoading && !hasResults && (
           <div className="flex items-center justify-center py-16 gap-3">
             <span className="material-symbols-outlined text-2xl text-secondary animate-spin">
@@ -263,12 +140,10 @@ export default function RoadPageClient() {
           </div>
         )}
 
-        {/* Form always shown in results view for re-search */}
         <RoadInputForm />
 
-        {/* No routes found (post-search, non-corridor-rejection) */}
         {!loading && !hasResults && hasSearched && searchMode === 'road' && !error && (
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex items-start gap-3">
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3 mt-4">
             <span
               className="material-symbols-outlined text-amber-400 mt-0.5"
               style={{ fontSize: '20px', fontVariationSettings: "'FILL' 1" }}
@@ -294,9 +169,7 @@ export default function RoadPageClient() {
           </div>
         )}
 
-        {/* Route results (handles InvalidCorridorCard internally when roadNoRoutesReason is set) */}
         {!loading && <RouteResults />}
-      </div>
-    </div>
+    </PipelineResultsLayout>
   );
 }

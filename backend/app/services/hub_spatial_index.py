@@ -1,7 +1,8 @@
 """
-Offline spatial index of 9k+ rail hub points for rural / village corridor discovery.
+Offline spatial index of 9k+ Indian Railways station points (lat/lng).
 
-Loaded once from data/hub_geo_index.json — no per-request geocoding of metro lists.
+Used for nearest-station lookup and local feeder pins — NOT for interchange hub selection.
+Major multimodal hubs come from hub_catalog.list_interchange_hub_cities() (~70 cities).
 """
 from __future__ import annotations
 
@@ -83,19 +84,25 @@ def _load_points() -> tuple[GeoHubPoint, ...]:
         return tuple()
 
 
-def hub_index_size() -> int:
+def station_index_size() -> int:
+    """Count of mapped rail stations in the spatial index."""
     return len(_load_points())
 
 
-def nearest_hub_points(
+def hub_index_size() -> int:
+    """Alias for station_index_size (legacy name)."""
+    return station_index_size()
+
+
+def nearest_station_points(
     lat: float,
     lng: float,
     *,
-    max_hubs: int = 4,
+    max_points: int = 4,
     exclude_labels: set[str] | None = None,
     exclude_codes: set[str] | None = None,
 ) -> list[tuple[float, GeoHubPoint]]:
-    """Return (distance_km, point) sorted nearest-first."""
+    """Return (distance_km, station) sorted nearest-first."""
     points = _load_points()
     if not points:
         return []
@@ -113,4 +120,22 @@ def nearest_hub_points(
         scored.append((dist, pt))
 
     scored.sort(key=lambda x: x[0])
-    return scored[:max_hubs]
+    return scored[:max_points]
+
+
+def nearest_hub_points(
+    lat: float,
+    lng: float,
+    *,
+    max_hubs: int = 4,
+    exclude_labels: set[str] | None = None,
+    exclude_codes: set[str] | None = None,
+) -> list[tuple[float, GeoHubPoint]]:
+    """Deprecated alias — use nearest_station_points for rail stops."""
+    return nearest_station_points(
+        lat,
+        lng,
+        max_points=max_hubs,
+        exclude_labels=exclude_labels,
+        exclude_codes=exclude_codes,
+    )
