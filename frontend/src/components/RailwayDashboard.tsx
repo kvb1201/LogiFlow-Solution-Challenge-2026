@@ -658,7 +658,7 @@ export default function RailwayDashboard() {
     trainDelayDetail,
     selectedTrainLive,
     error,
-    resetSearch,
+    resetResults,
     setLiveMapMode,
     routeMetadata,
     cargoType,
@@ -756,7 +756,7 @@ export default function RailwayDashboard() {
               expanding route coverage.
             </p>
             <button
-              onClick={resetSearch}
+              onClick={resetResults}
               className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition"
             >
               Try Another Route

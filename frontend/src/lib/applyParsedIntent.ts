@@ -14,6 +14,21 @@ export function routeForMode(mode: string): string {
   return MODE_TO_PATH[mode] || '/hybrid';
 }
 
+function normalizePriority(priority: string | undefined | null): string | undefined {
+  if (!priority) return undefined;
+  const key = priority.toLowerCase();
+  const map: Record<string, string> = {
+    cost: 'cost',
+    cheapest: 'cost',
+    time: 'time',
+    fastest: 'time',
+    safe: 'safe',
+    safest: 'safe',
+    balanced: 'cost',
+  };
+  return map[key] ?? priority;
+}
+
 /** Apply AI-parsed fields into zustand setters */
 export function buildIntentPatch(
   parsed: ParsedIntent,
@@ -37,8 +52,11 @@ export function buildIntentPatch(
 ): void {
   if (parsed.source) setters.setSource(parsed.source);
   if (parsed.destination) setters.setDestination(parsed.destination);
-  if (parsed.priority) setters.setPriority(parsed.priority);
-  if (parsed.cargo_weight_kg != null) setters.setCargoWeight(parsed.cargo_weight_kg);
+  const priority = normalizePriority(parsed.priority);
+  if (priority) setters.setPriority(priority);
+  if (parsed.cargo_weight_kg != null && parsed.cargo_weight_kg > 0) {
+    setters.setCargoWeight(Math.round(parsed.cargo_weight_kg));
+  }
   if (parsed.cargo_type) setters.setCargoType(parsed.cargo_type);
   if (parsed.departure_date) setters.setDepartureDate(parsed.departure_date);
   if (parsed.budget_max_inr != null) setters.setBudgetMax(parsed.budget_max_inr);

@@ -10,7 +10,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { NotificationBell } from '@/components/planner/NotificationBell';
 
-const navItems = [
+const publicNavItems = [
   { href: '/', label: 'Home' },
   { href: '/hybrid', label: 'Hybrid', mode: 'hybrid' as LogisticsMode },
   { href: '/comparator', label: 'Comparator', mode: 'comparator' as LogisticsMode },
@@ -18,6 +18,14 @@ const navItems = [
   { href: '/road', label: 'Road', mode: 'road' as LogisticsMode },
   { href: '/air', label: 'Air', mode: 'air' as LogisticsMode },
   { href: '/water', label: 'Water', mode: 'water' as LogisticsMode },
+] as const;
+
+const pipelineNavItems = publicNavItems.filter((item) => item.href !== '/');
+
+const authNavItems = [
+  { href: '/dashboard', label: 'Dashboard' },
+  ...pipelineNavItems,
+  { href: '/reports', label: 'My Plans' },
 ] as const;
 
 export default function NavBar() {
@@ -62,53 +70,31 @@ export default function NavBar() {
 
         {/* Navigation - different based on auth status */}
         {token && user ? (
-          // Authenticated nav
-          <nav className="hidden min-w-0 items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
-            <Link
-              href="/dashboard"
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                isActive('/dashboard')
-                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/hybrid"
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                isActive('/hybrid')
-                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Plan & Optimize
-            </Link>
-            <Link
-              href="/comparator"
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                isActive('/comparator')
-                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Compare
-            </Link>
-            <Link
-              href="/reports"
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all ${
-                isActive('/reports')
-                  ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              My Plans
-            </Link>
+          <nav className="hidden min-w-0 max-w-[min(100%,52rem)] items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-surface/60 p-1 md:flex [&::-webkit-scrollbar]:hidden">
+            {authNavItems.map((item) => {
+              const active = isActive(item.href);
+              const mode = 'mode' in item ? item.mode : null;
+              const accent = mode ? modeMeta[mode].accent : 'var(--foreground)';
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all lg:px-3 lg:text-[12px] ${
+                    active
+                      ? 'bg-surface-3 text-foreground shadow-[inset_0_0_0_1px_var(--border-strong)]'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  style={active && mode ? { color: accent } : undefined}
+                >
+                  {mode ? <ModeIcon mode={mode} className="h-3.5 w-3.5" /> : null}
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         ) : (
-          // Unauthenticated nav
           <nav className="hidden min-w-0 items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
-            {navItems.map((item) => {
+            {publicNavItems.map((item) => {
               const active = isActive(item.href);
               const mode = 'mode' in item ? item.mode : null;
               const accent = mode ? modeMeta[mode].accent : 'var(--foreground)';

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   parseShipmentIntent,
   type IntentContextMode,
@@ -54,6 +54,7 @@ export default function AiBriefPanel({
   className = '',
 }: AiBriefPanelProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const applyParsedIntent = useLogiFlowStore((s) => s.applyParsedIntent);
   const setScenarioBrief = useLogiFlowStore((s) => s.setScenarioBrief);
   const scenarioBrief = useLogiFlowStore((s) => s.scenarioBrief);
@@ -62,11 +63,12 @@ export default function AiBriefPanel({
   const [text, setText] = useState(scenarioBrief || '');
 
   useEffect(() => {
-    if (scenarioBrief?.trim()) setText(scenarioBrief);
+    setText(scenarioBrief || '');
   }, [scenarioBrief]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fillNotice, setFillNotice] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedIntent | null>(lastParsed);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingRouteIntent, setPendingRouteIntent] = useState<ParsedIntent | null>(null);
@@ -103,6 +105,16 @@ export default function AiBriefPanel({
     router.push(path);
   }
 
+  function scrollToPipelineForm() {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('logiflow-pipeline-form');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('ring-2', 'ring-violet-400/40');
+      window.setTimeout(() => el.classList.remove('ring-2', 'ring-violet-400/40'), 1600);
+    }
+  }
+
   async function runParse(andNavigate: boolean) {
     const brief = text.trim();
     if (brief.length < 3) {
@@ -110,6 +122,7 @@ export default function AiBriefPanel({
       return;
     }
     setError(null);
+    setFillNotice(null);
     setLoading(true);
     try {
       const result = await parseShipmentIntent(brief, contextMode);
@@ -121,7 +134,9 @@ export default function AiBriefPanel({
       setScenarioBrief(result.scenario_brief);
       setParsed(result);
 
-      if (!result.applied) {
+      const corridorReady = Boolean(result.source?.trim() && result.destination?.trim());
+
+      if (!corridorReady) {
         setError(
           sanitizeUserMessage(
             result.parse_warning ||
@@ -130,10 +145,31 @@ export default function AiBriefPanel({
         );
       }
 
-      if (andNavigate || navigateOnApply) {
+      if (contextMode === 'home' && (andNavigate || navigateOnApply)) {
         setPendingRouteIntent(result);
         setConfirmOpen(true);
+        return;
       }
+
+      if (andNavigate && corridorReady) {
+        const mode = resolveTargetMode(result);
+        const targetPath = getModePath(result);
+        setShipmentAutorun(mode);
+        setFillNotice('Form updated — running optimization…');
+        if (pathname !== targetPath) {
+          router.push(targetPath);
+        } else {
+          scrollToPipelineForm();
+        }
+        return;
+      }
+
+      if (corridorReady) {
+        setFillNotice('Form updated below — review origin, destination, weight, and date.');
+      } else {
+        setFillNotice('Partial fields applied — complete the form below.');
+      }
+      scrollToPipelineForm();
     } catch (e: unknown) {
       setError(
         sanitizeUserMessage(e instanceof Error ? e.message : 'Could not understand that brief.')
@@ -187,17 +223,25 @@ export default function AiBriefPanel({
         >
           {loading ? 'Understanding…' : 'Understand & fill form'}
         </button>
-        {(showRouteButton || navigateOnApply) && (
+        {(showRouteButton || navigateOnApply || contextMode !== 'home') && (
           <button
             type="button"
             disabled={loading}
             onClick={() => runParse(true)}
             className="px-4 py-2.5 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50"
           >
-            {contextMode === 'home' ? 'Route me to the right tool' : 'Fill & open results page'}
+            {contextMode === 'home'
+              ? 'Route me to the right tool'
+              : 'Understand & run optimize'}
           </button>
         )}
       </div>
+
+      {fillNotice && (
+        <p className="mt-3 text-xs text-emerald-200 border border-emerald-400/25 bg-emerald-500/10 rounded-lg px-3 py-2">
+          {fillNotice}
+        </p>
+      )}
 
       {error && (
         <p className="mt-3 text-xs text-red-300 border border-red-400/20 bg-red-500/10 rounded-lg px-3 py-2">

@@ -66,7 +66,7 @@ export default function RoadPageClient() {
   const source     = useLogiFlowStore(s => s.source);
   const destination = useLogiFlowStore(s => s.destination);
   const hasSearched = useLogiFlowStore(s => s.hasSearched);
-  const resetSearch = useLogiFlowStore(s => s.resetSearch);
+  const resetResults = useLogiFlowStore(s => s.resetResults);
   const searchMode  = useLogiFlowStore(s => s.searchMode);
   const roadNoRoutesReason = useLogiFlowStore(s => s.roadNoRoutesReason);
 
@@ -226,7 +226,7 @@ export default function RoadPageClient() {
             <div className="flex gap-2 shrink-0">
               <button
                 type="button"
-                onClick={resetSearch}
+                onClick={resetResults}
                 className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:border-outline-variant/35 transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">restart_alt</span>

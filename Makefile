@@ -1,4 +1,4 @@
-.PHONY: setup install dev dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick
+.PHONY: setup install dev dev-clean dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick
 
 # IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)
@@ -55,6 +55,15 @@ install:
 dev:
 	@echo "🚀 Starting LogiFlow (Frontend + Backend)..."
 	make -j 2 dev-backend dev-frontend
+
+# Wipe frontend/.next then start (use after Turbopack cache corruption / 404 on all routes)
+dev-clean:
+	@echo "🧹 Fresh dev start (clearing frontend/.next)..."
+	make -j 2 dev-backend dev-frontend-clean
+
+dev-frontend-clean:
+	@echo "💻 Starting Frontend (Next.js, clean cache)..."
+	cd frontend && npm run dev:clean
 
 # Run frontend only
 dev-frontend:
