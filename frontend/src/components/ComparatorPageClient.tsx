@@ -19,6 +19,7 @@ import {
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
+import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
@@ -320,9 +321,11 @@ export default function ComparatorPageClient() {
     } catch (err: unknown) {
       setResult(null);
       setError(
-        err instanceof Error
-          ? err.message
-          : 'Optimization failed. Try the demo corridor or simplify constraints.'
+        sanitizeUserMessage(
+          err instanceof Error
+            ? err.message
+            : 'Optimization failed. Try the demo corridor or simplify constraints.'
+        )
       );
     } finally {
       setLoading(false);

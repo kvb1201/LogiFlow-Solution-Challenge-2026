@@ -4,6 +4,14 @@ export function sanitizeUserMessage(message: string): string {
   if (!m) return m;
 
   if (
+    /generativelanguage\.googleapis\.com|HTTPSConnectionPool|RESOURCE_EXHAUSTED|HTTP 429|quota|rate.?limit|retry in [\d.]+s/i.test(
+      m
+    )
+  ) {
+    return 'AI assist is temporarily unavailable. Route planning still works — use the form below.';
+  }
+
+  if (
     /GEMINI_API_KEY|GROQ_API_KEY|start the API server|Render free tier|on the backend/i.test(
       m
     )

@@ -684,15 +684,30 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
-  const res = await fetchBackend(
-    '/optimize',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-    { retries: 2, retryDelayMs: 5000 }
-  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  let res: Response;
+  try {
+    res = await fetchBackend(
+      '/optimize',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      },
+      { retries: 2, retryDelayMs: 5000 }
+    );
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Comparison took too long. Wait a moment and retry — the backend may still be waking up.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 503 || res.status === 502 || res.status === 504) {
