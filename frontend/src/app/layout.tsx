@@ -33,11 +33,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-dvh flex flex-col overflow-x-hidden font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
+      <body className="min-h-dvh flex flex-col overflow-x-clip font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
           <AuthInitializer />
         <BackendWarmup />
         <NavBar />
-        <main className="relative isolate flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+        <main className="relative isolate flex flex-1 flex-col min-h-0 overflow-x-clip">
           <AmbientBackdrop variant="subtle" className="opacity-60" />
           <div className="relative z-10 w-full pointer-events-auto">{children}</div>
         </main>

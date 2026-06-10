@@ -26,13 +26,9 @@ export default function AirPageClient() {
 
   if (!hasSearched) {
     return (
-      <div className="flex-1 flex flex-col overflow-x-hidden">
+      <div className="relative overflow-x-clip" style={{ background: '#06080d' }}>
         {showAirLoading && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#06080d]/70 backdrop-blur-sm" />}
-        <div
-          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
-          style={{ background: '#06080d' }}
-        >
-          <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="pointer-events-none absolute inset-0 z-0">
             <div className="absolute w-[680px] h-[680px] rounded-full opacity-[0.09] blur-[130px] bg-sky-500 animate-mesh-1 top-[-20%] left-[-10%]" />
             <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-secondary animate-mesh-2 bottom-[-10%] right-[-8%]" />
             <div className="absolute w-[380px] h-[380px] rounded-full opacity-[0.05] blur-[90px] bg-primary-fixed-dim animate-mesh-3 top-[50%] left-[55%]" />
@@ -43,7 +39,8 @@ export default function AirPageClient() {
             />
           </div>
 
-          <div className="relative z-10 w-full max-w-[860px] animate-slide-up">
+        <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4rem)] w-full flex-col items-center justify-center px-4 py-10 sm:py-12">
+          <div className="w-full max-w-[860px] animate-slide-up">
             <div className="flex justify-center mb-8">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-secondary/8 border border-secondary/15 rounded-full">
                 <div className="w-1.5 h-1.5 rounded-full bg-sky-300 animate-pulse" />

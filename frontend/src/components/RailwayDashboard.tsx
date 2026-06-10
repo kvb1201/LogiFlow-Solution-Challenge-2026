@@ -6,7 +6,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
-import { RAIL_CAPABILITY_BADGES, RAIL_METRICS } from '@/lib/rail-metrics';
+import { RAIL_CAPABILITY_BADGES, RAIL_HERO_METRICS, RAIL_METRICS, RAIL_SECONDARY_METRICS } from '@/lib/rail-metrics';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
@@ -32,9 +32,9 @@ const RailwayMap = dynamic(() => import('@/components/Map'), { ssr: false });
 
 function RailMetricItem({ value, label }: { value: string; label: string }) {
   return (
-    <div className="text-center min-w-[88px] sm:min-w-0">
-      <div className="text-lg sm:text-xl md:text-2xl font-black text-rail">{value}</div>
-      <div className="text-[9px] sm:text-[10px] md:text-xs text-on-surface-variant uppercase tracking-wider font-semibold leading-tight mt-0.5">
+    <div className="text-center">
+      <div className="text-xl sm:text-2xl font-black text-rail">{value}</div>
+      <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
         {label}
       </div>
     </div>
@@ -59,15 +59,17 @@ function RailMetricsStrip({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-5 max-w-4xl mx-auto">
-      {RAIL_METRICS.map((m) => (
-        <div
-          key={m.label}
-          className="rounded-xl border border-rail/15 bg-surface-container/40 px-3 py-3 sm:py-4 backdrop-blur-sm"
-        >
-          <RailMetricItem value={m.value} label={m.label} />
-        </div>
-      ))}
+    <div className="space-y-5">
+      <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
+        {RAIL_HERO_METRICS.map((m) => (
+          <RailMetricItem key={m.label} value={m.value} label={m.label} />
+        ))}
+      </div>
+      <div className="flex flex-wrap justify-center gap-5 sm:gap-7">
+        {RAIL_SECONDARY_METRICS.map((m) => (
+          <RailMetricItem key={m.label} value={m.value} label={m.label} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -774,24 +776,21 @@ export default function RailwayDashboard() {
   // ── Landing ───────────────────────────────────────────────────────
   if (!hasSearched) {
     return (
-      <div className="flex-1 flex flex-col overflow-x-hidden">
+      <div className="relative overflow-x-clip" style={{ background: '#06080d' }}>
         {showRailLoading && <RailwayLoading />}
-        <div
-          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
-          style={{ background: '#06080d' }}
-        >
-          <div className="absolute inset-0 z-0 pointer-events-none">
-            <div className="absolute w-[680px] h-[680px] rounded-full opacity-[0.10] blur-[130px] bg-rail animate-mesh-1 top-[-20%] left-[-10%]" />
-            <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-primary animate-mesh-2 bottom-[-10%] right-[-8%]" />
-            <div className="absolute w-[380px] h-[380px] rounded-full opacity-[0.05] blur-[90px] bg-water animate-mesh-3 top-[50%] left-[55%]" />
-            <div className="absolute inset-0 hero-dot-grid opacity-[0.28]" />
-            <div
-              className="absolute inset-0"
-              style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #06080d 75%)' }}
-            />
-          </div>
+        <div className="pointer-events-none absolute inset-0 z-0">
+          <div className="absolute w-[680px] h-[680px] rounded-full opacity-[0.10] blur-[130px] bg-rail animate-mesh-1 top-[-20%] left-[-10%]" />
+          <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-primary animate-mesh-2 bottom-[-10%] right-[-8%]" />
+          <div className="absolute w-[380px] h-[380px] rounded-full opacity-[0.05] blur-[90px] bg-water animate-mesh-3 top-[50%] left-[55%]" />
+          <div className="absolute inset-0 hero-dot-grid opacity-[0.28]" />
+          <div
+            className="absolute inset-0"
+            style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #06080d 75%)' }}
+          />
+        </div>
 
-          <div className="relative z-10 w-full max-w-[920px] animate-slide-up">
+        <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-4rem)] w-full flex-col items-center justify-center px-4 py-10 sm:py-12">
+          <div className="w-full max-w-[860px] animate-slide-up">
             <div className="flex justify-center mb-8">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-rail/10 border border-rail/20 rounded-full">
                 <div className="w-1.5 h-1.5 rounded-full bg-rail animate-pulse" />
@@ -801,7 +800,7 @@ export default function RailwayDashboard() {
               </div>
             </div>
 
-            <div className="text-center mb-8">
+            <div className="text-center mb-10">
               <h1 className="text-[2.5rem] xs:text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
                 <span
                   className="bg-gradient-to-r from-rail via-primary to-water bg-clip-text text-transparent animate-gradient-shift"
@@ -811,14 +810,14 @@ export default function RailwayDashboard() {
                 </span>
                 <span className="text-on-surface">Flow</span>
               </h1>
-              <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-xl mx-auto leading-relaxed">
+              <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-lg mx-auto leading-relaxed">
                 AI-powered parcel routing across{' '}
                 <span className="text-rail font-medium">Indian Railways</span> — live schedules,
                 ML delay prediction, IRCA tariffs, and all-India track geometry.
               </p>
 
               <div
-                className="mt-8 animate-fade-in"
+                className="mt-6 animate-fade-in"
                 style={{ animationDelay: '0.3s', animationFillMode: 'backwards' }}
               >
                 <RailMetricsStrip />
@@ -831,7 +830,7 @@ export default function RailwayDashboard() {
                   key={badge.label}
                   className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
                   style={{
-                    animationDelay: `${0.5 + i * 0.08}s`,
+                    animationDelay: `${0.5 + i * 0.1}s`,
                     animationFillMode: 'backwards',
                   }}
                 >
@@ -846,17 +845,15 @@ export default function RailwayDashboard() {
               ))}
             </div>
 
-            <div className="space-y-6">
-              <InputForm />
-              <RailMlQuantifiers variant="panel" />
-            </div>
+            <InputForm />
 
             <div
-              className="text-center mt-8 animate-fade-in"
-              style={{ animationDelay: '0.85s', animationFillMode: 'backwards' }}
+              className="mt-8 flex flex-col items-center gap-4 animate-fade-in"
+              style={{ animationDelay: '0.8s', animationFillMode: 'backwards' }}
             >
-              <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">
-                9,524 stations · 186k+ schedules · 15,650 ML delay records · 81% within 30 min
+              <RailMlQuantifiers variant="inline" className="justify-center" />
+              <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label text-center">
+                Powered by live Indian Railways data · ML delay prediction · IRCA tariffs
               </p>
             </div>
           </div>
@@ -867,8 +864,7 @@ export default function RailwayDashboard() {
 
   if (!loading && showNoRoutePage) {
     return (
-      <div className="flex-1 flex flex-col overflow-x-hidden">
-        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-(--color-background)">
+      <div className="relative flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center px-6 py-12 bg-(--color-background)">
           <div className="max-w-xl w-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/40 p-8 text-center">
             <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
               <span className="material-symbols-outlined text-primary">train</span>
@@ -885,14 +881,13 @@ export default function RailwayDashboard() {
               Try Another Route
             </button>
           </div>
-        </div>
       </div>
     );
   }
 
   // ── Results dashboard ─────────────────────────────────────────────
   return (
-    <div className="flex flex-col w-full bg-background text-foreground lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
+    <div className="flex flex-col w-full bg-background text-foreground lg:min-h-[calc(100dvh-4rem)]">
       {showRailLoading && <RailwayLoading />}
 
       <PipelineResultsChrome mode="rail" />

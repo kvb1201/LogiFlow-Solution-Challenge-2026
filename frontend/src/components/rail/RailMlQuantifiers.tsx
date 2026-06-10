@@ -48,24 +48,27 @@ export function RailMlQuantifiers({
 
   if (variant === 'inline') {
     return (
-      <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          {modelLabel}
-        </span>
+      <div
+        className={`flex flex-wrap items-center justify-center gap-2 ${className}`}
+        aria-label="Rail delay model validation metrics"
+      >
         {loading
           ? Array.from({ length: 3 }).map((_, i) => (
               <span
                 key={i}
-                className="h-6 w-16 animate-pulse rounded-full bg-surface/80"
+                className="h-7 w-20 animate-pulse rounded-lg bg-surface-container/50"
               />
             ))
           : quantifiers.map((q) => (
               <span
                 key={q.id}
-                className="rounded-full border border-rail/25 bg-rail/10 px-2.5 py-1 text-[11px] font-mono text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/10 bg-surface-container/50 px-3 py-1.5 text-[11px] text-on-surface-variant backdrop-blur-sm"
                 title={q.summary}
               >
-                {q.short_label}: {formatValue(q)}
+                <span className="font-semibold uppercase tracking-wide text-rail/90">
+                  {q.short_label}
+                </span>
+                <span className="font-mono font-bold text-rail">{formatValue(q)}</span>
               </span>
             ))}
         <DocLink href={docUrl} compact />
