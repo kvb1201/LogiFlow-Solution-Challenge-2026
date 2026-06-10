@@ -1,116 +1,152 @@
-# Google OAuth Audience Mismatch — Fix Implementation
+# Authentication UX Completion + Legal Pages — Implementation
 
-## Root Cause
+## Overview
 
-`backend/app/services/auth_service.py` previously resolved `GOOGLE_CLIENT_ID` at
-**module import time** using a module-level constant:
-
-```python
-# OLD — resolved once at import, before load_dotenv() could fire in some paths
-GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID", dev_default="local-dev.apps.googleusercontent.com")
-```
-
-When anything (tests, hot-reload, direct module import) caused `auth_service` to be
-imported before `main.py` had called `load_dotenv()`, `os.getenv("GOOGLE_CLIENT_ID")`
-returned `None` and the placeholder `local-dev.apps.googleusercontent.com` was baked
-in permanently for the lifetime of that Python process.
-
-Google was issuing tokens for the **real** client ID
-`1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com`, so every
-verification call failed with:
-
-```
-Token has wrong audience 1007508154155-... expected one of ['local-dev.apps.googleusercontent.com']
-```
+This document covers changes made across Phases 1–7: login UX improvements, Terms & Conditions, Privacy Policy, Google account onboarding flow, site footer integration, and accessibility.
 
 ---
 
-## Configuration Source (before fix)
+## Phase 1 — Login Page UX
 
-| Location | Key | Value |
-|---|---|---|
-| `backend/.env` | `GOOGLE_CLIENT_ID` | `1007508154155-...` (correct) |
-| `frontend/.env.local` | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | `1007508154155-...` (correct) |
-| `auth_service.py` module-level | `GOOGLE_CLIENT_ID` | `local-dev.apps.googleusercontent.com` (wrong — placeholder fallback) |
+### File changed
+`frontend/src/components/auth/LoginPage.tsx`
 
-The `.env` value was correct all along. The bug was in when the env var was read.
+### 1. Branding deduplication
+The NavBar already renders the LogiFlow logo and brand name on every page. The login card contains no duplicate branding — it opens directly with the "Smart Shipment Planner" heading and a short description.
 
----
+### 2. Loading state
+- After Google returns a credential, `setAuthenticating(true)` fires immediately before any network request.
+- The loading overlay renders with `role="status"` and `aria-live="polite"` for screen readers.
+- Spinner text changed from "Authenticating…" / "Restoring your session" to **"Signing you in…"** / "Verifying your Google account" — clearer to users about what is happening.
+- The Google Sign-In button is replaced by the overlay, preventing any possibility of a second click.
 
-## Audience Validation Flow (after fix)
-
-```
-POST /auth/login  {credential: "<google JWT>"}
-        │
-        ▼
-verify_google_token(credential)
-        │
-        ├─ _get_allowed_audiences()          ← called at request time, not import time
-        │     1. GOOGLE_ALLOWED_CLIENT_IDS   (comma-separated list, takes priority)
-        │     2. GOOGLE_CLIENT_ID            (single ID, backward compat)
-        │     3. [] + actionable error       (dev: fails fast with helpful message)
-        │
-        ├─ for each audience in list:
-        │     google.oauth2.id_token.verify_oauth2_token(credential, Request(), audience)
-        │     → success: return id_info
-        │     → ValueError: log mismatch, try next
-        │
-        └─ all failed:
-              _extract_token_audience(credential)  ← decode without verifying signature
-              logger.warning(received_audience, allowed_count)
-              raise ValueError with actionable message
-```
+### 3. Error handling
+- Added `friendlyError(err)` helper that maps raw error messages to human-readable strings:
+  - Audience / token / invalid errors → "Unable to verify your Google account. Please try again."
+  - Network / fetch errors → "Connection error. Check your internet and try again."
+  - 401 / unauthorized → "Google authentication failed. Please try again."
+- Error API response body is now read (`body.detail`) and passed through `friendlyError` before display — raw backend exceptions never surface to the user.
+- Error banner has `role="alert"` for screen reader announcement.
 
 ---
 
-## Environment Handling
+## Phase 2 — Terms & Conditions Page (`/terms`)
 
-### Local development
-```
-backend/.env          → GOOGLE_CLIENT_ID=1007508154155-...
-frontend/.env.local   → NEXT_PUBLIC_GOOGLE_CLIENT_ID=1007508154155-...
-```
-Both sides use the same real client ID. No placeholder.
+### Files created
+- `frontend/src/components/legal/LegalPage.tsx` — shared layout component
+- `frontend/src/app/terms/page.tsx`
 
-### Multi-environment (optional)
-If separate OAuth clients are needed per environment:
-```
-# backend/.env or Render env vars
-GOOGLE_ALLOWED_CLIENT_IDS=<local-client-id>,<prod-client-id>
-```
-`_get_allowed_audiences()` splits by comma and tries each in order.
+### Design
+- Matches the LogiFlow dark design system: `bg-surface/40`, `border-border/50`, `rounded-2xl`, `backdrop-blur-sm`
+- Uses design-system fonts (Space Grotesk for headings, Inter for body)
+- Fully responsive — single-column on mobile, comfortable max-width (`max-w-3xl`) on desktop
 
-### Production (Render)
-`RENDER=true` is set automatically by Render. If neither `GOOGLE_ALLOWED_CLIENT_IDS`
-nor `GOOGLE_CLIENT_ID` is set, the app raises `RuntimeError` at startup to prevent a
-silently broken OAuth flow from reaching users.
+### Sections
+1. Acceptance of Terms
+2. Use of Platform
+3. Shipment Planning Disclaimer
+4. Data Accuracy Disclaimer
+5. Limitation of Liability
+6. Account Responsibilities
+7. Service Availability
+8. Contact Information
+
+Language is framed as an academic/project platform (Google Solution Challenge 2026) — no enterprise legal overreach.
 
 ---
 
-## Changes Made
+## Phase 3 — Privacy Policy Page (`/privacy`)
 
-### `backend/app/services/auth_service.py`
+### File created
+`frontend/src/app/privacy/page.tsx`
 
-1. **Removed module-level `GOOGLE_CLIENT_ID` constant** — audience is now resolved
-   inside `verify_google_token()` on every request via `_get_allowed_audiences()`.
+### Design
+Same layout and styling as `/terms` — uses the shared `LegalPage` component.
 
-2. **Added `_get_allowed_audiences() -> list[str]`** — reads env vars at call time,
-   supports comma-separated `GOOGLE_ALLOWED_CLIENT_IDS` as the primary source and
-   falls back to `GOOGLE_CLIENT_ID` for backward compatibility.
+### Sections
+1. Information Collected
+2. Google Authentication — includes link to Google Account permissions page
+3. Usage Data — mentions Vercel Analytics
+4. Shipment Planning Data
+5. Cookies and Session Storage — accurately describes sessionStorage usage (no persistent cookies)
+6. Data Retention
+7. Third-Party Services — lists Google OAuth, TomTom, OpenWeatherMap, Supabase, Vercel, Gemini/Groq
+8. Contact Information
 
-3. **Multi-audience loop** — iterates over all allowed audiences and returns on first
-   successful verification. This prevents future mismatch issues when running multiple
-   OAuth clients.
+Only practices actually implemented in the codebase are described.
 
-4. **Structured logging** — `logger.warning` on rejection includes `received_audience`
-   (extracted without trusting the unverified payload for auth) and `allowed_count`.
-   Audience values are truncated to 20 chars in debug logs to avoid secret leakage.
+---
 
-5. **`_extract_token_audience(credential)`** — safely decodes the JWT payload without
-   signature verification, used only for diagnostic logging on failure.
+## Phase 4 — Login Page Legal Links
 
-6. **Actionable error messages** — `ValueError` now names both env files to check, so
-   any future mismatch can be resolved without reading source code.
+The login card's existing placeholder `<a href="#">` links were replaced with:
+
+```tsx
+<Link href="/terms">Terms of Service</Link>
+<Link href="/privacy">Privacy Policy</Link>
+```
+
+A second set of footer-style links appears below the card:
+
+```tsx
+<Link href="/privacy">Privacy Policy</Link>
+<Link href="/terms">Terms & Conditions</Link>
+```
+
+All links use Next.js `<Link>` for client-side navigation, and include `focus-visible:ring-1 focus-visible:ring-rail` focus styles for keyboard accessibility.
+
+---
+
+## Phase 5 — Create New Account Flow
+
+The previous "Create an account with Google" button that attempted to programmatically click the hidden GSI button was replaced with:
+
+```tsx
+<a
+  href="https://accounts.google.com/signup"
+  target="_blank"
+  rel="noopener noreferrer"
+  aria-label="Create a Google account (opens in new tab)"
+>
+  Create a Google account →
+</a>
+```
+
+Helper text below the link reads:
+> LogiFlow uses Google for authentication. Create a Google account first if you don't already have one.
+
+No separate LogiFlow registration system was added. Google remains the sole identity provider.
+
+---
+
+## Phase 6 — Footer Integration
+
+### File created
+`frontend/src/components/SiteFooter.tsx`
+
+A minimal sticky footer added to the root layout (`frontend/src/app/layout.tsx`). It appears on all pages and contains:
+- Copyright line: "© 2026 LogiFlow — Google Solution Challenge 2026"
+- Navigation: Privacy Policy · Terms & Conditions
+
+The footer is visually subtle (`text-[11px]`, `text-muted-foreground`, `border-t border-border/40`) so it doesn't compete with page content.
+
+The login page also shows the same links in its own footer area, which is acceptable since the login page has a distinct full-screen layout without the global footer's context.
+
+---
+
+## Phase 7 — Accessibility
+
+| Element | Implementation |
+|---|---|
+| Loading overlay | `role="status"`, `aria-live="polite"`, spinner has `aria-hidden="true"` |
+| Error banner | `role="alert"` for immediate screen reader announcement |
+| Google Sign-In container | `aria-label="Sign in with Google"` |
+| Back to home link | `aria-label="Back to LogiFlow home"` |
+| Google account creation link | `aria-label="Create a Google account (opens in new tab)"` |
+| Legal links (login + footer) | `focus-visible:ring-1 focus-visible:ring-rail` visible focus rings |
+| Footer nav | `<nav aria-label="Legal navigation">` |
+| Legal page sections | Semantic `<header>`, `<section>`, `<h1>`, `<h2>` hierarchy |
+| `rel="noopener noreferrer"` | Applied to all `target="_blank"` external links |
 
 ---
 
@@ -118,10 +154,16 @@ silently broken OAuth flow from reaching users.
 
 | Check | Result |
 |---|---|
-| `backend/.env` `GOOGLE_CLIENT_ID` | ✅ matches frontend client ID |
-| `frontend/.env.local` `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ matches backend client ID |
-| Python syntax check | ✅ `Syntax OK` |
-| `npx tsc --noEmit` | ✅ No errors |
-| No hardcoded client IDs in business logic | ✅ All env-driven |
-| Email/password auth unchanged | ✅ `create_access_token` / `decode_access_token` untouched |
-| Production guard | ✅ `RuntimeError` raised if no client ID in production |
+| `npx tsc --noEmit` | ✅ Exit 0, no errors |
+| `npm run build` | ✅ Exit 0, all pages compiled |
+| `/login` route | ✅ Static page, builds cleanly |
+| `/terms` route | ✅ Static page, appears in build output |
+| `/privacy` route | ✅ Static page, appears in build output |
+| Legal links on login page | ✅ Link to `/terms` and `/privacy` (Next.js `<Link>`) |
+| Create Account flow | ✅ Opens `https://accounts.google.com/signup` in new tab |
+| Branding duplication | ✅ Login card contains no duplicate LogiFlow logo/name |
+| Loading state text | ✅ "Signing you in…" |
+| Error messages | ✅ Friendly user-facing text, no raw exceptions |
+| Footer on all pages | ✅ `SiteFooter` in root layout |
+| Google OAuth flow | ✅ Unchanged — `handleGoogleSuccess` logic preserved |
+| Email/password auth | ✅ Not applicable — Google is sole provider; no regression |
