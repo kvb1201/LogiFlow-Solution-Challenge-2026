@@ -103,8 +103,14 @@ export function InvalidCorridorCard({
     <div
       role="status"
       aria-label={`${modeLabel} route unavailable`}
-      className="rounded-xl border border-red-500/25 bg-red-500/5 p-5 sm:p-6"
+      className="relative overflow-hidden rounded-xl border border-red-500/25 bg-red-500/5 p-5 sm:p-6"
     >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-[30%] -right-[20%] h-[70%] w-[70%] rounded-full opacity-[0.15] blur-[48px]"
+        style={{ background: 'var(--risk)' }}
+      />
+      <div className="relative z-10">
       {/* Header */}
       <div className="flex items-start gap-4 mb-5">
         <span
@@ -183,6 +189,7 @@ export function InvalidCorridorCard({
           </ul>
         </div>
       )}
+      </div>
     </div>
   );
 }

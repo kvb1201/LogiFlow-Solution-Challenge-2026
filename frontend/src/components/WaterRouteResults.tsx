@@ -507,7 +507,7 @@ function DetailPanel({
       </div>
 
       {/* Expanded metrics */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Metric icon="savings" label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
         <Metric icon="schedule" label="Time" value={`${Number(route.time).toFixed(1)}h`} tone="text-amber-200" />
         <Metric icon="shield" label="Risk" value={`${Math.round(risk * 100)}%`} tone={rt.text} />

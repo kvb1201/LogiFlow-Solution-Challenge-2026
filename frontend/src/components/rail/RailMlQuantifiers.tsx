@@ -104,7 +104,7 @@ export function RailMlQuantifiers({
         <DocLink href={docUrl} />
       </div>
 
-      <div className={`grid gap-3 ${isCompact ? 'grid-cols-3' : 'sm:grid-cols-3'}`}>
+      <div className={`grid gap-3 ${isCompact ? 'grid-cols-1 min-[360px]:grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'}`}>
         {loading
           ? Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-20 animate-pulse rounded-xl bg-surface/60" />

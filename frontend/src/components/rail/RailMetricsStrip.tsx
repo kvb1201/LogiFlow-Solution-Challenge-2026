@@ -1,14 +1,11 @@
 'use client';
 
 import { RAIL_HERO_METRICS, RAIL_METRICS, RAIL_SECONDARY_METRICS } from '@/lib/rail-metrics';
-import { accentVar } from '@/lib/pipeline-theme';
 
 function RailMetricItem({ value, label }: { value: string; label: string }) {
   return (
     <div className="text-center min-w-[4.5rem]">
-      <div className="text-xl sm:text-2xl font-black tabular-nums" style={{ color: accentVar('rail') }}>
-        {value}
-      </div>
+      <div className="text-xl sm:text-2xl font-black tabular-nums text-rail">{value}</div>
       <div className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-semibold mt-0.5">
         {label}
       </div>
@@ -24,7 +21,7 @@ export function RailMetricsStrip({ compact = false }: { compact?: boolean }) {
           <span key={m.label} className="flex items-center gap-3 whitespace-nowrap">
             {i > 0 && <span className="w-1 h-1 shrink-0 rounded-full bg-border" aria-hidden />}
             <span>
-              <strong className="text-[11px] sm:text-[13px] font-bold" style={{ color: accentVar('rail') }}>
+              <strong className="text-[11px] sm:text-[13px] font-bold text-rail">
                 {m.value}
               </strong>{' '}
               {m.label}

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { LogisticsMode } from '@/lib/mode-meta';
+import { AmbientMesh } from './AmbientMesh';
 import { PipelineModeChrome } from './PipelineModeChrome';
 
 type PipelineResultsLayoutProps = {
@@ -22,7 +23,18 @@ export function PipelineResultsLayout({
   children,
 }: PipelineResultsLayoutProps) {
   return (
-    <div className="flex w-full flex-col bg-background min-h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
+    <div className="relative flex min-h-app w-full flex-col overflow-hidden bg-background lg:max-h-app">
+      <div className="pointer-events-none absolute inset-x-0 top-navbar z-0 h-64 overflow-hidden opacity-90" aria-hidden>
+        <AmbientMesh variant="section" tone={mode} />
+      </div>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-navbar z-0 h-px opacity-40"
+        style={{
+          background: `linear-gradient(90deg, transparent, var(--${mode}), transparent)`,
+        }}
+      />
+
       <PipelineModeChrome
         mode={mode}
         source={source}
@@ -30,8 +42,9 @@ export function PipelineResultsLayout({
         cargoWeight={cargoWeight}
         onEdit={onEdit}
       />
-      <div className="flex-1 min-h-0 lg:overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-4 sm:py-5">{children}</div>
+
+      <div className="relative z-10 min-h-0 flex-1 lg:overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">{children}</div>
       </div>
     </div>
   );

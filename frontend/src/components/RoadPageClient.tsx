@@ -94,7 +94,7 @@ export default function RoadPageClient() {
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Try relaxing the cargo constraints or explore{' '}
-              <Link href="/railway" className="text-primary hover:underline underline-offset-2">
+              <Link href="/railway" className="text-rail hover:underline underline-offset-2">
                 rail
               </Link>{' '}
               and{' '}

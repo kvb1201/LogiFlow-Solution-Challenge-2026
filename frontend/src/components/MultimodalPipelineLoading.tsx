@@ -86,7 +86,7 @@ export default function MultimodalPipelineLoading({
         </div>
 
         {/* Mode pulse strip */}
-        <div className="mb-5 grid grid-cols-4 gap-2">
+        <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {modeStates.map((mode) => (
             <div
               key={mode.id}

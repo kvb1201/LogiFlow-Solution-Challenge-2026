@@ -14,6 +14,7 @@ import {
   FormSubmit,
   LOGIFLOW_FORM_IDS,
   formInputClass,
+  FormDateInput,
 } from '@/components/forms/pipeline-form-ui';
 
 const CARGO_TYPES = [
@@ -142,13 +143,7 @@ export default function AirInputForm() {
               </div>
             </FormField>
             <FormField label="Departure">
-              <input
-                type="date"
-                min={today}
-                value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
-                className={formInputClass}
-              />
+              <FormDateInput value={departureDate} min={today} onChange={setDepartureDate} />
             </FormField>
             <FormField label={`Window · ${deadlineHours}h`}>
               <input

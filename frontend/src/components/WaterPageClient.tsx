@@ -107,7 +107,7 @@ export default function WaterPageClient() {
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Try a different port pair or explore{' '}
-              <Link href="/railway" className="text-primary hover:underline underline-offset-2">
+              <Link href="/railway" className="text-rail hover:underline underline-offset-2">
                 rail
               </Link>{' '}
               and{' '}

@@ -75,7 +75,7 @@ export default function RailwayLoading() {
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-rail/80 to-primary transition-all duration-700 ease-out"
+              className="h-full rounded-full bg-gradient-to-r from-yellow-700/80 via-rail to-yellow-200/90 transition-all duration-700 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>

@@ -16,6 +16,7 @@ import {
   FormSubmit,
   LOGIFLOW_FORM_IDS,
   formInputClass,
+  FormDateInput,
 } from '@/components/forms/pipeline-form-ui';
 import {
   DEFAULT_RAIL_SIMULATION,
@@ -229,12 +230,7 @@ export default function InputForm() {
               </div>
             </FormField>
             <FormField label="Departure date">
-              <input
-                type="date"
-                value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
-                className={formInputClass}
-              />
+              <FormDateInput value={departureDate} onChange={setDepartureDate} />
             </FormField>
           </div>
 

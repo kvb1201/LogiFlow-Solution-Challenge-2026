@@ -3,6 +3,8 @@
 import React from 'react';
 import type { ParsedIntent } from '@/services/api';
 import { buildIntentSummary } from '@/lib/formatIntentSummary';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar } from '@/lib/pipeline-theme';
 
 type IntentConfirmModalProps = {
   open: boolean;
@@ -38,11 +40,11 @@ export default function IntentConfirmModal({
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border/60 bg-surface/95 shadow-[0_32px_120px_-24px_rgba(0,0,0,0.85)] animate-fade-in pointer-events-auto sm:max-h-[88dvh] backdrop-blur-xl">
+      <AmbientSurface mode="hybrid" mesh="card" className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden animate-fade-in pointer-events-auto sm:max-h-[88dvh] !rounded-xl">
         <div
           className="border-b border-border/50 px-5 py-5 sm:px-6"
           style={{
-            background: `linear-gradient(90deg, color-mix(in oklab, var(--hybrid) 12%, transparent), color-mix(in oklab, var(--primary) 6%, transparent))`,
+            background: `linear-gradient(90deg, color-mix(in oklab, var(--hybrid) 14%, transparent), color-mix(in oklab, var(--comparator) 8%, transparent))`,
           }}
         >
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--hybrid)' }}>
@@ -89,11 +91,12 @@ export default function IntentConfirmModal({
             type="button"
             disabled={loading || !readyToRun}
             onClick={onConfirmRun}
-            className="flex-1 px-4 py-3 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2 touch-target"
+            className="flex-1 px-4 py-3 rounded-xl text-sm font-semibold hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2 touch-target text-zinc-950"
+            style={{ background: accentVar('hybrid') }}
           >
             {loading ? (
               <>
-                <span className="h-4 w-4 border-2 border-[#001b3f]/30 border-t-[#001b3f] rounded-full animate-spin" />
+                <span className="h-4 w-4 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
                 Running…
               </>
             ) : (
@@ -107,7 +110,7 @@ export default function IntentConfirmModal({
             )}
           </button>
         </div>
-      </div>
+      </AmbientSurface>
     </div>
   );
 }

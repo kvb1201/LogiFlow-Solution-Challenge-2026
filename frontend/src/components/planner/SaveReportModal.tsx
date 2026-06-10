@@ -6,6 +6,15 @@ import { usePathname } from 'next/navigation';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import type { CreateReportPayload, ReportMode } from '@/services/plannerApi';
+import { AmbientSurface, AmbientMetricTile } from '@/components/cockpit/AmbientSurface';
+import type { LogisticsMode } from '@/lib/mode-meta';
+import { accentVar } from '@/lib/pipeline-theme';
+
+function modeTone(mode: ReportMode): LogisticsMode {
+  if (mode === 'comparator') return 'comparator';
+  if (mode === 'hybrid') return 'hybrid';
+  return mode;
+}
 
 interface Props {
   isOpen: boolean;
@@ -81,7 +90,7 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9999] flex items-end justify-center p-4 sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-label="Save shipment report"
@@ -92,7 +101,7 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border/50 bg-surface/95 backdrop-blur-xl p-6 shadow-2xl">
+      <AmbientSurface mode={modeTone(prefill.mode)} mesh="card" className="relative z-10 mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto p-5 shadow-2xl sm:p-6">
         {success ? (
           <div className="flex flex-col items-center gap-3 py-4">
             <span className="text-4xl">✅</span>
@@ -158,16 +167,16 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
               </div>
 
               {/* Metrics summary */}
-              <div className="rounded-xl bg-surface-container/30 border border-border/20 px-3.5 py-3 grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {[
                   { label: 'Cost', value: prefill.estimatedCost != null ? `₹${Math.round(prefill.estimatedCost).toLocaleString('en-IN')}` : '—' },
                   { label: 'Time', value: prefill.estimatedTime != null ? `${prefill.estimatedTime.toFixed(1)}h` : '—' },
                   { label: 'Risk', value: prefill.riskScore != null ? `${Math.round(prefill.riskScore * 100)}%` : '—' },
                 ].map(m => (
-                  <div key={m.label} className="text-center">
+                  <AmbientMetricTile key={m.label} mode={modeTone(prefill.mode)} className="px-2 py-2 text-center">
                     <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{m.label}</div>
                     <div className="text-sm font-bold text-foreground mono">{m.value}</div>
-                  </div>
+                  </AmbientMetricTile>
                 ))}
               </div>
 
@@ -186,7 +195,8 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
                 <button
                   type="submit"
                   disabled={saving || !user}
-                  className="flex-1 rounded-xl bg-primary text-on-primary py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-all"
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all text-zinc-950"
+                  style={{ background: accentVar(modeTone(prefill.mode)) }}
                 >
                   {saving ? 'Saving…' : 'Save Report'}
                 </button>
@@ -194,7 +204,7 @@ export function SaveReportModal({ isOpen, onClose, prefill }: Props) {
             </form>
           </>
         )}
-      </div>
+      </AmbientSurface>
     </div>
   );
 }

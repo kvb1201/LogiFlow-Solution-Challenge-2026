@@ -15,6 +15,7 @@ import {
   FormShell,
   FormSubmit,
   LOGIFLOW_FORM_IDS,
+  FormDateInput,
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
@@ -481,20 +482,12 @@ export default function WaterInputForm() {
               label="Departure date"
               hint="Used for real-time marine weather and wave forecasts along the route."
             >
-              <div className="relative flex items-center">
-                <div className="absolute left-3 w-7 h-7 rounded-lg bg-surface-container/60 flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-outline" style={{ fontSize: '14px' }}>
-                    calendar_today
-                  </span>
-                </div>
-                <input
-                  type="date"
-                  value={departureDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setDepartureDate(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 border border-outline-variant/15 rounded-xl bg-surface-container-lowest/50 focus:border-teal-400/40 focus:ring-1 focus:ring-teal-400/20 text-on-surface transition-all outline-none text-sm"
-                />
-              </div>
+              <FormDateInput
+                value={departureDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={setDepartureDate}
+                className="w-full rounded-xl border border-outline-variant/15 bg-surface-container-lowest/50 py-3.5 pl-3 pr-11 text-sm text-on-surface outline-none transition-all focus:border-teal-400/40 focus:ring-1 focus:ring-teal-400/20"
+              />
             </FormField>
 
             <div className="rounded-xl border border-teal-400/20 bg-teal-500/5 p-3">

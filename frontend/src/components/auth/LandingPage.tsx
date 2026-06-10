@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Radar, ArrowUpRight, Sparkles, CheckCircle2 } from 'lucide-react';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import { AmbientSurface, AmbientMetricTile } from '@/components/cockpit/AmbientSurface';
 
 export function LandingPage() {
   return (
@@ -74,19 +75,19 @@ export function LandingPage() {
           </div>
 
           {/* Visualization - Dashboard Preview */}
-          <div className="rounded-2xl border border-border/50 bg-surface/30 backdrop-blur-sm p-6 sm:p-8 overflow-hidden">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <AmbientSurface mode="home" mesh="section" className="p-6 sm:p-8 overflow-hidden">
+            <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:grid-cols-4 mb-6">
               {[
                 { label: 'Planned', value: '0', icon: '📋' },
                 { label: 'Active', value: '0', icon: '🚀' },
                 { label: 'Completed', value: '0', icon: '✅' },
                 { label: 'Alerts', value: '0', icon: '⚠️' },
-              ].map(({ label, value, icon }) => (
-                <div key={label} className="rounded-lg border border-border/40 bg-surface/60 p-3 text-center">
+              ].map(({ label, value, icon }, i) => (
+                <AmbientMetricTile key={label} mode={(['hybrid', 'comparator', 'rail', 'road'] as const)[i % 4]} className="text-center">
                   <div className="text-2xl mb-2">{icon}</div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
                   <div className="text-lg font-bold text-foreground">{value}</div>
-                </div>
+                </AmbientMetricTile>
               ))}
             </div>
 
@@ -111,7 +112,7 @@ export function LandingPage() {
                 <span className="text-muted-foreground">Completion</span>
               </div>
             </div>
-          </div>
+          </AmbientSurface>
         </div>
 
         {/* Feature Cards */}
@@ -124,35 +125,41 @@ export function LandingPage() {
                 title: 'Route Optimization',
                 description: 'Optimize cost, time, and risk using AI-powered route recommendations.',
                 icon: '🎯',
-                accent: 'border-rail/30',
+                mode: 'rail' as const,
               },
               {
                 title: 'Multi-Stop Planning',
                 description: 'Plan complex shipment corridors with intelligent stop sequencing.',
                 icon: '📍',
-                accent: 'border-road/30',
+                mode: 'road' as const,
               },
               {
                 title: 'Shipment Monitoring',
                 description: 'Track route health and identify potential disruptions.',
                 icon: '📊',
-                accent: 'border-water/30',
+                mode: 'water' as const,
               },
               {
                 title: 'Dynamic Replanning',
                 description: 'Respond to changing traffic and weather conditions with updated recommendations.',
                 icon: '🔄',
-                accent: 'border-air/30',
+                mode: 'air' as const,
               },
             ].map((feature, i) => (
               <div
                 key={feature.title}
-                className={`rounded-2xl border ${feature.accent} bg-surface/40 p-6 sm:p-7 hover:bg-surface/60 transition-colors animate-fade-in`}
+                className="animate-fade-in"
                 style={{ animationDelay: `${0.1 + i * 0.1}s`, animationFillMode: 'backwards' }}
               >
-                <div className="text-4xl mb-4">{feature.icon}</div>
-                <h3 className="text-lg font-bold text-foreground mb-2">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                <AmbientSurface
+                  mode={feature.mode}
+                  mesh="card"
+                  className="p-6 sm:p-7 hover:-translate-y-0.5 transition-transform"
+                >
+                  <div className="text-4xl mb-4">{feature.icon}</div>
+                  <h3 className="text-lg font-bold text-foreground mb-2">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                </AmbientSurface>
               </div>
             ))}
           </div>

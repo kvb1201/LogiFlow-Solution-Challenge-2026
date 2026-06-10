@@ -3,6 +3,7 @@
 import type { ComposedItinerary } from '@/services/api';
 import { RoutePathStrip } from '@/components/hybrid/RoutePathStrip';
 import { LegTimeline } from '@/components/hybrid/LegTimeline';
+import { AmbientMesh } from '@/components/cockpit/AmbientMesh';
 import {
   changeoverCount,
   formatHours,
@@ -48,13 +49,14 @@ export function ItineraryCard({
 
   return (
     <article
-      className={`rounded-xl border overflow-hidden transition-colors ${
+      className={`group relative overflow-hidden rounded-xl border transition-colors ${
         recommended
           ? 'border-[color-mix(in_oklab,var(--hybrid)_28%,var(--border))] bg-surface/30'
           : 'border-border/50 bg-surface/20 hover:bg-surface/30'
       }`}
     >
-      <div className="px-4 sm:px-5 py-3 border-b border-border/30 flex flex-wrap items-center gap-x-4 gap-y-2">
+      {recommended ? <AmbientMesh variant="card" tone="hybrid" /> : null}
+      <div className="relative z-10 px-4 sm:px-5 py-3 border-b border-border/30 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {recommended && (
             <span
@@ -77,11 +79,11 @@ export function ItineraryCard({
         <InlineStats itinerary={itinerary} />
       </div>
 
-      <div className="px-4 sm:px-5 py-2.5 border-b border-border/20">
+      <div className="relative z-10 px-4 sm:px-5 py-2.5 border-b border-border/20">
         <RoutePathStrip itinerary={itinerary} inline />
       </div>
 
-      <div className={`px-4 sm:px-5 ${isAlt ? 'py-3' : 'py-3.5'}`}>
+      <div className={`relative z-10 px-4 sm:px-5 ${isAlt ? 'py-3' : 'py-3.5'}`}>
         <LegTimeline itinerary={itinerary} rich showLabel={!isAlt} />
       </div>
     </article>

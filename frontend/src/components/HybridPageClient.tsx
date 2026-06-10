@@ -13,7 +13,8 @@ import { HybridMetricsStrip } from '@/components/hybrid/HybridMetricItem';
 import { HYBRID_CAPABILITY_BADGES } from '@/lib/hybrid-metrics';
 import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
-import { PIPELINE_CARD_CLASS, accentVar } from '@/lib/pipeline-theme';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar } from '@/lib/pipeline-theme';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
@@ -211,7 +212,7 @@ export default function HybridPageClient() {
   }
 
   const stepDots = (
-    <div className="flex items-center gap-2 mb-6">
+    <div className="mb-6 flex flex-wrap items-center gap-2">
       {STEPS.map((label, i) => (
         <button
           key={label}
@@ -233,7 +234,7 @@ export default function HybridPageClient() {
       <button
         type="button"
         onClick={loadDemo}
-        className="ml-auto text-[11px] text-muted-foreground hover:brightness-110"
+        className="w-full text-[11px] text-muted-foreground hover:brightness-110 sm:ml-auto sm:w-auto"
       >
         Demo
       </button>
@@ -241,7 +242,7 @@ export default function HybridPageClient() {
   );
 
   const corridorForm = (
-    <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+    <AmbientSurface mode="hybrid" mesh="card" className="space-y-4 p-4 sm:p-5">
       <CorridorRow
         accentVar="--hybrid"
         swapDisabled={!source.trim() && !destination.trim()}
@@ -270,7 +271,7 @@ export default function HybridPageClient() {
           />
         </label>
       </CorridorRow>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block">
           <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
           <input
@@ -280,7 +281,7 @@ export default function HybridPageClient() {
             className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
           />
         </label>
-        <label className="block col-span-2">
+        <label className="block sm:col-span-2">
           <span className="text-xs text-muted-foreground mb-1.5 block">Priority</span>
           <select
             value={priority}
@@ -302,11 +303,11 @@ export default function HybridPageClient() {
       >
         Continue
       </button>
-    </div>
+    </AmbientSurface>
   );
 
   const briefForm = (
-    <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+    <AmbientSurface mode="hybrid" mesh="card" className="space-y-4 p-4 sm:p-5">
       <label className="block">
         <span className="text-xs text-muted-foreground mb-1.5 block">
           Brief <span className="text-outline">(optional)</span>
@@ -337,7 +338,7 @@ export default function HybridPageClient() {
           Back
         </button>
       </div>
-    </div>
+    </AmbientSurface>
   );
 
   if (!inResultsView) {

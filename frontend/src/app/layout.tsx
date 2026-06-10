@@ -38,8 +38,8 @@ export default function RootLayout({
         <BackendWarmup />
         <NavBar />
         <main className="relative isolate flex flex-1 flex-col min-h-0 overflow-x-clip">
-          <AmbientBackdrop variant="subtle" className="opacity-60" />
-          <div className="relative z-10 w-full pointer-events-auto">{children}</div>
+          <AmbientBackdrop variant="subtle" className="opacity-70" />
+          <div className="relative z-10 flex w-full min-h-0 flex-1 flex-col pointer-events-auto">{children}</div>
         </main>
         <SiteFooter />
         <Analytics />

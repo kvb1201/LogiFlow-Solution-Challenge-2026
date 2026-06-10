@@ -13,6 +13,7 @@ import { setShipmentAutorun } from '@/lib/shipmentAutorun';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import IntentConfirmModal from '@/components/IntentConfirmModal';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { accentMix, accentVar } from '@/lib/pipeline-theme';
@@ -227,27 +228,13 @@ export default function AiBriefPanel({
       ? 'Describe your shipment'
       : 'Or describe in your own words';
 
-  return (
-    <div
-      className={
-        embedded
-          ? className
-          : `pipeline-card p-4 sm:p-5 ${className}`
-      }
-      style={
-        embedded
-          ? undefined
-          : {
-              borderColor: accentMix(accentMode, 22, 'var(--border)'),
-              background: `linear-gradient(135deg, ${accentMix(accentMode, 7, 'transparent')} 0%, color-mix(in oklab, var(--surface) 40%, transparent) 100%)`,
-            }
-      }
-    >
+  const panelBody = (
+    <>
       {!embedded && (
         <div className="flex items-start gap-2 mb-3">
           <span
             className="material-symbols-outlined shrink-0"
-            style={{ color: accent, fontVariationSettings: "'FILL' 1" }}
+            style={{ color: accent, fontVariationSettings: "'FILL' 1", filter: `drop-shadow(0 0 8px ${accentMix(accentMode, 35, 'transparent')})` }}
             aria-hidden
           >
             auto_awesome
@@ -290,12 +277,12 @@ export default function AiBriefPanel({
         />
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <button
           type="button"
           disabled={loading}
           onClick={() => runParse(false)}
-          className="px-4 py-2.5 rounded-lg border text-sm font-semibold disabled:opacity-50 transition-colors hover:brightness-110"
+          className="w-full px-4 py-2.5 rounded-lg border text-sm font-semibold disabled:opacity-50 transition-colors hover:brightness-110 sm:w-auto"
           style={{
             borderColor: accentMix(accentMode, 35, 'transparent'),
             background: accentMix(accentMode, 18, 'transparent'),
@@ -309,7 +296,11 @@ export default function AiBriefPanel({
             type="button"
             disabled={loading}
             onClick={() => runParse(true)}
-            className="px-4 py-2.5 rounded-xl bg-primary text-[#001b3f] text-sm font-semibold hover:brightness-110 disabled:opacity-50"
+            className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold hover:brightness-110 disabled:opacity-50 sm:w-auto"
+            style={{
+              background: accentVar(accentMode),
+              color: accentMode === 'road' || accentMode === 'rail' ? 'oklch(0.15 0.02 250)' : 'white',
+            }}
           >
             {contextMode === 'home'
               ? 'Route me to the right tool'
@@ -357,6 +348,16 @@ export default function AiBriefPanel({
           navigateToPipeline(pendingRouteIntent, false);
         }}
       />
-    </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className={className}>{panelBody}</div>;
+  }
+
+  return (
+    <AmbientSurface mode={accentMode} mesh="card" className={`p-4 sm:p-5 ${className}`}>
+      {panelBody}
+    </AmbientSurface>
   );
 }

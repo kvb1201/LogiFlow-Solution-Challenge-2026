@@ -30,7 +30,8 @@ import AiBriefPanel from '@/components/AiBriefPanel';
 import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
-import { PIPELINE_CARD_CLASS, accentVar } from '@/lib/pipeline-theme';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar, PIPELINE_ACTION_PRIMARY, PIPELINE_ACTION_SECONDARY } from '@/lib/pipeline-theme';
 import {
   COMPARATOR_CAPABILITY_BADGES,
   COMPARATOR_HERO_METRICS,
@@ -58,8 +59,8 @@ const MODE_META: Record<
   },
   rail: {
     label: 'Rail',
-    tint: 'text-primary',
-    cardTint: 'border-primary/35 bg-primary/10',
+    tint: 'text-rail',
+    cardTint: 'border-rail/35 bg-rail/10',
     symbol: 'train',
   },
   air: {
@@ -535,15 +536,15 @@ export default function ComparatorPageClient() {
             )}
           </div>
         </div>
-        <div className="px-4 sm:px-5 py-4 grid grid-cols-3 gap-3 max-w-md border-b border-border/30">
+        <div className="grid max-w-md grid-cols-1 gap-2 border-b border-border/30 px-4 py-4 min-[360px]:grid-cols-3 min-[360px]:gap-3 sm:px-5">
           {[
             { label: 'Time', value: formatHours(recommendedRow?.time_hr) },
             { label: 'Cost', value: formatInr(recommendedRow?.cost_inr) },
             { label: 'Risk', value: formatRisk(recommendedRow?.risk) },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-lg border border-border/40 bg-surface/40 px-3 py-2">
+            <div key={label} className="rounded-lg border border-border/40 bg-surface/40 px-2.5 py-2 sm:px-3">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-              <div className="text-base font-bold font-mono text-on-surface mt-0.5">{value}</div>
+              <div className="mt-0.5 font-mono text-sm font-bold text-on-surface sm:text-base">{value}</div>
             </div>
           ))}
         </div>
@@ -644,7 +645,7 @@ export default function ComparatorPageClient() {
       </div>
 
       {Boolean(result.best_per_mode?.road?.geometry?.length) && (
-        <div className="rounded-xl border border-border/50 overflow-hidden h-[360px]">
+        <div className="h-[min(50vh,360px)] overflow-hidden rounded-xl border border-border/50 sm:h-[360px]">
           <MapView
             routes={[
               {
@@ -701,16 +702,15 @@ export default function ComparatorPageClient() {
               <button
                 type="button"
                 onClick={loadDemo}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white"
+                className={`${PIPELINE_ACTION_PRIMARY} text-white`}
                 style={{ background: accentVar('comparator') }}
               >
-                <span className="material-symbols-outlined text-lg">play_circle</span>
-                Run demo (Delhi → Mumbai)
+                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  play_circle
+                </span>
+                Run demo · Delhi → Mumbai
               </button>
-              <Link
-                href="/hybrid"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-              >
+              <Link href="/hybrid" className={PIPELINE_ACTION_SECONDARY}>
                 Hybrid chains
               </Link>
             </>
@@ -725,7 +725,7 @@ export default function ComparatorPageClient() {
           {stepDots}
           <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
             {step === 1 && (
-              <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+              <AmbientSurface mode="comparator" mesh="card" className="space-y-4 p-4 sm:p-5">
                 <h2 className="text-base font-bold text-on-surface">Where is the shipment moving?</h2>
                 <CorridorRow
                   accentVar="--comparator"
@@ -795,11 +795,11 @@ export default function ComparatorPageClient() {
                 >
                   Continue
                 </button>
-              </div>
+              </AmbientSurface>
             )}
 
             {step === 2 && (
-              <div className={`space-y-4 p-4 sm:p-5 ${PIPELINE_CARD_CLASS}`}>
+              <AmbientSurface mode="comparator" mesh="card" className="space-y-4 p-4 sm:p-5">
                 <div>
                   <h2 className="text-base font-bold text-on-surface">What constraints matter?</h2>
                   <p className="text-sm text-muted-foreground mt-1">
@@ -855,7 +855,7 @@ export default function ComparatorPageClient() {
                     Back
                   </button>
                 </div>
-              </div>
+              </AmbientSurface>
             )}
           </form>
         </PipelineLogiLanding>

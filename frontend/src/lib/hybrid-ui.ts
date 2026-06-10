@@ -7,9 +7,9 @@ export const MODE_META: Record<
   rail: {
     label: 'Train',
     icon: 'train',
-    tint: 'text-primary',
-    chip: 'bg-primary/15 border-primary/30 text-primary',
-    ring: 'ring-primary/40',
+    tint: 'text-rail',
+    chip: 'bg-rail/15 border-rail/30 text-rail',
+    ring: 'ring-rail/40',
   },
   road: {
     label: 'Road',

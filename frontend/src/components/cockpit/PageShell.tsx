@@ -5,6 +5,7 @@ import type { LogisticsMode } from '@/lib/mode-meta';
 import { modeMeta } from '@/lib/mode-meta';
 import { ModeIcon } from './ModeIcon';
 import { AmbientBackdrop } from './AmbientBackdrop';
+import { AmbientSurface } from './AmbientSurface';
 
 export function PageShell({
   mode,
@@ -30,7 +31,7 @@ export function PageShell({
       <div
         className={`relative z-10 pointer-events-auto mx-auto w-full px-4 py-8 sm:px-6 sm:py-10 ${contentClassName}`}
       >
-        <header className="pipeline-card mb-8 animate-slide-up overflow-hidden p-5 sm:p-6">
+        <AmbientSurface mode={mode ?? 'home'} mesh="card" className="mb-8 animate-slide-up overflow-hidden p-5 sm:p-6">
           <div
             aria-hidden
             className="pointer-events-none mb-4 h-px w-full opacity-80"
@@ -75,7 +76,7 @@ export function PageShell({
               <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
             ) : null}
           </div>
-        </header>
+        </AmbientSurface>
 
         <div className="animate-fade-in" style={{ animationDelay: '0.12s', animationFillMode: 'backwards' }}>
           {children}
