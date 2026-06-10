@@ -41,6 +41,31 @@ def iter_ports() -> Iterable[dict]:
     return PORTS
 
 
+def _port_dict_to_candidate(port: dict, distance_km: float = 0.0) -> PortCandidate:
+    return PortCandidate(
+        port_id=str(port["id"]),
+        name=str(port["name"]),
+        lat=float(port["lat"]),
+        lng=float(port["lng"]),
+        coast=str(port.get("coast", "unknown")),
+        base_congestion=float(port.get("base_congestion", 0.4)),
+        base_security_risk=float(port.get("base_security_risk", 0.2)),
+        distance_km=float(distance_km),
+        region=str(port.get("region", "india")),
+        infrastructure_quality=float(port.get("infrastructure_quality", 0.8)),
+        customs_hours=float(port.get("customs_hours", 8.0)),
+        piracy_risk=float(port.get("piracy_risk", 0.02)),
+    )
+
+
+def map_port_id_to_candidates(port_id: str, n: int = 1) -> list[PortCandidate]:
+    normalized = str(port_id).strip().lower()
+    for p in iter_ports():
+        if str(p["id"]).lower() == normalized:
+            return [_port_dict_to_candidate(p, distance_km=0.0)][: max(1, n)]
+    return []
+
+
 def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0, context=None) -> list[PortCandidate]:
     """
     Map a city name to the nearest N ports by geodesic distance.
@@ -62,22 +87,7 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
         # Check for strict alias matching like "mumbai" -> "mumbai" or "nhava sheva" -> jnpt
         # A simple check: if the normalized city matches the id, or is in the name.
         if normalized_city == p_id_norm or normalized_city in p_name_norm:
-            direct_matches.append(
-                PortCandidate(
-                    port_id=str(p["id"]),
-                    name=str(p["name"]),
-                    lat=float(p["lat"]),
-                    lng=float(p["lng"]),
-                    coast=str(p.get("coast", "unknown")),
-                    base_congestion=float(p.get("base_congestion", 0.4)),
-                    base_security_risk=float(p.get("base_security_risk", 0.2)),
-                    distance_km=0.0,
-                    region=str(p.get("region", "india")),
-                    infrastructure_quality=float(p.get("infrastructure_quality", 0.8)),
-                    customs_hours=float(p.get("customs_hours", 8.0)),
-                    piracy_risk=float(p.get("piracy_risk", 0.02)),
-                )
-            )
+            direct_matches.append(_port_dict_to_candidate(p, distance_km=0.0))
 
     if direct_matches:
         print(f"[WATER] Direct port match for '{city_name}': {[m.port_id for m in direct_matches]}")

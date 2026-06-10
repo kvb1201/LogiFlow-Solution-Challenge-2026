@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.pipelines.base import BasePipeline
 from app.pipelines.water.engineer import engineer_routes
-from app.pipelines.water.ports import map_city_to_ports
+from app.pipelines.water.ports import map_city_to_ports, map_port_id_to_candidates
 from app.pipelines.water.route_generator import generate_port_paths
 
 
@@ -35,15 +35,24 @@ class WaterPipeline(BasePipeline):
             constraints = {**constraints, "max_transshipments": 3}
             payload = {**payload, "constraints": constraints}
 
-        try:
-            origin_ports = map_city_to_ports(source, n=2, context=context)
-        except ValueError as e:
-            return _no_routes(str(e))
+        source_port_id = str(payload.get("source_port_id") or "").strip()
+        destination_port_id = str(payload.get("destination_port_id") or "").strip()
 
-        try:
-            dest_ports = map_city_to_ports(destination, n=2, context=context)
-        except ValueError as e:
-            return _no_routes(str(e))
+        if source_port_id:
+            origin_ports = map_port_id_to_candidates(source_port_id, n=1)
+        else:
+            try:
+                origin_ports = map_city_to_ports(source, n=2, context=context)
+            except ValueError as e:
+                return _no_routes(str(e))
+
+        if destination_port_id:
+            dest_ports = map_port_id_to_candidates(destination_port_id, n=1)
+        else:
+            try:
+                dest_ports = map_city_to_ports(destination, n=2, context=context)
+            except ValueError as e:
+                return _no_routes(str(e))
 
         # --- Fix #5: Handle empty port mapping ---
         if not origin_ports and not dest_ports:

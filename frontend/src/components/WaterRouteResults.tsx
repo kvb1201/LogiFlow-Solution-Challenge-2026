@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic';
 import React, { useMemo, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
-import { WATER_PORTS, WATER_PORT_REGION_COUNT } from '@/lib/water-ports';
+import { useWaterPortCatalog } from '@/hooks/useWaterPortCatalog';
+import type { WaterPortOption } from '@/lib/water-port-catalog';
 import { classifyWaterNoRoute, isWaterNoRouteMessage } from '@/lib/water-no-route';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
@@ -55,9 +56,9 @@ function stopsLabel(route: WaterRoute) {
 }
 
 /** Detect which regions a route spans based on port names */
-function routeRegions(route: WaterRoute): string[] {
+function routeRegions(route: WaterRoute, ports: WaterPortOption[]): string[] {
   const regionMap: Record<string, string> = {};
-  for (const port of WATER_PORTS) regionMap[port.name] = port.region;
+  for (const port of ports) regionMap[port.name] = port.region;
   const regions = new Set<string>();
   for (const seg of route.segments ?? []) {
     if (seg.mode === 'Water') {
@@ -337,17 +338,18 @@ function ActiveDisruptions({ disruptions }: { disruptions?: WaterRoute['active_d
 // ── Water Route Card ──────────────────────────────────────────────────
 
 function WaterRouteCard({
-  route, index, isSelected, onSelect, isCheapest, isFastest, isSafest,
+  route, index, isSelected, onSelect, isCheapest, isFastest, isSafest, ports,
 }: {
   route: WaterRoute; index: number; isSelected: boolean; onSelect: () => void;
   isCheapest: boolean; isFastest: boolean; isSafest: boolean;
+  ports: WaterPortOption[];
 }) {
   const risk = Number(route.risk ?? 0);
   const reliability = Number(route.reliability_score ?? 0);
   const distanceNm = Number(route.distance_nm ?? 0);
   const transshipments = Number(route.transshipments ?? 0);
   const rt = riskTone(risk);
-  const regions = routeRegions(route);
+  const regions = routeRegions(route, ports);
   const hasDisruptions = (route.active_disruptions?.length ?? 0) > 0;
   const hasStorm = route.marine_conditions?.storm_flag;
 
@@ -437,10 +439,11 @@ function WaterRouteCard({
 // ── Detail Panel ──────────────────────────────────────────────────────
 
 function DetailPanel({
-  route, source, destination, minCost, minTime, minRisk, onSave,
+  route, source, destination, minCost, minTime, minRisk, onSave, ports,
 }: {
   route: WaterRoute; source: string; destination: string;
   minCost: number; minTime: number; minRisk: number; onSave?: () => void;
+  ports: WaterPortOption[];
 }) {
   const priority = useLogiFlowStore((s) => s.priority);
   const [explanation, setExplanation] = useState<{ key: string; text: string } | null>(null);
@@ -452,7 +455,7 @@ function DetailPanel({
   const delay = Number(route.expected_delay_hours ?? 0);
   const distanceNm = Number(route.distance_nm ?? 0);
   const transshipments = Number(route.transshipments ?? 0);
-  const regions = routeRegions(route);
+  const regions = routeRegions(route, ports);
   const rt = riskTone(risk);
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
 
@@ -655,9 +658,16 @@ function DetailPanel({
 // ── No routes empty state ─────────────────────────────────────────────
 
 function WaterNoRoutesEmpty({
+  portTotal,
+  portRegions,
   source, destination, error, onTryAgain,
 }: {
-  source: string; destination: string; error: string | null; onTryAgain: () => void;
+  portTotal: number;
+  portRegions: number;
+  source: string;
+  destination: string;
+  error: string | null;
+  onTryAgain: () => void;
 }) {
   const kind = classifyWaterNoRoute(error);
   const isConstraints = kind === 'constraints';
@@ -683,7 +693,7 @@ function WaterNoRoutesEmpty({
           <ul className="space-y-1.5">
             <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Pick a major hub port closer to each coast (Singapore, Jebel Ali, Colombo).</span></li>
             <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Increase max transshipments in advanced options.</span></li>
-            <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Network: {WATER_PORTS.length} ports across {WATER_PORT_REGION_COUNT} regions.</span></li>
+            <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Network: {portTotal} ports across {portRegions} regions.</span></li>
           </ul>
         </div>
         <button type="button" onClick={onTryAgain}
@@ -713,6 +723,7 @@ export default function WaterRouteResults() {
   const priority = useLogiFlowStore((s) => s.priority);
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const { ports, total: portTotal, regions: portRegions } = useWaterPortCatalog();
 
   const safeIndex = Math.min(Math.max(selected, 0), Math.max(routes.length - 1, 0));
   const active = routes[safeIndex];
@@ -730,7 +741,16 @@ export default function WaterRouteResults() {
   const showNoRoutes = hasSearched && !showWaterLoading && routes.length === 0 && (isWaterNoRouteMessage(error) || !error);
 
   if (showNoRoutes) {
-    return <WaterNoRoutesEmpty source={source} destination={destination} error={error} onTryAgain={resetSearch} />;
+    return (
+      <WaterNoRoutesEmpty
+        portTotal={portTotal}
+        portRegions={portRegions}
+        source={source}
+        destination={destination}
+        error={error}
+        onTryAgain={resetSearch}
+      />
+    );
   }
   if (!routes.length || !active || !stats) return null;
 
@@ -747,7 +767,7 @@ export default function WaterRouteResults() {
           </div>
         </div>
         <div className="rounded-full border border-outline-variant/15 bg-surface-container-lowest/35 px-3 py-1 text-[10px] text-on-surface-variant">
-          {WATER_PORTS.length} ports · {WATER_PORT_REGION_COUNT} regions · live marine weather
+          {portTotal || '…'} ports · {portRegions || '…'} regions · live marine weather
         </div>
       </div>
 
@@ -772,6 +792,7 @@ export default function WaterRouteResults() {
               isCheapest={Number(route.cost) === stats.minCost}
               isFastest={Number(route.time) === stats.minTime}
               isSafest={Number(route.risk) === stats.minRisk}
+              ports={ports}
             />
           ))}
         </div>
@@ -803,6 +824,7 @@ export default function WaterRouteResults() {
               minTime={stats.minTime}
               minRisk={stats.minRisk}
               onSave={() => setSaveModalOpen(true)}
+              ports={ports}
             />
           </div>
         </div>

@@ -3,7 +3,7 @@
  * Connects to the LogiFlow FastAPI backend.
  */
 
-const BACKEND_BASE =
+export const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
@@ -754,9 +754,26 @@ export type WaterRoute = {
   departure_date?: string;
 };
 
+export type WaterPortRecord = {
+  id: string;
+  name: string;
+  country: string;
+  region: string;
+  routable: boolean;
+};
+
+export type WaterPortCatalogResponse = {
+  ports: WaterPortRecord[];
+  total: number;
+  routable: number;
+  regions: number;
+};
+
 export type WaterPayload = {
   source: string;
   destination: string;
+  source_port_id?: string | null;
+  destination_port_id?: string | null;
   cargo_weight_kg?: number;
   cargo_type?: string;
   priority?: string;
