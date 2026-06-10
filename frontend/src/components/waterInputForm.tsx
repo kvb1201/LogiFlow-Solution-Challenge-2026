@@ -247,28 +247,27 @@ export default function WaterInputForm() {
     useWaterPortCatalog();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [maxTransshipments, setMaxTransshipments] = useState(1);
+  const [maxTransshipments, setMaxTransshipments] = useState<number | null>(null);
   const [sourcePortId, setSourcePortId] = useState<string | null>(null);
   const [destinationPortId, setDestinationPortId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!ports.length) return;
-    if (source && !sourcePortId) {
-      const resolved = resolveWaterPort(ports, source);
-      if (resolved) setSourcePortId(resolved.id);
-    }
-    if (destination && !destinationPortId) {
-      const resolved = resolveWaterPort(ports, destination);
-      if (resolved) setDestinationPortId(resolved.id);
-    }
-  }, [ports, source, destination, sourcePortId, destinationPortId]);
+  const resolvedSourcePort = useMemo(
+    () => resolveWaterPort(ports, source, sourcePortId),
+    [ports, source, sourcePortId],
+  );
+  const resolvedDestinationPort = useMemo(
+    () => resolveWaterPort(ports, destination, destinationPortId),
+    [ports, destination, destinationPortId],
+  );
+  const effectiveSourcePortId = resolvedSourcePort?.id ?? sourcePortId;
+  const effectiveDestinationPortId = resolvedDestinationPort?.id ?? destinationPortId;
 
   const portsReady = Boolean(
-    sourcePortId &&
-      destinationPortId &&
-      resolveWaterPort(ports, source, sourcePortId)?.routable &&
-      resolveWaterPort(ports, destination, destinationPortId)?.routable,
+    effectiveSourcePortId &&
+      effectiveDestinationPortId &&
+      resolvedSourcePort?.routable &&
+      resolvedDestinationPort?.routable,
   );
 
   const validatePorts = useCallback((): string | null => {
@@ -296,8 +295,8 @@ export default function WaterInputForm() {
       mode: 'water',
       water: {
         max_transshipments: maxTransshipments,
-        source_port_id: sourcePortId,
-        destination_port_id: destinationPortId,
+        source_port_id: effectiveSourcePortId,
+        destination_port_id: effectiveDestinationPortId,
       },
     });
   }, [
@@ -305,8 +304,8 @@ export default function WaterInputForm() {
     destination,
     handleOptimize,
     maxTransshipments,
-    sourcePortId,
-    destinationPortId,
+    effectiveSourcePortId,
+    effectiveDestinationPortId,
     validatePorts,
   ]);
 
@@ -319,7 +318,7 @@ export default function WaterInputForm() {
       return;
     }
     if (source.trim().toLowerCase() === destination.trim().toLowerCase()) {
-      setError('Source and destination cannot be the same');
+      setError('Source and destination cannot be the same city.');
       return;
     }
     if (cargoWeight <= 0) {
@@ -381,7 +380,7 @@ export default function WaterInputForm() {
                 <LocationInput
                   label="Origin port"
                   value={source}
-                  portId={sourcePortId}
+                  portId={effectiveSourcePortId}
                   ports={ports}
                   catalogLoading={catalogLoading}
                   onChange={setSource}
@@ -394,7 +393,7 @@ export default function WaterInputForm() {
                 <LocationInput
                   label="Destination port"
                   value={destination}
-                  portId={destinationPortId}
+                  portId={effectiveDestinationPortId}
                   ports={ports}
                   catalogLoading={catalogLoading}
                   onChange={setDestination}
@@ -512,9 +511,9 @@ export default function WaterInputForm() {
               hint="Higher values allow more global lanes, but can increase transit time and route risk."
             >
               <div className="flex items-center gap-2">
-                {[0, 1, 2, 3].map((n) => (
+                {[null, 0, 1, 2, 3].map((n) => (
                   <button
-                    key={n}
+                    key={n ?? 'auto'}
                     type="button"
                     onClick={() => setMaxTransshipments(n)}
                     className={`flex-1 rounded-lg border px-3 py-2 text-sm font-bold mono transition-all ${
@@ -523,7 +522,7 @@ export default function WaterInputForm() {
                         : 'bg-surface-container-lowest/30 border-outline-variant/15 text-on-surface-variant hover:border-outline-variant/30'
                     }`}
                   >
-                    {n}
+                    {n ?? 'Auto'}
                   </button>
                 ))}
               </div>

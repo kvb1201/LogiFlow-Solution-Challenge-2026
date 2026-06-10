@@ -20,7 +20,29 @@ class CatalogPort:
     country: str
     region: str
     routable: bool
+    lat: float
+    lng: float
     locode: str = ""
+
+
+def city_matches_port(city: str, port_name: str, port_id: str = "") -> bool:
+    """True when a city/query label refers to a port (exact or common alias)."""
+    city_norm = (city or "").strip().lower()
+    if not city_norm:
+        return False
+
+    port_id_norm = (port_id or "").strip().lower()
+    name_norm = (port_name or "").strip().lower()
+    root = name_norm.split(",")[0].strip()
+    base = root.split("(")[0].strip()
+
+    if city_norm in {port_id_norm, name_norm, root, base}:
+        return True
+    if root.startswith(f"{city_norm}-") or root.startswith(f"{city_norm} "):
+        return True
+    if base.startswith(f"{city_norm} ") or base.startswith(f"{city_norm}("):
+        return True
+    return False
 
 
 def _display_name(portname: str, country: str) -> str:
@@ -54,6 +76,8 @@ def _meta_to_catalog(meta: PortMeta, routable: bool) -> CatalogPort:
         country=meta.country,
         region=meta.continent or "Unknown",
         routable=routable,
+        lat=meta.lat,
+        lng=meta.lon,
         locode=meta.locode,
     )
 
@@ -69,6 +93,8 @@ def _config_to_catalog(port: dict, routable: bool = True) -> CatalogPort:
         country=country,
         region=_region_from_config(port),
         routable=routable,
+        lat=float(port.get("lat", 0) or 0),
+        lng=float(port.get("lng", port.get("lon", 0)) or 0),
         locode=str(port.get("locode", "") or ""),
     )
 
@@ -101,6 +127,8 @@ def _build_catalog() -> None:
             country=existing.country,
             region=existing.region,
             routable=routable,
+            lat=existing.lat,
+            lng=existing.lng,
             locode=existing.locode,
         )
         _CATALOG_BY_ID[port_id] = updated
@@ -142,6 +170,8 @@ def list_ports() -> list[dict]:
             "country": p.country,
             "region": p.region,
             "routable": p.routable,
+            "lat": p.lat,
+            "lng": p.lng,
         }
         for p in ports
     ]
@@ -177,6 +207,8 @@ def search_ports(query: str, *, limit: int = 25) -> list[dict]:
             "country": p.country,
             "region": p.region,
             "routable": p.routable,
+            "lat": p.lat,
+            "lng": p.lng,
         }
         for p in matches
     ]
@@ -187,17 +219,33 @@ def get_port(port_id: str) -> Optional[CatalogPort]:
 
 
 def resolve_port(*, name: str | None = None, port_id: str | None = None) -> Optional[CatalogPort]:
-    if port_id:
-        hit = _CATALOG_BY_ID.get(str(port_id).strip())
-        if hit:
-            return hit
+    name_hit: CatalogPort | None = None
     if name:
         normalized = name.strip().lower()
         if normalized in _CATALOG_BY_NAME:
-            return _CATALOG_BY_NAME[normalized]
-        for entry in _CATALOG_BY_ID.values():
-            if entry.name.lower() == normalized or entry.id.lower() == normalized:
-                return entry
+            name_hit = _CATALOG_BY_NAME[normalized]
+        else:
+            alias_matches: list[CatalogPort] = []
+            for entry in _CATALOG_BY_ID.values():
+                if entry.name.lower() == normalized or entry.id.lower() == normalized:
+                    name_hit = entry
+                    break
+                if city_matches_port(normalized, entry.name, entry.id):
+                    alias_matches.append(entry)
+            if name_hit is None and alias_matches:
+                alias_matches.sort(key=lambda e: (not e.routable, len(e.name)))
+                name_hit = alias_matches[0]
+
+    if port_id:
+        hit = _CATALOG_BY_ID.get(str(port_id).strip())
+        if hit and not name:
+            return hit
+        if hit and name_hit is not None and name_hit.id == hit.id:
+            return hit
+        return None
+
+    if name_hit:
+        return name_hit
     return None
 
 

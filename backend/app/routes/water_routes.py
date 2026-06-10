@@ -11,10 +11,10 @@ water_router = APIRouter(prefix="/water", tags=["water-cargo"])
 
 
 class WaterConstraints(BaseModel):
-    risk_threshold: Optional[float] = None
-    delay_tolerance_hours: Optional[float] = None
-    max_transshipments: Optional[int] = None
-    budget_max_inr: Optional[float] = None
+    risk_threshold: Optional[float] = Field(default=None, ge=0, le=1)
+    delay_tolerance_hours: Optional[float] = Field(default=None, ge=0)
+    max_transshipments: Optional[int] = Field(default=None, ge=0)
+    budget_max_inr: Optional[float] = Field(default=None, ge=0)
 
 
 class WaterPayload(BaseModel):
@@ -22,7 +22,7 @@ class WaterPayload(BaseModel):
     destination: str
     source_port_id: Optional[str] = None
     destination_port_id: Optional[str] = None
-    cargo_weight_kg: float = 100
+    cargo_weight_kg: float = Field(default=100, gt=0)
     cargo_type: str = "General"
     priority: str = "balanced"
     departure_date: Optional[str] = None
@@ -47,6 +47,13 @@ def optimize_water(payload: WaterPayload):
     try:
         from app.pipelines.water.pipeline import WaterPipeline
         from app.utils.request_context import RequestContext
+
+        if not payload.source.strip() or not payload.destination.strip():
+            raise HTTPException(status_code=400, detail="Source and destination are required")
+        if payload.source.strip().lower() == payload.destination.strip().lower():
+            raise HTTPException(status_code=400, detail="Source and destination cannot be the same city.")
+        if payload.cargo_weight_kg <= 0:
+            raise HTTPException(status_code=400, detail="Cargo weight must be greater than 0")
 
         try:
             origin = validate_port_selection(
@@ -96,4 +103,3 @@ def optimize_water(payload: WaterPayload):
 @water_router.get("/health")
 def water_health():
     return {"status": "water api working"}
-

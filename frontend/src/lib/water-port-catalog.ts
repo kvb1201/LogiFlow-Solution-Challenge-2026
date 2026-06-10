@@ -6,6 +6,8 @@ export type WaterPortOption = {
   country: string;
   region: string;
   routable: boolean;
+  lat: number;
+  lng: number;
 };
 
 export type WaterPortCatalog = {
@@ -31,6 +33,21 @@ function buildIndex(ports: WaterPortOption[]): PortIndex {
     byName.set(port.name.toLowerCase(), port);
   }
   return { byId, byName };
+}
+
+function cityMatchesPort(city: string, port: WaterPortOption): boolean {
+  const cityNorm = city.trim().toLowerCase();
+  if (!cityNorm) return false;
+
+  const nameNorm = port.name.toLowerCase();
+  const root = nameNorm.split(',')[0].trim();
+  const base = root.split('(')[0].trim();
+  const idNorm = port.id.toLowerCase();
+
+  if ([idNorm, nameNorm, root, base].includes(cityNorm)) return true;
+  if (root.startsWith(`${cityNorm}-`) || root.startsWith(`${cityNorm} `)) return true;
+  if (base.startsWith(`${cityNorm} `) || base.startsWith(`${cityNorm}(`)) return true;
+  return false;
 }
 
 export function filterWaterPorts(ports: WaterPortOption[], query: string, limit = 25): WaterPortOption[] {
@@ -77,20 +94,28 @@ export function resolveWaterPort(
   value: string,
   portId?: string | null,
 ): WaterPortOption | null {
+  const normalized = value.trim().toLowerCase();
+  const fromIndex = normalized ? portIndex?.byName.get(normalized) : null;
+  const fromListByName = normalized
+    ? ports.find(
+        (p) =>
+          p.name.toLowerCase() === normalized ||
+          p.id.toLowerCase() === normalized ||
+          cityMatchesPort(normalized, p),
+      ) ?? null
+    : null;
+  const nameMatch = fromIndex ?? fromListByName;
+
   if (portId) {
     const byId = portIndex?.byId.get(portId);
-    if (byId) return byId;
+    if (byId) return !value.trim() || nameMatch?.id === byId.id ? byId : null;
     const fromList = ports.find((p) => p.id === portId);
-    if (fromList) return fromList;
+    if (fromList) return !value.trim() || nameMatch?.id === fromList.id ? fromList : null;
   }
 
-  const normalized = value.trim().toLowerCase();
   if (!normalized) return null;
 
-  const fromIndex = portIndex?.byName.get(normalized);
-  if (fromIndex) return fromIndex;
-
-  return ports.find((p) => p.name.toLowerCase() === normalized || p.id.toLowerCase() === normalized) ?? null;
+  return nameMatch;
 }
 
 export function validateWaterPortSelection(

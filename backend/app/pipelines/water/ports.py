@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Iterable
 
 from app.pipelines.water.config import PORTS
-from app.utils.coordinates import get_coords
+from app.pipelines.water.port_catalog import city_matches_port, search_ports
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -67,19 +70,28 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
 
     normalized_city = city_name.strip().lower()
 
-    # Step 2 & 3: Direct port detection — bypass geocoding/distance if city matches a port
+    # Direct port detection — bypass geocoding for exact or alias matches (e.g. Shanghai → Pudong).
     direct_matches: list[PortCandidate] = []
     for p in iter_ports():
-        p_id_norm = str(p["id"]).lower()
-        p_name_norm = str(p["name"]).lower()
-        
-        # Check for strict alias matching like "mumbai" -> "mumbai" or "nhava sheva" -> jnpt
-        # A simple check: if the normalized city matches the id, or is in the name.
-        if normalized_city == p_id_norm or normalized_city in p_name_norm:
+        if city_matches_port(normalized_city, str(p["name"]), str(p["id"])):
             direct_matches.append(_port_dict_to_candidate(p, distance_km=0.0))
 
     if direct_matches:
-        print(f"[WATER] Direct port match for '{city_name}': {[m.port_id for m in direct_matches]}")
+        direct_matches.sort(key=lambda c: (c.distance_km, len(c.name)))
+        log.info("[water] Direct port match for '%s': %s", city_name, [m.port_id for m in direct_matches])
+        return direct_matches[: max(1, n)]
+
+    # Catalog search before geocoding — avoids bad coords for major port cities.
+    catalog_hits = search_ports(city_name, limit=max(n * 3, 10))
+    routable_hits = [h for h in catalog_hits if h.get("routable")]
+    for hit in (routable_hits or catalog_hits)[: max(1, n)]:
+        for p in iter_ports():
+            if str(p["id"]) == hit["id"]:
+                direct_matches.append(_port_dict_to_candidate(p, distance_km=0.0))
+                break
+
+    if direct_matches:
+        log.info("[water] Catalog port match for '%s': %s", city_name, [m.port_id for m in direct_matches])
         return direct_matches[: max(1, n)]
 
     cache_key = f"coords:{city_name}"
@@ -88,7 +100,7 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
         if coords is None:
             raise ValueError(f"Port or city '{city_name}' does not exist.")
         city_lat, city_lng = coords
-        print(f"[CACHE HIT] {cache_key}")
+        log.debug("[water] Coordinate cache hit: %s", cache_key)
     else:
         from app.utils.coordinates import get_coords_or_none
         coords = get_coords_or_none(city_name)
@@ -97,7 +109,7 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
                 context.set(cache_key, None)
             raise ValueError(f"Port or city '{city_name}' does not exist.")
         city_lat, city_lng = coords
-        print(f"[API CALL] {cache_key}")
+        log.debug("[water] Coordinate lookup: %s", cache_key)
         if context:
             context.set(cache_key, (city_lat, city_lng))
 
@@ -129,5 +141,10 @@ def map_city_to_ports(city_name: str, n: int = 3, max_distance_km: float = 250.0
         return within[: max(1, n)]
 
     # No port within threshold — water transport not viable for this city.
-    print(f"[WATER] No ports within {max_distance_km}km of {city_name} (nearest: {candidates[0].distance_km:.0f}km)")
+    log.info(
+        "[water] No ports within %.0fkm of %s (nearest: %.0fkm)",
+        max_distance_km,
+        city_name,
+        candidates[0].distance_km,
+    )
     return []

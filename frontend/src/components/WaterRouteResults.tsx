@@ -292,8 +292,9 @@ function ChokepointsPath({
 // ── Active disruptions ────────────────────────────────────────────────
 
 function ActiveDisruptions({ disruptions }: { disruptions?: WaterRoute['active_disruptions'] }) {
-  if (!disruptions?.length) return null;
   const [open, setOpen] = useState(false);
+  if (!disruptions?.length) return null;
+
   const redCount = disruptions.filter(d => d.alert === 'RED').length;
   const orangeCount = disruptions.filter(d => d.alert === 'ORANGE').length;
   const headerTone = redCount > 0 ? 'border-red-400/25 bg-red-500/8' : 'border-amber-400/20 bg-amber-500/8';
@@ -784,7 +785,7 @@ export default function WaterRouteResults() {
           </div>
           {routes.map((route, index) => (
             <WaterRouteCard
-              key={routeKey(route)}
+              key={`${index}-${routeKey(route)}`}
               route={route}
               index={index}
               isSelected={index === safeIndex}
@@ -803,6 +804,7 @@ export default function WaterRouteResults() {
           <div className="h-[280px] sm:h-[340px] rounded-2xl overflow-hidden border border-teal-400/10">
             <SeaMapView
               routes={routes}
+              ports={ports}
               selectedRoute={safeIndex}
               source={source}
               destination={destination}

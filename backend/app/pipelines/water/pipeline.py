@@ -18,6 +18,26 @@ def _no_routes(message: str) -> dict:
     }
 
 
+def _coerce_nonnegative_int(value, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _sort_key_for_priority(priority: str):
+    normalized = (priority or "balanced").strip().lower()
+    if normalized in {"cost", "cheap", "cheapest"}:
+        return lambda x: (x.get("cost", 1e18), x.get("risk", 1), x.get("time", 1e9))
+    if normalized in {"time", "fast", "fastest"}:
+        return lambda x: (x.get("time", 1e9), x.get("risk", 1), x.get("cost", 1e18))
+    if normalized in {"safe", "safety", "safest"}:
+        return lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18))
+    return lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18))
+
+
 class WaterPipeline(BasePipeline):
     mode = "water"
     name = "Water Transport (Maritime)"
@@ -27,13 +47,13 @@ class WaterPipeline(BasePipeline):
         constraints = payload.get("constraints") or {}
 
         if source.strip().lower() == destination.strip().lower():
-            return _no_routes("Source and destination are the same city.")
+            return _no_routes("Source and destination cannot be the same city.")
 
         # Default: allow at most 3 transshipments (Indian coastal routes chain
         # through multiple ports along the coastline).
-        if constraints.get("max_transshipments") is None:
-            constraints = {**constraints, "max_transshipments": 3}
-            payload = {**payload, "constraints": constraints}
+        max_transshipments = _coerce_nonnegative_int(constraints.get("max_transshipments"), 3)
+        constraints = {**constraints, "max_transshipments": max_transshipments}
+        payload = {**payload, "constraints": constraints}
 
         source_port_id = str(payload.get("source_port_id") or "").strip()
         destination_port_id = str(payload.get("destination_port_id") or "").strip()
@@ -81,11 +101,10 @@ class WaterPipeline(BasePipeline):
                 # We need enough legs for hub routing (e.g. India → Jebel Ali → Port Said → Rotterdam
                 # = 3 legs, 2 transshipments). Add +2 headroom for hub-to-hub routing.
                 # But honour max_transshipments=0 strictly (direct routes only = max_legs=1).
-                max_trans = int(constraints.get("max_transshipments", 3))
-                if max_trans == 0:
+                if max_transshipments == 0:
                     max_legs = 1   # strictly direct, 1 sea leg
                 else:
-                    max_legs = max(max_trans + 2, 4)
+                    max_legs = max(max_transshipments + 2, 4)
                 port_paths = generate_port_paths(
                     op.port_id,
                     dp.port_id,
@@ -113,6 +132,5 @@ class WaterPipeline(BasePipeline):
         for r in filtered:
             r.pop("_filtered_out", None)
 
-        # Lower is better for central scorer, so provide a consistent ordering hint:
-        filtered.sort(key=lambda x: (x.get("risk", 1), x.get("time", 1e9), x.get("cost", 1e18)))
+        filtered.sort(key=_sort_key_for_priority(str(payload.get("priority") or "balanced")))
         return filtered

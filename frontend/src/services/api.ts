@@ -773,6 +773,8 @@ export type WaterPortRecord = {
   country: string;
   region: string;
   routable: boolean;
+  lat: number;
+  lng: number;
 };
 
 export type WaterPortCatalogResponse = {
