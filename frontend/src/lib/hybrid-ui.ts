@@ -157,20 +157,97 @@ export function transferSeverityMeta(severity?: string) {
     case 'warning':
       return {
         icon: 'warning',
-        label: 'Short connection — check delays',
-        chip: 'border-amber-400/50 bg-amber-500/15 text-amber-100',
+        label: 'Tight connection',
+        chip: 'border-amber-400/40 bg-amber-500/10 text-amber-50',
       };
     case 'caution':
       return {
         icon: 'schedule',
         label: 'Long wait at changeover',
-        chip: 'border-orange-400/40 bg-orange-500/10 text-orange-100',
+        chip: 'border-orange-400/35 bg-orange-500/10 text-orange-50',
       };
     default:
       return {
-        icon: 'pause_circle',
+        icon: 'sync_alt',
         label: 'Changeover',
-        chip: 'border-violet-400/30 bg-violet-500/10 text-violet-100',
+        chip: 'border-violet-400/30 bg-violet-500/10 text-violet-50',
       };
   }
+}
+
+/** One node in the corridor summary strip — derived from every leg, not hub_cities[0] only. */
+export type RoutePathNode =
+  | { kind: 'place'; name: string; role: 'origin' | 'changeover' | 'destination' }
+  | { kind: 'leg'; mode: string; label: string; icon: string };
+
+function _normPlace(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+/** Build full origin → … → destination path including every changeover (e.g. Bhusaval). */
+export function buildRoutePath(it: ComposedItinerary): RoutePathNode[] {
+  const legs = it.legs || [];
+  if (!legs.length) return [];
+
+  const transferCities = new Set(
+    (it.transfers || [])
+      .map((t) => (t.at_display || t.at || '').trim())
+      .filter(Boolean)
+      .map(_normPlace)
+  );
+
+  const nodes: RoutePathNode[] = [];
+
+  const pushPlace = (name: string, role: 'origin' | 'changeover' | 'destination') => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const last = nodes[nodes.length - 1];
+    if (last?.kind === 'place' && _normPlace(last.name) === _normPlace(trimmed)) {
+      if (role === 'destination') last.role = 'destination';
+      else if (role === 'changeover' && last.role === 'origin') last.role = 'changeover';
+      else if (role === 'changeover') last.role = 'changeover';
+      return;
+    }
+    const isTransfer = transferCities.has(_normPlace(trimmed));
+    const resolvedRole =
+      role === 'destination'
+        ? 'destination'
+        : isTransfer || role === 'changeover'
+          ? 'changeover'
+          : role;
+    nodes.push({ kind: 'place', name: trimmed, role: resolvedRole });
+  };
+
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const meta = modeMeta(leg.mode);
+    if (i === 0) pushPlace(leg.source, 'origin');
+    else if (_normPlace(leg.source) !== _normPlace(legs[i - 1].destination)) {
+      pushPlace(leg.source, 'changeover');
+    }
+
+    nodes.push({
+      kind: 'leg',
+      mode: leg.mode,
+      label: meta.label,
+      icon: meta.icon,
+    });
+
+    pushPlace(
+      leg.destination,
+      i === legs.length - 1 ? 'destination' : 'changeover'
+    );
+  }
+
+  return nodes;
+}
+
+export function corridorEndpointLabel(it: ComposedItinerary): string {
+  const legs = it.legs || [];
+  if (!legs.length) return '';
+  return `${legs[0].source} → ${legs[legs.length - 1].destination}`;
+}
+
+export function changeoverCount(it: ComposedItinerary): number {
+  return Math.max(it.transshipments ?? 0, (it.transfers || []).length, (it.legs?.length ?? 1) - 1);
 }

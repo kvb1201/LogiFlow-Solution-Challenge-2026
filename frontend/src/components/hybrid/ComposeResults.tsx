@@ -20,52 +20,58 @@ export function ComposeResults({
 
   if (!recommended && alternatives.length === 0) return null;
 
-  const topPick = recommended || alternatives[0];
-
   return (
-    <div className="space-y-8 animate-fade-in pb-12">
+    <div className="space-y-10 animate-fade-in pb-12">
       <ComposeContextBanner result={result} />
 
-      {topPick && (
-        <ItineraryCard itinerary={topPick} recommended={Boolean(recommended)} variant="full" />
-      )}
-
-      {onSave && recommended && (
-        <div className="flex justify-end mt-2">
-          <button
-            onClick={onSave}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-500/10 border border-violet-400/30 px-4 py-2 text-sm font-semibold text-violet-300 hover:bg-violet-500/20 transition-all"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
-            Save Report
-          </button>
-        </div>
+      {recommended && (
+        <section>
+          <ItineraryCard itinerary={recommended} recommended variant="full" />
+          {onSave && (
+            <div className="flex justify-end mt-4">
+              <button
+                type="button"
+                onClick={onSave}
+                className="inline-flex items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-5 py-2.5 text-sm font-semibold text-violet-100 hover:bg-violet-500/20 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]" aria-hidden>
+                  save
+                </span>
+                Save report
+              </button>
+            </div>
+          )}
+        </section>
       )}
 
       {baselines.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs text-muted-foreground self-center mr-1">Direct options:</span>
-          {baselines.map(([mode, b]) => (
-            <span
-              key={mode}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface/40 px-3 py-1 text-xs"
-            >
-              <span className="font-medium text-on-surface-variant">{modeLabel(mode)}</span>
-              <span className="font-mono text-muted-foreground">
-                {formatHours(b.time_hr)} · {formatInr(b.cost_inr)}
-              </span>
-            </span>
-          ))}
-        </div>
+        <section>
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-3">
+            Direct mode baselines
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {baselines.map(([mode, b]) => (
+              <div
+                key={mode}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs"
+              >
+                <span className="font-semibold text-on-surface">{modeLabel(mode)}</span>
+                <span className="font-mono text-muted-foreground">
+                  {formatHours(b.time_hr)} · {formatInr(b.cost_inr)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {alternatives.length > 0 && (
         <section>
-          <h3 className="text-sm font-semibold text-on-surface-variant mb-3 flex items-center gap-2">
-            <span className="material-symbols-outlined text-base text-violet-300/80">alt_route</span>
-            Other routes we considered
-            <span className="text-xs font-normal text-muted-foreground">({alternatives.length})</span>
-          </h3>
+          <h3 className="text-sm font-semibold text-on-surface mb-1">Other options</h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            {alternatives.length} alternative{alternatives.length === 1 ? '' : 's'} ranked lower for
+            your priority
+          </p>
           <div className="space-y-3">
             {alternatives.slice(0, 5).map((it) => (
               <ItineraryCard key={it.id} itinerary={it} variant="alt" />
@@ -74,13 +80,15 @@ export function ComposeResults({
         </section>
       )}
 
-      <button
-        type="button"
-        onClick={onEdit}
-        className="text-sm font-medium text-violet-300/90 hover:text-violet-200 transition-colors"
-      >
-        ← Change corridor or re-run
-      </button>
+      <div className="pt-2 border-t border-white/[0.06]">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="text-sm font-medium text-violet-300 hover:text-violet-200 transition-colors"
+        >
+          ← Edit corridor and re-run
+        </button>
+      </div>
     </div>
   );
 }
