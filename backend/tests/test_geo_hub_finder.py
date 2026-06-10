@@ -4,6 +4,11 @@ from app.services.geo_hub_finder import (
     is_remote_location,
     nearest_metropolitan_hubs,
 )
+from app.services.hub_spatial_index import hub_index_size
+
+
+def test_hub_index_has_thousand_plus_entries():
+    assert hub_index_size() >= 1000
 
 
 def test_haversine_delhi_mumbai_reasonable():
@@ -12,12 +17,21 @@ def test_haversine_delhi_mumbai_reasonable():
     assert 1100 < dist < 1500
 
 
+def test_nearest_hubs_for_chadausi_area():
+    # Chadausi UP — should pick a nearby indexed station, not require metro geocoding
+    hubs = nearest_metropolitan_hubs(28.4594, 78.7774, max_hubs=5)
+    assert len(hubs) >= 2
+    labels = {h.city.lower() for h in hubs}
+    assert labels & {"sambhal", "moradabad", "budaun", "badaun"}
+
+
 def test_nearest_hubs_for_rural_point():
     # Rough coords inland UP (not a mapped metro)
     hubs = nearest_metropolitan_hubs(26.2, 79.5, max_hubs=3)
     cities = [h.city for h in hubs]
     assert len(cities) >= 2
-    assert "Kanpur" in cities or "Lucknow" in cities or "Agra" in cities
+    # Nearest indexed stations in Jalaun / Orai / Pokhrayan belt
+    assert any(c.lower() in {"jalaun", "pokhrayan", "orai", "chaunrah", "jhinjhak"} for c in cities)
 
 
 def test_mapped_metro_not_remote():
