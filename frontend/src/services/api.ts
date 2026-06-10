@@ -670,6 +670,27 @@ export interface ComposeResult {
     label?: string;
   }>;
   rural_corridor?: boolean;
+  feeder_corridor?: boolean;
+  resolved_source?: {
+    raw?: string;
+    canonical_city?: string;
+    feeder_access?: {
+      local_place: string;
+      hub_city: string;
+      local_station?: string | null;
+      hub_station?: string | null;
+    };
+  };
+  resolved_destination?: {
+    raw?: string;
+    canonical_city?: string;
+    feeder_access?: {
+      local_place: string;
+      hub_city: string;
+      local_station?: string | null;
+      hub_station?: string | null;
+    };
+  };
   /**
    * Templates that could not be evaluated for this corridor.
    * Key is the template/mode name (e.g. "road"), value is the rejection reason.

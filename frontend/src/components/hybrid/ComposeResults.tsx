@@ -31,7 +31,32 @@ export function ComposeResults({
         </div>
       )}
 
-      {result.rural_corridor && result.compose_note && !result.short_corridor && (
+      {result.feeder_corridor && result.compose_note && !result.short_corridor && (
+        <div
+          className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100/90 leading-relaxed"
+          role="status"
+        >
+          <p className="font-medium text-emerald-200/95 mb-1">Local hub connection included</p>
+          <p>{result.compose_note}</p>
+          {result.resolved_source?.feeder_access && (
+            <p className="mt-2 text-xs text-emerald-200/75">
+              Origin: {result.resolved_source.feeder_access.local_place} via{' '}
+              {result.resolved_source.feeder_access.hub_city}
+              {result.resolved_source.feeder_access.local_station
+                ? ` (${result.resolved_source.feeder_access.local_station})`
+                : ''}
+            </p>
+          )}
+          {result.resolved_destination?.feeder_access && (
+            <p className="mt-1 text-xs text-emerald-200/75">
+              Destination: {result.resolved_destination.feeder_access.hub_city} hub →{' '}
+              {result.resolved_destination.feeder_access.local_place}
+            </p>
+          )}
+        </div>
+      )}
+
+      {result.rural_corridor && result.compose_note && !result.short_corridor && !result.feeder_corridor && (
         <div
           className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90 leading-relaxed"
           role="status"

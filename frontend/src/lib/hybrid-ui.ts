@@ -128,16 +128,28 @@ export function segmentHeading(
   hubCity?: string,
 ): string {
   const mode = modeLabel(leg.mode);
+  const route = `${leg.source} → ${leg.destination}`;
+
   if (total === 1) {
-    return `${mode}: ${leg.source} to ${leg.destination}`;
+    return `${mode}: ${route}`;
+  }
+
+  if (index === 0 && hubCity && leg.destination === hubCity) {
+    return `${mode}: ${leg.source} → ${hubCity} hub`;
+  }
+  if (index === total - 1 && hubCity && leg.source === hubCity) {
+    return `${mode}: ${hubCity} hub → ${leg.destination}`;
   }
   if (index === 0 && hubCity) {
     return `${mode} to ${hubCity}`;
   }
+  if (index > 0 && hubCity && index === total - 1) {
+    return `${mode} from ${hubCity} to ${leg.destination}`;
+  }
   if (index > 0 && hubCity) {
     return `${mode} from ${hubCity} to ${leg.destination}`;
   }
-  return `${mode}: ${leg.source} to ${leg.destination}`;
+  return `${mode}: ${route}`;
 }
 
 export function transferSeverityMeta(severity?: string) {
