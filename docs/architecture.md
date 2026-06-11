@@ -48,6 +48,8 @@ Data (TomTom · RailRadar · OpenFlights · PortWatch · Supabase · Redis · Po
 | Backend API | https://logiflow-api-sbexkjk72q-el.a.run.app |
 | Custom domain (optional) | https://logiflow.in · https://api.logiflow.in |
 
+**Google Cloud optimization** (SEO, optional GA4, monitoring): [gcp-optimization.md](./gcp-optimization.md)
+
 ---
 
 ## Frontend architecture

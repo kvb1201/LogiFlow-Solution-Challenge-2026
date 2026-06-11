@@ -1,9 +1,10 @@
-import type { Metadata } from 'next';
+import { buildPageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Landing — LogiFlow',
-  description: 'Welcome to LogiFlow - AI-Powered Logistics Planning & Optimization Platform',
-};
+export const metadata = buildPageMetadata({
+  title: 'Landing',
+  description: 'Welcome to LogiFlow — AI-powered multimodal freight planning and optimization for India.',
+  path: '/landing',
+});
 
 export default function LandingLayout({
   children,

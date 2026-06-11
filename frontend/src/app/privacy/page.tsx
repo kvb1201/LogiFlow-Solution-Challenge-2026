@@ -1,10 +1,11 @@
-import type { Metadata } from 'next';
 import { LegalPage } from '@/components/legal/LegalPage';
+import { buildPageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Privacy Policy — LogiFlow',
+export const metadata = buildPageMetadata({
+  title: 'Privacy Policy',
   description: 'Privacy policy for the LogiFlow multimodal freight planning platform.',
-};
+  path: '/privacy',
+});
 
 const sections = [
   {

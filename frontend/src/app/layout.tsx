@@ -1,18 +1,19 @@
-import type { Metadata } from 'next';
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { GoogleAnalytics } from '@next/third-parties/google';
 import './globals.css';
 import NavBar from '@/components/NavBar';
 import { SiteFooter } from '@/components/SiteFooter';
 import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import { WebSiteJsonLd } from '@/components/seo/JsonLd';
+import { rootMetadata } from '@/lib/seo';
 
 import { AuthInitializer } from '@/components/auth/AuthInitializer';
-export const metadata: Metadata = {
-  title: 'LogiFlow — Multimodal Logistics',
-  description:
-    'Compare rail, road, air, water, and hybrid freight routes with live data, AI-assisted planning, and explainable recommendations.',
-};
+
+export const metadata = rootMetadata;
+
+const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
 
 export default function RootLayout({
   children,
@@ -34,6 +35,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-dvh flex flex-col overflow-x-clip font-body [overflow-wrap:anywhere]" suppressHydrationWarning>
+        <WebSiteJsonLd />
           <AuthInitializer />
         <BackendWarmup />
         <NavBar />
@@ -44,6 +46,7 @@ export default function RootLayout({
         <SiteFooter />
         <Analytics />
         <SpeedInsights />
+        {gaId ? <GoogleAnalytics gaId={gaId} /> : null}
       </body>
     </html>
   );

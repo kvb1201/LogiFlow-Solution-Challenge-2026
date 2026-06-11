@@ -408,6 +408,7 @@ Full schemas → [`docs/api_contract.md`](./docs/api_contract.md)
 | [API contract](./docs/api_contract.md) | Request / response shapes |
 | [Deployment](./docs/deployment.md) | Vercel · Cloud Run · APK |
 | [GCP deployment](./docs/gcp-deployment.md) | Cloud Run setup & team-3mo profile |
+| [GCP optimization](./docs/gcp-optimization.md) | SEO, optional GA4, monitoring — current state & revert guide |
 | [Road pipeline](./docs/pipelines/road.md) | TomTom + ML + corridor validation |
 | [Rail pipeline](./docs/pipelines/rail.md) | Scraping + tariffs + geometry |
 | [Air pipeline](./docs/pipelines/air.md) | OpenFlights + OTP |

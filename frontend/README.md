@@ -89,6 +89,8 @@ frontend/src/
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase REST (geometry, ML metrics) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `NEXT_PUBLIC_RAILRADAR_API_KEY` | Live train map |
+| `NEXT_PUBLIC_SITE_URL` | Canonical site URL for SEO (`/sitemap.xml`, Open Graph) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional GA4 — loads only when set |
 
 Copy `frontend/.env.example` to `.env.local` for local dev. Production values in `vercel.json`.
 
@@ -106,6 +108,20 @@ npm run lint
 ```
 
 Backend must be running on port 8000 (or update `.env.local`).
+
+---
+
+## SEO & analytics (zero default client cost)
+
+| Route | Purpose |
+|-------|---------|
+| `/sitemap.xml` | Public pages for search engines (build-time) |
+| `/robots.txt` | Crawl rules; auth routes excluded |
+
+Per-pipeline `<title>` and meta descriptions live in `src/app/*/layout.tsx` and `src/lib/seo.ts`.  
+GA4 uses `@next/third-parties/google` and is **disabled** until `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set.
+
+Full Google Cloud optimization state: [docs/gcp-optimization.md](../docs/gcp-optimization.md)
 
 ---
 

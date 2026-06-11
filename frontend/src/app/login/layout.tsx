@@ -1,9 +1,11 @@
-import type { Metadata } from 'next';
+import { buildPageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Login — LogiFlow',
-  description: 'Sign in to your LogiFlow account',
-};
+export const metadata = buildPageMetadata({
+  title: 'Login',
+  description: 'Sign in to your LogiFlow account.',
+  path: '/login',
+  noIndex: true,
+});
 
 export default function LoginLayout({
   children,
