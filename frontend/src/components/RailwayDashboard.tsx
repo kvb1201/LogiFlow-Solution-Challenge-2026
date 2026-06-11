@@ -6,8 +6,12 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import InputForm from '@/components/InputForm';
 import RailwayLoading from '@/components/RailwayLoading';
 import { RailMlQuantifiers } from '@/components/rail/RailMlQuantifiers';
-import { RAIL_CAPABILITY_BADGES, RAIL_METRICS } from '@/lib/rail-metrics';
+import { RailMetricsStrip } from '@/components/rail/RailMetricsStrip';
+import { RAIL_CAPABILITY_BADGES } from '@/lib/rail-metrics';
+import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsChrome } from '@/components/cockpit/PipelineResultsChrome';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar } from '@/lib/pipeline-theme';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import {
@@ -30,50 +34,6 @@ import {
 
 const RailwayMap = dynamic(() => import('@/components/Map'), { ssr: false });
 
-function RailMetricItem({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center min-w-[88px] sm:min-w-0">
-      <div className="text-lg sm:text-xl md:text-2xl font-black text-rail">{value}</div>
-      <div className="text-[9px] sm:text-[10px] md:text-xs text-on-surface-variant uppercase tracking-wider font-semibold leading-tight mt-0.5">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function RailMetricsStrip({ compact = false }: { compact?: boolean }) {
-  if (compact) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] sm:text-xs font-medium text-rail/70 uppercase tracking-wider">
-        {RAIL_METRICS.map((m, i) => (
-          <span key={m.label} className="flex items-center gap-3 whitespace-nowrap">
-            {i > 0 && <span className="w-1 h-1 rounded-full bg-rail/40 shrink-0" aria-hidden />}
-            <span>
-              <strong className="text-rail/95 font-bold text-[11px] sm:text-[13px]">{m.value}</strong>{' '}
-              {m.label}
-            </span>
-          </span>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-5 max-w-4xl mx-auto">
-      {RAIL_METRICS.map((m) => (
-        <div
-          key={m.label}
-          className="rounded-xl border border-rail/15 bg-surface-container/40 px-3 py-3 sm:py-4 backdrop-blur-sm"
-        >
-          <RailMetricItem value={m.value} label={m.label} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Metric Chip ──────────────────────────────────────────────────────
-
 function MetricChip({
   label,
   value,
@@ -88,7 +48,7 @@ function MetricChip({
       <div className="text-[9px] text-outline/70 tracking-[0.12em] mb-0.5 font-label font-semibold uppercase">
         {label}
       </div>
-      <div className={`text-[11px] mono font-bold leading-tight ${accent ? 'text-primary' : 'text-on-surface'}`}>
+      <div className={`text-[11px] mono font-bold leading-tight ${accent ? 'text-rail' : 'text-on-surface'}`}>
         {value}
       </div>
     </div>
@@ -101,7 +61,7 @@ function SectionHeader({ icon, title }: { icon: string; title: string }) {
   return (
     <div className="flex items-center gap-2 mb-2.5">
       <span
-        className="material-symbols-outlined text-primary leading-none"
+        className="material-symbols-outlined text-rail leading-none"
         style={{
           fontSize: '14px',
           fontVariationSettings: "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20",
@@ -133,7 +93,7 @@ function InfoRow({
     <div className="flex justify-between items-baseline gap-2 py-1.5 border-b border-outline-variant/5 last:border-0">
       <span className="text-[10px] text-outline shrink-0">{label}</span>
       <span
-        className={`text-[11px] text-right break-all ${mono ? 'font-mono' : ''} ${accent ? 'text-primary font-bold' : 'text-on-surface'}`}
+        className={`text-[11px] text-right break-all ${mono ? 'font-mono' : ''} ${accent ? 'text-rail font-bold' : 'text-on-surface'}`}
       >
         {value}
       </span>
@@ -196,7 +156,7 @@ function RecCard({
             </span>
           </div>
           {isActive && (
-            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+            <div className="w-1.5 h-1.5 rounded-full bg-rail animate-pulse shrink-0" />
           )}
         </div>
 
@@ -211,7 +171,7 @@ function RecCard({
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-[15px] font-black mono text-primary leading-tight">
+            <div className="text-[15px] font-black mono text-rail leading-tight">
               ₹{rec.parcel_cost_inr?.toLocaleString()}
             </div>
           </div>
@@ -251,7 +211,7 @@ function RecCard({
           {isLogiFlowMlDelaySource(delay?.delay_data_source) && (
             <>
               <span className="text-outline/30">·</span>
-              <span className="text-primary/80">LogiFlow ML</span>
+              <span className="text-rail/80">LogiFlow ML</span>
             </>
           )}
           {rec.data_source && (
@@ -284,14 +244,14 @@ function OptionRow({
       onClick={onClick}
       className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all duration-150 border ${
         isActive
-          ? 'bg-surface-container/80 border-primary/15 shadow-sm'
+          ? 'bg-surface-container/80 border-rail/15 shadow-sm'
           : 'bg-surface-container-lowest/10 border-transparent hover:bg-surface-container/40 hover:border-outline-variant/8'
       }`}
     >
       {/* Rank */}
       <div
         className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold mono shrink-0 transition-colors ${
-          isActive ? 'bg-primary text-on-primary' : 'bg-surface-container text-outline'
+          isActive ? 'bg-rail text-zinc-950' : 'bg-surface-container text-outline'
         }`}
       >
         {opt.rank}
@@ -311,7 +271,7 @@ function OptionRow({
 
       {/* Metrics */}
       <div className="text-right shrink-0">
-        <div className="text-[12px] font-bold mono text-primary">
+        <div className="text-[12px] font-bold mono text-rail">
           ₹{opt.parcel_cost_inr?.toLocaleString()}
         </div>
         <div className="text-[10px] text-outline mono">
@@ -452,7 +412,7 @@ function DetailPanel({
             <div className="text-[10px] text-outline mono mt-0.5">{trainNo} · {trainType}</div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-lg font-black mono text-primary leading-tight">₹{parcelCost?.toLocaleString()}</div>
+            <div className="text-lg font-black mono text-rail leading-tight">₹{parcelCost?.toLocaleString()}</div>
             <div className="text-[10px] text-outline mono">{distanceKm} km</div>
           </div>
         </div>
@@ -462,7 +422,7 @@ function DetailPanel({
           <div className="mb-3">
             <button
               onClick={onSave}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-rail/10 border border-rail/20 px-3 py-2 text-xs font-semibold text-rail hover:bg-rail/20 transition-all"
             >
               <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
               Save to My Plans
@@ -581,7 +541,7 @@ function DetailPanel({
                 .slice(0, 6)
                 .map((line, i) => (
                   <li key={`${line}-${i}`} className="flex gap-2">
-                    <span className="text-primary/70 shrink-0">•</span>
+                    <span className="text-rail/70 shrink-0">•</span>
                     <span>{line.replace(/^[-*]\s*/, '')}</span>
                   </li>
                 ))}
@@ -596,7 +556,7 @@ function DetailPanel({
               type="button"
               onClick={() => void handleExplain()}
               disabled={isLoadingExplanation}
-              className="text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-primary/25 bg-primary/10 text-primary hover:bg-primary/15 disabled:opacity-60"
+              className="text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-rail/25 bg-rail/10 text-rail hover:bg-rail/15 disabled:opacity-60"
             >
               {isLoadingExplanation ? 'Generating…' : 'Generate AI explanation'}
             </button>
@@ -632,7 +592,7 @@ function DetailPanel({
             <ul className="space-y-1.5 text-[10px] mono text-on-surface-variant break-words">
               {liveEntries.map((line, i) => (
                 <li key={i} className="flex gap-2">
-                  <span className="text-primary/50 shrink-0 mt-px">›</span>
+                  <span className="text-rail/50 shrink-0 mt-px">›</span>
                   <span>{line}</span>
                 </li>
               ))}
@@ -657,7 +617,7 @@ function DetailPanel({
               >
                 <div
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    i === 0 ? 'bg-tertiary' : i === segments.length - 1 ? 'bg-error' : 'bg-primary/60'
+                    i === 0 ? 'bg-tertiary' : i === segments.length - 1 ? 'bg-error' : 'bg-rail/60'
                   }`}
                 />
                 <span className="text-on-surface truncate">{seg.from_name || seg.from}</span>
@@ -771,107 +731,57 @@ export default function RailwayDashboard() {
     !!error &&
     /route is not available right now|no train routes found|no feasible routes found/i.test(error);
 
+  const inFixedResultsDashboard = hasSearched && !( !loading && showNoRoutePage );
+
+  useEffect(() => {
+    if (!inFixedResultsDashboard) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [inFixedResultsDashboard]);
+
   // ── Landing ───────────────────────────────────────────────────────
   if (!hasSearched) {
     return (
-      <div className="flex-1 flex flex-col overflow-x-hidden">
+      <>
         {showRailLoading && <RailwayLoading />}
-        <div
-          className="flex-1 flex flex-col items-center sm:justify-center px-4 py-10 relative overflow-y-auto overflow-x-hidden"
-          style={{ background: '#06080d' }}
+        <PipelineLogiLanding
+          mode="rail"
+          badge="Railway Intelligence · Live Indian Railways data"
+          description={
+            <>
+              AI-powered parcel routing across{' '}
+              <span style={{ color: accentVar('rail') }} className="font-medium">
+                Indian Railways
+              </span>{' '}
+              — live schedules, ML delay prediction, IRCA tariffs, and all-India track geometry.
+            </>
+          }
+          metrics={<RailMetricsStrip />}
+          badges={RAIL_CAPABILITY_BADGES}
+          footer={
+            <>
+              <RailMlQuantifiers variant="inline" className="justify-center mb-4" />
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-[0.2em]">
+                Powered by live Indian Railways data · ML delay prediction · IRCA tariffs
+              </p>
+            </>
+          }
         >
-          <div className="absolute inset-0 z-0 pointer-events-none">
-            <div className="absolute w-[680px] h-[680px] rounded-full opacity-[0.10] blur-[130px] bg-rail animate-mesh-1 top-[-20%] left-[-10%]" />
-            <div className="absolute w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[110px] bg-primary animate-mesh-2 bottom-[-10%] right-[-8%]" />
-            <div className="absolute w-[380px] h-[380px] rounded-full opacity-[0.05] blur-[90px] bg-water animate-mesh-3 top-[50%] left-[55%]" />
-            <div className="absolute inset-0 hero-dot-grid opacity-[0.28]" />
-            <div
-              className="absolute inset-0"
-              style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #06080d 75%)' }}
-            />
-          </div>
-
-          <div className="relative z-10 w-full max-w-[920px] animate-slide-up">
-            <div className="flex justify-center mb-8">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-rail/10 border border-rail/20 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-rail animate-pulse" />
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-rail/90">
-                  Railway Intelligence · Live Indian Railways data
-                </span>
-              </div>
-            </div>
-
-            <div className="text-center mb-8">
-              <h1 className="text-[2.5rem] xs:text-5xl sm:text-6xl md:text-[72px] font-black font-headline tracking-tighter mb-4 leading-none">
-                <span
-                  className="bg-gradient-to-r from-rail via-primary to-water bg-clip-text text-transparent animate-gradient-shift"
-                  style={{ backgroundSize: '200% auto' }}
-                >
-                  Logi
-                </span>
-                <span className="text-on-surface">Flow</span>
-              </h1>
-              <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-xl mx-auto leading-relaxed">
-                AI-powered parcel routing across{' '}
-                <span className="text-rail font-medium">Indian Railways</span> — live schedules,
-                ML delay prediction, IRCA tariffs, and all-India track geometry.
-              </p>
-
-              <div
-                className="mt-8 animate-fade-in"
-                style={{ animationDelay: '0.3s', animationFillMode: 'backwards' }}
-              >
-                <RailMetricsStrip />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {RAIL_CAPABILITY_BADGES.map((badge, i) => (
-                <div
-                  key={badge.label}
-                  className="flex items-center gap-2 px-3.5 py-2 bg-surface-container/50 border border-outline-variant/10 rounded-lg text-xs text-on-surface-variant backdrop-blur-sm animate-fade-in"
-                  style={{
-                    animationDelay: `${0.5 + i * 0.08}s`,
-                    animationFillMode: 'backwards',
-                  }}
-                >
-                  <span
-                    className="material-symbols-outlined text-rail"
-                    style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {badge.icon}
-                  </span>
-                  {badge.label}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-6">
-              <InputForm />
-              <RailMlQuantifiers variant="panel" />
-            </div>
-
-            <div
-              className="text-center mt-8 animate-fade-in"
-              style={{ animationDelay: '0.85s', animationFillMode: 'backwards' }}
-            >
-              <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">
-                9,524 stations · 186k+ schedules · 15,650 ML delay records · 81% within 30 min
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+          <InputForm />
+        </PipelineLogiLanding>
+      </>
     );
   }
 
   if (!loading && showNoRoutePage) {
     return (
-      <div className="flex-1 flex flex-col overflow-x-hidden">
-        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-(--color-background)">
-          <div className="max-w-xl w-full rounded-2xl border border-outline-variant/15 bg-surface-container-low/40 p-8 text-center">
-            <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
-              <span className="material-symbols-outlined text-primary">train</span>
+      <div className="relative flex min-h-app flex-col items-center justify-center px-4 py-12 sm:px-6 bg-(--color-background)">
+          <AmbientSurface mode="rail" mesh="card" className="mx-auto w-full max-w-xl p-6 text-center sm:p-8">
+            <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-rail/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-rail">train</span>
             </div>
             <h2 className="text-xl font-semibold text-on-surface mb-2">Route Not Available Right Now</h2>
             <p className="text-sm text-on-surface-variant mb-6">
@@ -880,29 +790,28 @@ export default function RailwayDashboard() {
             </p>
             <button
               onClick={resetResults}
-              className="px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition"
+              className="px-4 py-2 rounded-lg bg-rail text-zinc-950 text-sm font-medium hover:opacity-90 transition"
             >
               Try Another Route
             </button>
-          </div>
-        </div>
+          </AmbientSurface>
       </div>
     );
   }
 
   // ── Results dashboard ─────────────────────────────────────────────
   return (
-    <div className="flex flex-col w-full bg-background text-foreground lg:h-[calc(100dvh-4rem)] lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
+    <div className="fixed inset-x-0 top-14 bottom-0 z-[15] flex flex-col overflow-hidden bg-background sm:top-16">
       {showRailLoading && <RailwayLoading />}
 
       <PipelineResultsChrome mode="rail" />
 
-      <div className="border-b border-outline-variant/10 bg-[#06080d]/80 px-4 py-2.5 shrink-0 overflow-x-auto">
+      <div className="shrink-0 overflow-x-auto border-b border-border/50 bg-surface/60 px-4 py-2 backdrop-blur-sm">
         <RailMetricsStrip compact />
       </div>
 
       {routeMetadata?.simulation && (
-        <div className="bg-rail/10 border-b border-rail/20 px-4 py-2 text-xs text-on-surface-variant flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2 border-b border-rail/20 bg-rail/10 px-4 py-2 text-xs text-on-surface-variant">
           <span className="material-symbols-outlined shrink-0 text-sm text-rail">science</span>
           <span>
             LogiFlow simulation — ML delay baseline scaled by your season, weather, congestion,
@@ -911,26 +820,24 @@ export default function RailwayDashboard() {
         </div>
       )}
 
-      {/* Error */}
       {error && (
-        <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-xs text-error flex items-start gap-2 shrink-0">
+        <div className="flex shrink-0 items-start gap-2 border-b border-error/20 bg-error/10 px-4 py-2 text-xs text-error">
           <span className="material-symbols-outlined shrink-0 text-sm">error</span>
           <span className="min-w-0 break-words">{error}</span>
         </div>
       )}
 
-      {/* List | map | detail — road-style map column on desktop */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-12 lg:overflow-hidden">
+      {/* Mobile: flex stack · Desktop: 3-column grid dashboard */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-12">
         {/* Train list */}
-        <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-outline-variant/8 bg-surface-container-low/30 max-h-[min(38vh,340px)] lg:col-span-3 lg:max-h-none lg:h-auto lg:border-b-0 lg:border-r">
-          {/* Toggle */}
-          <div className="p-3 pb-2 shrink-0">
-            <div className="flex bg-surface-container/50 rounded-lg p-0.5 border border-outline-variant/8">
+        <aside className="flex max-h-[min(46vh,400px)] min-h-0 shrink-0 flex-col overflow-hidden border-b border-outline-variant/8 bg-surface-container-low/30 lg:col-span-3 lg:max-h-none lg:shrink lg:border-b-0 lg:border-r">
+          <div className="shrink-0 p-3 pb-2">
+            <div className="flex rounded-lg border border-outline-variant/8 bg-surface-container/50 p-0.5">
               <button
                 onClick={() => setActiveView('recommendations')}
-                className={`flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-all ${
+                className={`flex-1 rounded-md py-1.5 text-[11px] font-semibold transition-all ${
                   activeView === 'recommendations'
-                    ? 'bg-primary text-on-primary shadow-sm'
+                    ? 'bg-rail text-zinc-950 shadow-sm'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -938,9 +845,9 @@ export default function RailwayDashboard() {
               </button>
               <button
                 onClick={() => setActiveView('all_options')}
-                className={`flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-all ${
+                className={`flex-1 rounded-md py-1.5 text-[11px] font-semibold transition-all ${
                   activeView === 'all_options'
-                    ? 'bg-primary text-on-primary shadow-sm'
+                    ? 'bg-rail text-zinc-950 shadow-sm'
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
@@ -949,11 +856,10 @@ export default function RailwayDashboard() {
             </div>
           </div>
 
-          {/* Cards */}
-          <div className="flex-1 overflow-y-auto p-3 pt-1 space-y-2.5 min-h-0">
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-y-contain p-3 pt-0 pb-3 [scrollbar-gutter:stable]">
             {loading && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+              <div className="flex flex-col items-center justify-center gap-3 py-12">
+                <span className="material-symbols-outlined animate-spin text-3xl text-rail">
                   progress_activity
                 </span>
                 <span className="text-xs text-on-surface-variant">Optimizing routes...</span>
@@ -967,8 +873,8 @@ export default function RailwayDashboard() {
                     rec={recommendations.cheapest}
                     label="Cheapest"
                     icon="savings"
-                    accentBar="bg-emerald-500"
-                    iconChipClass="bg-emerald-500/15 text-emerald-400"
+                    accentBar="bg-rail"
+                    iconChipClass="bg-rail/15 text-rail"
                     isActive={selectedRecType === 'cheapest'}
                     onClick={() => setSelectedRecType('cheapest')}
                   />
@@ -989,8 +895,8 @@ export default function RailwayDashboard() {
                     rec={recommendations.safest}
                     label="Safest"
                     icon="shield"
-                    accentBar="bg-blue-500"
-                    iconChipClass="bg-blue-500/15 text-blue-400"
+                    accentBar="bg-amber-600"
+                    iconChipClass="bg-amber-500/15 text-amber-400"
                     isActive={selectedRecType === 'safest'}
                     onClick={() => setSelectedRecType('safest')}
                   />
@@ -1011,26 +917,29 @@ export default function RailwayDashboard() {
           </div>
         </aside>
 
-        {/* Map — sticky center column like road results */}
-        <section className="flex min-h-[240px] shrink-0 flex-col border-b border-outline-variant/8 bg-surface-container-lowest/40 p-3 sm:min-h-[280px] sm:p-4 lg:col-span-5 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:border-b-0 lg:border-r">
+        {/* Map */}
+        <section className="flex min-h-[240px] shrink-0 flex-col border-b border-outline-variant/8 bg-surface-container-lowest/40 p-3 sm:min-h-[280px] sm:p-4 lg:col-span-5 lg:min-h-0 lg:shrink lg:border-b-0 lg:border-r">
           <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-outline">
               <span
-                className="material-symbols-outlined text-primary"
+                className="material-symbols-outlined text-rail"
                 style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}
               >
                 map
               </span>
               Route on map
             </span>
-            <span className="max-w-[min(100%,240px)] truncate text-[10px] font-mono text-on-surface-variant">
+            <span className="max-w-[min(100%,240px)] truncate font-mono text-[10px] text-on-surface-variant">
               {activeTrainNumber
                 ? `${activeTrainNumber} · ${activeTrainName}`
                 : 'Select a train'}
               {geometryLoading ? ' · …' : ''}
             </span>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-outline-variant/15">
+          <p className="mb-2 shrink-0 text-[10px] text-on-surface-variant/80">
+            Click the map once to enable scroll-wheel zoom.
+          </p>
+          <div className="min-h-[200px] flex-1 overflow-hidden rounded-xl border border-outline-variant/15 sm:min-h-[220px] lg:min-h-0">
             <RailwayMap
               selectedRec={activeRec}
               selectedOption={activeOption}
@@ -1041,8 +950,8 @@ export default function RailwayDashboard() {
           </div>
         </section>
 
-        {/* Train detail */}
-        <aside className="min-h-0 overflow-y-auto bg-surface-container-lowest/35 p-4 sm:p-5 lg:col-span-4">
+        {/* Train detail — scrolls independently */}
+        <aside className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-surface-container-lowest/35 p-4 sm:p-5 lg:col-span-4 lg:min-h-0 [scrollbar-gutter:stable]">
           <DetailPanel
             rec={activeRec}
             ranked={activeOption}
@@ -1054,7 +963,7 @@ export default function RailwayDashboard() {
             onSave={() => setSaveModalOpen(true)}
           />
         </aside>
-      </main>
+      </div>
 
       {/* Save Report Modal */}
       {activeRec || activeOption ? (

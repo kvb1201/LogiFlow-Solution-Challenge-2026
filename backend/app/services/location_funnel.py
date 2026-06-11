@@ -221,7 +221,22 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
 
     pdf_station_name: str | None = None
 
-    # ── 2) PDF index (station_name.pdf) ─────────────────────────────
+    # ── 2) Known metro names (rail CITY_TO_STATION) before PDF fuzzy search ──
+    # Prevents "Guwahati" → HATI and "Patna" → PATA (Auraiya) via PDF fuzzy code match.
+    if not station_codes:
+        try:
+            from app.services.hub_catalog import _match_city_key
+
+            matched_city = _match_city_key(original)
+            if matched_city:
+                city_key = matched_city
+                station_codes = _curated_cluster(matched_city)
+                primary_code = station_codes[0] if station_codes else None
+                resolution = "curated_metro"
+        except Exception:
+            pass
+
+    # ── 3) PDF index (station_name.pdf) ─────────────────────────────
     if not station_codes:
         pdf_district, pdf_primary, pdf_codes, pdf_res = pdf_station_codes_for_place(original)
         if pdf_codes:

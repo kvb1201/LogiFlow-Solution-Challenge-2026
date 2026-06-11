@@ -3,8 +3,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
-import { searchCities, type StationSearchResult } from '@/services/api';
+import { useCitySearch } from '@/hooks/useCitySearch';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import {
   AdvancedToggle,
   ChoicePills,
@@ -13,52 +14,10 @@ import {
   FormShell,
   FormSubmit,
   LOGIFLOW_FORM_IDS,
+  FormDateInput,
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
-
-// ── Debounced city search ─────────────────────────────────────────────
-
-function citiesToStationRows(
-  rows: { name: string; lat?: number; lng?: number }[]
-): StationSearchResult[] {
-  return rows.map((r) => ({
-    code: r.name.split(',')[0]?.trim().slice(0, 5).toUpperCase() || 'CITY',
-    name: r.name,
-  }));
-}
-
-function useCitySearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
-  const [results, setResults] = useState<{ name: string; lat?: number; lng?: number }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const search = useCallback(
-    (query: string) => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (!query || query.length < 2) {
-        setResults([]);
-        setGlobalSuggestions([]);
-        return;
-      }
-      setLoading(true);
-      timeoutRef.current = setTimeout(async () => {
-        const data = await searchCities(query);
-        setResults(data);
-        setGlobalSuggestions(citiesToStationRows(data));
-        setLoading(false);
-      }, 300);
-    },
-    [setGlobalSuggestions]
-  );
-
-  const clear = useCallback(() => {
-    setResults([]);
-    setGlobalSuggestions([]);
-  }, [setGlobalSuggestions]);
-
-  return { results, loading, search, clear };
-}
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -437,6 +396,8 @@ export default function RoadInputForm() {
 
   useShipmentAutorun('road', runRoadOptimize, Boolean(source.trim() && destination.trim()));
 
+  const onIntentApplied = useIntentFormReset(() => {});
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) {
@@ -452,22 +413,12 @@ export default function RoadInputForm() {
       return;
     }
     setError(null);
-    console.log("[FORM SUBMIT]", {
-      mode: 'road',
-      simulationMode,
-      simTraffic,
-      simWeather,
-      simIncidents,
-      source,
-      destination,
-      priority,
-    });
     runRoadOptimize();
   };
 
   return (
-    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="road" />
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24">
+      <AiBriefPanel contextMode="road" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="road"
         title="Road route search"
@@ -655,26 +606,15 @@ export default function RoadInputForm() {
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.14em] mb-2 ml-0.5">
+                <label className="mb-2 ml-0.5 block text-[10px] font-label font-bold uppercase tracking-[0.14em] text-on-surface-variant">
                   Departure Date
                 </label>
-                <div className="relative flex items-center">
-                  <div className="absolute left-3 w-7 h-7 rounded-lg bg-surface-container/60 flex items-center justify-center shrink-0">
-                    <span
-                      className="material-symbols-outlined text-outline"
-                      style={{ fontSize: '14px' }}
-                    >
-                      calendar_today
-                    </span>
-                  </div>
-                  <input
-                    type="date"
-                    min={today}
-                    value={departureDate}
-                    onChange={e => setDepartureDate(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3.5 border border-outline-variant/15 rounded-xl bg-surface-container-lowest/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20 text-on-surface transition-all outline-none text-sm"
-                  />
-                </div>
+                <FormDateInput
+                  value={departureDate}
+                  min={today}
+                  onChange={setDepartureDate}
+                  className="w-full rounded-xl border border-outline-variant/15 bg-surface-container-lowest/50 py-3.5 pl-3 pr-11 text-sm text-on-surface outline-none transition-all focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                />
               </div>
             </div>
 

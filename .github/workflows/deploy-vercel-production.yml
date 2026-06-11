@@ -119,4 +119,22 @@ jobs:
       - name: Deploy prebuilt output to production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: |
+          set -euo pipefail
+          attempt=1
+          max_attempts=4
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Deploy attempt $attempt/$max_attempts..."
+            if vercel deploy --prebuilt --prod --archive=tgz --token="$VERCEL_TOKEN"; then
+              echo "Deploy succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "::error::Vercel deploy failed after $max_attempts attempts (often a transient api.vercel.com/v2/files 500)."
+              exit 1
+            fi
+            sleep_seconds=$((attempt * 30))
+            echo "Deploy failed — retrying in ${sleep_seconds}s (Vercel upload API may be temporarily unavailable)..."
+            sleep "$sleep_seconds"
+            attempt=$((attempt + 1))
+          done

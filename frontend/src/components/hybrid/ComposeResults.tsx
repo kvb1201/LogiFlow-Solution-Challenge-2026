@@ -2,14 +2,17 @@
 
 import type { ComposeResult } from '@/services/api';
 import { ItineraryCard } from '@/components/hybrid/ItineraryCard';
+import { ComposeContextBanner } from '@/components/hybrid/ComposeContextBanner';
 import { formatHours, formatInr, modeLabel } from '@/lib/hybrid-ui';
 
 export function ComposeResults({
   result,
+  loadingMore = false,
   onEdit,
   onSave,
 }: {
   result: ComposeResult;
+  loadingMore?: boolean;
   onEdit: () => void;
   onSave?: () => void;
 }) {
@@ -17,77 +20,57 @@ export function ComposeResults({
   const alternatives = (result.alternatives || []).filter((a) => a.id !== recommended?.id);
   const baselines = result.baselines ? Object.entries(result.baselines) : [];
 
-  if (!recommended) return null;
+  if (!recommended && alternatives.length === 0) return null;
 
   return (
-    <div className="space-y-8 animate-fade-in pb-12">
-      {result.short_corridor && result.compose_note && (
-        <div
-          className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90 leading-relaxed"
-          role="status"
-        >
-          <p className="font-medium text-amber-200/95 mb-1">Short corridor — direct routes only</p>
-          <p>{result.compose_note}</p>
-        </div>
-      )}
+    <div className="space-y-5 animate-fade-in pb-8 w-full">
+      <ComposeContextBanner result={result} />
 
-      {result.rural_corridor && result.compose_note && !result.short_corridor && (
-        <div
-          className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90 leading-relaxed"
-          role="status"
-        >
-          <p className="font-medium text-sky-200/95 mb-1">Village / remote place — hub-connected routes</p>
-          <p>{result.compose_note}</p>
-          {result.hub_pairs_considered && result.hub_pairs_considered.length > 0 && (
-            <p className="mt-2 text-xs text-sky-200/75">
-              Hub pairs:{' '}
-              {result.hub_pairs_considered
-                .slice(0, 4)
-                .map((p) => `${p.origin_hub.city} ↔ ${p.dest_hub.city}`)
-                .join(' · ')}
-            </p>
+      {recommended && (
+        <section>
+          <ItineraryCard itinerary={recommended} recommended variant="full" />
+          {onSave && (
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={onSave}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-80"
+                style={{ color: 'var(--hybrid)' }}
+              >
+                <span className="material-symbols-outlined text-[18px]" aria-hidden>
+                  save
+                </span>
+                Save report
+              </button>
+            </div>
           )}
-        </div>
-      )}
-
-      <ItineraryCard itinerary={recommended} recommended variant="full" />
-
-      {onSave && (
-        <div className="flex justify-end mt-2">
-          <button
-            onClick={onSave}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-500/10 border border-violet-400/30 px-4 py-2 text-sm font-semibold text-violet-300 hover:bg-violet-500/20 transition-all"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>save</span>
-            Save Report
-          </button>
-        </div>
+        </section>
       )}
 
       {baselines.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs text-muted-foreground self-center mr-1">Direct options:</span>
+        <section className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Baselines
+          </span>
           {baselines.map(([mode, b]) => (
             <span
               key={mode}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface/40 px-3 py-1 text-xs"
+              className="inline-flex items-center gap-2 rounded-lg border border-border/40 px-3 py-1.5 text-sm"
             >
-              <span className="font-medium text-on-surface-variant">{modeLabel(mode)}</span>
-              <span className="font-mono text-muted-foreground">
+              <span className="font-medium text-on-surface">{modeLabel(mode)}</span>
+              <span className="font-mono text-xs text-muted-foreground">
                 {formatHours(b.time_hr)} · {formatInr(b.cost_inr)}
               </span>
             </span>
           ))}
-        </div>
+        </section>
       )}
 
       {alternatives.length > 0 && (
         <section>
-          <h3 className="text-sm font-semibold text-on-surface-variant mb-3 flex items-center gap-2">
-            <span className="material-symbols-outlined text-base text-violet-300/80">alt_route</span>
-            Other routes we considered
-            <span className="text-xs font-normal text-muted-foreground">({alternatives.length})</span>
-          </h3>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            {alternatives.length} alternative{alternatives.length === 1 ? '' : 's'}
+          </p>
           <div className="space-y-3">
             {alternatives.slice(0, 5).map((it) => (
               <ItineraryCard key={it.id} itinerary={it} variant="alt" />
@@ -96,12 +79,29 @@ export function ComposeResults({
         </section>
       )}
 
+      {loadingMore && (
+        <div
+          className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/40 px-4 py-3 text-sm text-muted-foreground animate-pulse"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="material-symbols-outlined text-[20px] animate-spin"
+            style={{ color: 'var(--hybrid)' }}
+            aria-hidden
+          >
+            progress_activity
+          </span>
+          Still computing the next hub option — each route appears below as soon as it is ready.
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onEdit}
-        className="text-sm font-medium text-violet-300/90 hover:text-violet-200 transition-colors"
+        className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
-        ← Change corridor or re-run
+        ← Edit corridor
       </button>
     </div>
   );

@@ -59,6 +59,8 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.actual.env
+frontend/.actual.env
 
 
 # =========================
@@ -75,3 +77,4 @@ build/
 *.bak
 backend/.env
 backend/test_irctc.mjs
+backend/logiflow.db

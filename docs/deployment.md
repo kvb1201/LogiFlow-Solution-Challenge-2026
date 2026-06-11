@@ -31,8 +31,12 @@
 | `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
 | `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
 | `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
-| `SUPABASE_URL` | ❌ | Supabase project URL (geometry + ML metrics sync) |
+| `SUPABASE_URL` | ❌ | Supabase project URL (geometry, ML metrics, compose leg cache) |
 | `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
+| `COMPOSE_LEG_CACHE_TTL_S` | ❌ | Success TTL for composed legs (default `21600` = 6h) |
+| `COMPOSE_LEG_SUPABASE` | ❌ | Set `0`/`false` to disable L3 Supabase leg cache |
+| `RURAL_HUB_CACHE_TTL_S` | ❌ | Rural hub-pair cache TTL (default `604800` = 7d) |
+| `RURAL_HUB_SUPABASE` | ❌ | Set `0`/`false` to disable rural hub Supabase cache |
 | *(geometry backfill)* | — | `POST /railway/geometry/ensure` computes missing `(train, from, to)` legs and upserts into `train_route_geometry` (no duplicates; PK is train+from+to) |
 | `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
 | `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |
@@ -60,17 +64,29 @@ On the **free** plan, Render stops your service after **~15 minutes** of no traf
 
 The built-in warmup reduces 503s for users but the **first visitor after a long idle gap** may still wait ~30s while Render boots.
 
+### GCP Cloud Run (recommended for student / free tier RAM)
+
+Project ID: `project-6d6f652b-7066-4341-806` (number `689785530973`).
+
+**1 GiB RAM**, 300s timeout, free tier quotas. See **[gcp-deployment.md](./gcp-deployment.md)** for setup, `GCP_SA_KEY`, and pointing Vercel at Cloud Run.
+
+```bash
+./scripts/deploy-gcp-cloud-run.sh
+```
+
+Or: GitHub Actions → **Deploy API to GCP Cloud Run**.
+
 ### Alternatives to Render
 
 | Platform | Fits this FastAPI app? | Cold start |
 |----------|--------------------------|------------|
+| **GCP Cloud Run** | ✅ **1 GiB RAM**, compose/stream friendly | ~5–15s scale-from-zero (free) |
 | **Firebase Hosting** | Frontend only — does not run Python/FastAPI | N/A |
-| **Firebase Cloud Functions** | Possible with heavy refactor; 60s timeout limits; not ideal for 13s+ `/optimize` | Can be slow |
-| **Google Cloud Run** | ✅ Good fit — containerize backend, set `min-instances: 1` for always warm | ~0s with min instances ($) |
+| **Google Cloud Run** (paid min instances) | Always warm | ~0s with min instances ($) |
 | **Fly.io / Railway** | ✅ Similar to Render | Paid tiers stay warm |
 | **Render Starter** | ✅ Easiest — no code changes | Always on |
 
-**Recommendation:** Stay on Render + enable the GitHub keep-alive workflow, or upgrade to **Render Starter** if you need guaranteed instant startup for demos.
+**Recommendation:** Use **GCP Cloud Run** on the free tier if Render OOMs; keep Vercel for the frontend.
 
 ---
 

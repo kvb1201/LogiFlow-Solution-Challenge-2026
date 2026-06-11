@@ -1,0 +1,30 @@
+# gcloud builds submit upload filter (keeps tarball small)
+.gcloudignore
+.git
+.gitignore
+.env
+.env.*
+venv
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+tests/
+*.md
+logiflow.db
+*.pdf
+logs/
+dummy_npm/
+run1.log
+test_output.log
+package-lock.json
+
+# Large training / scrape corpora — not needed at runtime
+data/ir_delay_scrape/
+data/water/Daily_Ports_Data.csv
+data/water/Spillover_simulator%3A_port-level_impact.csv
+data/railways_online/train_schedule_cache.json
+data/ir_delay_scrape/*.json
+data/ir_delay_scrape/*checkpoint*
+data/ir_delay_scrape/discovered_*
+data/ir_delay_scrape/active_*.txt

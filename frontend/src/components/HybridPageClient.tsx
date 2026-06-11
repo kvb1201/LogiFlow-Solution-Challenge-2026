@@ -3,27 +3,42 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  streamComposeMultimodalRoute,
   composeMultimodalRoute,
+  mergeComposeStreamUpdate,
+  ensureComposeBackendReady,
   BACKEND_UNAVAILABLE_MSG,
   TrafficQueueError,
   type ComposeResult,
 } from '@/services/api';
 import { ComposeResults } from '@/components/hybrid/ComposeResults';
+import { HybridMetricsStrip } from '@/components/hybrid/HybridMetricItem';
+import { HYBRID_CAPABILITY_BADGES } from '@/lib/hybrid-metrics';
+import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
+import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar } from '@/lib/pipeline-theme';
 import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import { CorridorRow } from '@/components/forms/pipeline-form-ui';
-import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { InvalidCorridorCard } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
+import {
+  extractRoadUnavailableReason,
+  isComposeFailureWithContext,
+} from '@/lib/compose-insights';
+import { ComposeFailurePanel } from '@/components/hybrid/ComposeFailurePanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 
 const DEMO_SOURCE = 'Lucknow, India';
 const DEMO_DEST = 'Delhi, India';
@@ -51,15 +66,16 @@ export default function HybridPageClient() {
   const [step, setStep] = useState(0);
   const [scenarioBrief, setScenarioBrief] = useState(() => useLogiFlowStore.getState().scenarioBrief || '');
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
+  const [failureContext, setFailureContext] = useState<ComposeResult | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  /** Reason string when road is rejected as an invalid corridor by the backend. */
   const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
-  const skipWizard = loading || Boolean(result?.recommended) || (autoTriggered && !error);
-  const showForm = !skipWizard;
+  const inResultsView =
+    loading || loadingMore || Boolean(result?.recommended) || Boolean(error && autoTriggered);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -83,48 +99,87 @@ export default function HybridPageClient() {
 
     const brief = (scenarioBrief || state.scenarioBrief || '').trim();
     setError(null);
+    setFailureContext(null);
     setRoadUnavailableReason(null);
     setLoading(true);
+    setLoadingMore(false);
+    setResult(null);
     setStep(2);
     setAutoTriggered(true);
 
-    try {
-      const warm = await ensureBackendWarm(90_000);
-      if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
+    const composePayload = {
+      source: origin,
+      destination: dest,
+      priority: state.priority,
+      departure_date: state.departureDate,
+      cargo_weight_kg: state.cargoWeight,
+      cargo_type: state.cargoType,
+      scenario_brief: brief || undefined,
+      cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
+      constraints: {
+        budget_max_inr: state.budgetMax || undefined,
+        budget_limit: state.budgetMax || undefined,
+        delay_tolerance_hours: state.deadlineHours,
+      },
+      compose_options: { max_hubs: 2, budget_seconds: 150 },
+    };
 
-      const data = await composeMultimodalRoute({
-        source: origin,
-        destination: dest,
-        priority: state.priority,
-        departure_date: state.departureDate,
-        cargo_weight_kg: state.cargoWeight,
-        cargo_type: state.cargoType,
-        scenario_brief: brief || undefined,
-        cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
-        constraints: {
-          budget_max_inr: state.budgetMax || undefined,
-          budget_limit: state.budgetMax || undefined,
-          delay_tolerance_hours: state.deadlineHours,
-        },
-        compose_options: { max_hubs: 2, budget_seconds: 55 },
-      });
+    const streamAcc = { current: null as ComposeResult | null };
+    try {
+      const ready = await ensureComposeBackendReady(20_000);
+      if (!ready) throw new Error(BACKEND_UNAVAILABLE_MSG);
+
+      let data: ComposeResult;
+      try {
+        data = await streamComposeMultimodalRoute(composePayload, (partial) => {
+          if (!partial.recommended) return;
+          streamAcc.current = mergeComposeStreamUpdate(streamAcc.current, partial);
+          setResult(streamAcc.current);
+          setLoading(false);
+          setLoadingMore(!partial.done);
+          setRoadUnavailableReason(null);
+        });
+      } catch {
+        if (streamAcc.current?.recommended) {
+          data = streamAcc.current;
+        } else {
+          data = await composeMultimodalRoute(composePayload);
+        }
+      }
 
       if (data.error && !data.recommended) {
-        throw new Error(data.error);
-      }
+        if (streamAcc.current?.recommended) {
+          setResult(streamAcc.current);
+          setFailureContext(data);
+          setError(
+            'Some hub legs could not be fully connected — showing the best routes found so far.'
+          );
+        } else if (isComposeFailureWithContext(data)) {
+          setFailureContext(data);
+          throw new Error(data.error);
+        } else {
+          throw new Error(data.error);
+        }
+      } else {
 
-      // ── Extract road-unavailable reason from compose result ───────────────
-      // If the road template was rejected as an invalid corridor, surface the
-      // reason so users understand it's a valid planning outcome, not an error.
-      const roadUnavail =
-        (data.unavailable_templates?.road as string | undefined) ?? null;
-      if (roadUnavail) {
-        setRoadUnavailableReason(roadUnavail);
-      }
+          const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
+        if (roadUnavail && !data.recommended) setRoadUnavailableReason(roadUnavail);
+        else setRoadUnavailableReason(null);
 
-      setResult(data);
+        setFailureContext(null);
+        setResult(data);
+      }
     } catch (err: unknown) {
       if (err instanceof TrafficQueueError) return;
+      if (streamAcc.current?.recommended) {
+        setResult(streamAcc.current);
+        setError(
+          sanitizeUserMessage(
+            err instanceof Error ? err.message : 'Compose interrupted — partial routes kept.'
+          )
+        );
+        return;
+      }
       setResult(null);
       setRoadUnavailableReason(null);
       setError(
@@ -136,17 +191,54 @@ export default function HybridPageClient() {
       );
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [scenarioBrief]);
 
   const runComposeRef = useRef(runCompose);
   runComposeRef.current = runCompose;
 
+  const corridorReady = Boolean(source.trim() && destination.trim());
+
+  const beginComposeRun = useCallback(() => {
+    setResult(null);
+    setError(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setAutoTriggered(true);
+    setStep(2);
+    setLoading(true);
+    setLoadingMore(false);
+    void runComposeRef.current();
+  }, []);
+
   useEffect(() => {
     if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
   }, [storeScenarioBrief]);
 
-  // Match comparator: only mark autorun started once corridor is in the store.
+  useShipmentAutorun('hybrid', beginComposeRun, corridorReady);
+
+  function resetToEdit(stepTarget = 0) {
+    setResult(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setAutoTriggered(false);
+    setError(null);
+    setStep(stepTarget);
+  }
+
+  const handleIntentApplied = useIntentFormReset((_parsed, action) => {
+    setError(null);
+    setFailureContext(null);
+    setRoadUnavailableReason(null);
+    setResult(null);
+    if (action === 'run') {
+      if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
+      return;
+    }
+    resetToEdit(0);
+  });
+
   useLayoutEffect(() => {
     syncAutorunFromSession();
     if (!shouldRunShipmentAutorun('hybrid')) return;
@@ -154,213 +246,251 @@ export default function HybridPageClient() {
     const state = useLogiFlowStore.getState();
     if (!state.source.trim() || !state.destination.trim()) return;
 
-    if (state.scenarioBrief?.trim()) {
-      setScenarioBrief(state.scenarioBrief);
-    }
+    if (state.scenarioBrief?.trim()) setScenarioBrief(state.scenarioBrief);
     markShipmentAutorunStarted('hybrid');
-    setAutoTriggered(true);
-    setStep(2);
-    setLoading(true);
-    void runComposeRef.current();
-  }, []);
+    beginComposeRun();
+  }, [beginComposeRun]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     void runCompose();
   }
 
+  const stepDots = (
+    <div className="mb-6 flex flex-wrap items-center gap-2">
+      {STEPS.map((label, i) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => !loading && setStep(i)}
+          className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+            step === i ? 'text-foreground' : 'text-muted-foreground hover:text-on-surface-variant'
+          }`}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{
+              background: step >= i ? 'var(--hybrid)' : 'var(--border)',
+            }}
+          />
+          {label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={loadDemo}
+        className="w-full text-[11px] text-muted-foreground hover:brightness-110 sm:ml-auto sm:w-auto"
+      >
+        Demo
+      </button>
+    </div>
+  );
+
+  const corridorForm = (
+    <AmbientSurface mode="hybrid" mesh="card" className="space-y-4 p-4 sm:p-5">
+      <CorridorRow
+        accentVar="--hybrid"
+        swapDisabled={!source.trim() && !destination.trim()}
+        onSwap={() => {
+          const t = source;
+          setSource(destination);
+          setDestination(t);
+        }}
+      >
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="Lucknow"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--hybrid)_40%,transparent)]"
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">To</span>
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="Delhi"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--hybrid)_40%,transparent)]"
+          />
+        </label>
+      </CorridorRow>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="block">
+          <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
+          <input
+            type="number"
+            value={cargoWeight}
+            onChange={(e) => setCargoWeight(Number(e.target.value))}
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+          />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="text-xs text-muted-foreground mb-1.5 block">Priority</span>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+          >
+            <option value="balanced">Balanced</option>
+            <option value="time">Fastest</option>
+            <option value="cost">Cheapest</option>
+            <option value="safe">Safest</option>
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={() => setStep(1)}
+        disabled={!source.trim() || !destination.trim()}
+        className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold disabled:opacity-40"
+      >
+        Continue
+      </button>
+    </AmbientSurface>
+  );
+
+  const briefForm = (
+    <AmbientSurface mode="hybrid" mesh="card" className="space-y-4 p-4 sm:p-5">
+      <label className="block">
+        <span className="text-xs text-muted-foreground mb-1.5 block">
+          Brief <span className="text-outline">(optional)</span>
+        </span>
+        <ParagraphInputWithStt
+          value={scenarioBrief}
+          onChange={setScenarioBrief}
+          rows={3}
+          placeholder="Time-critical, OK with train then flight…"
+          className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm resize-none min-h-[80px]"
+          lang="en-IN"
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+          style={{ background: 'var(--hybrid)' }}
+        >
+          Find route
+        </button>
+        <button
+          type="button"
+          onClick={() => setStep(0)}
+          className="px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground"
+        >
+          Back
+        </button>
+      </div>
+    </AmbientSurface>
+  );
+
+  if (!inResultsView) {
+    return (
+      <PipelineLogiLanding
+        mode="hybrid"
+        badge="Hybrid · Multimodal route composer"
+        description={
+          <>
+            Chain{' '}
+            <span style={{ color: accentVar('hybrid') }} className="font-medium">
+              rail, road, and air
+            </span>{' '}
+            through hub cities — village feeder access, changeover scoring, and ranked itineraries.
+          </>
+        }
+        metrics={<HybridMetricsStrip />}
+        badges={HYBRID_CAPABILITY_BADGES}
+        footer={
+          <>
+            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">
+              9,524 mapped stations · 56 interchange hubs · 55s compose budget
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Or{' '}
+              <Link href="/comparator" className="hover:underline" style={{ color: accentVar('comparator') }}>
+                compare single modes
+              </Link>
+            </p>
+          </>
+        }
+      >
+        <AiBriefPanel contextMode="hybrid" className="mb-6" onIntentApplied={handleIntentApplied} />
+        {stepDots}
+        <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
+          {step === 0 && corridorForm}
+          {step === 1 && briefForm}
+        </form>
+      </PipelineLogiLanding>
+    );
+  }
+
   return (
-    <div className="relative min-h-full pb-16">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-        {/* Header — compact */}
-        <header className="mb-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-300/80 mb-1">
-            Hybrid
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-on-surface tracking-tight">
-            Multimodal routes
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            Chain trains, flights, and more through hub cities.{' '}
-            <Link href="/comparator" className="text-violet-300 hover:underline">
-              Compare single modes
-            </Link>
-          </p>
-        </header>
-
-        <AiBriefPanel contextMode="hybrid" className="mb-6" />
-
-        {/* Step dots — minimal */}
-        {(showForm || loading) && (
-          <div className="flex items-center gap-2 mb-6">
-            {STEPS.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => !loading && setStep(i)}
-                className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                  step === i ? 'text-violet-300' : 'text-muted-foreground hover:text-on-surface-variant'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    step >= i ? 'bg-violet-400' : 'bg-border'
-                  }`}
-                />
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={loadDemo}
-              className="ml-auto text-[11px] text-muted-foreground hover:text-violet-300"
-            >
-              Demo
-            </button>
+    <>
+      <PipelineResultsLayout
+        mode="hybrid"
+        source={source}
+        destination={destination}
+        cargoWeight={cargoWeight}
+        onEdit={() => resetToEdit(0)}
+      >
+        {error && !result?.recommended && (
+          <div className="mb-6 space-y-4">
+            {failureContext ? (
+              <ComposeFailurePanel
+                result={failureContext}
+                message={error}
+                onEdit={() => resetToEdit(0)}
+              />
+            ) : (
+              <div className="text-sm text-red-300/90 rounded-lg border border-red-400/20 bg-red-500/5 px-4 py-3">
+                <p>{error}</p>
+                {autoTriggered && (
+                  <button
+                    type="button"
+                    onClick={() => resetToEdit(0)}
+                    className="mt-3 text-xs font-semibold text-red-100 underline"
+                  >
+                    Edit corridor and try again
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Status strip when autorunning */}
-        {autoTriggered && (loading || result?.recommended) && (
-          <p className="text-xs text-muted-foreground mb-4 font-mono truncate">
-            {source} → {destination}
-            {cargoWeight ? ` · ${cargoWeight} kg` : ''}
-          </p>
+        {loading && !result?.recommended && (
+          <MultimodalPipelineLoading variant="compose" />
         )}
 
-        <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
-          {showForm && step === 0 && (
-            <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
-              <CorridorRow
-                accentVar="--hybrid"
-                swapDisabled={!source.trim() && !destination.trim()}
-                onSwap={() => {
-                  const t = source;
-                  setSource(destination);
-                  setDestination(t);
-                }}
-              >
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
-                  <input
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    placeholder="Lucknow"
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-violet-400/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">To</span>
-                  <input
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="Delhi"
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-violet-400/40"
-                  />
-                </label>
-              </CorridorRow>
-              <div className="grid grid-cols-3 gap-3">
-                <label className="block">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
-                  <input
-                    type="number"
-                    value={cargoWeight}
-                    onChange={(e) => setCargoWeight(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
-                  />
-                </label>
-                <label className="block col-span-2">
-                  <span className="text-xs text-muted-foreground mb-1.5 block">Priority</span>
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
-                  >
-                    <option value="balanced">Balanced</option>
-                    <option value="time">Fastest</option>
-                    <option value="cost">Cheapest</option>
-                    <option value="safe">Safest</option>
-                  </select>
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                disabled={!source.trim() || !destination.trim()}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold disabled:opacity-40"
-              >
-                Continue
-              </button>
-            </div>
-          )}
-
-          {showForm && step === 1 && (
-            <div className="space-y-4 rounded-2xl border border-border/60 bg-surface/40 p-5 sm:p-6">
-              <label className="block">
-                <span className="text-xs text-muted-foreground mb-1.5 block">
-                  Brief <span className="text-outline">(optional)</span>
-                </span>
-                <ParagraphInputWithStt
-                  value={scenarioBrief}
-                  onChange={setScenarioBrief}
-                  rows={3}
-                  placeholder="Time-critical, OK with train then flight…"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm resize-none min-h-[80px]"
-                  lang="en-IN"
-                />
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg bg-violet-500 text-white text-sm font-semibold disabled:opacity-50"
-                >
-                  Find route
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep(0)}
-                  className="px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground"
-                >
-                  Back
-                </button>
-              </div>
-            </div>
-          )}
-        </form>
-
-        {error && (
-          <p className="mt-4 text-sm text-red-300/90 rounded-lg border border-red-400/20 bg-red-500/5 px-4 py-3">
-            {error}
-          </p>
-        )}
-
-        {loading && <MultimodalPipelineLoading variant="compose" />}
-
-        {/* Road segment unavailable — shown as an informational notice, not an error */}
-        {roadUnavailableReason && !loading && (
-          <div className="mt-4">
+        {roadUnavailableReason && !loading && !loadingMore && !result?.recommended && (
+          <div className="mb-3">
             <InvalidCorridorCard
               mode="road"
               source={source}
               destination={destination}
               reason={roadUnavailableReason}
+              compact
             />
           </div>
         )}
 
-        {result?.recommended && !loading && (
+        {error && result?.recommended && (
+          <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {error}
+          </div>
+        )}
+
+        {result?.recommended && (
           <ComposeResults
             result={result}
-            onEdit={() => {
-              setResult(null);
-              setRoadUnavailableReason(null);
-              setStep(1);
-            }}
+            loadingMore={loadingMore}
+            onEdit={() => resetToEdit(0)}
             onSave={() => setSaveModalOpen(true)}
           />
         )}
-      </div>
+      </PipelineResultsLayout>
 
       <SaveReportModal
         isOpen={saveModalOpen}
@@ -368,16 +498,18 @@ export default function HybridPageClient() {
         prefill={{
           source,
           destination,
-          stops: result?.recommended?.segments?.map(s => String(s.to_city)).slice(0, -1) || [],
+          stops: result?.recommended?.segments?.map((s) => String(s.to_city)).slice(0, -1) || [],
           mode: 'hybrid',
           cargoType,
           optimizationInput: { priority },
           optimizationResult: result?.recommended as unknown as Record<string, unknown>,
           estimatedCost: result?.recommended?.total_cost_inr,
           estimatedTime: result?.recommended?.total_time_hr,
-          riskScore: (result?.recommended as any)?.total_risk_score || (result?.recommended as any)?.risk_score,
+          riskScore:
+            (result?.recommended as { total_risk_score?: number; risk_score?: number })?.total_risk_score ||
+            (result?.recommended as { risk_score?: number })?.risk_score,
         }}
       />
-    </div>
+    </>
   );
 }

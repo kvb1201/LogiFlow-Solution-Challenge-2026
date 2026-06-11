@@ -68,14 +68,14 @@ export default function RailwayLoading() {
         </div>
 
         {/* Progress */}
-        <div className="mb-5 rounded-2xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
+        <div className="mb-5 rounded-xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
             <span>Pipeline progress</span>
             <span className="font-mono text-rail">{progress}%</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-rail/80 to-primary transition-all duration-700 ease-out"
+              className="h-full rounded-full bg-gradient-to-r from-yellow-700/80 via-rail to-yellow-200/90 transition-all duration-700 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>

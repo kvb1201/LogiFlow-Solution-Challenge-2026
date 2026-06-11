@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   optimizeHybridRoute,
+  TrafficQueueError,
   type AiConstraintsApplied,
   type HybridComparisonRow,
   type HybridOptimizeResult,
@@ -18,6 +19,7 @@ import {
   shouldRunShipmentAutorun,
   syncAutorunFromSession,
 } from '@/lib/shipmentAutorun';
+import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { BACKEND_UNAVAILABLE_MSG } from '@/services/api';
 import { sanitizeUserMessage } from '@/lib/user-facing-messages';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
@@ -25,6 +27,15 @@ import MultimodalPipelineLoading from '@/components/MultimodalPipelineLoading';
 import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
+import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
+import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
+import { accentVar, PIPELINE_ACTION_PRIMARY, PIPELINE_ACTION_SECONDARY } from '@/lib/pipeline-theme';
+import {
+  COMPARATOR_CAPABILITY_BADGES,
+  COMPARATOR_HERO_METRICS,
+} from '@/lib/comparator-metrics';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -38,37 +49,46 @@ const DEMO_SCENARIO =
 
 const MODE_META: Record<
   Mode,
-  { label: string; icon: string; tint: string; cardTint: string; symbol: string }
+  { label: string; tint: string; cardTint: string; symbol: string }
 > = {
   road: {
     label: 'Road',
-    icon: '🚚',
     tint: 'text-secondary',
     cardTint: 'border-secondary/35 bg-secondary/10',
     symbol: 'local_shipping',
   },
   rail: {
     label: 'Rail',
-    icon: '🚆',
-    tint: 'text-primary',
-    cardTint: 'border-primary/35 bg-primary/10',
+    tint: 'text-rail',
+    cardTint: 'border-rail/35 bg-rail/10',
     symbol: 'train',
   },
   air: {
     label: 'Air',
-    icon: '✈️',
     tint: 'text-sky-300',
     cardTint: 'border-sky-400/35 bg-sky-400/10',
     symbol: 'flight_takeoff',
   },
   water: {
     label: 'Water',
-    icon: '🚢',
     tint: 'text-teal-300',
     cardTint: 'border-teal-400/35 bg-teal-400/10',
     symbol: 'directions_boat',
   },
 };
+
+function ComparatorMetricItem({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="text-center">
+      <div className="text-xl sm:text-2xl font-black" style={{ color: 'var(--comparator)' }}>
+        {value}
+      </div>
+      <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
+        {label}
+      </div>
+    </div>
+  );
+}
 
 const ALL_MODES: Mode[] = ['road', 'rail', 'air', 'water'];
 
@@ -119,14 +139,14 @@ function ComparisonTable({
   const minCost = Math.min(...validRows.map((row) => toNum(row.cost_inr) ?? Number.POSITIVE_INFINITY));
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-[#0c1018]/80 overflow-hidden shadow-[0_24px_80px_-40px_rgba(0,0,0,0.9)]">
-      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+    <div className="rounded-xl border border-border/60 bg-surface/30 overflow-hidden">
+      <div className="px-4 sm:px-5 py-3 border-b border-border/40 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-on-surface tracking-tight">Multimodal comparison</h3>
-        <span className="text-[10px] uppercase tracking-widest text-outline">4 modes · delay-adjusted</span>
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">4 modes · delay-adjusted</span>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-white/[0.03] text-on-surface-variant text-[11px] uppercase tracking-wider">
+          <thead className="bg-surface/40 text-muted-foreground text-xs uppercase tracking-wider">
             <tr>
               <th className="px-5 py-3 text-left font-semibold">Mode</th>
               <th className="px-5 py-3 text-left font-semibold">Time</th>
@@ -135,7 +155,7 @@ function ComparisonTable({
               <th className="px-5 py-3 text-left font-semibold hidden md:table-cell">Insight</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/[0.04]">
+          <tbody className="divide-y divide-border/30">
             {validRows.map((row) => {
               const mode = normalizeMode(row.mode) as Mode;
               const meta = MODE_META[mode];
@@ -145,12 +165,12 @@ function ComparisonTable({
               return (
                 <tr
                   key={`row-${mode}`}
-                  className={isRec ? 'bg-primary/[0.08]' : 'hover:bg-white/[0.02] transition-colors'}
+                  className={isRec ? 'bg-[color-mix(in_oklab,var(--comparator)_8%,transparent)]' : 'hover:bg-surface/20 transition-colors'}
                 >
-                  <td className="px-5 py-4">
+                  <td className="px-4 sm:px-5 py-3">
                     <div className="flex items-center gap-2.5">
                       <span
-                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border ${meta.cardTint}`}
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${meta.cardTint}`}
                       >
                         <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>
                           {meta.symbol}
@@ -159,27 +179,34 @@ function ComparisonTable({
                       <div>
                         <span className={`font-semibold ${meta.tint}`}>{meta.label}</span>
                         {isRec && (
-                          <span className="ml-2 text-[9px] font-bold uppercase tracking-wider text-primary border border-primary/30 rounded-full px-2 py-0.5">
+                          <span
+                            className="ml-2 text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5"
+                            style={{
+                              color: 'var(--comparator)',
+                              border: '1px solid color-mix(in oklab, var(--comparator) 35%, transparent)',
+                              background: 'color-mix(in oklab, var(--comparator) 10%, transparent)',
+                            }}
+                          >
                             Pick
                           </span>
                         )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">
+                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">
                     {formatHours(time)}
                     {time != null && time === minTime && (
-                      <span className="ml-2 text-[9px] text-emerald-400 font-sans font-semibold">fastest</span>
+                      <span className="ml-2 text-[10px] text-emerald-400 font-sans font-semibold">fastest</span>
                     )}
                   </td>
-                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">
+                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">
                     {formatInr(cost)}
                     {cost != null && cost === minCost && (
-                      <span className="ml-2 text-[9px] text-sky-300 font-sans font-semibold">cheapest</span>
+                      <span className="ml-2 text-[10px] text-sky-300 font-sans font-semibold">cheapest</span>
                     )}
                   </td>
-                  <td className="px-5 py-4 text-on-surface font-mono text-[13px]">{formatRisk(row.risk)}</td>
-                  <td className="px-5 py-4 text-on-surface-variant text-xs leading-relaxed hidden md:table-cell max-w-xs">
+                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">{formatRisk(row.risk)}</td>
+                  <td className="px-4 sm:px-5 py-3 text-muted-foreground text-xs leading-relaxed hidden md:table-cell max-w-xs">
                     {row.explanation?.trim() || '—'}
                   </td>
                 </tr>
@@ -202,24 +229,27 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
   if (c.excluded_modes?.length) chips.push(`Exclude: ${c.excluded_modes.join(', ')}`);
 
   return (
-    <div className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/10 via-transparent to-primary/5 p-5">
+    <div className="rounded-lg border border-border/60 bg-surface/25 px-4 py-3">
       <div className="flex items-start gap-3">
-        <span className="material-symbols-outlined text-violet-300 shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+        <span
+          className="material-symbols-outlined shrink-0"
+          style={{ color: 'var(--comparator)', fontVariationSettings: "'FILL' 1" }}
+        >
           auto_awesome
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300 mb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Shipment understood
           </p>
           <p className="text-sm text-on-surface leading-relaxed">
             {ai.scenario_summary || 'Scenario parsed into optimization constraints before scoring.'}
           </p>
           {chips.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-2">
               {chips.map((chip) => (
                 <span
                   key={chip}
-                  className="text-[10px] font-semibold px-2.5 py-1 rounded-full border border-violet-400/20 bg-violet-500/10 text-violet-100"
+                  className="text-xs font-medium px-2.5 py-1 rounded-full border border-border/60 bg-surface/40 text-muted-foreground"
                 >
                   {chip}
                 </span>
@@ -259,8 +289,6 @@ export default function ComparatorPageClient() {
   const [result, setResult] = useState<HybridOptimizeResult | null>(null);
   const [saveMode, setSaveMode] = useState<Mode | null>(null);
 
-  const skipWizard = loading || Boolean(result) || (autoTriggered && !error);
-
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
     setDestination(DEMO_DEST);
@@ -271,6 +299,7 @@ export default function ComparatorPageClient() {
     setBudgetMax(8000);
     setStep(2);
     setError(null);
+    setResult(null);
   }, [setSource, setDestination, setPriority, setCargoWeight, setCargoType, setBudgetMax]);
 
   const comparisonRows = useMemo(
@@ -341,11 +370,35 @@ export default function ComparatorPageClient() {
   const runOptimizeRef = useRef(runOptimize);
   runOptimizeRef.current = runOptimize;
 
+  const corridorReady = Boolean(source.trim() && destination.trim());
+
+  const beginOptimizeRun = useCallback(() => {
+    setResult(null);
+    setError(null);
+    setAutoTriggered(true);
+    setStep(3);
+    setLoading(true);
+    void runOptimizeRef.current();
+  }, []);
+
   useEffect(() => {
     if (storeScenarioBrief?.trim()) {
       setScenarioBrief(storeScenarioBrief);
     }
   }, [storeScenarioBrief]);
+
+  useShipmentAutorun('comparator', beginOptimizeRun, corridorReady);
+
+  const onIntentApplied = useIntentFormReset((_parsed, action) => {
+    setError(null);
+    setResult(null);
+    if (action === 'run') {
+      if (storeScenarioBrief?.trim()) setScenarioBrief(storeScenarioBrief);
+      return;
+    }
+    setAutoTriggered(false);
+    setStep(1);
+  });
 
   useLayoutEffect(() => {
     syncAutorunFromSession();
@@ -358,279 +411,470 @@ export default function ComparatorPageClient() {
       setScenarioBrief(state.scenarioBrief);
     }
     markShipmentAutorunStarted('comparator');
-    setAutoTriggered(true);
-    setStep(3);
-    setLoading(true);
-    void runOptimizeRef.current();
-  }, []);
+    beginOptimizeRun();
+  }, [beginOptimizeRun]);
 
-  return (
-    <div className="flex-1 flex flex-col overflow-x-hidden bg-[#05070c] min-h-0">
-      {/* Hero */}
-      <section className="relative border-b border-white/[0.06] overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 [&_*]:pointer-events-none">
-          <div className="absolute w-[min(90vw,640px)] h-[min(90vw,640px)] rounded-full opacity-[0.14] blur-[110px] bg-violet-600 -top-[50%] right-[-20%]" />
-          <div className="absolute w-[min(70vw,480px)] h-[min(70vw,480px)] rounded-full opacity-[0.1] blur-[90px] bg-primary bottom-[-40%] left-[-15%]" />
-        </div>
-        <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto px-5 sm:px-8 py-10 sm:py-12">
-          <div className="flex flex-wrap items-center gap-2 mb-5">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
-              Smart Supply Chain
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200">
-              Smart planning
-            </span>
-          </div>
-          <h1 className="font-headline text-3xl sm:text-[2.75rem] font-black tracking-tight text-on-surface leading-[1.05] max-w-3xl">
-            Decide the best way to move cargo — not just display routes
-          </h1>
-          <p className="mt-4 text-[15px] sm:text-base text-on-surface-variant max-w-2xl leading-relaxed">
-            Compare <strong className="text-on-surface">road, rail, air, and water</strong> on delay-adjusted time,
-            cost, and risk. Describe your shipment in plain English and we turn it into constraints before scoring.
+  const inResultsView = loading || Boolean(result) || Boolean(error && autoTriggered);
+
+  function resetToEdit() {
+    setResult(null);
+    setError(null);
+    setAutoTriggered(false);
+    setStep(1);
+  }
+
+  const stepDots = (
+    <div className="flex items-center gap-2 mb-6">
+      {[
+        { n: 1, label: 'Corridor' },
+        { n: 2, label: 'Scenario' },
+        { n: 3, label: 'Decision' },
+      ].map(({ n, label }) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => !loading && setStep(n as 1 | 2 | 3)}
+          className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+            step === n ? 'text-foreground' : 'text-muted-foreground hover:text-on-surface-variant'
+          }`}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: step >= n ? 'var(--comparator)' : 'var(--border)' }}
+          />
+          {label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={loadDemo}
+        className="ml-auto text-[11px] text-muted-foreground hover:brightness-110"
+      >
+        Demo
+      </button>
+    </div>
+  );
+
+  const saveModal = (
+    <SaveReportModal
+      isOpen={saveMode !== null}
+      onClose={() => setSaveMode(null)}
+      prefill={{
+        source,
+        destination,
+        stops: [],
+        mode: 'comparator',
+        cargoType,
+        optimizationInput: { priority },
+        optimizationResult: saveMode
+          ? ({
+              ...(result?.best_per_mode?.[saveMode] || {}),
+              selected_from_comparator: true,
+              selected_mode: saveMode,
+            } as Record<string, unknown>)
+          : undefined,
+        estimatedCost: saveMode
+          ? (result?.best_per_mode?.[saveMode]?.cost_inr ??
+            result?.best_per_mode?.[saveMode]?.cost ??
+            undefined)
+          : undefined,
+        estimatedTime: saveMode
+          ? (result?.best_per_mode?.[saveMode]?.time_hr ??
+            result?.best_per_mode?.[saveMode]?.time ??
+            undefined)
+          : undefined,
+        riskScore: saveMode ? (result?.best_per_mode?.[saveMode]?.risk ?? undefined) : undefined,
+      }}
+    />
+  );
+
+  const resultsBody = result && !loading && (
+    <div className="space-y-5 animate-fade-in pb-8">
+      {result.demo_mode && (
+        <p className="text-xs text-amber-200/90 border border-amber-400/20 bg-amber-500/10 rounded-lg px-3 py-2 inline-block">
+          Demo cache mode — stable snapshot for judging.
+        </p>
+      )}
+
+      {result.ai_constraints && <AiConstraintsPanel ai={result.ai_constraints} />}
+
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{
+          borderColor: 'color-mix(in oklab, var(--comparator) 30%, var(--border))',
+          background: 'color-mix(in oklab, var(--comparator) 6%, var(--surface))',
+        }}
+      >
+        <div className="px-4 sm:px-5 py-3 border-b border-border/40">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            Recommended mode
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={loadDemo}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary/90 transition-all shadow-[0_0_40px_-12px_rgba(172,199,255,0.5)]"
-            >
-              <span className="material-symbols-outlined text-lg">play_circle</span>
-              Run judge demo (Delhi → Mumbai)
-            </button>
-            <Link
-              href="/railway"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/10 text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:border-white/20 transition-colors"
-            >
-              Deep-dive rail
-            </Link>
-          </div>
-          {/* Impact strip — alignment scoring */}
-          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { k: 'SDG 9', v: 'Resilient logistics infra' },
-              { k: '< 60s', v: 'Multimodal compare' },
-              { k: '4 modes', v: 'Single decision view' },
-              { k: 'MSME', v: 'India freight operators' },
-            ].map((item) => (
-              <div
-                key={item.k}
-                className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 backdrop-blur-sm"
-              >
-                <div className="text-lg font-black text-primary font-headline">{item.k}</div>
-                <div className="text-[11px] text-on-surface-variant mt-0.5">{item.v}</div>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            {recommendedMode ? (
+              <>
+                <span
+                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border ${MODE_META[recommendedMode].cardTint}`}
+                >
+                  <span
+                    className="material-symbols-outlined text-xl"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    {MODE_META[recommendedMode].symbol}
+                  </span>
+                </span>
+                <div>
+                  <h2 className={`text-2xl font-black font-headline ${MODE_META[recommendedMode].tint}`}>
+                    {MODE_META[recommendedMode].label}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Best fit for your priority and constraints
+                  </p>
+                </div>
+              </>
+            ) : (
+              <span className="text-lg font-semibold">No single mode won</span>
+            )}
           </div>
         </div>
-      </section>
-
-      {/* Steps */}
-      <div className="relative z-10 pointer-events-auto max-w-6xl mx-auto w-full px-5 sm:px-8 pt-8">
-        <div className="flex items-center gap-2 sm:gap-4 mb-8">
+        <div className="grid max-w-md grid-cols-1 gap-2 border-b border-border/30 px-4 py-4 min-[360px]:grid-cols-3 min-[360px]:gap-3 sm:px-5">
           {[
-            { n: 1, label: 'Corridor' },
-            { n: 2, label: 'Scenario (AI)' },
-            { n: 3, label: 'Decision' },
-          ].map(({ n, label }) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setStep(n as 1 | 2 | 3)}
-              className={`flex-1 flex items-center gap-2 sm:gap-3 py-3 px-3 sm:px-4 rounded-xl border transition-all ${
-                step === n
-                  ? 'border-primary/40 bg-primary/10 text-on-surface'
-                  : 'border-white/[0.06] bg-white/[0.02] text-on-surface-variant hover:border-white/10'
-              }`}
-            >
-              <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                  step >= n ? 'bg-primary text-on-primary' : 'bg-white/10'
-                }`}
-              >
-                {n}
-              </span>
-              <span className="text-xs sm:text-sm font-semibold truncate">{label}</span>
-            </button>
+            { label: 'Time', value: formatHours(recommendedRow?.time_hr) },
+            { label: 'Cost', value: formatInr(recommendedRow?.cost_inr) },
+            { label: 'Risk', value: formatRisk(recommendedRow?.risk) },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-lg border border-border/40 bg-surface/40 px-2.5 py-2 sm:px-3">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+              <div className="mt-0.5 font-mono text-sm font-bold text-on-surface sm:text-base">{value}</div>
+            </div>
           ))}
         </div>
+        <p className="px-4 sm:px-5 py-4 text-sm text-on-surface leading-relaxed border-l-2 border-[var(--comparator)] ml-4 sm:ml-5 my-3">
+          {result.reason?.trim() || 'Recommendation based on multimodal scoring.'}
+        </p>
+      </div>
 
-        {skipWizard && (
-          <div className="mb-6 rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4">
-            <p className="text-sm font-semibold text-on-surface">
-              {loading
-                ? 'Running multimodal comparison with your confirmed shipment…'
-                : result
-                  ? 'Recommendation ready — based on your confirmed shipment'
-                  : 'Preparing your multimodal comparison…'}
+      <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
+
+      {(() => {
+        const unavailableModes = Array.isArray(result.unavailable_modes) ? result.unavailable_modes : [];
+        return unavailableModes.length > 0 ? (
+          <div className="rounded-lg border border-border/50 bg-surface/25 px-4 py-3 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Unavailable modes
             </p>
-            <p className="text-xs text-on-surface-variant mt-1">
-              {source && destination ? `${source} → ${destination}` : 'Using parsed corridor from home'}
-              {cargoWeight ? ` · ${cargoWeight} kg` : ''}
-              {priority ? ` · priority: ${priority}` : ''}
-            </p>
+            {unavailableModes.map((entry, entryIdx) => {
+              const modeRaw =
+                typeof entry === 'object' && entry !== null ? String(entry.mode ?? '') : String(entry ?? '');
+              const reasonRaw =
+                typeof entry === 'object' && entry !== null
+                  ? String(entry.reason ?? 'Not available for this corridor.')
+                  : 'Not available for this corridor.';
+              return (
+                <InvalidCorridorInline
+                  key={modeRaw || `unavail-${entryIdx}`}
+                  mode={modeRaw}
+                  reason={reasonRaw}
+                />
+              );
+            })}
           </div>
-        )}
+        ) : null;
+      })()}
 
-        {!skipWizard && (
-          <AiBriefPanel contextMode="comparator" className="mb-6" />
-        )}
+      {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
+        <div className="rounded-lg border border-border/50 bg-surface/25 p-4">
+          <h3 className="text-sm font-semibold mb-2">Tradeoffs</h3>
+          <ul className="space-y-1.5">
+            {result.tradeoffs.map((line, i) => (
+              <li key={i} className="text-sm text-muted-foreground flex gap-2">
+                <span style={{ color: 'var(--comparator)' }}>•</span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-        <form id="logiflow-pipeline-form" onSubmit={onSubmit} className="space-y-6">
-          {!skipWizard && step === 1 && (
-            <div className="rounded-2xl border border-white/[0.08] bg-[#0a0e16]/90 p-6 sm:p-8 backdrop-blur-xl space-y-5 animate-fade-in">
-              <h2 className="text-lg font-bold text-on-surface">Where is the shipment moving?</h2>
-              <CorridorRow
-                accentVar="--hybrid"
-                swapDisabled={!source.trim() && !destination.trim()}
-                onSwap={() => {
-                  const t = source;
-                  setSource(destination);
-                  setDestination(t);
-                }}
-              >
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
-                    Origin
-                  </span>
-                  <input
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    placeholder="Delhi, India"
-                    className="w-full px-4 py-3.5 rounded-xl border border-white/10 bg-black/30 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
-                    Destination
-                  </span>
-                  <input
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="Mumbai, India"
-                    className="w-full px-4 py-3.5 rounded-xl border border-white/10 bg-black/30 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </label>
-              </CorridorRow>
-              <div className="grid sm:grid-cols-3 gap-4">
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
-                    Weight (kg)
-                  </span>
-                  <input
-                    type="number"
-                    value={cargoWeight}
-                    onChange={(e) => setCargoWeight(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
-                    Cargo type
-                  </span>
-                  <select
-                    value={cargoType}
-                    onChange={(e) => setCargoType(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {ALL_MODES.map((mode) => {
+          const data = result.best_per_mode?.[mode];
+          const won = mode === recommendedMode;
+          const safeUnavailable = Array.isArray(result.unavailable_modes) ? result.unavailable_modes : [];
+          const unavailableEntry = safeUnavailable.find((e) => {
+            if (typeof e === 'object' && e !== null) return String(e.mode ?? '').toLowerCase() === mode;
+            return String(e ?? '').toLowerCase().startsWith(mode);
+          });
+          const unavailableReason = unavailableEntry
+            ? typeof unavailableEntry === 'object' && unavailableEntry !== null
+              ? String((unavailableEntry as { reason?: string }).reason ?? 'Not available for this corridor.')
+              : 'Not available for this corridor.'
+            : null;
+          return (
+            <div
+              key={mode}
+              className={`rounded-lg border p-4 ${
+                won ? MODE_META[mode].cardTint : 'border-border/50 bg-surface/20'
+              }`}
+            >
+              <h4 className={`font-semibold text-sm ${MODE_META[mode].tint} mb-2`}>{MODE_META[mode].label}</h4>
+              {data ? (
+                <>
+                  <div className="text-xs space-y-1 font-mono text-muted-foreground">
+                    <p>Time {formatHours(data.time_hr ?? data.time)}</p>
+                    <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveMode(mode)}
+                    className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border border-border/50 bg-surface/40 px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface/60 transition-all"
                   >
-                    <option value="General">General</option>
-                    <option value="Perishable">Perishable</option>
-                    <option value="Fragile">Fragile</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-outline mb-2 block">
-                    Max budget (₹)
-                  </span>
-                  <input
-                    type="number"
-                    value={budgetMax}
-                    onChange={(e) => setBudgetMax(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-black/30 text-on-surface"
-                  />
-                </label>
-              </div>
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                      save
+                    </span>
+                    Save report
+                  </button>
+                </>
+              ) : unavailableReason ? (
+                <InvalidCorridorInline mode={mode} reason={unavailableReason} />
+              ) : (
+                <p className="text-xs text-muted-foreground italic">Unavailable for this corridor</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {Boolean(result.best_per_mode?.road?.geometry?.length) && (
+        <div className="h-[min(50vh,360px)] overflow-hidden rounded-xl border border-border/50 sm:h-[360px]">
+          <MapView
+            routes={[
+              {
+                geometry: result.best_per_mode!.road!.geometry!,
+                time: result.best_per_mode!.road!.time_hr ?? result.best_per_mode!.road!.time ?? 0,
+                cost: result.best_per_mode!.road!.cost_inr ?? result.best_per_mode!.road!.cost ?? 0,
+                risk: result.best_per_mode!.road!.risk ?? 0,
+              },
+            ]}
+            selectedRoute={0}
+          />
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => {
+          setStep(2);
+          setResult(null);
+        }}
+        className="text-sm font-medium hover:underline"
+        style={{ color: 'var(--comparator)' }}
+      >
+        ← Adjust scenario and re-run
+      </button>
+    </div>
+  );
+
+  if (!inResultsView) {
+    return (
+      <>
+        <PipelineLogiLanding
+          mode="comparator"
+          badge="Comparator · AI multimodal planner"
+          description={
+            <>
+              Compare{' '}
+              <span style={{ color: accentVar('comparator') }} className="font-medium">
+                road, rail, air, and water
+              </span>{' '}
+              on delay-adjusted time, cost, and risk — describe your shipment in plain English first.
+            </>
+          }
+          metrics={
+            <div className="flex flex-wrap justify-center gap-6">
+              {COMPARATOR_HERO_METRICS.map((m) => (
+                <ComparatorMetricItem key={m.label} value={m.value} label={m.label} />
+              ))}
+            </div>
+          }
+          badges={COMPARATOR_CAPABILITY_BADGES}
+          actions={
+            <>
               <button
                 type="button"
-                onClick={() => setStep(2)}
-                disabled={!source.trim() || !destination.trim()}
-                className="px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 font-semibold text-sm disabled:opacity-40"
+                onClick={loadDemo}
+                className={`${PIPELINE_ACTION_PRIMARY} text-white`}
+                style={{ background: accentVar('comparator') }}
               >
-                Next: describe scenario →
+                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  play_circle
+                </span>
+                Run demo · Delhi → Mumbai
               </button>
-            </div>
-          )}
-
-          {!skipWizard && step === 2 && (
-            <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-b from-violet-500/[0.06] to-transparent p-6 sm:p-8 space-y-5 animate-fade-in">
-              <div>
-                <h2 className="text-lg font-bold text-on-surface">What constraints matter?</h2>
-                <p className="text-sm text-on-surface-variant mt-1">
-                  We use this <em>before</em> comparing modes — it can change priority, budget caps, deadlines,
-                  and excluded modes.
-                </p>
-              </div>
-              <ParagraphInputWithStt
-                value={scenarioBrief}
-                onChange={setScenarioBrief}
-                rows={4}
-                placeholder="e.g. Monsoon delays expected, budget under ₹10k, must deliver within 48h, prefer rail over air…"
-                className="w-full px-4 py-3.5 rounded-xl border border-violet-400/20 bg-black/40 text-on-surface placeholder:text-outline/60 focus:outline-none focus:ring-2 focus:ring-violet-400/30 resize-y min-h-[100px]"
-                lang="en-IN"
-              />
-              <div className="flex flex-wrap gap-2">
-                {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer water/rail'].map(
-                  (chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() =>
-                        setScenarioBrief((prev) => (prev ? `${prev}. ${chip}` : chip))
-                      }
-                      className="text-[11px] px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:border-white/20"
-                    >
-                      + {chip}
-                    </button>
-                  )
-                )}
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-6 py-3 rounded-xl bg-primary text-on-primary font-semibold text-sm disabled:opacity-50 flex items-center gap-2"
+              <Link href="/hybrid" className={PIPELINE_ACTION_SECONDARY}>
+                Hybrid chains
+              </Link>
+            </>
+          }
+          footer={
+            <p className="text-[10px] text-outline/50 uppercase tracking-[0.2em] font-label">
+              LogiFlow comparator decision engine · explainable 4-mode scoring
+            </p>
+          }
+        >
+          <AiBriefPanel contextMode="comparator" className="mb-6" onIntentApplied={onIntentApplied} />
+          {stepDots}
+          <form id="logiflow-pipeline-form" onSubmit={onSubmit}>
+            {step === 1 && (
+              <AmbientSurface mode="comparator" mesh="card" className="space-y-4 p-4 sm:p-5">
+                <h2 className="text-base font-bold text-on-surface">Where is the shipment moving?</h2>
+                <CorridorRow
+                  accentVar="--comparator"
+                  swapDisabled={!source.trim() && !destination.trim()}
+                  onSwap={() => {
+                    const t = source;
+                    setSource(destination);
+                    setDestination(t);
+                  }}
                 >
-                  {loading ? (
-                    <>
-                      <span className="h-4 w-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                      Scoring 4 modes…
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-lg">bolt</span>
-                      Get recommendation
-                    </>
-                  )}
-                </button>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground mb-1.5 block">From</span>
+                    <input
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      placeholder="Delhi, India"
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--comparator)_40%,transparent)]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground mb-1.5 block">To</span>
+                    <input
+                      value={destination}
+                      onChange={(e) => setDestination(e.target.value)}
+                      placeholder="Mumbai, India"
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm focus:outline-none focus:ring-1 focus:ring-[color-mix(in_oklab,var(--comparator)_40%,transparent)]"
+                    />
+                  </label>
+                </CorridorRow>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground mb-1.5 block">Kg</span>
+                    <input
+                      type="number"
+                      value={cargoWeight}
+                      onChange={(e) => setCargoWeight(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground mb-1.5 block">Cargo type</span>
+                    <select
+                      value={cargoType}
+                      onChange={(e) => setCargoType(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+                    >
+                      <option value="General">General</option>
+                      <option value="Perishable">Perishable</option>
+                      <option value="Fragile">Fragile</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground mb-1.5 block">Max budget (₹)</span>
+                    <input
+                      type="number"
+                      value={budgetMax}
+                      onChange={(e) => setBudgetMax(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm"
+                    />
+                  </label>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
-                  className="px-5 py-3 rounded-xl border border-white/10 text-sm font-semibold text-on-surface-variant"
+                  onClick={() => setStep(2)}
+                  disabled={!source.trim() || !destination.trim()}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold disabled:opacity-40"
                 >
-                  Back
+                  Continue
                 </button>
-              </div>
-            </div>
-          )}
+              </AmbientSurface>
+            )}
 
-          {!skipWizard && step === 3 && !result && !loading && (
-            <div className="text-center py-12 text-on-surface-variant text-sm">
-              Complete steps 1–2 and run optimization, or use the demo button above.
-            </div>
-          )}
-        </form>
+            {step === 2 && (
+              <AmbientSurface mode="comparator" mesh="card" className="space-y-4 p-4 sm:p-5">
+                <div>
+                  <h2 className="text-base font-bold text-on-surface">What constraints matter?</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Parsed before comparing modes — can change priority, budget, deadlines, and exclusions.
+                  </p>
+                </div>
+                <ParagraphInputWithStt
+                  value={scenarioBrief}
+                  onChange={setScenarioBrief}
+                  rows={4}
+                  placeholder="Monsoon delays expected, budget under ₹10k, must deliver within 48h…"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background/60 text-sm resize-y min-h-[100px]"
+                  lang="en-IN"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {['Urgent — minimize time', 'Tight budget', 'Monsoon — avoid air', 'Bulk — prefer rail'].map(
+                    (chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setScenarioBrief((prev) => (prev ? `${prev}. ${chip}` : chip))}
+                        className="text-xs px-3 py-1.5 rounded-full border border-border/60 bg-surface/30 text-muted-foreground hover:text-foreground"
+                      >
+                        + {chip}
+                      </button>
+                    )
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ background: accentVar('comparator') }}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Scoring 4 modes…
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-lg">bolt</span>
+                        Get recommendation
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="px-4 py-2.5 rounded-lg border border-border text-sm text-muted-foreground"
+                  >
+                    Back
+                  </button>
+                </div>
+              </AmbientSurface>
+            )}
+          </form>
+        </PipelineLogiLanding>
+        {saveModal}
+      </>
+    );
+  }
 
+  return (
+    <>
+      <PipelineResultsLayout
+        mode="comparator"
+        source={source}
+        destination={destination}
+        cargoWeight={cargoWeight}
+        onEdit={resetToEdit}
+      >
         {error && (
-          <div className="mt-6 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex flex-col gap-3">
+          <div className="mb-4 rounded-lg border border-red-400/20 bg-red-500/5 px-4 py-3 text-sm text-red-200 flex flex-col gap-2">
             <div className="flex gap-2 items-start">
               <span className="material-symbols-outlined text-base shrink-0">error</span>
               <span>{error}</span>
@@ -638,218 +882,19 @@ export default function ComparatorPageClient() {
             {autoTriggered && (
               <button
                 type="button"
-                onClick={() => {
-                  setAutoTriggered(false);
-                  setStep(1);
-                }}
+                onClick={resetToEdit}
                 className="self-start text-xs font-semibold text-red-100 underline"
               >
-                Edit shipment details and try again
+                Edit shipment and try again
               </button>
             )}
           </div>
         )}
 
         {loading && <MultimodalPipelineLoading variant="optimize" />}
-
-        {result && !loading && (
-          <div className="mt-8 pb-16 space-y-6 animate-fade-in">
-            {result.demo_mode && (
-              <p className="text-[11px] text-amber-200/90 border border-amber-400/20 bg-amber-500/10 rounded-lg px-3 py-2 inline-block">
-                Demo cache mode — stable snapshot for judging (set LOGIFLOW_DEMO_MODE=0 for live APIs).
-              </p>
-            )}
-
-            {result.ai_constraints && <AiConstraintsPanel ai={result.ai_constraints} />}
-
-            {/* Verdict card */}
-            <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-[#0c1018] to-[#05070c] p-6 sm:p-8 shadow-[0_32px_100px_-48px_rgba(172,199,255,0.35)]">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary mb-3">Recommended mode</p>
-              <div className="flex flex-wrap items-center gap-4 mb-4">
-                {recommendedMode ? (
-                  <>
-                    <span
-                      className={`inline-flex h-14 w-14 items-center justify-center rounded-2xl border text-2xl ${MODE_META[recommendedMode].cardTint}`}
-                    >
-                      {MODE_META[recommendedMode].icon}
-                    </span>
-                    <div>
-                      <h2 className={`text-3xl font-black font-headline ${MODE_META[recommendedMode].tint}`}>
-                        {MODE_META[recommendedMode].label}
-                      </h2>
-                      <p className="text-sm text-on-surface-variant mt-1">Best fit for your stated priority & constraints</p>
-                    </div>
-                  </>
-                ) : (
-                  <span className="text-lg font-semibold">No single mode won</span>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-3 max-w-md">
-                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-outline">Time</div>
-                  <div className="text-lg font-bold font-mono text-on-surface">{formatHours(recommendedRow?.time_hr)}</div>
-                </div>
-                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-outline">Cost</div>
-                  <div className="text-lg font-bold font-mono text-on-surface">{formatInr(recommendedRow?.cost_inr)}</div>
-                </div>
-                <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-outline">Risk</div>
-                  <div className="text-lg font-bold font-mono text-on-surface">{formatRisk(recommendedRow?.risk)}</div>
-                </div>
-              </div>
-              <p className="mt-5 text-[15px] text-on-surface leading-relaxed border-l-2 border-primary/50 pl-4">
-                {result.reason?.trim() || 'Recommendation based on multimodal scoring.'}
-              </p>
-            </div>
-
-            <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
-
-            {(() => {
-              const unavailableModes = Array.isArray(result.unavailable_modes)
-                ? result.unavailable_modes
-                : [];
-              return unavailableModes.length > 0 ? (
-                <div className="rounded-xl border border-outline-variant/15 bg-surface-container/20 px-4 py-3 space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-outline mb-1">
-                    Unavailable modes
-                  </p>
-                  {unavailableModes.map((entry) => {
-                    const modeRaw = typeof entry === 'object' && entry !== null
-                      ? String(entry.mode ?? '')
-                      : String(entry ?? '');
-                    const reasonRaw = typeof entry === 'object' && entry !== null
-                      ? String(entry.reason ?? 'Not available for this corridor.')
-                      : 'Not available for this corridor.';
-                    return (
-                      <InvalidCorridorInline
-                        key={modeRaw || Math.random()}
-                        mode={modeRaw}
-                        reason={reasonRaw}
-                      />
-                    );
-                  })}
-                </div>
-              ) : null;
-            })()}
-
-            {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0a0e16]/60 p-5">
-                <h3 className="text-sm font-semibold mb-3">Tradeoffs</h3>
-                <ul className="space-y-2">
-                  {result.tradeoffs.map((line, i) => (
-                    <li key={i} className="text-sm text-on-surface-variant flex gap-2">
-                      <span className="text-primary">•</span>
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {ALL_MODES.map((mode) => {
-                const data = result.best_per_mode?.[mode];
-                const won = mode === recommendedMode;
-                // Check if this mode is listed as unavailable (defensive: handle both old and new shapes)
-                const safeUnavailable = Array.isArray(result.unavailable_modes)
-                  ? result.unavailable_modes
-                  : [];
-                const unavailableEntry = safeUnavailable.find(
-                  (e) => {
-                    if (typeof e === 'object' && e !== null) return String(e.mode ?? '').toLowerCase() === mode;
-                    return String(e ?? '').toLowerCase().startsWith(mode);
-                  }
-                );
-                const unavailableReason = unavailableEntry
-                  ? (typeof unavailableEntry === 'object' && unavailableEntry !== null
-                      ? String((unavailableEntry as { reason?: string }).reason ?? 'Not available for this corridor.')
-                      : 'Not available for this corridor.')
-                  : null;
-                return (
-                  <div
-                    key={mode}
-                    className={`rounded-xl border p-4 ${won ? MODE_META[mode].cardTint : 'border-white/[0.06] bg-white/[0.02]'}`}
-                  >
-                    <h4 className={`font-semibold text-sm ${MODE_META[mode].tint} mb-2`}>
-                      {MODE_META[mode].label}
-                    </h4>
-                    {data ? (
-                      <>
-                        <div className="text-xs space-y-1 font-mono text-on-surface-variant">
-                          <p>Time {formatHours(data.time_hr ?? data.time)}</p>
-                          <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
-                        </div>
-                        <button
-                          onClick={() => setSaveMode(mode)}
-                          className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg bg-surface/50 border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-on-surface hover:bg-white/10 transition-all"
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>save</span>
-                          Save Report
-                        </button>
-                      </>
-                    ) : unavailableReason ? (
-                      <InvalidCorridorInline mode={mode} reason={unavailableReason} />
-                    ) : (
-                      <p className="text-[11px] text-outline italic">Unavailable for this corridor</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {Boolean(
-              result.best_per_mode?.road?.geometry?.length
-            ) && (
-              <div className="rounded-2xl border border-white/[0.06] overflow-hidden h-[360px]">
-                <MapView
-                  routes={[
-                    {
-                      geometry: result.best_per_mode!.road!.geometry!,
-                      time: result.best_per_mode!.road!.time_hr ?? result.best_per_mode!.road!.time ?? 0,
-                      cost: result.best_per_mode!.road!.cost_inr ?? result.best_per_mode!.road!.cost ?? 0,
-                      risk: result.best_per_mode!.road!.risk ?? 0,
-                    },
-                  ]}
-                  selectedRoute={0}
-                />
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setStep(2);
-                setResult(null);
-              }}
-              className="text-sm font-semibold text-primary hover:underline"
-            >
-              ← Adjust scenario and re-run
-            </button>
-          </div>
-        )}
-      </div>
-
-      <SaveReportModal
-        isOpen={saveMode !== null}
-        onClose={() => setSaveMode(null)}
-        prefill={{
-          source,
-          destination,
-          stops: [],
-          mode: 'comparator',
-          cargoType,
-          optimizationInput: { priority },
-          optimizationResult: saveMode ? { 
-            ...(result?.best_per_mode?.[saveMode] || {}), 
-            selected_from_comparator: true, 
-            selected_mode: saveMode 
-          } as Record<string, unknown> : undefined,
-          estimatedCost: saveMode ? (result?.best_per_mode?.[saveMode]?.cost_inr ?? result?.best_per_mode?.[saveMode]?.cost ?? undefined) : undefined,
-          estimatedTime: saveMode ? (result?.best_per_mode?.[saveMode]?.time_hr ?? result?.best_per_mode?.[saveMode]?.time ?? undefined) : undefined,
-          riskScore: saveMode ? (result?.best_per_mode?.[saveMode]?.risk ?? undefined) : undefined,
-        }}
-      />
-    </div>
+        {resultsBody}
+      </PipelineResultsLayout>
+      {saveModal}
+    </>
   );
 }

@@ -35,7 +35,7 @@ export function PipelineModePage({
   }
 
   return (
-    <div className="flex w-full flex-col bg-background text-foreground lg:max-h-[calc(100dvh-4rem)] lg:overflow-hidden">
+    <div className="flex w-full flex-col bg-background text-foreground lg:max-h-app lg:overflow-hidden">
       <PipelineResultsChrome mode={mode} />
 
       {error && !hideErrorBanner ? (

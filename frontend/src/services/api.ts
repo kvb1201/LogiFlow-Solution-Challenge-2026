@@ -19,6 +19,11 @@ const BACKEND_SERVER =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
 
+/** Long-running compose bypasses Vercel serverless (FUNCTION_INVOCATION_TIMEOUT). */
+const COMPOSE_DIRECT =
+  process.env.NEXT_PUBLIC_COMPOSE_URL?.replace(/\/$/, '') ||
+  BACKEND_SERVER;
+
 /** Browser calls use same-origin proxy; SSR uses direct backend URL. */
 export const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
 const RAILRADAR_BASE = '/railradar';
@@ -670,6 +675,27 @@ export interface ComposeResult {
     label?: string;
   }>;
   rural_corridor?: boolean;
+  feeder_corridor?: boolean;
+  resolved_source?: {
+    raw?: string;
+    canonical_city?: string;
+    feeder_access?: {
+      local_place: string;
+      hub_city: string;
+      local_station?: string | null;
+      hub_station?: string | null;
+    };
+  };
+  resolved_destination?: {
+    raw?: string;
+    canonical_city?: string;
+    feeder_access?: {
+      local_place: string;
+      hub_city: string;
+      local_station?: string | null;
+      hub_station?: string | null;
+    };
+  };
   /**
    * Templates that could not be evaluated for this corridor.
    * Key is the template/mode name (e.g. "road"), value is the rejection reason.
@@ -684,24 +710,182 @@ export interface ComposeResult {
   corridor_distance_km?: number | null;
   compose_note?: string | null;
   error?: string;
+  streaming?: boolean;
+  done?: boolean;
+  just_found_id?: string;
 }
 
-export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
-  const budgetSec = payload.compose_options?.budget_seconds ?? 55;
-  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
-  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
-  const composeUrl =
-    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), budgetMs);
-  let res: Response;
+/** Merge streamed snapshots so each hub route stacks below prior results. */
+export function mergeComposeStreamUpdate(
+  prev: ComposeResult | null,
+  next: ComposeResult,
+): ComposeResult {
+  if (!prev?.recommended) return next;
+
+  const byId = new Map<string, ComposedItinerary>();
+  for (const it of [prev.recommended, ...(prev.alternatives || [])]) {
+    if (it) byId.set(it.id, it);
+  }
+  if (next.recommended) byId.set(next.recommended.id, next.recommended);
+  for (const it of next.alternatives || []) {
+    if (it) byId.set(it.id, it);
+  }
+
+  const recommended = next.recommended ?? prev.recommended;
+  const alternatives = [...byId.values()].filter((it) => it.id !== recommended?.id);
+
+  return {
+    ...next,
+    recommended,
+    alternatives,
+    total_candidates: byId.size,
+    partial: !next.done,
+  };
+}
+
+/** Quick ping to the compose backend (Render direct) — do not block UI for 90s warm. */
+export async function ensureComposeBackendReady(maxWaitMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${COMPOSE_DIRECT}/health`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) return true;
+    } catch {
+      /* cold start */
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return false;
+}
+
+function composeBudgetMs(payload: ComposePayload): number {
+  const budgetSec = payload.compose_options?.budget_seconds ?? 150;
+  return Math.max((budgetSec + 120) * 1000, 180_000);
+}
+
+function composeDirectUrl(path: 'compose' | 'compose/stream'): string {
+  if (typeof window === 'undefined') {
+    return `${BACKEND_SERVER}/${path}`;
+  }
+  return `${COMPOSE_DIRECT}/${path}`;
+}
+
+function handleComposeHttpError(res: Response, payload: ComposePayload, text: string): never {
+  if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
+    const corridor =
+      payload.source && payload.destination
+        ? `${payload.source} → ${payload.destination}`
+        : undefined;
+    redirectToWaitingRoom({
+      retryAfter: parseRetryAfter(res),
+      reason: res.status === 429 ? 'rate_limit' : 'capacity',
+      returnPath: getCurrentReturnPath(),
+      autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
+      corridor,
+    });
+    throw new TrafficQueueError('redirecting', true);
+  }
+  let message = text;
   try {
-    res = await fetch(composeUrl, {
+    const parsed = JSON.parse(text) as { error?: string };
+    if (parsed.error) message = parsed.error;
+  } catch {
+    /* use raw body */
+  }
+  if (res.status === 502 || res.status === 504) {
+    throw new Error(message || BACKEND_UNAVAILABLE_MSG);
+  }
+  throw new Error(`Compose failed (${res.status}): ${message}`);
+}
+
+async function parseComposeSseStream(
+  res: Response,
+  onUpdate?: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  if (!res.body) {
+    throw new Error('Compose stream returned no body');
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResult: ComposeResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() ?? '';
+    for (const chunk of chunks) {
+      const line = chunk
+        .split('\n')
+        .find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      const parsed = JSON.parse(line.slice(6)) as ComposeResult;
+      if (onUpdate && (parsed.recommended || parsed.done)) {
+        onUpdate(parsed);
+      }
+      if (parsed.done) {
+        finalResult = parsed;
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('Compose stream ended without a final result');
+  }
+  return finalResult;
+}
+
+/** Progressive compose — shows routes as they are found (SSE, direct to Render). */
+export async function streamComposeMultimodalRoute(
+  payload: ComposePayload,
+  onUpdate: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return await parseComposeSseStream(res, onUpdate);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Compose is still running — partial routes may already be visible. Retry to load cached legs faster.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return res.json();
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(
@@ -712,35 +896,6 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
   } finally {
     clearTimeout(timeout);
   }
-  if (!res.ok) {
-    if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
-      const corridor =
-        payload.source && payload.destination
-          ? `${payload.source} → ${payload.destination}`
-          : undefined;
-      redirectToWaitingRoom({
-        retryAfter: parseRetryAfter(res),
-        reason: res.status === 429 ? 'rate_limit' : 'capacity',
-        returnPath: getCurrentReturnPath(),
-        autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
-        corridor,
-      });
-      throw new TrafficQueueError('redirecting', true);
-    }
-    const text = await res.text();
-    let message = text;
-    try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed.error) message = parsed.error;
-    } catch {
-      /* use raw body */
-    }
-    if (res.status === 502 || res.status === 504) {
-      throw new Error(message || BACKEND_UNAVAILABLE_MSG);
-    }
-    throw new Error(`Compose failed (${res.status}): ${message}`);
-  }
-  return res.json();
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {

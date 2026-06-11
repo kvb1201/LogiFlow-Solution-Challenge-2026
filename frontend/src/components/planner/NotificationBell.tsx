@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import Link from 'next/link';
+import { AmbientMesh } from '@/components/cockpit/AmbientMesh';
 
 const NOTIFICATION_ICONS: Record<string, string> = {
   trip_started: 'play_circle',
@@ -73,7 +74,9 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl border border-border/50 bg-surface/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden animate-fade-in">
+        <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] animate-fade-in overflow-hidden rounded-2xl border border-border/50 bg-surface/95 shadow-2xl backdrop-blur-xl sm:w-96">
+          <AmbientMesh variant="card" tone="hybrid" className="opacity-80" />
+          <div className="relative z-10">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/20">
             <h3 className="text-sm font-bold text-foreground">Notifications</h3>
@@ -146,6 +149,7 @@ export function NotificationBell() {
                 })}
               </ul>
             )}
+          </div>
           </div>
         </div>
       )}

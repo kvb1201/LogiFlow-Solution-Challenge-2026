@@ -28,6 +28,7 @@ _CITY_ALIASES: dict[str, str] = {
     "calcutta": "Kolkata, India",
     "bengaluru": "Bengaluru, India",
     "bangalore": "Bengaluru, India",
+    "banglore": "Bengaluru, India",
     "hyderabad": "Hyderabad, India",
     "pune": "Pune, India",
     "ahmedabad": "Ahmedabad, India",

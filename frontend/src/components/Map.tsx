@@ -225,6 +225,7 @@ export default function MapView({
     mapRef.current = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false,
+      scrollWheelZoom: false,
     }).setView([22.5, 78.0], 5);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -250,6 +251,16 @@ export default function MapView({
       });
 
     const map = mapRef.current;
+    const enableWheelZoom = () => {
+      map.scrollWheelZoom.enable();
+    };
+    const disableWheelZoom = () => {
+      map.scrollWheelZoom.disable();
+    };
+    map.scrollWheelZoom.disable();
+    map.on('click', enableWheelZoom);
+    map.on('mouseout', disableWheelZoom);
+
     const bump = () => setMapTick(n => n + 1);
     const onZoomEnd = () => {
       bump();
@@ -279,6 +290,8 @@ export default function MapView({
       setMapReady(false);
       indiaBoundaryRef.current?.remove();
       indiaBoundaryRef.current = null;
+      map.off('click', enableWheelZoom);
+      map.off('mouseout', disableWheelZoom);
       map.off('moveend', bump);
       map.off('zoomend', onZoomEnd);
       map.remove();

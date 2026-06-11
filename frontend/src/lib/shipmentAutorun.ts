@@ -50,6 +50,9 @@ export function shouldRunShipmentAutorun(mode: string): boolean {
 export function markShipmentAutorunStarted(mode: string) {
   if (pendingMode === mode) {
     runStartedFor = mode;
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(AUTORUN_KEY);
+    }
   }
 }
 
