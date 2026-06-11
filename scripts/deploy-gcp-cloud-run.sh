@@ -26,8 +26,23 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com containerreg
 echo "==> Building image ${IMAGE} ..."
 gcloud builds submit "${ROOT}/backend" --tag "${IMAGE}" --timeout=1200
 
+# Deploy profile: team-3mo = always-warm + parallel compose (~$75/mo, fits $300/3mo credits)
+DEPLOY_PROFILE="${DEPLOY_PROFILE:-team-3mo}"
+MIN_INSTANCES="${MIN_INSTANCES:-1}"
+MAX_INSTANCES="${MAX_INSTANCES:-3}"
+CLOUD_RUN_CPU="${CLOUD_RUN_CPU:-2}"
+CLOUD_RUN_MEMORY="${CLOUD_RUN_MEMORY:-2Gi}"
+
+if [[ "${DEPLOY_PROFILE}" == "team-3mo" ]]; then
+  MIN_INSTANCES=1
+  MAX_INSTANCES=3
+  CLOUD_RUN_CPU=2
+  CLOUD_RUN_MEMORY=2Gi
+  echo "==> Profile: team-3mo (always-warm, parallel compose, 3-month credit budget)"
+fi
+
 # Runtime tuning + optional secrets from backend/.env (never committed).
-BASE_ENV="WATER_SKIP_CONGESTION_SCAN=1,WATER_AUTO_TRAIN=off,RAIL_PERMANENT_CACHE=false,RAIL_PRELOAD_ON_STARTUP=false,COMPOSE_LEG_SUPABASE=1,RURAL_HUB_SUPABASE=1"
+BASE_ENV="WATER_SKIP_CONGESTION_SCAN=1,WATER_AUTO_TRAIN=off,RAIL_PERMANENT_CACHE=false,RAIL_PRELOAD_ON_STARTUP=false,COMPOSE_LEG_SUPABASE=1,RURAL_HUB_SUPABASE=1,COMPOSE_PARALLEL_WORKERS=8,COMPOSE_RAIL_API_BUDGET_S=10,RAIL_ENGINEER_MAX_EXTERNAL_LOOKUPS=1"
 SECRET_ENV=""
 if [[ -f "${ENV_FILE}" ]]; then
   echo "==> Loading env from ${ENV_FILE}"
@@ -52,12 +67,12 @@ gcloud run deploy "${SERVICE_NAME}" \
   --region "${GCP_REGION}" \
   --platform managed \
   --allow-unauthenticated \
-  --memory 2Gi \
-  --cpu 2 \
+  --memory "${CLOUD_RUN_MEMORY}" \
+  --cpu "${CLOUD_RUN_CPU}" \
   --timeout 300 \
   --concurrency 40 \
-  --max-instances 10 \
-  --min-instances 1 \
+  --max-instances "${MAX_INSTANCES}" \
+  --min-instances "${MIN_INSTANCES}" \
   --port 8080 \
   --set-env-vars "${ENV_VARS}"
 

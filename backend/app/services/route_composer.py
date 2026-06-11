@@ -7,8 +7,9 @@ cross-request leg cache, cold-corridor fast path, and corridor-aware hubs.
 from __future__ import annotations
 
 import math
+import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from typing import Any, Callable, Optional
 
 from app.services.compose_leg_cache import get_cached_leg, set_cached_leg
@@ -62,7 +63,8 @@ _TRANSFER_BUFFER_HR: dict[tuple[str, str], float] = {
     ("rail", "rail"): 2.0,
 }
 
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="compose-leg")
+_PARALLEL_WORKERS = max(4, int(os.getenv("COMPOSE_PARALLEL_WORKERS", "8")))
+_executor = ThreadPoolExecutor(max_workers=_PARALLEL_WORKERS, thread_name_prefix="compose-leg")
 
 
 
@@ -327,7 +329,7 @@ class RouteComposer:
         *,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
-        payload = payload or {}
+        payload = {**(payload or {}), "compose_lite": True}
         context = context or RequestContext()
         from app.services.location_funnel import normalize_corridor
 
@@ -493,6 +495,132 @@ class RouteComposer:
             route = extract_best_route(res, mode, priority)
             return route_to_leg(route, mode, frm_c, to_c)
 
+        def _resolve_leg_endpoints(
+            mode: str,
+            frm: str,
+            to: str,
+            *,
+            use_raw_endpoints: bool = False,
+        ) -> tuple[str, str, tuple[str, str, str]] | None:
+            if _should_skip_mode(mode) or _past_deadline():
+                return None
+            if use_raw_endpoints:
+                frm_c, to_c = frm.strip(), to.strip()
+            else:
+                frm_c, to_c = canonical_city(frm), canonical_city(to)
+            if frm_c.lower() == to_c.lower():
+                return None
+            return frm_c, to_c, (mode, frm_c, to_c)
+
+        def _leg_from_cache(key: tuple[str, str, str]) -> Any | None:
+            if key in leg_cache:
+                return leg_cache[key]
+            cached = get_cached_leg(key[0], key[1], key[2], priority)
+            if not cached:
+                return None
+            status, data = cached
+            if status == "fail":
+                leg_cache[key] = None
+                _record_fail(key[0])
+                return None
+            if status == "hit" and data:
+                from app.services.leg_extractor import Leg
+
+                leg = Leg(
+                    mode=data["mode"],
+                    source=data["source"],
+                    destination=data["destination"],
+                    time_hr=data["time_hr"],
+                    cost_inr=data["cost_inr"],
+                    risk=data["risk"],
+                    segments=data.get("segments") or [],
+                    status="ok",
+                )
+                leg_cache[key] = leg
+                return leg
+            return None
+
+        def _store_leg_result(key: tuple[str, str, str], leg: Any | None) -> Any | None:
+            leg_cache[key] = leg
+            set_cached_leg(key[0], key[1], key[2], priority, leg_to_dict(leg) if leg else None)
+            if not leg:
+                _record_fail(key[0])
+            return leg
+
+        def fetch_legs_parallel(
+            specs: list[tuple[str, str, str, dict[str, Any]]],
+        ) -> dict[tuple[str, str, str], Any | None]:
+            """Run independent leg pipelines concurrently (GCP thread pool)."""
+            nonlocal leg_calls
+            out: dict[tuple[str, str, str], Any | None] = {}
+            pending: list[tuple[tuple[str, str, str], str, str, str, dict[str, Any]]] = []
+
+            for mode, frm, to, kw in specs:
+                resolved = _resolve_leg_endpoints(
+                    mode, frm, to, use_raw_endpoints=bool(kw.get("use_raw_endpoints"))
+                )
+                if not resolved:
+                    continue
+                frm_c, to_c, key = resolved
+                hit = _leg_from_cache(key)
+                if hit is not None or key in leg_cache:
+                    out[key] = leg_cache.get(key)
+                    continue
+                pending.append((key, mode, frm_c, to_c, kw))
+
+            if not pending or _past_deadline():
+                return out
+
+            slot_cost = sum(1 for *_, kw in pending if not kw.get("reserve_slot"))
+            if leg_calls + slot_cost > max_leg_calls:
+                allowed = max(0, max_leg_calls - leg_calls)
+                trim: list = []
+                used = 0
+                for item in pending:
+                    if item[4].get("reserve_slot") or used < allowed:
+                        trim.append(item)
+                        if not item[4].get("reserve_slot"):
+                            used += 1
+                pending = trim
+                if not pending:
+                    unavailable["_leg_cap"] = "Leg call limit reached — partial results returned"
+                    return out
+
+            leg_calls += sum(1 for *_, kw in pending if not kw.get("reserve_slot"))
+            wait_s = min(
+                max(_leg_wait_s(item[1]) for item in pending),
+                max(1.0, _remaining_s() - 0.25),
+            )
+            if wait_s <= 0:
+                return out
+
+            futures = {
+                _executor.submit(_do_pipeline, mode, frm_c, to_c): key
+                for key, mode, frm_c, to_c, _kw in pending
+            }
+            try:
+                for future in as_completed(futures, timeout=wait_s):
+                    key = futures[future]
+                    try:
+                        leg = future.result()
+                    except Exception as e:
+                        mode, frm_c, to_c = key
+                        print(f"[COMPOSE] {mode} {frm_c}→{to_c} failed: {e}")
+                        leg = None
+                    out[key] = _store_leg_result(key, leg)
+            except FuturesTimeoutError:
+                for future, key in futures.items():
+                    if future.done():
+                        try:
+                            out[key] = _store_leg_result(key, future.result())
+                        except Exception:
+                            out[key] = _store_leg_result(key, None)
+                    elif key not in out:
+                        mode, frm_c, to_c = key
+                        print(f"[COMPOSE] {mode} {frm_c}→{to_c} timed out ({wait_s:.0f}s)")
+                        out[key] = _store_leg_result(key, None)
+            return out
+
         def fetch_leg(
             mode: str,
             frm: str,
@@ -566,49 +694,73 @@ class RouteComposer:
                 _record_fail(mode)
             return leg
 
-        # ── Phase 0: feeder legs (reserved slots + synthetic fallback) before hub search ──
-        if src_feeder and not _past_deadline():
-            access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
-            if access_in_leg and self._leg_is_synthetic(access_in_leg):
+        # ── Phase 0: feeder legs in parallel (reserved slots + synthetic fallback) ──
+        if src_feeder and dst_feeder and not _past_deadline():
+            fin = _executor.submit(self._fetch_access_leg, fetch_leg, src_feeder)
+            fout = _executor.submit(
+                self._fetch_access_leg,
+                fetch_leg,
+                dst_feeder,
+                frm=dst_feeder.hub_city,
+                to=dst_feeder.local_place,
+            )
+            try:
+                access_in_leg = fin.result(timeout=max(1.0, min(20.0, _remaining_s())))
+                access_out_leg = fout.result(timeout=max(1.0, min(20.0, _remaining_s())))
+            except FuturesTimeoutError:
+                access_in_leg = fin.result() if fin.done() else None
+                access_out_leg = fout.result() if fout.done() else None
+        else:
+            if src_feeder and not _past_deadline():
+                access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
+            elif src_feeder:
+                access_in_leg = self._synthetic_feeder_leg(src_feeder, outbound=False)
                 unavailable["feeder:in:estimate"] = (
                     f"Estimated local leg {src_feeder.local_place}→{src_feeder.hub_city}"
                 )
-        elif src_feeder:
-            access_in_leg = self._synthetic_feeder_leg(src_feeder, outbound=False)
-            unavailable["feeder:in:estimate"] = (
-                f"Estimated local leg {src_feeder.local_place}→{src_feeder.hub_city}"
-            )
-
-        if dst_feeder and not _past_deadline():
-            access_out_leg = self._fetch_access_leg(
-                fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
-            )
-            if access_out_leg and self._leg_is_synthetic(access_out_leg):
+            if dst_feeder and not _past_deadline():
+                access_out_leg = self._fetch_access_leg(
+                    fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
+                )
+            elif dst_feeder:
+                access_out_leg = self._synthetic_feeder_leg(dst_feeder, outbound=True)
                 unavailable["feeder:out:estimate"] = (
                     f"Estimated local leg {dst_feeder.hub_city}→{dst_feeder.local_place}"
                 )
-        elif dst_feeder:
-            access_out_leg = self._synthetic_feeder_leg(dst_feeder, outbound=True)
+
+        if src_feeder and access_in_leg and self._leg_is_synthetic(access_in_leg):
+            unavailable["feeder:in:estimate"] = (
+                f"Estimated local leg {src_feeder.local_place}→{src_feeder.hub_city}"
+            )
+        if dst_feeder and access_out_leg and self._leg_is_synthetic(access_out_leg):
             unavailable["feeder:out:estimate"] = (
                 f"Estimated local leg {dst_feeder.hub_city}→{dst_feeder.local_place}"
             )
 
-        # ── Phase 1: fast direct modes (road + air) — emit immediately ──
+        # ── Phase 1: direct road + air in parallel ──
         if not _past_deadline() and leg_calls < max_leg_calls:
+            direct_specs: list[tuple[str, str, str, dict[str, Any]]] = []
             if "road" not in excluded and not _should_skip_mode("road") and try_road:
-                leg = fetch_leg("road", origin_effective, dest_effective)
-                if leg:
-                    _note_itinerary(self._single_leg_itinerary(leg, "direct_road"))
-                elif not itineraries:
-                    unavailable["direct_road"] = "No direct road route"
-
-        if not _past_deadline() and leg_calls < max_leg_calls:
-            if "air" not in excluded and not _should_skip_mode("air"):
-                leg = fetch_leg("air", origin_effective, dest_effective)
-                if leg:
-                    _note_itinerary(self._single_leg_itinerary(leg, "direct_air"))
-                elif not short_corridor:
-                    unavailable["direct_air"] = "No direct air route"
+                direct_specs.append(("road", origin_effective, dest_effective, {}))
+            if (
+                not short_corridor
+                and "air" not in excluded
+                and not _should_skip_mode("air")
+            ):
+                direct_specs.append(("air", origin_effective, dest_effective, {}))
+            direct_hits = fetch_legs_parallel(direct_specs)
+            road_key = ("road", canonical_city(origin_effective), canonical_city(dest_effective))
+            air_key = ("air", canonical_city(origin_effective), canonical_city(dest_effective))
+            road_leg = direct_hits.get(road_key)
+            air_leg = direct_hits.get(air_key)
+            if road_leg:
+                _note_itinerary(self._single_leg_itinerary(road_leg, "direct_road"))
+            elif try_road and "road" not in excluded and not itineraries:
+                unavailable["direct_road"] = "No direct road route"
+            if air_leg:
+                _note_itinerary(self._single_leg_itinerary(air_leg, "direct_air"))
+            elif not short_corridor and "air" not in excluded:
+                unavailable["direct_air"] = "No direct air route"
 
         # ── Phase 2: hub-by-hub — emit rail+rail first, then other templates if budget left ──
         if not short_corridor:
@@ -618,12 +770,16 @@ class RouteComposer:
                     break
 
                 if "rail" not in excluded and not _past_deadline():
-                    leg_in = fetch_leg("rail", origin_effective, hub.city)
-                    leg_out = (
-                        fetch_leg("rail", hub.city, dest_effective)
-                        if leg_in and leg_calls < max_leg_calls and not _past_deadline()
-                        else None
+                    rr = fetch_legs_parallel(
+                        [
+                            ("rail", origin_effective, hub.city, {}),
+                            ("rail", hub.city, dest_effective, {}),
+                        ]
                     )
+                    o_city = canonical_city(origin_effective)
+                    d_city = canonical_city(dest_effective)
+                    leg_in = rr.get(("rail", o_city, hub.city))
+                    leg_out = rr.get(("rail", hub.city, d_city))
                     if leg_in and leg_out:
                         _note_itinerary(
                             self._compose_two_leg("rail+rail", hub, leg_in, leg_out)
@@ -639,14 +795,22 @@ class RouteComposer:
                     if not try_road and (mode1 == "road" or mode2 == "road"):
                         continue
 
-                    leg_in = fetch_leg(mode1, origin_effective, hub.city)
+                    pair = fetch_legs_parallel(
+                        [
+                            (mode1, origin_effective, hub.city, {}),
+                            (mode2, hub.city, dest_effective, {}),
+                        ]
+                    )
+                    h_city = hub.city
+                    o_city = canonical_city(origin_effective)
+                    d_city = canonical_city(dest_effective)
+                    leg_in = pair.get((mode1, o_city, h_city))
+                    leg_out = pair.get((mode2, h_city, d_city))
                     if not leg_in:
                         unavailable[f"{template_id}:{hub.city}:in"] = (
                             f"no {mode1} {origin}→{hub.city}"
                         )
                         continue
-
-                    leg_out = fetch_leg(mode2, hub.city, dest_effective)
                     if not leg_out:
                         unavailable[f"{template_id}:{hub.city}"] = (
                             f"{mode2} {hub.city}→{dest} failed"

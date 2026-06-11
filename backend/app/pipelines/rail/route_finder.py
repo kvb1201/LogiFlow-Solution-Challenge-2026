@@ -113,6 +113,7 @@ def find_routes(
     max_transfer=5,
     use_api=True,
     date_of_journey=None,
+    api_budget_s: float | None = None,
 ):
     """
     Find all cargo routes between two cities.
@@ -147,7 +148,10 @@ def find_routes(
         import os
         import time
 
-        api_budget_s = float(os.getenv("RAIL_API_PAIR_BUDGET_S", "22"))
+        if api_budget_s is None:
+            api_budget_s = float(os.getenv("RAIL_API_PAIR_BUDGET_S", "22"))
+        else:
+            api_budget_s = float(api_budget_s)
         api_started = time.monotonic()
         seen_train_nos: set[str] = set()
         # Query API for each station pair (hub codes only — see _resolve_stations)

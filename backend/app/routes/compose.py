@@ -31,7 +31,7 @@ class ComposeConstraints(BaseModel):
 
 class ComposeOptions(BaseModel):
     max_hubs: int = 2
-    budget_seconds: int = 42
+    budget_seconds: int = 150
     include_road_water: bool = False
 
 
@@ -70,12 +70,22 @@ def _request_payload(data: ComposeRequest) -> dict:
 def compose_multimodal(request: Request, data: ComposeRequest):
     context = RequestContext()
     composer = RouteComposer()
-    return composer.compose(
-        data.source,
-        data.destination,
-        _request_payload(data),
-        context=context,
-    )
+    try:
+        return composer.compose(
+            data.source,
+            data.destination,
+            _request_payload(data),
+            context=context,
+        )
+    except Exception as exc:
+        import traceback
+
+        traceback.print_exc()
+        return {
+            "error": f"Compose failed: {exc}",
+            "partial": False,
+            "unavailable_templates": {"_internal": str(exc)},
+        }
 
 
 @router.post("/compose/stream")

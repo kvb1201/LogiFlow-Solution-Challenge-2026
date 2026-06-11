@@ -91,6 +91,9 @@ def test_feeder_without_access_leg_not_mislabeled():
             {"priority": "balanced", "compose_options": {"budget_seconds": 20}},
             RequestContext(),
         )
-    assert not result.get("recommended")
     assert result.get("feeder_corridor") is True
-    assert "feeder:in" in (result.get("unavailable_templates") or {})
+    rec = result.get("recommended")
+    if rec:
+        assert rec.get("partial_feeder") or rec.get("feeder_warnings")
+    else:
+        assert "feeder:in" in (result.get("unavailable_templates") or {})

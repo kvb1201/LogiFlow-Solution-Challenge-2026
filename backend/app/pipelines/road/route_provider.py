@@ -138,6 +138,7 @@ def estimate_toll(distance_km, highway_ratio):
 
 def get_routes(source, destination, payload=None, context=None):
     payload = payload or {}
+    compose_lite = bool(payload.get("compose_lite"))
 
     simulation_mode = payload.get("mode") == "simulation"
     print(f"[ROUTE_PROVIDER] mode={payload.get('mode')} simulation_mode={simulation_mode}")
@@ -177,7 +178,7 @@ def get_routes(source, destination, payload=None, context=None):
     params = {
         "key": TOMTOM_API_KEY,
         "traffic": "true",
-        "maxAlternatives": 3,
+        "maxAlternatives": 1 if compose_lite else 3,
     }
 
     # Apply constraints (clean handling)
@@ -215,7 +216,9 @@ def get_routes(source, destination, payload=None, context=None):
 
     for i, r in enumerate(res["routes"]):
         # --- Fetch incidents ONCE for the route corridor, reuse for all alternatives ---
-        if context and context.has("road_incidents"):
+        if compose_lite:
+            incident_count = 0
+        elif context and context.has("road_incidents"):
             incident_count = context.get("road_incidents")
             print(f"[CACHE HIT] road_incidents")
         else:

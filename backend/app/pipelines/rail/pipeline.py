@@ -48,16 +48,23 @@ class RailPipeline(BasePipeline):
         from app.services.location_funnel import corridor_endpoints
 
         source, destination = corridor_endpoints(source, destination, context=context)
+        compose_lite = bool((payload or {}).get("compose_lite"))
         try:
             departure_date = (payload or {}).get("departure_date")
+            import os
+
+            rail_budget = None
+            if compose_lite:
+                rail_budget = float(os.getenv("COMPOSE_RAIL_API_BUDGET_S", "10"))
             # API-first route discovery; CSV is used only as fallback inside find_routes.
             routes = find_routes(
                 source,
                 destination,
-                max_direct=10,
-                max_transfer=3,
+                max_direct=4 if compose_lite else 10,
+                max_transfer=1 if compose_lite else 3,
                 use_api=True,
                 date_of_journey=departure_date,
+                api_budget_s=rail_budget,
             )
         except Exception as e:
             print(f"  [RailPipeline] Route finding failed: {e}")
@@ -83,9 +90,9 @@ class RailPipeline(BasePipeline):
         if payload:
             default_payload.update(payload)
 
-        # Use context to cache weather for the origin city
+        # Use context to cache weather for the origin city (skip on compose-lite legs).
         weather_override = None
-        if context:
+        if context and not compose_lite:
             cache_key = f"weather:{source}"
             if context.has(cache_key):
                 weather_override = context.get(cache_key)
