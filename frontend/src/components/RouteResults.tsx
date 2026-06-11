@@ -804,7 +804,7 @@ function RouteCard({
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
       }}
       className={[
-        'w-full text-left rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden',
+        'w-full text-left rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden',
         isSelected
           ? 'border-primary/60 bg-surface-container/60 shadow-[0_0_0_2px_rgba(172,199,255,0.18),0_0_24px_rgba(172,199,255,0.10)] sm:scale-[1.01]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:bg-surface-container/30 hover:border-outline-variant/25',
@@ -1231,7 +1231,7 @@ function RecommendationPanel({
   if (!routes.length) return null;
 
   return (
-    <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4 shrink-0">
+    <div className="rounded-xl border border-outline-variant/12 bg-surface-container/20 p-4 shrink-0">
       <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-2">
         Recommendation
       </div>
@@ -1361,7 +1361,7 @@ export default function RouteResults() {
 
         {/* Map column */}
         <div className="lg:col-span-2 lg:sticky lg:top-4 w-full min-h-[240px] h-[min(55vh,420px)] sm:min-h-[300px] sm:h-[min(60vh,480px)] lg:h-[80vh] lg:min-h-[320px]">
-          <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/25 border border-outline-variant/10 rounded-2xl p-4 shadow-sm">
+          <div className="flex flex-col h-full min-h-0 bg-surface-container-lowest/25 border border-outline-variant/10 rounded-xl p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2 shrink-0 pb-3 border-b border-outline-variant/8">
               <span className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline flex items-center gap-2">
                 <span

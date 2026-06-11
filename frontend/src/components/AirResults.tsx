@@ -141,7 +141,7 @@ export default function AirResults() {
 
   if (!airRoutes.length || !selected) {
     return (
-      <div className="rounded-2xl border border-outline-variant/15 bg-surface-container-low/40 p-6 text-sm text-on-surface-variant">
+      <div className="rounded-xl border border-outline-variant/15 bg-surface-container-low/40 p-6 text-sm text-on-surface-variant">
         No air routes matched the active cargo rules and constraints. Try a wider budget or a less restrictive cargo profile.
       </div>
     );
@@ -243,7 +243,7 @@ export default function AirResults() {
 
         {/* Main detail */}
         <div className="min-w-0 space-y-5">
-          <div className="rounded-2xl border border-outline-variant/12 bg-surface-container-low/40 overflow-hidden">
+          <div className="rounded-xl border border-outline-variant/12 bg-surface-container-low/40 overflow-hidden">
             <div className="border-b border-outline-variant/10 bg-gradient-to-br from-sky-500/10 via-primary/5 to-transparent px-4 py-4 sm:px-5 sm:py-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">

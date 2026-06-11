@@ -7,6 +7,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired } from '@/services/plannerApi';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import { AmbientSurface, AmbientMetricTile } from '@/components/cockpit/AmbientSurface';
+import { ModeShortcutCard } from '@/components/cockpit/ModePickerCard';
 import AiBriefPanel from '@/components/AiBriefPanel';
 
 function formatShortDate(value: string | null) {
@@ -59,7 +61,7 @@ export function Dashboard() {
   const activeReports  = reports.filter(r => r.status === 'active').slice(0, 4);
 
   return (
-    <div className="relative w-full overflow-hidden">
+    <div className="relative w-full min-h-app overflow-hidden">
       <AmbientBackdrop variant="subtle" />
 
       <div className="relative z-10 pointer-events-auto mx-auto w-full max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
@@ -79,19 +81,14 @@ export function Dashboard() {
 
         {/* Gemini AI brief — same flow as home / mode pages */}
         <section className="mb-10">
-          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
-            <AiBriefPanel
-              contextMode="home"
-              navigateOnApply={false}
-              showRouteButton
-              className="border-0 bg-transparent p-0 shadow-none"
-            />
-          </div>
+          <AmbientSurface mode="home" mesh="section" className="p-5 sm:p-6">
+            <AiBriefPanel contextMode="home" navigateOnApply={false} showRouteButton embedded />
+          </AmbientSurface>
         </section>
 
         {/* ── Smart AI Planner ─────────────────────────────────────────── */}
         <section className="mb-10">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-0.5">
                 Smart AI Planner
@@ -117,27 +114,30 @@ export function Dashboard() {
                 highlight: reoptimizedTrips > 0 },
               { label: 'Expired',       value: expiredPlans, icon: '⏰',
                 warn: expiredPlans > 0 },
-            ].map(s => (
-              <div key={s.label} className={[
-                'rounded-2xl border p-4 transition-all',
-                s.warn && s.value > 0
-                  ? 'border-amber-500/20 bg-amber-500/5'
-                  : s.highlight && s.value > 0
-                  ? 'border-emerald-500/20 bg-emerald-500/5'
-                  : 'border-border/40 bg-surface/40',
-              ].join(' ')}>
+            ].map((s, i) => (
+              <AmbientMetricTile
+                key={s.label}
+                mode={(['hybrid', 'comparator', 'rail', 'road'] as const)[i % 4]}
+                className={
+                  s.warn && s.value > 0
+                    ? 'border-amber-500/25'
+                    : s.highlight && s.value > 0
+                    ? 'border-emerald-500/25'
+                    : ''
+                }
+              >
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</p>
                   <span className="text-lg">{s.icon}</span>
                 </div>
                 <p className="text-2xl font-bold text-foreground">{reportsLoading ? '…' : s.value}</p>
-              </div>
+              </AmbientMetricTile>
             ))}
           </div>
 
           {/* Recent plans */}
           {!reportsLoading && recentReports.length > 0 ? (
-            <div className="rounded-2xl border border-border/40 bg-surface/30 overflow-hidden">
+            <AmbientSurface mode="home" mesh="section" className="overflow-hidden">
               <div className="px-4 py-3 border-b border-border/20 flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Recent Plans
@@ -187,9 +187,9 @@ export function Dashboard() {
                   );
                 })}
               </ul>
-            </div>
+            </AmbientSurface>
           ) : !reportsLoading ? (
-            <div className="rounded-2xl border border-dashed border-border/40 bg-surface/20 p-8 text-center">
+            <AmbientSurface mode="home" mesh="card" className="p-8 text-center">
               <span className="text-3xl block mb-3">📭</span>
               <p className="text-sm font-medium text-foreground mb-1">No plans yet</p>
               <p className="text-xs text-muted-foreground mb-4">
@@ -202,14 +202,14 @@ export function Dashboard() {
               >
                 Plan a route
               </Link>
-            </div>
+            </AmbientSurface>
           ) : null}
         </section>
 
         {/* ── Active Trips ───────────────────────────────────────────── */}
         {activeReports.length > 0 && (
           <section className="mb-10">
-            <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-0.5">
                   Monitor
@@ -227,7 +227,7 @@ export function Dashboard() {
                 const progress = getProgress(report.started_at, report.expected_end_time);
                 const health = getHealthLevel(report.risk_score);
                 return (
-                  <div key={report.id} className="rounded-2xl border border-border/40 bg-surface/35 p-4">
+                  <div key={report.id} className="rounded-xl border border-border/40 bg-surface/35 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-foreground">{report.name}</p>
@@ -291,65 +291,16 @@ export function Dashboard() {
         <section className="mb-10">
           <h2 className="text-lg font-bold text-foreground mb-4">Create New Plan</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Link
-              href="/comparator"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-primary/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>rule</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Compare</span>
-            </Link>
-
-            <Link
-              href="/hybrid"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-violet-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-violet-400" style={{ fontVariationSettings: "'FILL' 1" }}>alt_route</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Hybrid</span>
-            </Link>
-
-            <Link
-              href="/road"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-emerald-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-emerald-400" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Road</span>
-            </Link>
-
-            <Link
-              href="/railway"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-sky-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-sky-400" style={{ fontVariationSettings: "'FILL' 1" }}>train</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Rail</span>
-            </Link>
-
-            <Link
-              href="/air"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-amber-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-amber-400" style={{ fontVariationSettings: "'FILL' 1" }}>flight_takeoff</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Air</span>
-            </Link>
-
-            <Link
-              href="/water"
-              className="rounded-xl border border-border/50 bg-surface/40 p-4 hover:border-teal-500/40 hover:bg-surface/60 transition-all flex flex-col items-center text-center group"
-            >
-              <div className="h-10 w-10 rounded-lg bg-surface-container/50 border border-border/50 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-teal-400" style={{ fontVariationSettings: "'FILL' 1" }}>directions_boat</span>
-              </div>
-              <span className="font-semibold text-sm text-foreground">Water</span>
-            </Link>
+            {([
+              { mode: 'comparator' as const, label: 'Compare' },
+              { mode: 'hybrid' as const, label: 'Hybrid' },
+              { mode: 'road' as const, label: 'Road' },
+              { mode: 'rail' as const, label: 'Rail' },
+              { mode: 'air' as const, label: 'Air' },
+              { mode: 'water' as const, label: 'Water' },
+            ]).map(({ mode, label }) => (
+              <ModeShortcutCard key={mode} mode={mode} label={label} />
+            ))}
           </div>
         </section>
 

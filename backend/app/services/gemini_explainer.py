@@ -64,7 +64,7 @@ def generate_hybrid_explanations(
         response_mime_type="application/json",
         temperature=0.4,
         max_output_tokens=1500,
-        timeout_s=16,
+        timeout_s=10,
     )
     if not text:
         if err:

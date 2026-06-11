@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired, expiresIn, type ShipmentReport, type ReportStatus } from '@/services/plannerApi';
+import { AmbientSurface, AmbientMetricTile } from '@/components/cockpit/AmbientSurface';
+import type { LogisticsMode } from '@/lib/mode-meta';
 
 const STATUS_STYLES: Record<ReportStatus, string> = {
   draft:     'bg-surface-container text-outline border-outline-variant/20',
@@ -15,12 +17,20 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
 
 const MODE_STYLES: Record<string, string> = {
   road: 'bg-secondary/10 text-secondary border-secondary/20',
-  rail: 'bg-primary/10 text-primary border-primary/20',
+  rail: 'bg-rail/10 text-rail border-rail/20',
   air: 'bg-sky-400/10 text-sky-400 border-sky-400/20',
   water: 'bg-teal-400/10 text-teal-400 border-teal-400/20',
   hybrid: 'bg-violet-400/10 text-violet-400 border-violet-400/20',
   comparator: 'bg-amber-400/10 text-amber-400 border-amber-400/20',
 };
+
+function reportTone(mode: string): LogisticsMode {
+  const m = mode.toLowerCase();
+  if (m === 'rail' || m === 'road' || m === 'air' || m === 'water' || m === 'hybrid' || m === 'comparator') {
+    return m;
+  }
+  return 'hybrid';
+}
 
 function fmt(v: number | null | undefined, prefix = '', suffix = '') {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -56,32 +66,33 @@ export function ReportCard({ report }: Props) {
   };
 
   return (
-    <div className={[
-      'rounded-2xl border transition-all duration-200',
-      expired
-        ? 'border-amber-500/20 bg-amber-500/5'
-        : 'border-border/40 bg-surface/40 hover:border-border/70 hover:bg-surface/60',
-    ].join(' ')}>
+    <AmbientSurface
+      mode={reportTone(report.mode)}
+      mesh="card"
+      className={expired ? 'border-amber-500/25' : 'transition-all duration-200 hover:-translate-y-0.5'}
+    >
       <div className="p-4 sm:p-5">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
             {renaming ? (
-              <form onSubmit={handleRenameSubmit} className="flex gap-2">
+              <form onSubmit={handleRenameSubmit} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   autoFocus
                   value={draftName}
                   onChange={e => setDraftName(e.target.value)}
                   maxLength={120}
-                  className="flex-1 min-w-0 rounded-lg border border-border/40 bg-surface-container-lowest/50 px-2.5 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  className="min-w-0 flex-1 rounded-lg border border-border/40 bg-surface-container-lowest/50 px-2.5 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
-                <button type="submit" disabled={busy} className="text-[10px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition disabled:opacity-50">
-                  Save
-                </button>
-                <button type="button" onClick={() => { setRenaming(false); setDraftName(report.name); }}
-                  className="text-[10px] px-2.5 py-1 rounded-lg border border-border/30 text-muted-foreground hover:text-foreground transition">
-                  Cancel
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button type="submit" disabled={busy} className="flex-1 rounded-lg bg-primary/10 px-2.5 py-1 text-[10px] text-primary transition hover:bg-primary/20 disabled:opacity-50 sm:flex-none">
+                    Save
+                  </button>
+                  <button type="button" onClick={() => { setRenaming(false); setDraftName(report.name); }}
+                    className="flex-1 rounded-lg border border-border/30 px-2.5 py-1 text-[10px] text-muted-foreground transition hover:text-foreground sm:flex-none">
+                    Cancel
+                  </button>
+                </div>
               </form>
             ) : (
               <h3 className="font-semibold text-sm text-foreground truncate leading-tight">{report.name}</h3>
@@ -101,18 +112,18 @@ export function ReportCard({ report }: Props) {
         </div>
 
         {/* Metrics row */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="mb-3 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
           {[
             { emoji: '💰', label: 'Cost', value: fmt(report.estimated_cost, '₹') },
             { emoji: '⏱', label: 'Time', value: report.estimated_time != null ? `${report.estimated_time.toFixed(1)}h` : '—' },
             { emoji: '⚠️', label: 'Risk', value: report.risk_score != null ? `${Math.round(report.risk_score * 100)}%` : '—' },
           ].map(m => (
-            <div key={m.label} className="rounded-lg bg-surface-container/30 border border-border/15 px-2.5 py-2">
+            <AmbientMetricTile key={m.label} mode={reportTone(report.mode)} className="px-2.5 py-2">
               <div className="text-[9px] text-muted-foreground mb-0.5 flex items-center gap-1">
                 <span>{m.emoji}</span>{m.label}
               </div>
               <div className="text-xs font-bold text-foreground mono">{m.value}</div>
-            </div>
+            </AmbientMetricTile>
           ))}
         </div>
 
@@ -137,7 +148,7 @@ export function ReportCard({ report }: Props) {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             href={`/reports/${report.id}`}
             className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-border/40 py-2 text-[11px] font-semibold text-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
@@ -176,6 +187,6 @@ export function ReportCard({ report }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </AmbientSurface>
   );
 }

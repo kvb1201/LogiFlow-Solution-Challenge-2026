@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
 import { setShipmentAutorun } from '@/lib/shipmentAutorun';
 import {
   clearTrafficQueueContext,
@@ -134,7 +135,7 @@ export function WaitingRoom({
       </div>
 
       <div className="relative z-10 mx-auto w-full max-w-lg px-6 animate-fade-in">
-        <div className="rounded-2xl border border-border/80 bg-surface/80 p-8 shadow-[0_0_80px_-20px_color-mix(in_oklab,var(--hybrid)_35%,transparent)] backdrop-blur-xl">
+        <AmbientSurface mode="hybrid" mesh="card" className="p-8">
           <div className="mb-6 flex items-center gap-2 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
             <span className="inline-flex h-2 w-2 rounded-full bg-live animate-glow-pulse" />
             Traffic control
@@ -256,7 +257,7 @@ export function WaitingRoom({
               Leave queue
             </Link>
           </div>
-        </div>
+        </AmbientSurface>
 
         <p className="mt-6 text-center font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">
           LogiFlow · DDoS-safe traffic shaping

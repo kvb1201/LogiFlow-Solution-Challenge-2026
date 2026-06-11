@@ -86,7 +86,7 @@ export default function MultimodalPipelineLoading({
         </div>
 
         {/* Mode pulse strip */}
-        <div className="mb-5 grid grid-cols-4 gap-2">
+        <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {modeStates.map((mode) => (
             <div
               key={mode.id}
@@ -123,7 +123,7 @@ export default function MultimodalPipelineLoading({
         </div>
 
         {/* Progress */}
-        <div className="mb-4 rounded-2xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
+        <div className="mb-4 rounded-xl border border-border/70 bg-surface/60 p-4 backdrop-blur-md">
           <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
             <span>Pipeline progress</span>
             <span className={`font-mono ${config.accentClass}`}>{progress}%</span>

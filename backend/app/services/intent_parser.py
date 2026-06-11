@@ -504,7 +504,29 @@ def _compose_engine_label(*parts: str) -> str:
     return "+".join(p for p in parts if p)
 
 
-def _parse_gemini(user_brief: str, context_mode: str, timeout_s: int = 12) -> tuple[dict[str, Any] | None, str | None]:
+def _sanitize_llm_warning(err: str | None) -> str | None:
+    """Strip raw provider error chains before showing parse warnings in the UI."""
+    if not err:
+        return None
+    e = err.strip()
+    if not e:
+        return None
+    low = e.lower()
+    if "gemini unavailable" in low or "groq unavailable" in low or "groq error" in low:
+        if any(x in low for x in ("429", "quota", "resource_exhausted", "rate limit")):
+            return "AI assist is rate-limited right now — basic parsing still works."
+        if "timeout" in low or "timed out" in low:
+            return "AI assist timed out — basic parsing still works."
+        if "not configured" in low or "disabled" in low:
+            return None
+    if "generativelanguage.googleapis.com" in low or "HTTPSConnectionPool" in e:
+        return "AI assist is temporarily unavailable — basic parsing still works."
+    if len(e) > 120:
+        return e[:117] + "..."
+    return e
+
+
+def _parse_gemini(user_brief: str, context_mode: str, timeout_s: int = 8) -> tuple[dict[str, Any] | None, str | None]:
     prompt = (
         "You are LogiFlow's shipment intent parser for Indian multimodal freight.\n"
         f"{_LLM_INTENT_INSTRUCTIONS}\n"
@@ -601,14 +623,16 @@ def parse_shipment_intent(user_brief: str, context_mode: str = "home") -> dict[s
     engines_used = ["heuristic"]
     prefer_llm = needs_llm
 
-    gemini, gemini_err = _parse_gemini(brief, context_mode)
-    if gemini_err:
-        llm_warnings.append(gemini_err)
-    if gemini:
-        engines_used.append("gemini")
+    # Groq first — faster and avoids Gemini quota chains blocking Hinglish/Hindi briefs.
+    groq, groq_err = _parse_groq(brief, context_mode)
+    groq_warn = _sanitize_llm_warning(groq_err)
+    if groq_warn:
+        llm_warnings.append(groq_warn)
+    if groq:
+        engines_used.append("groq")
         result = _merge_llm_into_heuristic(
             result,
-            gemini,
+            groq,
             _compose_engine_label(*engines_used),
             prefer_llm=prefer_llm,
         )
@@ -616,14 +640,15 @@ def parse_shipment_intent(user_brief: str, context_mode: str = "home") -> dict[s
             return result
         prefer_llm = True
 
-    groq, groq_err = _parse_groq(brief, context_mode)
-    if groq_err:
-        llm_warnings.append(groq_err)
-    if groq:
-        engines_used.append("groq")
+    gemini, gemini_err = _parse_gemini(brief, context_mode)
+    gemini_warn = _sanitize_llm_warning(gemini_err)
+    if gemini_warn:
+        llm_warnings.append(gemini_warn)
+    if gemini:
+        engines_used.append("gemini")
         result = _merge_llm_into_heuristic(
             result,
-            groq,
+            gemini,
             _compose_engine_label(*engines_used),
             prefer_llm=True,
         )

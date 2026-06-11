@@ -25,9 +25,13 @@ import json
 import logging
 import os
 import pickle
+import threading
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+_TRAIN_LOCK = threading.Lock()
+_TRAINING = False
 
 # Feature columns used during training and inference
 FEATURE_COLS = [
@@ -236,7 +240,119 @@ def train(
         json.dump(metrics, f, indent=2)
     log.info("[train] Saved metrics → %s", metrics_path)
 
+    try:
+        from app.pipelines.water.ml_models import reload_models
+
+        reload_models()
+    except Exception as e:
+        log.warning("[train] Could not reload ml_models cache: %s", e)
+
     return metrics
+
+
+def _watched_data_files() -> list[Path]:
+    from app.pipelines.water.data_loader import DATA_DIR
+
+    return [
+        DATA_DIR / "Ports.csv",
+        DATA_DIR / "Daily_Ports_Data.csv",
+        DATA_DIR / "Daily_Chokepoints_Data.csv",
+        DATA_DIR / "Spillover_simulator%3A_port-level_impact.csv",
+        DATA_DIR / "PortWatch_chokepoints_database.csv",
+        *DATA_DIR.glob("portwatch_disruptions_database*.csv"),
+    ]
+
+
+def models_are_stale() -> bool:
+    """True when model pkls are missing or older than PortWatch source CSVs."""
+    models_dir = _models_dir()
+    delay_path = models_dir / "water_delay_model.pkl"
+    eta_path = models_dir / "water_eta_model.pkl"
+    if not delay_path.exists() or not eta_path.exists():
+        return True
+
+    model_mtime = min(delay_path.stat().st_mtime, eta_path.stat().st_mtime)
+    for path in _watched_data_files():
+        if path.exists() and path.stat().st_mtime > model_mtime:
+            return True
+    return False
+
+
+def _auto_train_mode() -> str:
+    """
+    WATER_AUTO_TRAIN controls startup training:
+      always  — retrain on every backend start (background)
+      stale   — retrain when source CSVs are newer than model pkls
+      missing — retrain only when pkls are absent (default on Render)
+      off     — disable auto-train
+    """
+    default = "missing" if os.environ.get("RENDER") else "stale"
+    return os.environ.get("WATER_AUTO_TRAIN", default).strip().lower()
+
+
+def should_auto_train() -> bool:
+    mode = _auto_train_mode()
+    if mode in {"0", "false", "no", "off"}:
+        return False
+    if mode in {"always", "1", "true", "yes"}:
+        return True
+    if mode == "missing":
+        models_dir = _models_dir()
+        return not (
+            (models_dir / "water_delay_model.pkl").exists()
+            and (models_dir / "water_eta_model.pkl").exists()
+        )
+    return models_are_stale()
+
+
+def ensure_water_models_trained(*, background: bool = True, **train_kwargs) -> bool:
+    """
+    Train water ML models when configured to do so.
+    Returns True if a training run was started or is already running.
+    """
+    global _TRAINING
+
+    if not should_auto_train():
+        log.info("[train] Auto-train skipped (WATER_AUTO_TRAIN=%s)", _auto_train_mode())
+        return False
+
+    if _TRAINING:
+        log.info("[train] Auto-train already in progress")
+        return True
+
+    def _run() -> None:
+        global _TRAINING
+        with _TRAIN_LOCK:
+            if _TRAINING:
+                return
+            _TRAINING = True
+        try:
+            mode = _auto_train_mode()
+            csv_path = _models_dir() / "water_training_data.csv"
+            if mode in {"always", "1", "true", "yes"}:
+                skip_dataset = False
+            elif mode == "missing":
+                skip_dataset = csv_path.exists()
+            else:
+                skip_dataset = False
+            log.info(
+                "[train] Auto-train starting (mode=%s skip_dataset=%s)",
+                mode,
+                skip_dataset,
+            )
+            train(skip_dataset=skip_dataset, **train_kwargs)
+            log.info("[train] Auto-train complete")
+        except Exception as e:
+            log.exception("[train] Auto-train failed: %s", e)
+        finally:
+            _TRAINING = False
+
+    if background:
+        threading.Thread(target=_run, name="water-auto-train", daemon=True).start()
+        return True
+
+    _run()
+    return True
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

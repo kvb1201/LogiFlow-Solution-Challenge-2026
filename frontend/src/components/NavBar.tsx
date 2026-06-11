@@ -107,14 +107,22 @@ export default function NavBar() {
 
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-border/70 bg-background/80 shadow-[0_12px_40px_-28px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
-      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-4 sm:h-16 sm:gap-4 sm:px-5">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-70"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent, var(--hybrid), var(--comparator), var(--rail), var(--road), var(--air), transparent)',
+        }}
+      />
+      <div className="relative mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-4 sm:h-16 sm:gap-4 sm:px-5">
         <Link
           href="/"
           onClick={resetSearch}
           className="group flex items-center gap-2.5"
           aria-label="LogiFlow home"
         >
-          <div className="relative grid h-9 w-9 place-items-center rounded-lg border border-border-strong bg-surface-2 text-rail shadow-[0_0_30px_-18px_var(--rail)] transition-shadow duration-300 group-hover:shadow-[0_0_40px_-12px_var(--rail)]">
+          <div className="relative grid h-9 w-9 place-items-center rounded-lg border border-border-strong bg-surface-2 text-rail shadow-[0_0_24px_-20px_var(--rail)] transition-shadow duration-300 group-hover:shadow-[0_0_28px_-18px_var(--rail)]">
             <Radar className="h-4 w-4" strokeWidth={2.4} />
             <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background bg-live" />
           </div>
@@ -126,7 +134,15 @@ export default function NavBar() {
           </div>
         </Link>
 
-        <nav className="hidden min-w-0 max-w-[min(100%,52rem)] items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-surface/60 p-1 md:flex [&::-webkit-scrollbar]:hidden">
+        <nav className="relative hidden min-w-0 max-w-[min(100%,52rem)] items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-surface/60 p-1 md:flex [&::-webkit-scrollbar]:hidden">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-full opacity-40"
+            style={{
+              background:
+                'radial-gradient(ellipse 80% 120% at 50% 100%, color-mix(in oklab, var(--hybrid) 8%, transparent), transparent 70%)',
+            }}
+          />
           <NavLinks items={navItems} isActive={isActive} />
         </nav>
 
@@ -189,9 +205,12 @@ export default function NavBar() {
             <div className="flex items-center gap-2">
               <Link
                 href="/login"
+                aria-label="Smart Shipment Planner — sign in"
                 className="btn-app btn-app-primary flex h-8 items-center gap-2 rounded-md bg-foreground px-2.5 text-[12px] font-semibold text-background"
               >
                 <Plus className="h-3.5 w-3.5" />
+                <span className="xs:hidden">Plan</span>
+                <span className="hidden xs:inline sm:hidden">Planner</span>
                 <span className="hidden sm:inline">Smart Shipment Planner</span>
               </Link>
             </div>

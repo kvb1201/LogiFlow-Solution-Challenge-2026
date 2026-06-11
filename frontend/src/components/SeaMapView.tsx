@@ -11,12 +11,13 @@
  *  - Route label at midpoint
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { LatLngTuple, Map as LeafletMap } from 'leaflet';
 import type { WaterRoute } from '@/services/api';
+import type { WaterPortOption } from '@/lib/water-port-catalog';
 
 // Fix default marker icons
 type IconDefaultProto = typeof L.Icon.Default.prototype & { _getIconUrl?: unknown };
@@ -26,62 +27,6 @@ L.Icon.Default.mergeOptions({
   iconUrl:       'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
   shadowUrl:     'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
 });
-
-// ── Port coordinate lookup ────────────────────────────────────────────
-// Keyed by the port name strings returned by the backend
-const PORT_COORDS: Record<string, [number, number]> = {
-  // India – West
-  'Mundra Port, Gujarat, India':                     [22.763,  69.622],
-  'Deendayal Port (Kandla), Gujarat, India':         [23.009,  70.216],
-  'Jawaharlal Nehru Port (JNPT), Navi Mumbai, India':[18.917,  72.940],
-  'Hazira Port, Gujarat, India':                     [21.087,  72.646],
-  'Dahej Port, Gujarat, India':                      [21.703,  72.575],
-  'Pipavav Port, Gujarat, India':                    [20.908,  71.466],
-  'Mormugao Port, Goa, India':                       [15.407,  73.802],
-  'New Mangalore Port, Karnataka, India':            [12.938,  74.819],
-  'Cochin Port (Kochi), Kerala, India':              [ 9.969,  76.259],
-  // India – East
-  'V.O. Chidambaranar Port (Tuticorin), Tamil Nadu, India': [8.766, 78.189],
-  'Chennai Port, Tamil Nadu, India':                 [13.100,  80.294],
-  'Kamarajar Port (Ennore), Tamil Nadu, India':      [13.279,  80.339],
-  'Krishnapatnam Port, Andhra Pradesh, India':       [14.261,  80.118],
-  'Visakhapatnam Port, Andhra Pradesh, India':       [17.655,  83.231],
-  'Paradip Port, Odisha, India':                     [20.280,  86.649],
-  'Haldia Dock Complex, West Bengal, India':         [22.058,  88.104],
-  'Kolkata Port (Syama Prasad Mookerjee), West Bengal, India': [22.536, 88.300],
-  // Middle East
-  'Jebel Ali Port (Dubai), UAE':                     [25.013,  55.061],
-  'Jeddah Islamic Port, Saudi Arabia':               [21.486,  39.188],
-  'Port of Salalah, Oman':                           [16.950,  54.010],
-  'Port Said (Suez Canal Gateway), Egypt':           [31.260,  32.310],
-  'Alexandria Port, Egypt':                          [31.200,  29.900],
-  // South Asia
-  'Port of Colombo, Sri Lanka':                      [ 6.935,  79.848],
-  // Southeast Asia
-  'Port of Singapore, Singapore':                    [ 1.264, 103.840],
-  'Port Klang, Malaysia':                            [ 3.000, 101.350],
-  'Tanjung Pelepas Port, Malaysia':                  [ 1.363, 103.553],
-  'Laem Chabang Port, Thailand':                     [13.080, 100.890],
-  'Ho Chi Minh City Port (Cat Lai), Vietnam':        [10.760, 106.790],
-  'Jakarta (Tanjung Priok), Indonesia':              [-6.101, 106.870],
-  // East Asia
-  'Port of Shanghai, China':                         [31.220, 121.480],
-  'Port of Ningbo, China':                           [29.867, 121.550],
-  'Port of Hong Kong':                               [22.300, 114.160],
-  'Port of Busan, South Korea':                      [35.096, 129.040],
-  'Port of Tokyo, Japan':                            [35.630, 139.780],
-  // Europe
-  'Port of Rotterdam, Netherlands':                  [51.924,   4.477],
-  'Port of Antwerp-Bruges, Belgium':                 [51.219,   4.402],
-  'Port of Hamburg, Germany':                        [53.551,   9.993],
-  'Port of Istanbul (Ambarli), Türkiye':             [41.020,  28.660],
-  // Africa
-  'Port of Durban, South Africa':                    [-29.870,  31.040],
-  'Tanger Med, Morocco':                             [35.890,  -5.500],
-  // Americas
-  'Port of Houston, United States':                  [29.749, -95.208],
-  'Port of Santos, Brazil':                          [-23.970, -46.320],
-};
 
 // Known chokepoint coordinates (by common name)
 const CHOKEPOINT_COORDS: Record<string, [number, number]> = {
@@ -194,11 +139,13 @@ function fmt(n: number) {
 
 export default function SeaMapView({
   routes,
+  ports,
   selectedRoute = 0,
   source,
   destination,
 }: {
   routes: WaterRoute[];
+  ports: WaterPortOption[];
   selectedRoute?: number;
   source?: string;
   destination?: string;
@@ -207,20 +154,30 @@ export default function SeaMapView({
 
   const active = routes[selectedRoute] ?? routes[0];
 
+  const portLookup = useMemo(() => {
+    const byName = new Map<string, WaterPortOption>();
+    const byId = new Map<string, WaterPortOption>();
+    for (const port of ports) {
+      byId.set(port.id.toLowerCase(), port);
+      byName.set(port.name.toLowerCase(), port);
+    }
+    return { byName, byId };
+  }, [ports]);
+
   /** Resolve port coords from route segments */
-  const resolvePortCoords = (portName?: string): [number, number] | null => {
+  const resolvePortCoords = useCallback((portName?: string): [number, number] | null => {
     if (!portName) return null;
-    // Exact match first
-    if (PORT_COORDS[portName]) return PORT_COORDS[portName];
-    // Fuzzy: find first key that contains portName or vice versa
     const lower = portName.toLowerCase();
-    for (const [key, coord] of Object.entries(PORT_COORDS)) {
-      if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase().split(',')[0].toLowerCase())) {
-        return coord;
+    const exact = portLookup.byName.get(lower) ?? portLookup.byId.get(lower);
+    if (exact) return [exact.lat, exact.lng];
+    for (const port of ports) {
+      const portNameRoot = port.name.toLowerCase().split(',')[0];
+      if (port.name.toLowerCase().includes(lower) || lower.includes(portNameRoot)) {
+        return [port.lat, port.lng];
       }
     }
     return null;
-  };
+  }, [ports, portLookup]);
 
   /**
    * Build arc segments for the selected route from its port segments.
@@ -237,22 +194,26 @@ export default function SeaMapView({
       segs.push({ arc: makeArc(fromCoord, toCoord), from: seg.from, to: seg.to });
     }
     return segs;
-  }, [active]);
+  }, [active, resolvePortCoords]);
 
   /** All other (non-selected) routes — faint arcs */
   const otherArcs = useMemo(() => {
-    return routes
-      .map((r, i) => {
-        if (i === selectedRoute || !r.segments?.length) return null;
-        const firstWater = r.segments.find(s => s.mode === 'Water');
-        if (!firstWater) return null;
-        const fromCoord = resolvePortCoords(firstWater.from);
-        const toCoord   = resolvePortCoords(firstWater.to);
-        if (!fromCoord || !toCoord) return null;
-        return { arc: makeArc(fromCoord, toCoord), index: i };
-      })
-      .filter(Boolean) as { arc: LatLngTuple[]; index: number }[];
-  }, [routes, selectedRoute]);
+    return routes.flatMap((r, i) => {
+      if (i === selectedRoute || !r.segments?.length) return null;
+      return r.segments
+        .filter(s => s.mode === 'Water')
+        .map((segment, segmentIndex) => {
+          const fromCoord = resolvePortCoords(segment.from);
+          const toCoord   = resolvePortCoords(segment.to);
+          if (!fromCoord || !toCoord) return null;
+          return {
+            arc: makeArc(fromCoord, toCoord),
+            index: `${i}-${segmentIndex}`,
+          };
+        });
+    })
+      .filter(Boolean) as { arc: LatLngTuple[]; index: string }[];
+  }, [routes, selectedRoute, resolvePortCoords]);
 
   /** Chokepoints on the selected route */
   const chokepointMarkers = useMemo(() => {
@@ -267,8 +228,14 @@ export default function SeaMapView({
   }, [active]);
 
   /** Origin and destination markers */
-  const originCoord  = resolvePortCoords(active?.origin_port ?? source);
-  const destCoord    = resolvePortCoords(active?.destination_port ?? destination);
+  const originCoord = useMemo(
+    () => resolvePortCoords(active?.origin_port ?? source),
+    [active?.origin_port, source, resolvePortCoords],
+  );
+  const destCoord = useMemo(
+    () => resolvePortCoords(active?.destination_port ?? destination),
+    [active?.destination_port, destination, resolvePortCoords],
+  );
 
   /** Fit map to all arc points */
   const allPoints = useMemo(() => {

@@ -17,10 +17,16 @@ export const RAIL_METRICS = [
 ] as const;
 
 export const RAIL_CAPABILITY_BADGES = [
-  { icon: 'train', label: '186k+ train rows' },
-  { icon: 'swap_horiz', label: 'Direct + transfer' },
-  { icon: 'route', label: '9,524 geo points' },
-  { icon: 'science', label: '15.6k ML samples' },
-  { icon: 'payments', label: 'IRCA tariff slabs' },
-  { icon: 'auto_awesome', label: '81% delay accuracy' },
+  { icon: 'schedule', label: 'Live Schedules' },
+  { icon: 'psychology', label: 'ML Delay Model' },
+  { icon: 'payments', label: 'IRCA Tariffs' },
+  { icon: 'route', label: 'Track Geometry' },
+  { icon: 'swap_horiz', label: 'Direct + Transfer' },
+  { icon: 'monitoring', label: 'Delay Prediction' },
 ] as const;
+
+/** Top-line hero stats — shown inline on landing (road/air style). */
+export const RAIL_HERO_METRICS = RAIL_METRICS.slice(0, 3);
+
+/** Secondary stats — second flex row on landing. */
+export const RAIL_SECONDARY_METRICS = RAIL_METRICS.slice(3);

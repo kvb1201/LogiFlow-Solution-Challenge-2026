@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic';
 import React, { useMemo, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation, type WaterRoute } from '@/services/api';
-import { WATER_PORTS, WATER_PORT_REGION_COUNT } from '@/lib/water-ports';
+import { useWaterPortCatalog } from '@/hooks/useWaterPortCatalog';
+import type { WaterPortOption } from '@/lib/water-port-catalog';
 import { classifyWaterNoRoute, isWaterNoRouteMessage } from '@/lib/water-no-route';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 
@@ -55,9 +56,9 @@ function stopsLabel(route: WaterRoute) {
 }
 
 /** Detect which regions a route spans based on port names */
-function routeRegions(route: WaterRoute): string[] {
+function routeRegions(route: WaterRoute, ports: WaterPortOption[]): string[] {
   const regionMap: Record<string, string> = {};
-  for (const port of WATER_PORTS) regionMap[port.name] = port.region;
+  for (const port of ports) regionMap[port.name] = port.region;
   const regions = new Set<string>();
   for (const seg of route.segments ?? []) {
     if (seg.mode === 'Water') {
@@ -291,8 +292,9 @@ function ChokepointsPath({
 // ── Active disruptions ────────────────────────────────────────────────
 
 function ActiveDisruptions({ disruptions }: { disruptions?: WaterRoute['active_disruptions'] }) {
-  if (!disruptions?.length) return null;
   const [open, setOpen] = useState(false);
+  if (!disruptions?.length) return null;
+
   const redCount = disruptions.filter(d => d.alert === 'RED').length;
   const orangeCount = disruptions.filter(d => d.alert === 'ORANGE').length;
   const headerTone = redCount > 0 ? 'border-red-400/25 bg-red-500/8' : 'border-amber-400/20 bg-amber-500/8';
@@ -337,17 +339,18 @@ function ActiveDisruptions({ disruptions }: { disruptions?: WaterRoute['active_d
 // ── Water Route Card ──────────────────────────────────────────────────
 
 function WaterRouteCard({
-  route, index, isSelected, onSelect, isCheapest, isFastest, isSafest,
+  route, index, isSelected, onSelect, isCheapest, isFastest, isSafest, ports,
 }: {
   route: WaterRoute; index: number; isSelected: boolean; onSelect: () => void;
   isCheapest: boolean; isFastest: boolean; isSafest: boolean;
+  ports: WaterPortOption[];
 }) {
   const risk = Number(route.risk ?? 0);
   const reliability = Number(route.reliability_score ?? 0);
   const distanceNm = Number(route.distance_nm ?? 0);
   const transshipments = Number(route.transshipments ?? 0);
   const rt = riskTone(risk);
-  const regions = routeRegions(route);
+  const regions = routeRegions(route, ports);
   const hasDisruptions = (route.active_disruptions?.length ?? 0) > 0;
   const hasStorm = route.marine_conditions?.storm_flag;
 
@@ -357,7 +360,7 @@ function WaterRouteCard({
       aria-pressed={isSelected}
       onClick={onSelect}
       className={[
-        'w-full rounded-2xl border text-left transition-all duration-200 overflow-hidden',
+        'w-full rounded-xl border text-left transition-all duration-200 overflow-hidden',
         isSelected
           ? 'border-teal-400/50 bg-teal-500/10 shadow-[0_0_0_2px_rgba(45,212,191,0.10)]'
           : 'border-outline-variant/12 bg-surface-container-lowest/30 hover:border-teal-400/25 hover:bg-surface-container/30',
@@ -437,10 +440,11 @@ function WaterRouteCard({
 // ── Detail Panel ──────────────────────────────────────────────────────
 
 function DetailPanel({
-  route, source, destination, minCost, minTime, minRisk, onSave,
+  route, source, destination, minCost, minTime, minRisk, onSave, ports,
 }: {
   route: WaterRoute; source: string; destination: string;
   minCost: number; minTime: number; minRisk: number; onSave?: () => void;
+  ports: WaterPortOption[];
 }) {
   const priority = useLogiFlowStore((s) => s.priority);
   const [explanation, setExplanation] = useState<{ key: string; text: string } | null>(null);
@@ -452,7 +456,7 @@ function DetailPanel({
   const delay = Number(route.expected_delay_hours ?? 0);
   const distanceNm = Number(route.distance_nm ?? 0);
   const transshipments = Number(route.transshipments ?? 0);
-  const regions = routeRegions(route);
+  const regions = routeRegions(route, ports);
   const rt = riskTone(risk);
   const factors = Array.isArray(route.key_factors) ? route.key_factors : [];
 
@@ -468,7 +472,7 @@ function DetailPanel({
   return (
     <div className="space-y-4">
       {/* Why this route */}
-      <div className="rounded-2xl border border-teal-400/15 bg-teal-500/5 p-4">
+      <div className="rounded-xl border border-teal-400/15 bg-teal-500/5 p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-teal-300">
@@ -503,7 +507,7 @@ function DetailPanel({
       </div>
 
       {/* Expanded metrics */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Metric icon="savings" label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
         <Metric icon="schedule" label="Time" value={`${Number(route.time).toFixed(1)}h`} tone="text-amber-200" />
         <Metric icon="shield" label="Risk" value={`${Math.round(risk * 100)}%`} tone={rt.text} />
@@ -655,16 +659,23 @@ function DetailPanel({
 // ── No routes empty state ─────────────────────────────────────────────
 
 function WaterNoRoutesEmpty({
+  portTotal,
+  portRegions,
   source, destination, error, onTryAgain,
 }: {
-  source: string; destination: string; error: string | null; onTryAgain: () => void;
+  portTotal: number;
+  portRegions: number;
+  source: string;
+  destination: string;
+  error: string | null;
+  onTryAgain: () => void;
 }) {
   const kind = classifyWaterNoRoute(error);
   const isConstraints = kind === 'constraints';
   return (
     <section className="flex min-h-[min(70vh,520px)] items-center justify-center px-4 py-12 sm:px-8">
-      <div className="w-full max-w-lg rounded-2xl border border-teal-400/20 bg-surface-container-low/40 p-8 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/10 border border-teal-400/20">
+      <div className="w-full max-w-lg rounded-xl border border-teal-400/20 bg-surface-container-low/40 p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-teal-500/10 border border-teal-400/20">
           <span className="material-symbols-outlined text-teal-400" style={{ fontSize: '28px', fontVariationSettings: "'FILL' 1" }}>
             {isConstraints ? 'tune' : 'sailing'}
           </span>
@@ -683,7 +694,7 @@ function WaterNoRoutesEmpty({
           <ul className="space-y-1.5">
             <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Pick a major hub port closer to each coast (Singapore, Jebel Ali, Colombo).</span></li>
             <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Increase max transshipments in advanced options.</span></li>
-            <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Network: {WATER_PORTS.length} ports across {WATER_PORT_REGION_COUNT} regions.</span></li>
+            <li className="flex gap-2"><span className="text-teal-400 shrink-0">•</span><span>Network: {portTotal} ports across {portRegions} regions.</span></li>
           </ul>
         </div>
         <button type="button" onClick={onTryAgain}
@@ -713,6 +724,7 @@ export default function WaterRouteResults() {
   const priority = useLogiFlowStore((s) => s.priority);
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const { ports, total: portTotal, regions: portRegions } = useWaterPortCatalog();
 
   const safeIndex = Math.min(Math.max(selected, 0), Math.max(routes.length - 1, 0));
   const active = routes[safeIndex];
@@ -730,7 +742,16 @@ export default function WaterRouteResults() {
   const showNoRoutes = hasSearched && !showWaterLoading && routes.length === 0 && (isWaterNoRouteMessage(error) || !error);
 
   if (showNoRoutes) {
-    return <WaterNoRoutesEmpty source={source} destination={destination} error={error} onTryAgain={resetResults} />;
+    return (
+      <WaterNoRoutesEmpty
+        portTotal={portTotal}
+        portRegions={portRegions}
+        source={source}
+        destination={destination}
+        error={error}
+        onTryAgain={resetResults}
+      />
+    );
   }
   if (!routes.length || !active || !stats) return null;
 
@@ -747,14 +768,14 @@ export default function WaterRouteResults() {
           </div>
         </div>
         <div className="rounded-full border border-outline-variant/15 bg-surface-container-lowest/35 px-3 py-1 text-[10px] text-on-surface-variant">
-          {WATER_PORTS.length} ports · {WATER_PORT_REGION_COUNT} regions · live marine weather
+          {portTotal || '…'} ports · {portRegions || '…'} regions · live marine weather
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         {/* Route cards list */}
         <div className="space-y-3 lg:col-span-1 lg:max-h-[80vh] lg:overflow-y-auto lg:pr-1 [scrollbar-gutter:stable]">
-          <div className="rounded-2xl border border-outline-variant/12 bg-surface-container/20 p-4">
+          <div className="rounded-xl border border-outline-variant/12 bg-surface-container/20 p-4">
             <div className="text-[9px] font-label font-bold uppercase tracking-[0.14em] text-outline">Recommendation</div>
             <p className="mt-2 text-[12px] leading-relaxed text-on-surface-variant">
               Route {safeIndex + 1} selected — {stopsLabel(active)} via{' '}
@@ -764,7 +785,7 @@ export default function WaterRouteResults() {
           </div>
           {routes.map((route, index) => (
             <WaterRouteCard
-              key={routeKey(route)}
+              key={`${index}-${routeKey(route)}`}
               route={route}
               index={index}
               isSelected={index === safeIndex}
@@ -772,6 +793,7 @@ export default function WaterRouteResults() {
               isCheapest={Number(route.cost) === stats.minCost}
               isFastest={Number(route.time) === stats.minTime}
               isSafest={Number(route.risk) === stats.minRisk}
+              ports={ports}
             />
           ))}
         </div>
@@ -779,9 +801,10 @@ export default function WaterRouteResults() {
         {/* Detail panel + map */}
         <div className="lg:col-span-2 space-y-4">
           {/* Sea map */}
-          <div className="h-[280px] sm:h-[340px] rounded-2xl overflow-hidden border border-teal-400/10">
+          <div className="h-[280px] sm:h-[340px] rounded-xl overflow-hidden border border-teal-400/10">
             <SeaMapView
               routes={routes}
+              ports={ports}
               selectedRoute={safeIndex}
               source={source}
               destination={destination}
@@ -789,7 +812,7 @@ export default function WaterRouteResults() {
           </div>
 
           {/* Detail panel */}
-          <div className="rounded-2xl border border-teal-400/10 bg-surface-container-lowest/25 p-5 shadow-sm">
+          <div className="rounded-xl border border-teal-400/10 bg-surface-container-lowest/25 p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2 border-b border-outline-variant/8 pb-3">
               <span className="material-symbols-outlined text-teal-400" style={{ fontSize: '16px', fontVariationSettings: "'FILL' 1" }}>anchor</span>
               <span className="text-[10px] font-label font-bold uppercase tracking-[0.12em] text-outline">Selected route</span>
@@ -803,6 +826,7 @@ export default function WaterRouteResults() {
               minTime={stats.minTime}
               minRisk={stats.minRisk}
               onSave={() => setSaveModalOpen(true)}
+              ports={ports}
             />
           </div>
         </div>

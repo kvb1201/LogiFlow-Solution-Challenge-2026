@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import { FormAutocomplete } from '@/components/forms/FormAutocomplete';
 import { useCitySearch } from '@/hooks/useCitySearch';
 import {
@@ -15,6 +16,7 @@ import {
   FormSubmit,
   LOGIFLOW_FORM_IDS,
   formInputClass,
+  FormDateInput,
 } from '@/components/forms/pipeline-form-ui';
 
 const CARGO_TYPES = [
@@ -65,9 +67,11 @@ export default function AirInputForm() {
 
   useShipmentAutorun('air', runAirOptimize, Boolean(source.trim() && destination.trim()));
 
+  const onIntentApplied = useIntentFormReset(() => {});
+
   return (
-    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="air" />
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24">
+      <AiBriefPanel contextMode="air" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="air"
         title="Air cargo search"
@@ -161,13 +165,7 @@ export default function AirInputForm() {
               </div>
             </FormField>
             <FormField label="Departure">
-              <input
-                type="date"
-                min={today}
-                value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
-                className={formInputClass}
-              />
+              <FormDateInput value={departureDate} min={today} onChange={setDepartureDate} />
             </FormField>
             <FormField label={`Window · ${deadlineHours}h`}>
               <input

@@ -3,10 +3,70 @@
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { modeMeta } from '@/lib/mode-meta';
 import { ModeIcon } from '@/components/cockpit/ModeIcon';
-import type { ReactNode } from 'react';
+import { AmbientMesh } from '@/components/cockpit/AmbientMesh';
+import { accentMix, accentVar } from '@/lib/pipeline-theme';
+import { Children, useRef, type ReactNode } from 'react';
 
 export const formInputClass =
   'h-11 w-full rounded-lg border border-border bg-background/60 px-3 text-sm text-foreground outline-none transition-all duration-200 placeholder:text-muted-foreground/50 focus:border-ring focus:bg-surface/80 focus:ring-2 focus:ring-ring/15';
+
+/** Date fields — room for the calendar trigger on the right. */
+export const formDateInputClass = `${formInputClass} pr-11`;
+
+export function FormDateInput({
+  value,
+  onChange,
+  min,
+  max,
+  className = formDateInputClass,
+  id,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  min?: string;
+  max?: string;
+  className?: string;
+  id?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === 'function') {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        // fall through to focus
+      }
+    }
+    input.focus();
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        id={id}
+        type="date"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        className={`form-date-input relative ${className}`}
+      />
+      <button
+        type="button"
+        onClick={openPicker}
+        aria-label="Open calendar"
+        className="absolute right-1.5 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface/50 hover:text-foreground"
+      >
+        <span className="material-symbols-outlined text-[18px] leading-none">calendar_today</span>
+      </button>
+    </div>
+  );
+}
 
 export const formLabelClass =
   'text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground';
@@ -50,20 +110,26 @@ export function FormShell({
 
   return (
     <div
-      className="panel-hard scanline overflow-hidden rounded-2xl"
-      style={{ boxShadow: `inset 0 1px 0 0 color-mix(in oklab, ${accent} 18%, transparent)` }}
+      className="group relative overflow-hidden rounded-xl border border-border/40 bg-surface/15 backdrop-blur-md"
+      style={{
+        boxShadow: `inset 0 1px 0 0 ${accentMix(mode, 12, 'transparent')}, 0 20px 56px -40px ${accentVar(mode)}`,
+      }}
     >
+      <AmbientMesh variant="card" tone={mode} />
       <div
         aria-hidden
-        className="h-px w-full"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-px opacity-60"
         style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
       />
-      <div className="p-4 sm:p-5 md:p-6">
+      <div className="relative z-10 p-4 sm:p-5">
         <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <span
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background/50"
-              style={{ color: accent }}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/45 bg-background/50 backdrop-blur-sm transition-all duration-300 group-hover:scale-105"
+              style={{
+                color: accent,
+                boxShadow: `0 0 28px -6px ${accentVar(mode)}`,
+              }}
             >
               <ModeIcon mode={mode} className="h-5 w-5" />
             </span>
@@ -241,7 +307,7 @@ export function CorridorSwapButton({
       onClick={onClick}
       disabled={disabled}
       aria-label="Swap origin and destination"
-      className={`absolute left-1/2 top-1/2 z-10 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground shadow-md transition-all duration-200 hover:scale-105 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground shadow-md transition-all duration-200 hover:scale-105 hover:border-border-strong hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
     >
       <span
         className="material-symbols-outlined text-base leading-none"
@@ -264,12 +330,19 @@ export function CorridorRow({
   swapDisabled?: boolean;
   accentVar?: string;
 }) {
+  const childList = Children.toArray(children);
+  const origin = childList[0];
+  const destination = childList[1] ?? null;
+
   return (
-    <div className="relative grid grid-cols-1 gap-4 md:grid-cols-2">
-      {children}
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-end md:gap-3">
+      <div className="min-w-0">{origin}</div>
       {onSwap ? (
-        <CorridorSwapButton onClick={onSwap} disabled={swapDisabled} accentVar={accentVar} />
+        <div className="flex justify-center py-0.5 md:px-0.5 md:py-0">
+          <CorridorSwapButton onClick={onSwap} disabled={swapDisabled} accentVar={accentVar} />
+        </div>
       ) : null}
+      {destination ? <div className="min-w-0">{destination}</div> : null}
     </div>
   );
 }

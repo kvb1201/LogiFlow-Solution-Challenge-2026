@@ -7,6 +7,7 @@ import { usePlannerStore } from '@/store/usePlannerStore';
 import { isExpired, type ReportStatus } from '@/services/plannerApi';
 import { ReportCard } from './ReportCard';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
+import { AmbientSurface, AmbientMetricTile } from '@/components/cockpit/AmbientSurface';
 import AiBriefPanel from '@/components/AiBriefPanel';
 
 const STATUS_FILTERS: { label: string; value: ReportStatus | 'all' | 'expired' }[] = [
@@ -28,13 +29,13 @@ export function ReportsPage() {
   const searchParams = useSearchParams();
   const { reports, loading, error, fetchReports } = usePlannerStore();
   const [filter, setFilter] = useState<ReportStatus | 'all' | 'expired'>(() =>
-    parseStatusFilter(searchParams.get('status'))
+    parseStatusFilter(searchParams?.get('status') ?? null)
   );
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
   useEffect(() => {
-    setFilter(parseStatusFilter(searchParams.get('status')));
+    setFilter(parseStatusFilter(searchParams?.get('status') ?? null));
   }, [searchParams]);
 
   const filtered = reports.filter(r => {
@@ -48,14 +49,14 @@ export function ReportsPage() {
   const expiredPlans = reports.filter(r => isExpired(r)).length;
 
   return (
-    <div className="relative w-full min-h-screen">
+    <div className="relative w-full min-h-app">
       <AmbientBackdrop variant="subtle" />
 
       <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 py-10 sm:py-12">
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 mb-8">
-          <div>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <div className="text-[10px] font-label font-bold uppercase tracking-[0.14em] text-outline mb-1">
               Shipment Planner
             </div>
@@ -63,7 +64,7 @@ export function ReportsPage() {
           </div>
           <Link
             href="/dashboard"
-            className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 sm:w-auto"
           >
             <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>add</span>
             New Plan
@@ -71,35 +72,35 @@ export function ReportsPage() {
         </div>
 
         <section className="mb-8">
-          <div className="panel-hard scanline form-container-glow rounded-2xl p-5 sm:p-6">
-            <AiBriefPanel
-              contextMode="home"
-              navigateOnApply={false}
-              showRouteButton
-              className="border-0 bg-transparent p-0 shadow-none"
-            />
-          </div>
+          <AmbientSurface mode="home" mesh="section" className="p-5 sm:p-6">
+            <AiBriefPanel contextMode="home" navigateOnApply={false} showRouteButton embedded />
+          </AmbientSurface>
         </section>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-3 min-[360px]:grid-cols-3">
           {[
             { label: 'Total Plans', value: totalPlans, icon: '📋' },
             { label: 'Active Plans', value: activePlans, icon: '🚀', highlight: activePlans > 0 },
             { label: 'Expired', value: expiredPlans, icon: '⏰', warn: expiredPlans > 0 },
-          ].map(s => (
-            <div key={s.label} className={[
-              'rounded-2xl border p-4 transition-all',
-              s.warn && s.value > 0 ? 'border-amber-500/20 bg-amber-500/5' :
-              s.highlight && s.value > 0 ? 'border-emerald-500/20 bg-emerald-500/5' :
-              'border-border/40 bg-surface/40',
-            ].join(' ')}>
+          ].map((s, i) => (
+            <AmbientMetricTile
+              key={s.label}
+              mode={(['hybrid', 'comparator', 'rail'] as const)[i % 3]}
+              className={
+                s.warn && s.value > 0
+                  ? 'border-amber-500/25'
+                  : s.highlight && s.value > 0
+                  ? 'border-emerald-500/25'
+                  : ''
+              }
+            >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</span>
                 <span className="text-lg">{s.icon}</span>
               </div>
               <p className="text-2xl font-bold text-foreground">{s.value}</p>
-            </div>
+            </AmbientMetricTile>
           ))}
         </div>
 
@@ -134,12 +135,12 @@ export function ReportsPage() {
             <p className="text-sm text-muted-foreground">Loading plans…</p>
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-risk/30 bg-risk/10 p-6 text-center">
+          <AmbientSurface mode="home" mesh="card" className="p-6 text-center border-risk/25">
             <p className="text-sm text-foreground mb-3">{error}</p>
-            <button onClick={fetchReports} className="text-sm text-primary hover:underline">Try again</button>
-          </div>
+            <button onClick={fetchReports} className="text-sm text-hybrid hover:underline">Try again</button>
+          </AmbientSurface>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-border/30 bg-surface/20 p-10 text-center">
+          <AmbientSurface mode="home" mesh="section" className="p-10 text-center">
             <span className="text-4xl block mb-4">📭</span>
             <h3 className="font-semibold text-foreground mb-2">
               {filter === 'all' ? 'No plans yet' : `No ${filter} plans`}
@@ -150,11 +151,16 @@ export function ReportsPage() {
             </p>
             <Link
               href="/hybrid"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all"
+              className="inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:brightness-110"
+              style={{
+                borderColor: 'color-mix(in oklab, var(--hybrid) 35%, transparent)',
+                background: 'color-mix(in oklab, var(--hybrid) 12%, transparent)',
+                color: 'color-mix(in oklab, var(--hybrid) 92%, white)',
+              }}
             >
               Plan a route
             </Link>
-          </div>
+          </AmbientSurface>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {filtered.map(r => <ReportCard key={r.id} report={r} />)}

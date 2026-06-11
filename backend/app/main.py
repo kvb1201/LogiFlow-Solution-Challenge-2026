@@ -48,6 +48,24 @@ app.add_middleware(
 )
 
 
+def _warm_water_models():
+    """Background-train water ML models when missing or stale (see WATER_AUTO_TRAIN)."""
+    import os
+
+    if os.getenv("WATER_AUTO_TRAIN", "stale").strip().lower() in ("0", "false", "no", "off"):
+        print("[startup] Water model auto-train skipped (WATER_AUTO_TRAIN=off)")
+        return
+    try:
+        from app.pipelines.water.train_model import ensure_water_models_trained
+
+        if ensure_water_models_trained(background=True):
+            print("[startup] Water model auto-train started in background")
+        else:
+            print("[startup] Water models up to date")
+    except Exception as exc:
+        print(f"[startup] Water model auto-train skipped: {exc}")
+
+
 def _warm_rail_data():
     """
     Optional rail CSV preload. Disabled by default on Render free tier (512MB RAM).
@@ -95,6 +113,7 @@ async def startup_event():
         await _ensure_revision_columns(conn)
         
     _warm_rail_data()
+    _warm_water_models()
 
 
 @app.get("/health")

@@ -5,6 +5,7 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import { searchStations, type StationSearchResult } from '@/services/api';
 import AiBriefPanel from '@/components/AiBriefPanel';
+import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import { FormAutocomplete } from '@/components/forms/FormAutocomplete';
 import {
   AdvancedToggle,
@@ -15,6 +16,7 @@ import {
   FormSubmit,
   LOGIFLOW_FORM_IDS,
   formInputClass,
+  FormDateInput,
 } from '@/components/forms/pipeline-form-ui';
 import {
   DEFAULT_RAIL_SIMULATION,
@@ -133,6 +135,8 @@ export default function InputForm() {
 
   useShipmentAutorun('rail', runRailOptimize, Boolean(source.trim() && destination.trim()));
 
+  const onIntentApplied = useIntentFormReset(() => {});
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!source.trim() || !destination.trim()) return;
@@ -146,8 +150,8 @@ export default function InputForm() {
   };
 
   return (
-    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24 rounded-2xl transition-shadow">
-      <AiBriefPanel contextMode="rail" />
+    <div id="logiflow-pipeline-form" className="w-full space-y-4 scroll-mt-24">
+      <AiBriefPanel contextMode="rail" onIntentApplied={onIntentApplied} />
       <FormShell
         mode="rail"
         title="Route search"
@@ -226,12 +230,7 @@ export default function InputForm() {
               </div>
             </FormField>
             <FormField label="Departure date">
-              <input
-                type="date"
-                value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
-                className={formInputClass}
-              />
+              <FormDateInput value={departureDate} onChange={setDepartureDate} />
             </FormField>
           </div>
 

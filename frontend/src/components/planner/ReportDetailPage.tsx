@@ -35,7 +35,7 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
 
 const MODE_STYLES: Record<string, string> = {
   road: 'bg-secondary/10 text-secondary border-secondary/20',
-  rail: 'bg-primary/10 text-primary border-primary/20',
+  rail: 'bg-rail/10 text-rail border-rail/20',
   air: 'bg-sky-400/10 text-sky-400 border-sky-400/20',
   water: 'bg-teal-400/10 text-teal-400 border-teal-400/20',
   hybrid: 'bg-violet-400/10 text-violet-400 border-violet-400/20',
@@ -158,7 +158,7 @@ export function ReportDetailPage({ reportId }: Props) {
     : childRevisions;
 
   return (
-    <div className="relative w-full min-h-screen">
+    <div className="relative w-full min-h-app">
       <AmbientBackdrop variant="subtle" />
 
       <div className="relative z-10 mx-auto max-w-3xl px-4 sm:px-6 py-10 sm:py-12">
@@ -174,17 +174,17 @@ export function ReportDetailPage({ reportId }: Props) {
 
         {/* Expiry warning */}
         {expired && (
-          <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 flex items-start gap-3">
-            <span className="material-symbols-outlined text-amber-400 shrink-0 mt-0.5" style={{ fontSize: '16px' }}>schedule</span>
-            <div className="flex-1 min-w-0">
+          <div className="mb-5 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 sm:flex-row sm:items-start">
+            <span className="material-symbols-outlined shrink-0 text-amber-400 sm:mt-0.5" style={{ fontSize: '16px' }}>schedule</span>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-amber-300">Estimates Outdated</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
                 This plan was generated more than 24 hours ago. Traffic, weather, and pricing may have changed.
               </p>
             </div>
             <Link
               href={`${routeForMode(report.mode)}?source=${encodeURIComponent(report.source)}&destination=${encodeURIComponent(report.destination)}`}
-              className="shrink-0 flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition"
+              className="flex w-full shrink-0 items-center justify-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold text-amber-300 transition hover:bg-amber-500/25 sm:w-auto"
             >
               Regenerate Plan
             </Link>
@@ -203,22 +203,24 @@ export function ReportDetailPage({ reportId }: Props) {
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex-1 min-w-0">
             {renaming ? (
-              <form onSubmit={handleRename} className="flex gap-2 items-center">
+              <form onSubmit={handleRename} className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   autoFocus
                   value={draftName}
                   onChange={e => setDraftName(e.target.value)}
                   maxLength={120}
-                  className="flex-1 min-w-0 rounded-xl border border-border/40 bg-surface-container-lowest/50 px-3 py-2 text-lg font-bold focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  className="min-w-0 flex-1 rounded-xl border border-border/40 bg-surface-container-lowest/50 px-3 py-2 text-lg font-bold focus:outline-none focus:ring-1 focus:ring-primary/30"
                 />
-                <button type="submit" disabled={renameSaving}
-                  className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50">
-                  {renameSaving ? '…' : 'Save'}
-                </button>
-                <button type="button" onClick={() => setRenaming(false)}
-                  className="rounded-xl border border-border/30 px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground">
-                  Cancel
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button type="submit" disabled={renameSaving}
+                    className="flex-1 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50 sm:flex-none">
+                    {renameSaving ? '…' : 'Save'}
+                  </button>
+                  <button type="button" onClick={() => setRenaming(false)}
+                    className="flex-1 rounded-xl border border-border/30 px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground sm:flex-none">
+                    Cancel
+                  </button>
+                </div>
               </form>
             ) : (
               <div className="flex items-start gap-2">

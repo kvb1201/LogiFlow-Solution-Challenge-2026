@@ -1,53 +1,18 @@
 """
-Geospatial nearest metropolitan hub discovery for rural / unmapped villages.
+Geospatial hub discovery for rural / unmapped villages.
 
-Villagers often name a place with no rail station or airport. We geocode the label,
-then rank major interchange cities by great-circle distance.
+Interchange *hubs* are major catalog cities (~70) with multimodal connectivity.
+The offline station index (9k+ points) is used only to pin nearest rail stops — not as hubs.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
-from app.services.hub_catalog import Hub, _build_hub, _match_city_key
-
-# Tier-1 metros + major logistics gateways (must exist in rail CITY_TO_STATION).
-_METRO_HUB_CITIES: tuple[str, ...] = (
-    "Delhi",
-    "Mumbai",
-    "Bengaluru",
-    "Chennai",
-    "Kolkata",
-    "Hyderabad",
-    "Ahmedabad",
-    "Pune",
-    "Jaipur",
-    "Lucknow",
-    "Chandigarh",
-    "Nagpur",
-    "Patna",
-    "Bhopal",
-    "Kanpur",
-    "Varanasi",
-    "Agra",
-    "Surat",
-    "Vadodara",
-    "Indore",
-    "Visakhapatnam",
-    "Guwahati",
-    "Bhubaneswar",
-    "Kochi",
-    "Coimbatore",
-    "Prayagraj",
-    "Allahabad",
-    "Ranchi",
-    "Raipur",
-    "Jodhpur",
-    "Amritsar",
-)
-
-_hub_coords_cache: dict[str, tuple[float, float] | None] = {}
+from app.services.hub_catalog import Hub, _build_hub, _match_city_key, list_interchange_hub_cities
+from app.services.hub_spatial_index import GeoHubPoint, nearest_station_points
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -57,17 +22,6 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def _hub_coords(city: str) -> tuple[float, float] | None:
-    if city in _hub_coords_cache:
-        return _hub_coords_cache[city]
-
-    from app.services.geocoder import geocode_latlng
-
-    hit = geocode_latlng(f"{city}, India")
-    _hub_coords_cache[city] = (float(hit[0]), float(hit[1])) if hit else None
-    return _hub_coords_cache[city]
 
 
 def _attach_airport(hub: Hub) -> Hub:
@@ -81,6 +35,36 @@ def _attach_airport(hub: Hub) -> Hub:
     except Exception:
         pass
     return hub
+
+
+@lru_cache(maxsize=1)
+def _station_coords_by_code() -> dict[str, tuple[float, float]]:
+    from app.services.hub_spatial_index import _load_points
+
+    return {pt.code.upper(): (pt.lat, pt.lng) for pt in _load_points()}
+
+
+@lru_cache(maxsize=1)
+def _interchange_hub_centroids() -> dict[str, tuple[float, float]]:
+    """Primary-station lat/lng for each catalog interchange city."""
+    by_code = _station_coords_by_code()
+    from app.services.hub_catalog import CITY_TO_STATION
+
+    centroids: dict[str, tuple[float, float]] = {}
+    for city in list_interchange_hub_cities():
+        key = _match_city_key(city) or city
+        for code in CITY_TO_STATION.get(city, []):
+            hit = by_code.get(str(code).upper())
+            if hit:
+                centroids[key] = hit
+                break
+    return centroids
+
+
+def nearest_rail_station(lat: float, lng: float) -> GeoHubPoint | None:
+    """Nearest mapped rail stop — for local station pins, not interchange hub selection."""
+    hits = nearest_station_points(lat, lng, max_points=1)
+    return hits[0][1] if hits else None
 
 
 def is_remote_location(
@@ -109,25 +93,33 @@ def nearest_metropolitan_hubs(
     max_hubs: int = 4,
     exclude_cities: set[str] | None = None,
 ) -> list[Hub]:
-    exclude = {c.lower() for c in (exclude_cities or set())}
-    scored: list[tuple[float, str]] = []
+    """
+    Nearest major interchange cities from the rail catalog — Delhi, Kanpur, Moradabad, etc.
+    Does not treat every indexed rail stop as a hub.
+    """
+    exclude = {_match_city_key(c) or c.strip().lower() for c in (exclude_cities or set()) if c}
+    centroids = _interchange_hub_centroids()
 
-    for city in _METRO_HUB_CITIES:
-        if city.lower() in exclude:
-            continue
-        coords = _hub_coords(city)
-        if not coords:
+    scored: list[tuple[float, str]] = []
+    for city, coords in centroids.items():
+        key = _match_city_key(city) or city
+        if key.lower() in exclude or city.lower() in exclude:
             continue
         dist = _haversine_km(lat, lng, coords[0], coords[1])
         scored.append((dist, city))
 
     scored.sort(key=lambda x: x[0])
+
     hubs: list[Hub] = []
-    for dist, city in scored[:max_hubs]:
-        hub = _build_hub(city, on_route=False)
-        hub.tier = 1
-        hub = _attach_airport(hub)
-        hubs.append(hub)
+    seen: set[str] = set()
+    for _dist, city in scored:
+        key = (_match_city_key(city) or city).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        hubs.append(_attach_airport(_build_hub(city, on_route=False)))
+        if len(hubs) >= max_hubs:
+            break
     return hubs
 
 
@@ -141,7 +133,7 @@ def hubs_for_resolved_place(
     max_hubs: int = 4,
     exclude_cities: set[str] | None = None,
 ) -> list[Hub]:
-    """Nearest metros for a geocoded endpoint (village or small town)."""
+    """Nearest catalog interchange hubs for a geocoded endpoint (village or small town)."""
     coords: tuple[float, float] | None = None
     if lat is not None and lng is not None:
         coords = (float(lat), float(lng))
@@ -197,7 +189,7 @@ def discover_rural_hub_pairs(
     hubs_per_end: int = 3,
 ) -> list[HubPair]:
     """
-    Hub pairs for village-style O-D: nearest metro to source × nearest metro to dest.
+    Hub pairs for village-style O-D: nearest catalog metro × nearest catalog metro.
     """
     src_remote = is_remote_location(
         canonical_city=src_r.canonical_city,
