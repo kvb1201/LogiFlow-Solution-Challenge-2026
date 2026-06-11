@@ -1875,6 +1875,36 @@ export async function parseShipmentIntent(
   return parsed as ParsedIntent;
 }
 
+/** Server-side Whisper fallback when browser Web Speech API fails (e.g. network). */
+export async function transcribeSpeechAudio(blob: Blob): Promise<string> {
+  const fd = new FormData();
+  const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
+  fd.append('file', blob, `speech.${ext}`);
+  const res = await fetchBackend(
+    '/speech/transcribe',
+    { method: 'POST', body: fd },
+    { retries: 1, retryDelayMs: 2000 }
+  );
+  const raw = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      res.ok ? 'Could not read transcription response.' : BACKEND_UNAVAILABLE_MSG
+    );
+  }
+  if (!res.ok) {
+    const err = parsed as { detail?: string; error?: string };
+    throw new Error(
+      (typeof err.detail === 'string' ? err.detail : null) ||
+        err.error ||
+        `Transcription failed (${res.status})`
+    );
+  }
+  return String((parsed as { text?: string }).text || '').trim();
+}
+
 // ── Legacy fallback (for the old /optimize endpoint) ─────────────────
 
 export async function fetchOptimizedRoute(
