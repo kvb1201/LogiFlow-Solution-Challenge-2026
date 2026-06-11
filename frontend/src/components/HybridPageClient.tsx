@@ -119,7 +119,7 @@ export default function HybridPageClient() {
           budget_limit: state.budgetMax || undefined,
           delay_tolerance_hours: state.deadlineHours,
         },
-        compose_options: { max_hubs: 2, budget_seconds: 55 },
+        compose_options: { max_hubs: 2, budget_seconds: 75 },
       });
 
       if (data.error && !data.recommended) {

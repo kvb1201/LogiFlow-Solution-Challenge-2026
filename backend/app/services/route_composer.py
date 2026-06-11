@@ -146,6 +146,32 @@ def _corridor_is_warm(origin: str, dest: str, priority: str) -> bool:
     return False
 
 
+def _feeder_compose_note(
+    src_feeder: FeederAccess | None,
+    dst_feeder: FeederAccess | None,
+    access_in_leg: Any | None,
+    access_out_leg: Any | None,
+) -> str | None:
+    """Only claim a feeder leg is included when that leg was actually scheduled."""
+    positive = _feeder_access_note(
+        src_feeder if access_in_leg else None,
+        dst_feeder if access_out_leg else None,
+    )
+    if positive:
+        return positive
+    failures: list[str] = []
+    if src_feeder and not access_in_leg:
+        failures.append(f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}")
+    if dst_feeder and not access_out_leg:
+        failures.append(f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}")
+    if failures:
+        return (
+            " · ".join(failures)
+            + " — try naming the nearest city (e.g. Prayagraj) or retry with more time."
+        )
+    return None
+
+
 def _feeder_access_note(access_in: FeederAccess | None, access_out: FeederAccess | None) -> str | None:
     parts: list[str] = []
     if access_in:
@@ -202,6 +228,9 @@ class RouteComposer:
             src_r, dst_r, src_feeder, dst_feeder, context
         )
         has_feeder = bool(src_feeder or dst_feeder)
+        if has_feeder:
+            budget_s = min(90, max(budget_s, 70))
+            deadline = time.monotonic() + budget_s
 
         warm_corridor = _corridor_is_warm(origin_effective, dest_effective, priority)
         known = is_known_corridor(origin_effective, dest_effective)
@@ -363,19 +392,29 @@ class RouteComposer:
 
         access_in_leg = None
         access_out_leg = None
-        if src_feeder and not _past_deadline():
-            access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
-            if not access_in_leg:
+        if src_feeder:
+            if not _past_deadline():
+                access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
+                if not access_in_leg:
+                    unavailable["feeder:in"] = (
+                        f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
+                    )
+            else:
                 unavailable["feeder:in"] = (
-                    f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
+                    f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
                 )
-        if dst_feeder and not _past_deadline():
-            access_out_leg = self._fetch_access_leg(
-                fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
-            )
-            if not access_out_leg:
+        if dst_feeder:
+            if not _past_deadline():
+                access_out_leg = self._fetch_access_leg(
+                    fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
+                )
+                if not access_out_leg:
+                    unavailable["feeder:out"] = (
+                        f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
+                    )
+            else:
                 unavailable["feeder:out"] = (
-                    f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
+                    f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
                 )
 
         # ── Phase 1: fast direct modes (road + air) — villages get truck option early ──
@@ -545,7 +584,9 @@ class RouteComposer:
                     **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
                 },
             }
-            feeder_note = _feeder_access_note(src_feeder, dst_feeder)
+            feeder_note = _feeder_compose_note(
+                src_feeder, dst_feeder, access_in_leg, access_out_leg
+            )
             if short_corridor and corridor_km is not None:
                 out["compose_note"] = _short_corridor_note(corridor_km)
             elif feeder_note:
@@ -655,7 +696,9 @@ class RouteComposer:
                 **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
             },
         }
-        feeder_note = _feeder_access_note(src_feeder, dst_feeder)
+        feeder_note = _feeder_compose_note(
+            src_feeder, dst_feeder, access_in_leg, access_out_leg
+        )
         if short_corridor and corridor_km is not None:
             out["compose_note"] = _short_corridor_note(corridor_km)
         elif feeder_note:
@@ -675,6 +718,30 @@ class RouteComposer:
         frm: str | None = None,
         to: str | None = None,
     ) -> Any | None:
+        outbound = bool(frm and to)
+        inbound_default = frm is None and to is None
+
+        if outbound and feeder.hub_station_code and feeder.local_station_code:
+            for mode in ("rail", "road"):
+                leg = fetch_leg(
+                    mode,
+                    feeder.hub_station_code,
+                    feeder.local_station_code,
+                    use_raw_endpoints=True,
+                )
+                if leg:
+                    return leg
+        elif inbound_default and feeder.local_station_code and feeder.hub_station_code:
+            for mode in ("rail", "road"):
+                leg = fetch_leg(
+                    mode,
+                    feeder.local_station_code,
+                    feeder.hub_station_code,
+                    use_raw_endpoints=True,
+                )
+                if leg:
+                    return leg
+
         origin = frm or feeder.local_place
         dest = to or feeder.hub_city
         origin_candidates = [origin]
@@ -775,8 +842,19 @@ class RouteComposer:
             extra_handling += _HANDLING_FEE_INR
             extra_time += d_last["time_hr"] + buf
         elif dst_feeder and not access_out_leg:
-            if not (src_feeder and access_in_leg):
+            if src_feeder and not access_in_leg:
                 return None
+            itin = {
+                **itin,
+                "partial_feeder": True,
+                "feeder_warnings": [
+                    *list(itin.get("feeder_warnings") or []),
+                    (
+                        f"Last mile not scheduled: {dst_feeder.hub_city} → "
+                        f"{dst_feeder.local_place} — route ends at the hub."
+                    ),
+                ],
+            }
 
         if (src_feeder and access_in_leg) or (dst_feeder and access_out_leg):
             template_id = f"feeder+{template_id}"
