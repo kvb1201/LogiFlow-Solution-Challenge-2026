@@ -252,6 +252,24 @@ def engineer_routes(
 
     out: list[dict] = []
 
+    # --- Pre-warm weather cache concurrently for all unique ports ---
+    all_unique_ports = set()
+    for path in port_paths:
+        for pid in path:
+            pm = _port_meta(pid)
+            if pm and "lat" in pm and "lng" in pm:
+                all_unique_ports.add((float(pm["lat"]), float(pm["lng"])))
+
+    if all_unique_ports:
+        from concurrent.futures import ThreadPoolExecutor
+        from app.pipelines.water.marine_weather_service import get_port_marine_conditions, get_departure_wind_conditions
+        dep_date = payload.get("departure_date")
+        with ThreadPoolExecutor(max_workers=min(20, len(all_unique_ports) * 2)) as executor:
+            for lat, lon in all_unique_ports:
+                executor.submit(get_port_marine_conditions, lat, lon)
+                executor.submit(get_departure_wind_conditions, lat, lon, dep_date)
+    # -----------------------------------------------------------------
+
     for path in port_paths:
         if not path:
             continue
