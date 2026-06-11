@@ -121,7 +121,7 @@ export default function HybridPageClient() {
         budget_limit: state.budgetMax || undefined,
         delay_tolerance_hours: state.deadlineHours,
       },
-      compose_options: { max_hubs: 2, budget_seconds: 75 },
+      compose_options: { max_hubs: 2, budget_seconds: 90 },
     };
 
     try {

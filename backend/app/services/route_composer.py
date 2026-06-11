@@ -407,7 +407,7 @@ class RouteComposer:
             if rural_corridor:
                 max_leg_calls = _MAX_LEG_CALLS_RURAL
             if src_feeder or dst_feeder:
-                max_leg_calls += 2
+                max_leg_calls += 4
             # Rural / village corridors always need road access legs to nearest metros.
             try_road = warm_corridor or known or bool(hubs) or rural_corridor
 
@@ -553,7 +553,32 @@ class RouteComposer:
                 _record_fail(mode)
             return leg
 
-        # ── Phase 1: fast direct modes (road + air) — emit immediately, do not wait for feeder ──
+        # ── Phase 0: feeder access legs first — must run before hub chains burn the leg budget ──
+        if src_feeder and not _past_deadline():
+            access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
+            if not access_in_leg:
+                unavailable["feeder:in"] = (
+                    f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
+                )
+        elif src_feeder:
+            unavailable["feeder:in"] = (
+                f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
+            )
+
+        if dst_feeder and not _past_deadline():
+            access_out_leg = self._fetch_access_leg(
+                fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
+            )
+            if not access_out_leg:
+                unavailable["feeder:out"] = (
+                    f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
+                )
+        elif dst_feeder:
+            unavailable["feeder:out"] = (
+                f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
+            )
+
+        # ── Phase 1: fast direct modes (road + air) — emit immediately ──
         if not _past_deadline() and leg_calls < max_leg_calls:
             if "road" not in excluded and not _should_skip_mode("road") and try_road:
                 leg = fetch_leg("road", origin_effective, dest_effective)
@@ -673,31 +698,6 @@ class RouteComposer:
             leg = fetch_leg("water", origin_effective, dest_effective)
             if leg:
                 _note_itinerary(self._single_leg_itinerary(leg, "direct_water"))
-
-        if src_feeder:
-            if not _past_deadline():
-                access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
-                if not access_in_leg:
-                    unavailable["feeder:in"] = (
-                        f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
-                    )
-            else:
-                unavailable["feeder:in"] = (
-                    f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
-                )
-        if dst_feeder:
-            if not _past_deadline():
-                access_out_leg = self._fetch_access_leg(
-                    fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
-                )
-                if not access_out_leg:
-                    unavailable["feeder:out"] = (
-                        f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
-                    )
-            else:
-                unavailable["feeder:out"] = (
-                    f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
-                )
 
         if itineraries and (src_feeder or dst_feeder):
             wrapped: list[dict[str, Any]] = []
