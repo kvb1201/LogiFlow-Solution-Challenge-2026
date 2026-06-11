@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ParsedIntent } from '@/services/api';
 import { buildIntentSummary } from '@/lib/formatIntentSummary';
 import { routeForMode } from '@/lib/applyParsedIntent';
@@ -31,11 +31,25 @@ export default function IntentConfirmModal({
   onEdit,
   onClose,
 }: IntentConfirmModalProps) {
-  if (!open || !parsed) return null;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open || !parsed || !mounted) return null;
 
   const { lines, modeLabel, readyToRun, headline } = buildIntentSummary(parsed);
   const mode = resolveMode(parsed);
-  const modePath = routeForMode(mode);
   const accent = accentVar(
     (['rail', 'road', 'air', 'water', 'hybrid', 'comparator'] as const).includes(
       mode as 'rail'
@@ -44,7 +58,7 @@ export default function IntentConfirmModal({
       : 'hybrid'
   );
 
-  return (
+  const modal = (
     <div
       className="fixed inset-0 z-[200000] flex items-end justify-center p-3 sm:items-center sm:p-6"
       role="dialog"
@@ -60,10 +74,11 @@ export default function IntentConfirmModal({
       <AmbientSurface
         mode="hybrid"
         mesh="card"
-        className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden animate-fade-in pointer-events-auto sm:max-h-[88dvh] !rounded-xl"
+        innerClassName="flex min-h-0 flex-1 flex-col"
+        className="relative z-10 flex h-[min(92dvh,34rem)] w-full max-w-lg flex-col overflow-hidden !rounded-xl sm:h-auto sm:max-h-[min(88dvh,36rem)] pointer-events-auto"
       >
         <div
-          className="shrink-0 border-b border-border/50 px-5 py-5 sm:px-6"
+          className="shrink-0 border-b border-border/50 px-5 py-4 sm:px-6"
           style={{
             background: `linear-gradient(90deg, color-mix(in oklab, var(--hybrid) 14%, transparent), color-mix(in oklab, var(--comparator) 8%, transparent))`,
           }}
@@ -76,7 +91,7 @@ export default function IntentConfirmModal({
           </h2>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">
           {lines.map(({ label, value }) => (
             <div
               key={label}
@@ -103,25 +118,25 @@ export default function IntentConfirmModal({
           )}
         </div>
 
-        <div className="shrink-0 border-t border-outline-variant/15 bg-surface-container-low/40 px-5 py-4 sm:px-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-outline-variant/20 bg-surface-container-low/90 px-5 py-4 sm:px-6 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-20px_rgba(0,0,0,0.5)]">
           <button
             type="button"
             disabled={loading}
             onClick={onEdit}
-            className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold text-zinc-950 hover:brightness-110 disabled:opacity-50"
+            className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-4 text-base font-bold text-zinc-950 hover:brightness-110 disabled:opacity-50"
             style={{ background: accent }}
           >
-            <span className="material-symbols-outlined text-[18px]" aria-hidden>
+            <span className="material-symbols-outlined text-[22px]" aria-hidden>
               arrow_forward
             </span>
-            Open {modeLabel}
+            Continue to {modeLabel}
           </button>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               disabled={loading || !readyToRun}
               onClick={onConfirmRun}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/25 px-4 py-3 text-sm font-semibold text-on-surface hover:border-outline-variant/40 disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface/50 px-4 py-3 text-sm font-semibold text-on-surface hover:border-outline-variant/50 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -133,20 +148,22 @@ export default function IntentConfirmModal({
                   <span className="material-symbols-outlined text-[18px]" aria-hidden>
                     play_arrow
                   </span>
-                  Open &amp; run optimize
+                  Continue &amp; run optimize
                 </>
               )}
             </button>
-            <Link
-              href={modePath}
+            <button
+              type="button"
               onClick={onClose}
-              className="flex flex-1 items-center justify-center rounded-xl px-4 py-3 text-center text-xs font-medium text-muted-foreground hover:text-foreground"
+              className="flex flex-1 items-center justify-center rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-surface/40 hover:text-foreground"
             >
-              Preview {modeLabel} page
-            </Link>
+              Stay on home
+            </button>
           </div>
         </div>
       </AmbientSurface>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

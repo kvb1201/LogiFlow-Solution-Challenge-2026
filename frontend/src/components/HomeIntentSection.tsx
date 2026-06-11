@@ -25,7 +25,7 @@ export default function HomeIntentSection() {
           </p>
         </div>
       </div>
-      <AiBriefPanel contextMode="home" navigateOnApply={false} showRouteButton embedded />
+      <AiBriefPanel contextMode="home" navigateOnApply showRouteButton embedded />
     </AmbientSurface>
   );
 }
