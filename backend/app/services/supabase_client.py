@@ -50,6 +50,28 @@ def rest_upsert(table: str, row: dict[str, Any], on_conflict: str) -> bool:
     return rest_upsert_many(table, [row], on_conflict=on_conflict) > 0
 
 
+def rest_patch(
+    table: str,
+    match_params: dict[str, str],
+    body: dict[str, Any],
+    *,
+    timeout_s: float = 8,
+) -> bool:
+    if not is_configured():
+        return False
+    try:
+        res = requests.patch(
+            f"{_URL}/rest/v1/{table}",
+            headers={**_headers(), "Prefer": "return=minimal"},
+            params=match_params,
+            json=body,
+            timeout=timeout_s,
+        )
+        return res.status_code in (200, 204)
+    except Exception:
+        return False
+
+
 def rest_upsert_many(
     table: str,
     rows: list[dict[str, Any]],

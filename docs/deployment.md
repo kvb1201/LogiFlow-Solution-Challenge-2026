@@ -31,8 +31,12 @@
 | `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
 | `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
 | `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
-| `SUPABASE_URL` | ❌ | Supabase project URL (geometry + ML metrics sync) |
+| `SUPABASE_URL` | ❌ | Supabase project URL (geometry, ML metrics, compose leg cache) |
 | `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
+| `COMPOSE_LEG_CACHE_TTL_S` | ❌ | Success TTL for composed legs (default `21600` = 6h) |
+| `COMPOSE_LEG_SUPABASE` | ❌ | Set `0`/`false` to disable L3 Supabase leg cache |
+| `RURAL_HUB_CACHE_TTL_S` | ❌ | Rural hub-pair cache TTL (default `604800` = 7d) |
+| `RURAL_HUB_SUPABASE` | ❌ | Set `0`/`false` to disable rural hub Supabase cache |
 | *(geometry backfill)* | — | `POST /railway/geometry/ensure` computes missing `(train, from, to)` legs and upserts into `train_route_geometry` (no duplicates; PK is train+from+to) |
 | `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
 | `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |

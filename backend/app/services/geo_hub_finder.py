@@ -191,6 +191,24 @@ def discover_rural_hub_pairs(
     """
     Hub pairs for village-style O-D: nearest catalog metro × nearest catalog metro.
     """
+    from app.services.rural_hub_cache import (
+        get_cached_rural_hub_pairs,
+        rural_hub_cache_key,
+        set_cached_rural_hub_pairs,
+    )
+
+    hub_key = rural_hub_cache_key(
+        src_r.lat,
+        src_r.lng,
+        dst_r.lat,
+        dst_r.lng,
+        max_pairs=max_pairs,
+        hubs_per_end=hubs_per_end,
+    )
+    cached = get_cached_rural_hub_pairs(hub_key)
+    if cached is not None:
+        return cached
+
     src_remote = is_remote_location(
         canonical_city=src_r.canonical_city,
         station_codes=src_r.station_codes or [],
@@ -250,4 +268,7 @@ def discover_rural_hub_pairs(
                 continue
             pairs.append(HubPair(origin_hub=oh, dest_hub=dh, strategy="geo_rural"))
 
-    return pairs[:max_pairs]
+    result = pairs[:max_pairs]
+    if result:
+        set_cached_rural_hub_pairs(hub_key, result)
+    return result
