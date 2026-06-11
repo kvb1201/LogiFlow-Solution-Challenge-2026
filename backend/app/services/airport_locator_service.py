@@ -49,6 +49,7 @@ CITY_TO_AIRPORT = {
 
 CITY_ALIASES = {
     "bangalore": "Bengaluru",
+    "banglore": "Bengaluru",
     "bengaluru": "Bengaluru",
     "bombay": "Mumbai",
     "calcutta": "Kolkata",

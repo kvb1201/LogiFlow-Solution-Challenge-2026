@@ -123,6 +123,7 @@ def _normalize_key(name: str) -> str:
         "new delhi": "delhi",
         "bombay": "mumbai",
         "bangalore": "bengaluru",
+        "banglore": "bengaluru",
         "calcutta": "kolkata",
         "madras": "chennai",
         "prayagraj jn": "prayagraj",

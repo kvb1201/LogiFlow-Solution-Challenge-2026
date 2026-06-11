@@ -479,6 +479,7 @@ export const useLogiFlowStore = create<LogiFlowState>((set, get) => ({
           airRoutes: result.ranked_routes || [],
           selectedAirRouteIndex: 0,
           airConstraintsApplied: result.constraints_applied,
+          error: null,
           recommendations: { cheapest: null, fastest: null, safest: null },
           allOptions: [],
           constraintsApplied: null,

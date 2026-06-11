@@ -488,8 +488,8 @@ class AirPipeline(BasePipeline):
         cost_multiplier = max(1.0, min(cost_multiplier, 1.5))
         
         final_cost = round(adjusted_cost * cost_multiplier, 2)
-        
-        return {
+
+        breakdown = {
             "routeType": route_type,
             "actualWeight": round(actual_weight, 2),
             "volumetricWeight": round(volumetric_weight, 2),
@@ -500,6 +500,7 @@ class AirPipeline(BasePipeline):
             "weightCharge": round(weight_charge, 2),
             "fuelSurcharge": round(fuel_surcharge, 2),
             "airportHandlingFee": round(handling_fee_total, 2),
+            "cargoMarkup": round(cargo_markup, 2),
             "weatherAdjustment": round(weather_adj, 4),
             "congestionAdjustment": round(congestion_adj, 4),
             "otpAdjustment": round(otp_adj, 4),
@@ -508,6 +509,34 @@ class AirPipeline(BasePipeline):
             "total": final_cost,
             "currency": "INR"
         }
+
+        # Keep snake_case aliases for frontend/components that expect API-style
+        # fields and for any downstream tooling that consumes the air payload.
+        breakdown.update({
+            "route_type": breakdown["routeType"],
+            "actual_weight": breakdown["actualWeight"],
+            "volumetric_weight": breakdown["volumetricWeight"],
+            "chargeable_weight": breakdown["chargeableWeight"],
+            "distance_km": breakdown["distanceKm"],
+            "base_freight": breakdown["baseCharge"],
+            "base_charge": breakdown["baseCharge"],
+            "distance_charge": breakdown["distanceCharge"],
+            "distance_freight": breakdown["distanceCharge"],
+            "weight_charge": breakdown["weightCharge"],
+            "fuel_surcharge": breakdown["fuelSurcharge"],
+            "terminal_fee": breakdown["airportHandlingFee"],
+            "handling_fee": breakdown["airportHandlingFee"],
+            "airport_handling_fee": breakdown["airportHandlingFee"],
+            "cargo_markup": breakdown["cargoMarkup"],
+            "weather_adjustment": breakdown["weatherAdjustment"],
+            "congestion_adjustment": breakdown["congestionAdjustment"],
+            "otp_adjustment": breakdown["otpAdjustment"],
+            "cost_multiplier": breakdown["costMultiplier"],
+            "final_cost": breakdown["finalCost"],
+            "pricing_basis": breakdown["routeType"],
+        })
+
+        return breakdown
 
     def _evaluate_business_rules(self, route, cargo_weight, cargo_type, cargo_rule):
         messages = list(cargo_rule["notes"])
