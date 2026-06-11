@@ -1,4 +1,5 @@
 from copy import deepcopy
+import logging
 
 from app.pipelines.air.config import CITY_TO_AIRPORT
 from app.pipelines.air.engine import score_routes
@@ -8,6 +9,8 @@ from app.services.air_data_service import get_live_air_routes
 from app.services.airport_locator_service import resolve_city_to_airport
 from app.services.air_weather_service import get_route_weather_context
 from app.services.air_timezone_service import build_route_schedule
+
+logger = logging.getLogger(__name__)
 
 
 class AirPipeline(BasePipeline):
@@ -68,11 +71,25 @@ class AirPipeline(BasePipeline):
         mode = payload.get("mode", "realtime")
         simulation = payload.get("simulation") or {} if mode == "simulation" else {}
         weight = float(cargo.get("weight", 100))
+        
+        length_cm = float(cargo.get("length_cm", 0))
+        width_cm = float(cargo.get("width_cm", 0))
+        height_cm = float(cargo.get("height_cm", 0))
+        
+        if length_cm > 0 and width_cm > 0 and height_cm > 0:
+            volumetric_weight = (length_cm * width_cm * height_cm) / 6000.0
+        else:
+            volumetric_weight = 0.0
+            
+        chargeable_weight = max(weight, volumetric_weight)
+
         return {
             "mode": mode,
             "priority": self._normalize_priority(payload.get("priority")),
             "cargo_weight": weight,
             "cargo_volume": float(cargo.get("volume", weight / 167.0)),
+            "volumetric_weight": volumetric_weight,
+            "chargeable_weight": chargeable_weight,
             "cargo_type": str(cargo.get("type", "general")).lower(),
             "max_stops": constraints.get("max_stops"),
             "budget_limit": constraints.get("budget_limit"),
@@ -149,8 +166,15 @@ class AirPipeline(BasePipeline):
 
             stops = int(route.get("stops", 0))
             time = float(route.get("duration", 0))
-            cost_breakdown = self._build_cost_breakdown(route, cargo_weight, cargo_volume, cargo_type, cargo_rule)
-            cost = cost_breakdown["total"]
+            cost_breakdown = self._build_cost_breakdown(
+                route,
+                payload,
+                cargo_rule,
+                weather_risk,
+                congestion_risk,
+                reliability,
+            )
+            cost = cost_breakdown["finalCost"]
 
             # Apply simulation mode to cost
             if simulation_mode:
@@ -415,38 +439,104 @@ class AirPipeline(BasePipeline):
         route["eta"] = f"{route['time']} hrs"
         return route
 
-    def _build_cost_breakdown(self, route, cargo_weight, cargo_volume, cargo_type, cargo_rule):
-        actual_weight = cargo_weight
-        volumetric_weight = cargo_volume * 167.0
-        chargeable_weight = max(actual_weight, volumetric_weight)
-
-        route_rate = float(route.get("cost_per_kg", 0))
-        fuel_rate = route_rate * 0.12  # Extracted from previous 12% surcharge logic
-        security_rate = cargo_rule.get("security_fee_per_kg", 0.0)
-
-        freight = round(chargeable_weight * route_rate, 2)
-        fuel = round(chargeable_weight * fuel_rate, 2)
-        security = round(chargeable_weight * security_rate, 2)
+    def _build_cost_breakdown(self, route, payload, cargo_rule, weather_risk, congestion_risk, reliability):
+        actual_weight = payload["cargo_weight"]
+        volumetric_weight = payload["volumetric_weight"]
+        chargeable_weight = payload["chargeable_weight"]
         
-        awb_fee = 320.0
-        terminal_fee = round(route.get("stops", 0) * cargo_rule.get("handling_fee_per_stop", 0.0), 2)
+        distance_km = float(route.get("distance", 0))
+        
+        source_country = route.get("source_country", "IN")
+        destination_country = route.get("destination_country", "IN")
+        
+        is_domestic = source_country in ["IN", "India"] and destination_country in ["IN", "India"]
+        
+        if is_domestic:
+            route_type = "Domestic"
+            base_charge = 500.0
+            distance_rate = 0.8
+            weight_rate = 25.0
+            handling_fee = 500.0
+            fuel_rate_per_km = 0.15
+        else:
+            route_type = "International"
+            base_charge = 2500.0
+            distance_rate = 2.5
+            weight_rate = 60.0
+            handling_fee = 2500.0
+            fuel_rate_per_km = 0.40
+            
+        distance_charge = distance_km * distance_rate
+        weight_charge = chargeable_weight * weight_rate
+        base_cost = base_charge + distance_charge + weight_charge
+        
+        fuel_surcharge = distance_km * fuel_rate_per_km
+        
+        stops = int(route.get("stops", 0))
+        handling_fee_total = handling_fee + (stops * cargo_rule.get("handling_fee_per_stop", 0.0))
+        
+        cargo_markup = base_cost * (cargo_rule.get("base_markup", 1.0) - 1.0)
+        
+        adjusted_cost = base_cost + fuel_surcharge + handling_fee_total + cargo_markup
+        
+        cost_multiplier = 1.0
+        weather_adj = weather_risk * 0.10
+        congestion_adj = congestion_risk * 0.15
+        otp_adj = (1.0 - reliability) * 0.10
+        
+        cost_multiplier += weather_adj + congestion_adj + otp_adj
+        cost_multiplier = max(1.0, min(cost_multiplier, 1.5))
+        
+        final_cost = round(adjusted_cost * cost_multiplier, 2)
 
-        cargo_markup = round(freight * (cargo_rule.get("base_markup", 1.0) - 1.0), 2)
-
-        total = round(freight + fuel + security + awb_fee + terminal_fee + cargo_markup, 2)
-
-        return {
-            "base_freight": freight,
-            "fuel_surcharge": fuel,
-            "security_fee": security,
-            "awb_fee": awb_fee,
-            "terminal_fee": terminal_fee,
-            "cargo_markup": cargo_markup,
-            "total": total,
-            "currency": "INR",
-            "pricing_basis": f"{cargo_type} cargo business rule model",
-            "chargeable_weight": chargeable_weight,
+        breakdown = {
+            "routeType": route_type,
+            "actualWeight": round(actual_weight, 2),
+            "volumetricWeight": round(volumetric_weight, 2),
+            "chargeableWeight": round(chargeable_weight, 2),
+            "distanceKm": round(distance_km, 2),
+            "baseCharge": round(base_charge, 2),
+            "distanceCharge": round(distance_charge, 2),
+            "weightCharge": round(weight_charge, 2),
+            "fuelSurcharge": round(fuel_surcharge, 2),
+            "airportHandlingFee": round(handling_fee_total, 2),
+            "cargoMarkup": round(cargo_markup, 2),
+            "weatherAdjustment": round(weather_adj, 4),
+            "congestionAdjustment": round(congestion_adj, 4),
+            "otpAdjustment": round(otp_adj, 4),
+            "costMultiplier": round(cost_multiplier, 4),
+            "finalCost": final_cost,
+            "total": final_cost,
+            "currency": "INR"
         }
+
+        # Keep snake_case aliases for frontend/components that expect API-style
+        # fields and for any downstream tooling that consumes the air payload.
+        breakdown.update({
+            "route_type": breakdown["routeType"],
+            "actual_weight": breakdown["actualWeight"],
+            "volumetric_weight": breakdown["volumetricWeight"],
+            "chargeable_weight": breakdown["chargeableWeight"],
+            "distance_km": breakdown["distanceKm"],
+            "base_freight": breakdown["baseCharge"],
+            "base_charge": breakdown["baseCharge"],
+            "distance_charge": breakdown["distanceCharge"],
+            "distance_freight": breakdown["distanceCharge"],
+            "weight_charge": breakdown["weightCharge"],
+            "fuel_surcharge": breakdown["fuelSurcharge"],
+            "terminal_fee": breakdown["airportHandlingFee"],
+            "handling_fee": breakdown["airportHandlingFee"],
+            "airport_handling_fee": breakdown["airportHandlingFee"],
+            "cargo_markup": breakdown["cargoMarkup"],
+            "weather_adjustment": breakdown["weatherAdjustment"],
+            "congestion_adjustment": breakdown["congestionAdjustment"],
+            "otp_adjustment": breakdown["otpAdjustment"],
+            "cost_multiplier": breakdown["costMultiplier"],
+            "final_cost": breakdown["finalCost"],
+            "pricing_basis": breakdown["routeType"],
+        })
+
+        return breakdown
 
     def _evaluate_business_rules(self, route, cargo_weight, cargo_type, cargo_rule):
         messages = list(cargo_rule["notes"])
@@ -531,9 +621,7 @@ class AirPipeline(BasePipeline):
         return "watch"
 
     def generate(self, source, destination, payload=None, context=None):
-        from app.services.location_funnel import corridor_endpoints
-
-        source, destination = corridor_endpoints(source, destination, context=context)
+        normalized = None
         try:
             normalized = self._get_payload(payload)
             mode = normalized.get("mode", "realtime")
@@ -611,7 +699,7 @@ class AirPipeline(BasePipeline):
             }
 
         except Exception as e:
-            print("[AIR PIPELINE ERROR]", str(e), type(e))
+            logger.exception("Air pipeline failed")
             return {
                 "mode": "air",
                 "simulation": normalized.get("mode") == "simulation" if normalized else False,

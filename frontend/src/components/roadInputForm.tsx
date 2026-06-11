@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
-import { searchCities, type StationSearchResult } from '@/services/api';
+import { useCitySearch } from '@/hooks/useCitySearch';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { useIntentFormReset } from '@/hooks/useIntentFormReset';
 import {
@@ -18,49 +18,6 @@ import {
   formInputClass,
   formLabelClass,
 } from '@/components/forms/pipeline-form-ui';
-
-// ── Debounced city search ─────────────────────────────────────────────
-
-function citiesToStationRows(
-  rows: { name: string; lat?: number; lng?: number }[]
-): StationSearchResult[] {
-  return rows.map((r) => ({
-    code: r.name.split(',')[0]?.trim().slice(0, 5).toUpperCase() || 'CITY',
-    name: r.name,
-  }));
-}
-
-function useCitySearch(setGlobalSuggestions: (rows: StationSearchResult[]) => void) {
-  const [results, setResults] = useState<{ name: string; lat?: number; lng?: number }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const search = useCallback(
-    (query: string) => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (!query || query.length < 2) {
-        setResults([]);
-        setGlobalSuggestions([]);
-        return;
-      }
-      setLoading(true);
-      timeoutRef.current = setTimeout(async () => {
-        const data = await searchCities(query);
-        setResults(data);
-        setGlobalSuggestions(citiesToStationRows(data));
-        setLoading(false);
-      }, 300);
-    },
-    [setGlobalSuggestions]
-  );
-
-  const clear = useCallback(() => {
-    setResults([]);
-    setGlobalSuggestions([]);
-  }, [setGlobalSuggestions]);
-
-  return { results, loading, search, clear };
-}
 
 // ── Constants ─────────────────────────────────────────────────────────
 

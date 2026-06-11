@@ -89,18 +89,27 @@ def get_live_air_routes(source: str, destination: str, departure_date: str) -> L
     routes = []
     direct = _build_direct_route(source_airport, destination_airport)
     if direct:
+        direct["source_country"] = source_airport.get("country", "IN")
+        direct["destination_country"] = destination_airport.get("country", "IN")
         routes.append(direct)
 
-    routes.extend(_build_one_stop_routes(source_airport, destination_airport))
+    for route in _build_one_stop_routes(source_airport, destination_airport):
+        route["source_country"] = source_airport.get("country", "IN")
+        route["destination_country"] = destination_airport.get("country", "IN")
+        routes.append(route)
+        
     return routes
 
 
 def _resolve_airport_details(city: str) -> dict:
     resolved = resolve_city_to_airport(city)
     lookup = get_airport_by_iata(resolved.get("code", ""))
-    if lookup:
-        return {**lookup, **resolved}
-    return resolved
+    
+    result = {**lookup, **resolved} if lookup else resolved
+    if "country" not in result or not result["country"]:
+        result["country"] = "IN"
+        
+    return result
 
 
 def _build_direct_route(source_airport: dict, destination_airport: dict) -> Optional[dict]:
@@ -127,7 +136,6 @@ def _build_direct_route(source_airport: dict, destination_airport: dict) -> Opti
         "distance": distance,
         "duration": duration,
         "delay_risk": 0.18,
-        "cost_per_kg": 8.0,
         "cargo_types": ["general", "fragile", "perishable"],
         "source_airport": source_airport,
         "destination_airport": destination_airport,
@@ -190,7 +198,6 @@ def _build_one_stop_routes(source_airport: dict, destination_airport: dict) -> L
                 "distance": distance,
                 "duration": _estimate_duration_hours(distance, stops=1),
                 "delay_risk": 0.3,
-                "cost_per_kg": 6.5,
                 "cargo_types": ["general", "fragile", "perishable"],
                 "source_airport": source_airport,
                 "destination_airport": destination_airport,

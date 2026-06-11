@@ -123,6 +123,7 @@ def _normalize_key(name: str) -> str:
         "new delhi": "delhi",
         "bombay": "mumbai",
         "bangalore": "bengaluru",
+        "banglore": "bengaluru",
         "calcutta": "kolkata",
         "madras": "chennai",
         "prayagraj jn": "prayagraj",
@@ -460,7 +461,7 @@ def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
     if context:
         context.set(cache_key, hit)
     if hit and provider:
-        print(f"[Geocoder] {provider} → {name} ({hit[0]:.4f}, {hit[1]:.4f})")
+        print(f"[Geocoder] {provider} -> {name} ({hit[0]:.4f}, {hit[1]:.4f})")
     elif not hit:
         print(f"[Geocoder] no coords for {name}")
     return hit
@@ -530,7 +531,7 @@ def geocode_latlng_global(name: str, *, context=None) -> Optional[tuple[float, f
     if context:
         context.set(cache_key, hit)
     if hit and provider:
-        print(f"[Geocoder] {provider} → {name} ({hit[0]:.4f}, {hit[1]:.4f})")
+        print(f"[Geocoder] {provider} -> {name} ({hit[0]:.4f}, {hit[1]:.4f})")
     elif not hit:
         print(f"[Geocoder] no global coords for {name}")
     return hit

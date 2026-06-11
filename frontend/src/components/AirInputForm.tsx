@@ -5,6 +5,8 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useShipmentAutorun } from '@/hooks/useShipmentAutorun';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { useIntentFormReset } from '@/hooks/useIntentFormReset';
+import { FormAutocomplete } from '@/components/forms/FormAutocomplete';
+import { useCitySearch } from '@/hooks/useCitySearch';
 import {
   AdvancedToggle,
   ChoicePills,
@@ -50,6 +52,10 @@ export default function AirInputForm() {
     handleOptimize,
     loading,
   } = useLogiFlowStore();
+
+  const setStationSuggestions = useLogiFlowStore((s) => s.setStationSuggestions);
+  const originSearch = useCitySearch(setStationSuggestions);
+  const destSearch = useCitySearch(setStationSuggestions);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const today = new Date().toISOString().split('T')[0];
@@ -106,24 +112,40 @@ export default function AirInputForm() {
               setDestination(t);
             }}
           >
-            <FormField label="Origin city">
-              <input
-                type="text"
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                placeholder="Delhi"
-                className={formInputClass}
-              />
-            </FormField>
-            <FormField label="Destination city">
-              <input
-                type="text"
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                placeholder="Mumbai"
-                className={formInputClass}
-              />
-            </FormField>
+            <FormAutocomplete
+              label="Origin city"
+              value={source}
+              onChange={setSource}
+              placeholder="Delhi"
+              icon="flight_takeoff"
+              accentVar="--air"
+              onSearch={originSearch.search}
+              onClear={originSearch.clear}
+              options={originSearch.results}
+              loading={originSearch.loading}
+              dropdownIcon={
+                <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: '16px' }}>
+                  flight_takeoff
+                </span>
+              }
+            />
+            <FormAutocomplete
+              label="Destination city"
+              value={destination}
+              onChange={setDestination}
+              placeholder="Mumbai"
+              icon="flight_land"
+              accentVar="--air"
+              onSearch={destSearch.search}
+              onClear={destSearch.clear}
+              options={destSearch.results}
+              loading={destSearch.loading}
+              dropdownIcon={
+                <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: '16px' }}>
+                  flight_land
+                </span>
+              }
+            />
           </CorridorRow>
 
           <div className="grid gap-4 sm:grid-cols-3">

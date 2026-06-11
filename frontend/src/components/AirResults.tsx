@@ -1,6 +1,5 @@
 'use client';
-import Link from "next/link";
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { fetchExplanation } from '@/services/api';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
@@ -11,6 +10,30 @@ function formatCurrency(value: number) {
 
 function formatPercent(value: number) {
   return `${Math.round(value)}%`;
+}
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeAirCostBreakdown(raw: unknown) {
+  const b = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    base_freight: toFiniteNumber(b.base_freight ?? b.baseCharge ?? b.base_charge),
+    base_charge: toFiniteNumber(b.base_charge ?? b.baseCharge),
+    distance_charge: toFiniteNumber(b.distance_charge ?? b.distanceCharge),
+    weight_charge: toFiniteNumber(b.weight_charge ?? b.weightCharge),
+    fuel_surcharge: toFiniteNumber(b.fuel_surcharge ?? b.fuelSurcharge),
+    terminal_fee: toFiniteNumber(b.terminal_fee ?? b.airportHandlingFee ?? b.handling_fee),
+    handling_fee: toFiniteNumber(b.handling_fee ?? b.airportHandlingFee),
+    airport_handling_fee: toFiniteNumber(b.airport_handling_fee ?? b.airportHandlingFee),
+    cargo_markup: toFiniteNumber(b.cargo_markup ?? b.cargoMarkup ?? b.baseMarkup),
+    heavy_lift_fee: toFiniteNumber(b.heavy_lift_fee ?? b.heavyLiftFee),
+    total: toFiniteNumber(b.total ?? b.finalCost ?? b.final_cost),
+    pricing_basis: String(b.pricing_basis ?? b.routeType ?? 'Breakdown not provided by API.'),
+    currency: String(b.currency ?? 'INR'),
+  };
 }
 
 function confidenceTone(score: number) {
@@ -79,15 +102,15 @@ export default function AirResults() {
   const priority = useLogiFlowStore((state) => state.priority);
 
   const selected = airRoutes[selectedAirRouteIndex] ?? airRoutes[0];
+  const selectedRouteKey = useMemo(
+    () => (selected ? `${selected.airline}|${selected.stops}|${selected.route_support_type}` : 'none'),
+    [selected]
+  );
 
   const [dynamicExplanation, setDynamicExplanation] = useState<string | null>(null);
+  const [dynamicExplanationRouteKey, setDynamicExplanationRouteKey] = useState<string | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-
-  useEffect(() => {
-    setDynamicExplanation(null);
-    setIsLoadingExplanation(false);
-  }, [selected]);
 
   const handleExplain = async () => {
     if (!selected) return;
@@ -97,27 +120,17 @@ export default function AirResults() {
       priority: useLogiFlowStore.getState().priority,
       route_data: selected,
     });
-    if (expl) setDynamicExplanation(expl);
+    setDynamicExplanation(expl);
+    setDynamicExplanationRouteKey(selectedRouteKey);
     setIsLoadingExplanation(false);
   };
+  const displayedExplanation =
+    dynamicExplanationRouteKey === selectedRouteKey ? dynamicExplanation : null;
 
   const breakdown = useMemo(() => {
-    const b = selected?.cost_breakdown;
-    if (!b) {
-      const total = Number(selected?.cost ?? 0);
-      return {
-        base_freight: 0,
-        fuel_surcharge: 0,
-        terminal_fee: 0,
-        handling_fee: 0,
-        cargo_markup: 0,
-        heavy_lift_fee: 0,
-        total,
-        pricing_basis: 'Breakdown not provided by API.',
-        currency: 'INR',
-      };
-    }
-    return b;
+    const raw = selected?.cost_breakdown ?? selected?.air_details?.cost_breakdown;
+    if (!raw) return normalizeAirCostBreakdown({ total: selected?.cost ?? 0 });
+    return normalizeAirCostBreakdown(raw);
   }, [selected]);
 
   const supportingAirlines = useMemo(() => {
@@ -143,12 +156,12 @@ export default function AirResults() {
   };
 
   const breakdownRows: [string, number][] = [
-    ['Base freight', Number(breakdown.base_freight)],
-    ['Fuel surcharge', Number(breakdown.fuel_surcharge)],
-    ['Terminal fee', Number(breakdown.terminal_fee)],
-    ['Handling fee', Number(breakdown.handling_fee)],
-    ['Cargo markup', Number(breakdown.cargo_markup)],
-    ['Heavy lift fee', Number(breakdown.heavy_lift_fee)],
+    ['Base charge', breakdown.base_charge],
+    ['Distance charge', breakdown.distance_charge],
+    ['Weight charge', breakdown.weight_charge],
+    ['Fuel surcharge', breakdown.fuel_surcharge],
+    ['Airport handling', breakdown.airport_handling_fee],
+    ['Cargo markup', breakdown.cargo_markup],
   ];
   const maxBreakdown = Math.max(...breakdownRows.map(([, v]) => v), 1);
 
@@ -490,9 +503,9 @@ export default function AirResults() {
                   )}
                 </div>
 
-                {dynamicExplanation ? (
+                {displayedExplanation ? (
                   <ul className="space-y-1.5 mt-3 text-[11px] text-on-surface-variant leading-relaxed">
-                    {dynamicExplanation
+                    {displayedExplanation
                       .split('\n')
                       .map(line => line.trim())
                       .filter(Boolean)

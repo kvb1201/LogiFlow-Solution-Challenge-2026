@@ -15,11 +15,13 @@ load_dotenv()
 
 DEFAULT_OURAIRPORTS_CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "airports.csv"
 OURAIRPORTS_CSV_PATH = os.getenv("OURAIRPORTS_CSV_PATH", str(DEFAULT_OURAIRPORTS_CSV_PATH))
+INTL_AIRPORTS_CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "international_airports.csv"
 AIRPORT_MATCH_THRESHOLD_KM = 100.0
 GLOBAL_AIRPORT_MATCH_THRESHOLD_KM = 150.0
 
 CITY_TO_AIRPORT = {
     "Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
+    "New Delhi": {"code": "DEL", "name": "Indira Gandhi International Airport"},
     "Mumbai": {"code": "BOM", "name": "Chhatrapati Shivaji Maharaj International Airport"},
     "Bengaluru": {"code": "BLR", "name": "Kempegowda International Airport"},
     "Bangalore": {"code": "BLR", "name": "Kempegowda International Airport"},
@@ -37,6 +39,7 @@ CITY_TO_AIRPORT = {
     "Hong Kong": {"code": "HKG", "name": "Hong Kong International Airport"},
     "Tokyo": {"code": "NRT", "name": "Narita International Airport"},
     "Seoul": {"code": "ICN", "name": "Incheon International Airport"},
+    "Shanghai": {"code": "PVG", "name": "Shanghai Pudong International Airport"},
     "Chicago": {"code": "ORD", "name": "O'Hare International Airport"},
     "Los Angeles": {"code": "LAX", "name": "Los Angeles International Airport"},
     "Doha": {"code": "DOH", "name": "Hamad International Airport"},
@@ -47,12 +50,14 @@ CITY_TO_AIRPORT = {
 
 CITY_ALIASES = {
     "bangalore": "Bengaluru",
+    "banglore": "Bengaluru",
     "bengaluru": "Bengaluru",
     "bombay": "Mumbai",
     "calcutta": "Kolkata",
     "madras": "Chennai",
     "tirupati": "Tirupati",
     "delhi": "Delhi",
+    "new delhi": "New Delhi",
     "mumbai": "Mumbai",
     "hyderabad": "Hyderabad",
     "kolkata": "Kolkata",
@@ -67,6 +72,8 @@ CITY_ALIASES = {
     "hong kong": "Hong Kong",
     "tokyo": "Tokyo",
     "seoul": "Seoul",
+    "shanghai": "Shanghai",
+    "shangai": "Shanghai",
     "chicago": "Chicago",
     "los angeles": "Los Angeles",
     "la": "Los Angeles",
@@ -80,7 +87,8 @@ _IATA_PATTERN = re.compile(r"^[A-Z]{3}$")
 
 
 def normalize_city(city: str) -> str:
-    raw = city.strip()
+    # Split by comma to handle "New Delhi, Delhi" -> "New Delhi"
+    raw = city.split(',')[0].strip()
     canonical = CITY_ALIASES.get(raw.lower(), raw)
     return canonical
 
@@ -181,41 +189,114 @@ def find_nearest_airport_for_city(city: str) -> Optional[dict]:
 
 @lru_cache(maxsize=1)
 def _load_ourairports() -> List[dict]:
-    if not OURAIRPORTS_CSV_PATH or not os.path.exists(OURAIRPORTS_CSV_PATH):
-        return []
+    airports_map = {}
+    total_loaded = 0
+    missing_coords = 0
+    missing_iata = 0
+    duplicates = 0
+    invalid_records = 0
+    countries = set()
+    domestic_count = 0
+    intl_count = 0
+    country_coverage = {}
 
-    airports: List[dict] = []
-    try:
-        with open(OURAIRPORTS_CSV_PATH, "r", encoding="utf-8") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                if row.get("type") not in {"large_airport", "medium_airport", "small_airport"}:
-                    continue
-                if row.get("scheduled_service") not in {"yes", "1", "true", "True"}:
-                    continue
-                iata = (row.get("iata_code") or "").strip()
-                if not iata:
-                    continue
-                try:
-                    lat = float(row["latitude_deg"])
-                    lng = float(row["longitude_deg"])
-                except Exception:
-                    continue
+    if OURAIRPORTS_CSV_PATH and os.path.exists(OURAIRPORTS_CSV_PATH):
+        try:
+            with open(OURAIRPORTS_CSV_PATH, "r", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    if row.get("type") not in {"large_airport", "medium_airport", "small_airport"}:
+                        continue
+                    if row.get("scheduled_service") not in {"yes", "1", "true", "True"}:
+                        continue
+                    iata = (row.get("iata_code") or "").strip()
+                    if not iata:
+                        missing_iata += 1
+                        continue
+                    try:
+                        lat = float(row["latitude_deg"])
+                        lng = float(row["longitude_deg"])
+                    except Exception:
+                        missing_coords += 1
+                        invalid_records += 1
+                        continue
 
-                airports.append(
-                    {
+                    country = (row.get("iso_country") or "IN").strip()
+                    if iata in airports_map:
+                        duplicates += 1
+                        continue
+
+                    airports_map[iata] = {
                         "iata_code": iata,
                         "name": row.get("name") or iata,
                         "municipality": row.get("municipality") or "",
+                        "country": country,
                         "lat": lat,
                         "lng": lng,
+                        "timezone": "Asia/Kolkata"
                     }
-                )
-    except Exception as exc:
-        print(f"[AirportLocatorService] Failed to load OurAirports CSV: {exc}")
-        return []
+        except Exception as exc:
+            print(f"[AirportLocatorService] Failed to load OurAirports CSV: {exc}")
 
-    return airports
+    if INTL_AIRPORTS_CSV_PATH and os.path.exists(INTL_AIRPORTS_CSV_PATH):
+        try:
+            with open(INTL_AIRPORTS_CSV_PATH, "r", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    iata = (row.get("iata") or "").strip()
+                    if not iata:
+                        missing_iata += 1
+                        continue
+                    try:
+                        lat = float(row["latitude"])
+                        lng = float(row["longitude"])
+                    except Exception:
+                        missing_coords += 1
+                        invalid_records += 1
+                        continue
+                        
+                    country = (row.get("country") or "").strip()
+                    if iata in airports_map:
+                        duplicates += 1
+                        continue
+
+                    airports_map[iata] = {
+                        "iata_code": iata,
+                        "name": row.get("airport_name") or iata,
+                        "municipality": row.get("city") or "",
+                        "country": country,
+                        "lat": lat,
+                        "lng": lng,
+                        "timezone": row.get("timezone", "Asia/Kolkata")
+                    }
+        except Exception as exc:
+            print(f"[AirportLocatorService] Failed to load International Airports CSV: {exc}")
+
+    for apt in airports_map.values():
+        total_loaded += 1
+        c = apt["country"]
+        countries.add(c)
+        country_coverage[c] = country_coverage.get(c, 0) + 1
+        if c == "IN" or c.lower() == "india":
+            domestic_count += 1
+        else:
+            intl_count += 1
+
+    print("=" * 50)
+    print("AIRPORT DATA QUALITY AUDIT")
+    print("=" * 50)
+    print(f"Total airports loaded: {total_loaded}")
+    print(f"Domestic airports count: {domestic_count}")
+    print(f"International airports count: {intl_count}")
+    print(f"Countries represented: {len(countries)}")
+    print(f"Duplicate airports removed: {duplicates}")
+    print(f"Airports missing coordinates: {missing_coords}")
+    print(f"Airports missing IATA codes: {missing_iata}")
+    print(f"Invalid airport records: {invalid_records}")
+    print(f"Coverage by country: {country_coverage}")
+    print("=" * 50)
+
+    return list(airports_map.values())
 
 
 @lru_cache(maxsize=1)
@@ -228,9 +309,10 @@ def _load_ourairports_by_iata() -> dict:
                 "code": code.upper(),
                 "name": airport["name"],
                 "city_name": airport.get("municipality") or "",
+                "country": airport.get("country") or "",
                 "lat": airport.get("lat"),
                 "lng": airport.get("lng"),
-                "timezone": "Asia/Kolkata",
+                "timezone": airport.get("timezone", "Asia/Kolkata"),
             }
     return by_code
 
