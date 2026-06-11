@@ -1,0 +1,16 @@
+flowchart TB
+    A([Open LogiFlow Home]) --> B[Enter shipment brief]
+    B --> C[AI intent parse]
+    C --> D{Confirm corridor?}
+    D -->|Yes / Skip| E[Select transport mode]
+    E --> F[Enter cargo constraints]
+    F --> G[Warm backend]
+    G --> H[Call optimize API]
+    H --> I{Server busy?}
+    I -->|429/503| J[Waiting room queue]
+    J --> K[View ranked results]
+    I -->|OK| K
+    K --> L[Map route geometry]
+    L --> M[AI explanation]
+    M --> N{Save report?}
+    N --> O([Dashboard / Reports])

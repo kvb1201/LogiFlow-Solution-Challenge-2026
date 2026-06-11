@@ -1,0 +1,8 @@
+flowchart LR
+    A([Corridor input]) --> B[Location funnel]
+    B --> C[Road · TomTom/OSRM]
+    B --> D[Air · OpenFlights/OTP]
+    B --> E[Water · PortWatch BFS]
+    C & D & E --> F[ML delay models]
+    F --> G[Cost / time / risk score]
+    G --> H([Mode result JSON])

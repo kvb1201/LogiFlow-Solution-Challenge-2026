@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant Browser
+    participant Proxy as Vercel Proxy
+    participant Hybrid as HybridPipeline
+    participant Road as Road Pipeline
+    participant Rail as Rail Pipeline
+    participant Air as Air Pipeline
+    participant Water as Water Pipeline
+    participant Scorer
+
+    Browser->>Proxy: POST /optimize
+    Proxy->>Hybrid: Forward request
+    par Parallel execution
+        Hybrid->>Road: optimize
+        Hybrid->>Rail: optimize
+        Hybrid->>Air: optimize
+        Hybrid->>Water: optimize
+    end
+    Road-->>Hybrid: road result
+    Rail-->>Hybrid: rail result
+    Hybrid->>Scorer: Normalize + score
+    Scorer-->>Hybrid: Comparison JSON
+    Hybrid-->>Proxy: Response
+    Proxy-->>Browser: Render results

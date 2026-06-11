@@ -1,0 +1,11 @@
+flowchart LR
+    A([GitHub push main]) --> B[GitHub Actions CI]
+    B --> C[Vercel deploy frontend]
+    B --> D[GCP Cloud Run deploy]
+    B --> K[Cron warm API]
+    C --> E[Vercel Edge CDN]
+    E --> F[Cloudflare Worker proxy]
+    F --> G[Cloud Run FastAPI]
+    G --> H[(Supabase Postgres)]
+    G --> I[(Redis cache)]
+    K -->|Ping| G

@@ -1,0 +1,11 @@
+flowchart TB
+    A([Save shipment report]) --> B[POST /planner/reports]
+    B --> C[(Store in Postgres)]
+    C --> D[Trip lifecycle tracking]
+    D --> E[Route health monitor]
+    E --> F[Condition intelligence]
+    F --> G{Reoptimization trigger?}
+    G -->|Yes| H[Build new recommendation]
+    H --> I[Shipment notification]
+    I --> J([Dashboard update])
+    G -->|No| J

@@ -1,0 +1,11 @@
+flowchart TB
+    A([User types brief]) --> B[Voice STT optional]
+    B --> C[POST /intent/parse]
+    C --> D[Gemini / Groq LLM]
+    D --> E[(Structured JSON)]
+    E --> F{Valid corridor?}
+    F -->|No| A
+    F -->|Yes| G[Fill Zustand store]
+    G --> H{Intent confirm modal?}
+    H -->|Yes| I[Route to mode page]
+    I --> J([Autorun optimize])

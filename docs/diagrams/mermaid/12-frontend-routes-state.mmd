@@ -1,0 +1,10 @@
+flowchart TB
+    L[App Layout] --> H[Home + AI Brief]
+    L --> M[Mode Pages<br/>rail · road · air · water]
+    L --> C[Comparator / Hybrid]
+    L --> D[Dashboard / Reports]
+    H & M & C --> Z[(Zustand Store)]
+    L --> A[(Auth Store)]
+    D --> P[(Planner Store)]
+    M --> MAP[Mapbox Maps]
+    M --> API[API Proxy layer]
