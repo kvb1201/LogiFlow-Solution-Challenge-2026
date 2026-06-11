@@ -1,0 +1,105 @@
+# Deploy backend to GCP Cloud Run on demand or when backend/ changes on main.
+#
+# Required GitHub secrets:
+#   GCP_SA_KEY — JSON key for a service account with:
+#     roles/run.admin, roles/cloudbuild.builds.editor, roles/storage.admin, roles/iam.serviceAccountUser
+#
+# Optional variables (repo → Settings → Variables):
+#   GCP_PROJECT  (default: project-6d6f652b-7066-4341-806)
+#   GCP_REGION   (default: asia-south1)
+name: Deploy API to GCP Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'scripts/deploy-gcp-cloud-run.sh'
+      - '.github/workflows/deploy-gcp-cloud-run.yml'
+
+concurrency:
+  group: gcp-cloud-run-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GCP_PROJECT: ${{ vars.GCP_PROJECT || 'project-6d6f652b-7066-4341-806' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-south1' }}
+      SERVICE_NAME: logiflow-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require GCP_SA_KEY
+        if: ${{ secrets.GCP_SA_KEY == '' }}
+        run: |
+          echo "::error::Add GitHub secret GCP_SA_KEY — see docs/gcp-deployment.md"
+          exit 1
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enable APIs
+        run: |
+          gcloud config set project "$GCP_PROJECT"
+          gcloud services enable run.googleapis.com cloudbuild.googleapis.com containerregistry.googleapis.com --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE="gcr.io/${GCP_PROJECT}/${SERVICE_NAME}"
+          gcloud builds submit backend --tag "$IMAGE" --timeout=1200
+
+      - name: Deploy to Cloud Run
+        env:
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          TOMTOM_API_KEY: ${{ secrets.TOMTOM_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
+          RAILRADAR_API_KEY: ${{ secrets.RAILRADAR_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+        run: |
+          IMAGE="gcr.io/${GCP_PROJECT}/${SERVICE_NAME}"
+          ENV_VARS="WATER_SKIP_CONGESTION_SCAN=1,WATER_AUTO_TRAIN=off,RAIL_PERMANENT_CACHE=false,RAIL_PRELOAD_ON_STARTUP=false,COMPOSE_LEG_SUPABASE=1,RURAL_HUB_SUPABASE=1"
+          for key in ORS_API_KEY TOMTOM_API_KEY OPENWEATHER_API_KEY REDIS_URL GEMINI_API_KEY GEMINI_MODEL GROQ_API_KEY GROQ_MODEL RAILRADAR_API_KEY SUPABASE_URL SUPABASE_KEY JWT_SECRET GOOGLE_CLIENT_ID; do
+            val="${!key:-}"
+            if [[ -n "$val" ]]; then
+              ENV_VARS="${key}=${val},${ENV_VARS}"
+            fi
+          done
+          gcloud run deploy "$SERVICE_NAME" \
+            --image "$IMAGE" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300 \
+            --concurrency 40 \
+            --max-instances 10 \
+            --min-instances 1 \
+            --port 8080 \
+            --set-env-vars "$ENV_VARS"
+
+      - name: Print service URL
+        run: |
+          URL="$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_REGION" --format='value(status.url)')"
+          echo "## Cloud Run URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${URL}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Set \`NEXT_PUBLIC_COMPOSE_URL\` and \`BACKEND_URL\` in Vercel to this URL." >> "$GITHUB_STEP_SUMMARY"
+          curl -fsS "${URL}/health"
