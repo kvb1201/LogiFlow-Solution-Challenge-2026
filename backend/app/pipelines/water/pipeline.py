@@ -49,6 +49,15 @@ class WaterPipeline(BasePipeline):
         if source.strip().lower() == destination.strip().lower():
             return _no_routes("Source and destination cannot be the same city.")
 
+        from app.utils.coordinates import get_coords_or_none
+        from app.pipelines.water.geo import haversine_km
+        s_coords = get_coords_or_none(source)
+        d_coords = get_coords_or_none(destination)
+        if s_coords and d_coords:
+            direct_km = haversine_km(s_coords[0], s_coords[1], d_coords[0], d_coords[1])
+            if direct_km < 300.0:
+                return _no_routes(f"Distance between {source} and {destination} is too short ({direct_km:.0f} km) for viable water transport.")
+
         # Default: allow at most 3 transshipments (Indian coastal routes chain
         # through multiple ports along the coastline).
         max_transshipments = _coerce_nonnegative_int(constraints.get("max_transshipments"), 3)
