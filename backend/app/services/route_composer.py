@@ -63,7 +63,6 @@ _TRANSFER_BUFFER_HR: dict[tuple[str, str], float] = {
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="compose-leg")
 
-_PROGRESS_EMIT_MIN_S = 0.35
 
 
 def _build_compose_snapshot(
@@ -396,11 +395,11 @@ class RouteComposer:
             max_leg_calls = 4
             try_road = True
         else:
-            # Cold + unknown OD: skip hub probes entirely on first request.
+            # Always try at least one on-path hub — emit hub routes before slow direct rail.
             if warm_corridor or known:
                 hub_cap = max_hubs if known else min(max_hubs, 1)
             else:
-                hub_cap = 0
+                hub_cap = min(max_hubs, 1)
             hubs = get_hubs(origin_effective, dest_effective, max_hubs=hub_cap)
 
             templates = _HUB_TEMPLATES if warm_corridor else _COLD_HUB_TEMPLATES
@@ -417,7 +416,8 @@ class RouteComposer:
         itineraries: list[dict[str, Any]] = []
         unavailable: dict[str, str] = {}
         leg_calls = 0
-        last_progress_emit = 0.0
+        access_in_leg = None
+        access_out_leg = None
 
         def _snapshot_context() -> dict[str, Any]:
             return dict(
@@ -438,26 +438,22 @@ class RouteComposer:
             )
 
         def _emit_progress(*, force: bool = False) -> None:
-            nonlocal last_progress_emit
             if not on_progress or not itineraries:
                 return
-            now = time.monotonic()
-            if not force and now - last_progress_emit < _PROGRESS_EMIT_MIN_S:
-                return
-            last_progress_emit = now
             snap = _build_compose_snapshot(
                 itineraries,
                 priority,
-                partial=True,
-                streaming=True,
+                partial=not force,
+                streaming=not force,
                 **_snapshot_context(),
             )
             if snap.get("recommended"):
+                snap["just_found_id"] = itineraries[-1].get("id")
                 on_progress(snap)
 
         def _note_itinerary(it: dict[str, Any]) -> None:
             itineraries.append(it)
-            _emit_progress()
+            _emit_progress(force=True)
 
         def _remaining_s() -> float:
             return deadline - time.monotonic()
@@ -557,34 +553,7 @@ class RouteComposer:
                 _record_fail(mode)
             return leg
 
-        access_in_leg = None
-        access_out_leg = None
-        if src_feeder:
-            if not _past_deadline():
-                access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
-                if not access_in_leg:
-                    unavailable["feeder:in"] = (
-                        f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
-                    )
-            else:
-                unavailable["feeder:in"] = (
-                    f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
-                )
-        if dst_feeder:
-            if not _past_deadline():
-                access_out_leg = self._fetch_access_leg(
-                    fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
-                )
-                if not access_out_leg:
-                    unavailable["feeder:out"] = (
-                        f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
-                    )
-            else:
-                unavailable["feeder:out"] = (
-                    f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
-                )
-
-        # ── Phase 1: fast direct modes (road + air) — villages get truck option early ──
+        # ── Phase 1: fast direct modes (road + air) — emit immediately, do not wait for feeder ──
         if not _past_deadline() and leg_calls < max_leg_calls:
             if "road" not in excluded and not _should_skip_mode("road") and try_road:
                 leg = fetch_leg("road", origin_effective, dest_effective)
@@ -601,7 +570,38 @@ class RouteComposer:
                 elif not short_corridor:
                     unavailable["direct_air"] = "No direct air route"
 
-        # ── Phase 2: rural geo-hub chains (village → nearest metro → metro → village) ──
+        # ── Phase 2: on-path hub chains — one hub at a time, emit each before the next ──
+        if not short_corridor:
+            for hub in hubs:
+                if _past_deadline() or leg_calls >= max_leg_calls:
+                    unavailable["_budget"] = "Time budget reached — partial results returned"
+                    break
+
+                for template_id, mode1, mode2 in templates:
+                    if mode1 in excluded or mode2 in excluded or _past_deadline():
+                        continue
+                    if not try_road and (mode1 == "road" or mode2 == "road"):
+                        continue
+
+                    leg_in = fetch_leg(mode1, origin_effective, hub.city)
+                    if not leg_in:
+                        unavailable[f"{template_id}:{hub.city}:in"] = (
+                            f"no {mode1} {origin}→{hub.city}"
+                        )
+                        continue
+
+                    leg_out = fetch_leg(mode2, hub.city, dest_effective)
+                    if not leg_out:
+                        unavailable[f"{template_id}:{hub.city}"] = (
+                            f"{mode2} {hub.city}→{dest} failed"
+                        )
+                        continue
+
+                    _note_itinerary(
+                        self._compose_two_leg(template_id, hub, leg_in, leg_out)
+                    )
+
+        # ── Phase 3: rural geo-hub chains (village → nearest metro → metro → village) ──
         if not short_corridor and hub_pairs:
             for pair in hub_pairs:
                 if _past_deadline() or leg_calls >= max_leg_calls:
@@ -661,60 +661,43 @@ class RouteComposer:
                             self._compose_three_leg(template_id, h_o, h_d, legs[0], legs[1], legs[2])
                         )
 
-        # ── Phase 3: direct rail ──
-        direct_rail_leg = None
+        # ── Phase 4: direct rail (slow scraper — after hub options are already streamed) ──
         if not _past_deadline() and leg_calls < max_leg_calls and "rail" not in excluded:
             leg = fetch_leg("rail", origin_effective, dest_effective)
             if leg:
-                direct_rail_leg = leg
                 _note_itinerary(self._single_leg_itinerary(leg, "direct_rail"))
             else:
                 unavailable["direct_rail"] = "No direct rail route"
-
-        fast_compose = False
-        if not short_corridor and direct_rail_leg is not None and not warm_corridor and not rural_corridor:
-            dr = leg_to_dict(direct_rail_leg)
-            if dr["time_hr"] < 8:
-                fast_compose = True
-                hubs = hubs[:1]
-                templates = [("rail+rail", "rail", "rail")]
-                max_leg_calls = min(max_leg_calls, 6)
-
-        # ── Phase 4: on-path hub chains (rail-schedule intermediates) ──
-        if not short_corridor and not fast_compose:
-            for hub in hubs:
-                if _past_deadline() or leg_calls >= max_leg_calls:
-                    unavailable["_budget"] = "Time budget reached — partial results returned"
-                    break
-
-                for template_id, mode1, mode2 in templates:
-                    if mode1 in excluded or mode2 in excluded or _past_deadline():
-                        continue
-                    if not try_road and (mode1 == "road" or mode2 == "road"):
-                        continue
-
-                    leg_in = fetch_leg(mode1, origin_effective, hub.city)
-                    if not leg_in:
-                        unavailable[f"{template_id}:{hub.city}:in"] = (
-                            f"no {mode1} {origin}→{hub.city}"
-                        )
-                        continue
-
-                    leg_out = fetch_leg(mode2, hub.city, dest_effective)
-                    if not leg_out:
-                        unavailable[f"{template_id}:{hub.city}"] = (
-                            f"{mode2} {hub.city}→{dest} failed"
-                        )
-                        continue
-
-                    _note_itinerary(
-                        self._compose_two_leg(template_id, hub, leg_in, leg_out)
-                    )
 
         if include_heavy and not _past_deadline() and "water" not in excluded:
             leg = fetch_leg("water", origin_effective, dest_effective)
             if leg:
                 _note_itinerary(self._single_leg_itinerary(leg, "direct_water"))
+
+        if src_feeder:
+            if not _past_deadline():
+                access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
+                if not access_in_leg:
+                    unavailable["feeder:in"] = (
+                        f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
+                    )
+            else:
+                unavailable["feeder:in"] = (
+                    f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
+                )
+        if dst_feeder:
+            if not _past_deadline():
+                access_out_leg = self._fetch_access_leg(
+                    fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
+                )
+                if not access_out_leg:
+                    unavailable["feeder:out"] = (
+                        f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
+                    )
+            else:
+                unavailable["feeder:out"] = (
+                    f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
+                )
 
         if itineraries and (src_feeder or dst_feeder):
             wrapped: list[dict[str, Any]] = []

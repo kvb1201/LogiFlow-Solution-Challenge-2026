@@ -712,6 +712,53 @@ export interface ComposeResult {
   error?: string;
   streaming?: boolean;
   done?: boolean;
+  just_found_id?: string;
+}
+
+/** Merge streamed snapshots so each hub route stacks below prior results. */
+export function mergeComposeStreamUpdate(
+  prev: ComposeResult | null,
+  next: ComposeResult,
+): ComposeResult {
+  if (!prev?.recommended) return next;
+
+  const byId = new Map<string, ComposedItinerary>();
+  for (const it of [prev.recommended, ...(prev.alternatives || [])]) {
+    if (it) byId.set(it.id, it);
+  }
+  if (next.recommended) byId.set(next.recommended.id, next.recommended);
+  for (const it of next.alternatives || []) {
+    if (it) byId.set(it.id, it);
+  }
+
+  const recommended = next.recommended ?? prev.recommended;
+  const alternatives = [...byId.values()].filter((it) => it.id !== recommended?.id);
+
+  return {
+    ...next,
+    recommended,
+    alternatives,
+    total_candidates: byId.size,
+    partial: !next.done,
+  };
+}
+
+/** Quick ping to the compose backend (Render direct) — do not block UI for 90s warm. */
+export async function ensureComposeBackendReady(maxWaitMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${COMPOSE_DIRECT}/health`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) return true;
+    } catch {
+      /* cold start */
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return false;
 }
 
 function composeBudgetMs(payload: ComposePayload): number {
@@ -778,7 +825,7 @@ async function parseComposeSseStream(
         .find((l) => l.startsWith('data: '));
       if (!line) continue;
       const parsed = JSON.parse(line.slice(6)) as ComposeResult;
-      if (onUpdate && parsed.recommended) {
+      if (onUpdate && (parsed.recommended || parsed.done)) {
         onUpdate(parsed);
       }
       if (parsed.done) {

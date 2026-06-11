@@ -109,6 +109,7 @@ def compose_multimodal_stream(request: Request, data: ComposeRequest):
         while True:
             item = events.get()
             yield f"data: {json.dumps(item, default=str)}\n\n"
+            yield ": flush\n\n"
             if item.get("done"):
                 break
 

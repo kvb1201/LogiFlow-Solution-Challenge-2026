@@ -92,7 +92,7 @@ export function ComposeResults({
           >
             progress_activity
           </span>
-          Still searching hub chains and rail legs — new routes will appear below as they are found.
+          Still computing the next hub option — each route appears below as soon as it is ready.
         </div>
       )}
 

@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import {
   streamComposeMultimodalRoute,
   composeMultimodalRoute,
+  mergeComposeStreamUpdate,
+  ensureComposeBackendReady,
   BACKEND_UNAVAILABLE_MSG,
   TrafficQueueError,
   type ComposeResult,
@@ -21,7 +23,6 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import { CorridorRow } from '@/components/forms/pipeline-form-ui';
-import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
   shouldRunShipmentAutorun,
@@ -124,19 +125,25 @@ export default function HybridPageClient() {
     };
 
     try {
-      const warm = await ensureBackendWarm(90_000);
-      if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
+      const ready = await ensureComposeBackendReady(20_000);
+      if (!ready) throw new Error(BACKEND_UNAVAILABLE_MSG);
 
+      const streamAcc = { current: null as ComposeResult | null };
       let data: ComposeResult;
       try {
         data = await streamComposeMultimodalRoute(composePayload, (partial) => {
           if (!partial.recommended) return;
-          setResult(partial);
+          streamAcc.current = mergeComposeStreamUpdate(streamAcc.current, partial);
+          setResult(streamAcc.current);
           setLoading(false);
           setLoadingMore(!partial.done);
         });
       } catch {
-        data = await composeMultimodalRoute(composePayload);
+        if (streamAcc.current?.recommended) {
+          data = streamAcc.current;
+        } else {
+          data = await composeMultimodalRoute(composePayload);
+        }
       }
 
       if (data.error && !data.recommended) {
