@@ -2,6 +2,9 @@
 
 This folder contains the air cargo decision engine for LogiFlow.
 
+**API:** `POST /air/optimize` · **Frontend:** `/air`  
+**Docs:** [docs/pipelines/air.md](../../../docs/pipelines/air.md) · [OTP scoring](../../../docs/air-otp-congestion-scoring.md) · [International routing](../../../docs/international-air-routing-summary.md)
+
 ## Goal
 
 The airway pipeline selects the best air cargo option using:

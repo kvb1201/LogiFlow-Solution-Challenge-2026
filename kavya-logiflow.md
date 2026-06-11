@@ -113,7 +113,20 @@ Founded LogiFlow and built the core platform from zero — initial repo, road lo
 - Maintained **implementation.md** and early architecture docs.
 - Refactored **API contract** and architecture documentation for team alignment.
 - Removed obsolete docs when contracts moved into code.
-- Updated CORS and backend URL config for Vercel ↔ Render integration.
+- Updated CORS and backend URL config for Vercel ↔ Cloud Run integration.
+- Built **Google OAuth auth backend** (`auth_routes.py`, `auth_service.py`) and **planner API** (reports, trip lifecycle, route health, reoptimization, notifications).
+- Shipped **dashboard**, **reports list**, and **report detail** pages with `SaveReportModal` and `RouteHealthCard`.
+
+---
+
+## Current platform state (June 2026)
+
+| Surface | Detail |
+|---------|--------|
+| Web | https://logi-flow-solution-challenge-2026.vercel.app |
+| API | https://logiflow-api-sbexkjk72q-el.a.run.app |
+| Auth | Google Sign-In → JWT · `/dashboard` · `/reports` |
+| Planner | Trip execute/stop/cancel · route health · reoptimize v1 |
 
 ---
 

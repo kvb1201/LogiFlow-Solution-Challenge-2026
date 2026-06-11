@@ -1,3 +1,10 @@
+# Backend Implementation Notes
+
+> **Index:** See [implementation.md](../implementation.md) for the full feature index.  
+> **This file** documents the road corridor validity audit (trans-oceanic rejection).
+
+---
+
 # Route Validity Audit — Implementation Notes
 
 ## Root Cause

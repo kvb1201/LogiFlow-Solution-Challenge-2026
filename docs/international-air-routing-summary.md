@@ -1,5 +1,9 @@
 # International Air Routing — Implementation Summary
 
+**Status:** Implemented and in production.  
+**API:** `POST /air/optimize` · **Frontend:** `/air`  
+**Full doc:** [international-air-routing.md](./international-air-routing.md)
+
 ## Modified Files
 
 | File | Why |

@@ -1,5 +1,7 @@
 # Road Pipeline Hero Metrics — Implementation Notes
 
+**Page:** `/road` · **Component:** `RoadPageClient.tsx` · **Metrics lib:** `src/lib/road-metrics.ts`
+
 ## Approach
 
 The Road page previously used the generic `PipelineModePage` shell (landing +

@@ -1,5 +1,8 @@
 # Open-Meteo API Reference — Water Pipeline
 
+**Consumer:** `backend/app/pipelines/water/marine_weather_service.py`  
+**Pipeline doc:** [docs/pipelines/water.md](../../../docs/pipelines/water.md)
+
 ## 1. Marine Weather API
 **URL:** `https://marine-api.open-meteo.com/v1/marine`
 **Use:** Runtime risk calculation — wave height, wind, ocean current per port coordinates

@@ -1,3 +1,10 @@
+# Frontend Implementation Notes
+
+> **Index:** See [implementation.md](../implementation.md) for the full feature index.  
+> **This file** documents invalid corridor UX (`InvalidCorridorCard`) across road, comparator, and hybrid.
+
+---
+
 # Frontend Invalid Corridor Handling — Implementation Notes
 
 ## Summary

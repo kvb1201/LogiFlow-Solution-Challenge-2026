@@ -2,9 +2,13 @@
 
 ## Overview
 
-The Air pipeline finds cargo-feasible flight routes using **OpenFlights** plus **Supabase** tables (`airports`, `air_routes`, `otp_baselines`) for domestic and international lanes. It resolves cities via the shared location funnel, scores OTP/congestion risk, and returns only routes above the confidence threshold. No mock or fabricated routes are returned.
+The Air pipeline finds cargo-feasible flight routes using **OpenFlights** plus **Supabase** tables (`airports`, `air_routes`, `otp_baselines`) for domestic and international lanes. It resolves cities via the shared location funnel, scores **OTP congestion risk** with weather/time penalties, applies volumetric cargo pricing, and returns only routes above the confidence threshold. No mock or fabricated routes are returned.
 
-See also [international air routing](../international-air-routing-summary.md).
+**Entry:** `backend/app/pipelines/air/pipeline.py`  
+**API:** `POST /air/optimize`  
+**Frontend:** `/air` → `AirPageClient` → `AirInputForm` → `AirResults`
+
+See also [international air routing](../international-air-routing-summary.md) · [OTP scoring](../air-otp-congestion-scoring.md).
 
 ## Flow
 
@@ -22,10 +26,11 @@ Output: {best, alternatives, all} OR {status: "no_routes"}
 
 ## Key Features
 
-### OpenFlights Dataset
-- Static dataset of global airline routes with source/destination airports
-- Pre-loaded at application startup for fast lookups
-- No external API calls required
+### Data sources
+- `backend/data/routes.dat` — OpenFlights India snapshot (direct + one-stop)
+- `backend/data/international_routes.csv` — international hub edges (offline fallback)
+- Supabase `airports` / `air_routes` / `otp_baselines` — global reference (via `air_store.py`)
+- `backend/data/otp-baselines.json` + `otp-regions.json` — OTP lookup chain
 
 ### Airport Resolution
 - City name → IATA airport code mapping

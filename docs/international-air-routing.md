@@ -1,8 +1,12 @@
 # International Air Cargo Routing
 
+**API:** `POST /air/optimize` · **Frontend:** `/air` · **Summary:** [international-air-routing-summary.md](./international-air-routing-summary.md)
+
 ## 1. Overview
 
 LogiFlow's air pipeline optimizes cargo routes using OpenFlights route support, OTP congestion scoring, OpenWeather integration, and a scoring-based ranking engine. This document describes how the system was extended from **India-only** corridors to **worldwide** support while preserving backward compatibility with existing APIs, Indian routes, and frontend integrations.
+
+Supabase tables (`airports`, `air_routes`, `otp_baselines`) are seeded via `scripts/seedAirports.js` and `scripts/seedRoutes.js`. Offline fallbacks: `international_airports.csv`, `international_routes.csv`, `otp-regions.json`.
 
 ## 2. Existing Architecture
 

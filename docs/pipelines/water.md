@@ -2,9 +2,13 @@
 
 ## Overview
 
-The Water pipeline computes port-to-port cargo shipping routes between Indian coastal cities using a **static port and shipping route dataset**. It uses best-first search across a sparse sea-lane adjacency graph and applies risk modeling based on distance, seasonal weather, and port congestion.
+The Water pipeline computes port-to-port cargo shipping routes using the **PortWatch dataset** (~350 global ports with `vessel_count > 500`). It uses best-first search across a sparse sea-lane adjacency graph, **chokepoint awareness**, marine weather (Open-Meteo), and trained ML models for delay/ETA prediction.
 
-The pipeline enforces **strict correctness**: inland cities without nearby ports receive an explicit "no routes" response rather than fabricated fallback routes.
+The pipeline enforces **strict correctness**: inland cities without nearby ports receive an explicit `no_routes` response rather than fabricated fallback routes.
+
+**Entry:** `backend/app/pipelines/water/pipeline.py`  
+**API:** `POST /water/optimize` · `GET /water/ports` · `GET /water/ports/search`  
+**Frontend:** `/water` → `WaterPageClient` → `waterInputForm` → `WaterRouteResults` · `SeaMapView`
 
 ## Flow
 
@@ -40,10 +44,11 @@ Output: [sorted routes] OR {status: "no_routes"}
 - Returns up to 2 candidate ports per city
 
 ### Sea-Lane Graph
-- 13 major Indian ports (7 west coast, 6 east coast)
-- Sparse adjacency list (`SEA_LANES`) modeling realistic coastal connectivity
+- ~350 global ports from PortWatch `Ports.csv` (filtered `vessel_count_total > 500`)
+- Sparse adjacency list (`SEA_LANES`) built from observed port-pair connectivity
+- **Chokepoint stress** from `Daily_Chokepoints_Data.csv` (Suez, Malacca, Bab el-Mandeb, Gibraltar, etc.)
 - No "teleportation": routes only exist along defined sea lanes
-- Default max transshipments: 3 (Indian coastal routes chain through multiple ports)
+- Default max transshipments: configurable (typically 3)
 
 ### Best-First Search (Route Generation)
 - Dijkstra-style search with Haversine edge distances
@@ -76,16 +81,32 @@ Routes are filtered against user-provided constraints:
 
 If all routes fail constraints, the pipeline returns `no_routes` instead of ignoring the filters.
 
-### ML Hooks
-- `predict_eta_adjustment()` — adjusts estimated arrival time based on sea distance, transshipments, and season
-- `predict_port_congestion()` — predicts port-level congestion for risk calculation
+### ML Models
+- `water_delay_model.pkl` — GradientBoosting delay hours prediction
+- `water_eta_model.pkl` — ETA multiplier adjustment
+- Training data from PortWatch spillover simulator CSVs (`delay_dataset.py`)
+- Auto-train on startup unless `WATER_AUTO_TRAIN=off` (disabled in production Dockerfile)
+
+### Marine Weather
+- Open-Meteo marine/forecast APIs via `marine_weather_service.py`
+- See `OPENMETEO_API_REFERENCE.md` for endpoint details
+
+## Data files (`backend/data/water/`)
+
+| File | Purpose |
+|------|---------|
+| `Ports.csv` | Global port catalog (~350 ports) |
+| `PortWatch_chokepoints_database.csv` | Chokepoint definitions |
+| `Daily_Chokepoints_Data.csv` | Daily chokepoint stress index |
+| `portwatch_disruptions_database_*.csv` | Port disruption events |
+| `Spillover_simulator*.csv` | ML training transit days (large — gitignored from deploy) |
 
 ## Limitations
 
-- **Static dataset**: Sea lanes and ports are pre-defined, not queried from live shipping APIs
-- **Estimated timings**: Transit times are approximations based on average vessel speed (16 knots)
-- **India-only coverage**: 13 major Indian ports — no international routes
-- **No live tracking**: Port congestion uses base estimates, not real-time data
+- **Static graph**: Sea lanes are pre-defined from PortWatch, not live AIS tracking
+- **Estimated timings**: Transit times based on average vessel speed (~16 knots)
+- **Port proximity**: Cities >400 km from coast return `no_routes`
+- **Congestion**: Uses PortWatch baselines + ML, not real-time berth occupancy
 
 ## Output Structure
 

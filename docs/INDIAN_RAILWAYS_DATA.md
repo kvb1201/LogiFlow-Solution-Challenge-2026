@@ -2,6 +2,8 @@
 
 There is **no official public IR API with unlimited rate limits**. CRIS/NTES/IRCTC protect live data with firewalls, CAPTCHAs, and partner licenses. LogiFlow must use a **tiered strategy**, not naive bulk scraping of government sites.
 
+**Pipeline:** `backend/app/pipelines/rail/` · **API:** `POST /railway/optimize` · **Frontend:** `/railway` · **Scrape corpus:** `backend/data/ir_delay_scrape/`
+
 ## Category 1 — Official ground truth (strict limits)
 
 | Source | Role | LogiFlow use |

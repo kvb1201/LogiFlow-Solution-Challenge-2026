@@ -1,92 +1,87 @@
 # Deployment
 
-## Backend (Render)
+## Production topology (current)
 
-### Setup
+| Component | Platform | URL |
+|-----------|----------|-----|
+| **Frontend** | Vercel | https://logi-flow-solution-challenge-2026.vercel.app |
+| **Backend API** | GCP Cloud Run (asia-south1) | https://logiflow-api-sbexkjk72q-el.a.run.app |
+| **Database (planner)** | Postgres (production) or SQLite (local) | via `DATABASE_URL` |
+| **Cache / geometry** | Supabase + optional Redis | https://mwvohdvtxwltzkyuboaz.supabase.co |
+| **Custom domain** | Cloudflare (optional) | https://logiflow.in · https://api.logiflow.in |
 
-1. Create a new **Web Service** on [Render](https://render.com)
-2. Connect your GitHub repository
-3. Set the following:
+**Primary backend deploy path:** [gcp-deployment.md](./gcp-deployment.md)
 
-| Setting | Value |
-|---------|-------|
-| **Root Directory** | `backend` |
-| **Build Command** | `pip install -r requirements.txt` |
-| **Start Command** | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-| **Python Version** | 3.10+ |
+---
 
-### Environment Variables
+## Backend (GCP Cloud Run) — recommended
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `JWT_SECRET` | ✅ (prod) | Secret for signing session tokens — **required on Render** |
-| `GOOGLE_CLIENT_ID` | ✅ (prod) | Google OAuth client ID (same app as frontend `NEXT_PUBLIC_GOOGLE_CLIENT_ID`) |
-| `DATABASE_URL` | ✅ (prod) | Postgres URL for planner reports (`postgresql+asyncpg://…`); omit for local SQLite |
-| `GEMINI_API_KEY` | ✅ | Google Gemini API key (intent parse, route explanations, hybrid compare) |
-| `GROQ_API_KEY` | ❌ | Groq fallback for intent parse + rail explanations if Gemini fails |
-| `TOMTOM_API_KEY` | ✅ | TomTom routing API key |
-| `RAIL_ENABLE_LLM_EXPLANATION` | ❌ | Default **on** when `GEMINI_API_KEY` or `GROQ_API_KEY` is set; set `false` to disable |
-| `RAIL_LLM_EXPLANATION_TIMEOUT_S` | ❌ | Seconds for rail LLM blurb during `/optimize` (default `6`) |
-| `REDIS_URL` | ❌ | Redis connection URL (omit for in-memory cache) |
-| `RAIL_PERMANENT_CACHE` | ❌ | Set to `true` to persist rail cache indefinitely |
-| `GEMINI_MODEL` | ❌ | Gemini model (default: `gemini-2.5-flash`) |
-| `GEMINI_TIMEOUT_S` | ❌ | Gemini timeout in seconds (default: `5`) |
-| `SUPABASE_URL` | ❌ | Supabase project URL (geometry, ML metrics, compose leg cache) |
-| `SUPABASE_KEY` | ❌ | Supabase service/anon key for backend upserts |
-| `COMPOSE_LEG_CACHE_TTL_S` | ❌ | Success TTL for composed legs (default `21600` = 6h) |
-| `COMPOSE_LEG_SUPABASE` | ❌ | Set `0`/`false` to disable L3 Supabase leg cache |
-| `RURAL_HUB_CACHE_TTL_S` | ❌ | Rural hub-pair cache TTL (default `604800` = 7d) |
-| `RURAL_HUB_SUPABASE` | ❌ | Set `0`/`false` to disable rural hub Supabase cache |
-| *(geometry backfill)* | — | `POST /railway/geometry/ensure` computes missing `(train, from, to)` legs and upserts into `train_route_geometry` (no duplicates; PK is train+from+to) |
-| `RAIL_PRELOAD_ON_STARTUP` | ❌ | Set `true` to preload 2017 CSV on boot (needs ≥1GB RAM) |
-| `CONFIRMTKT_CONNECT_TIMEOUT_S` | ❌ | ConfirmTkt connect timeout (default: `3`) |
-| `CONFIRMTKT_READ_TIMEOUT_S` | ❌ | ConfirmTkt read timeout (default: `4`) |
-
-### Health Check
-
-```
-GET /health
-→ {"status": "ok"}
-```
-
-### Render cold start (free tier)
-
-On the **free** plan, Render stops your service after **~15 minutes** of no traffic. The next request can take **30–90 seconds** to boot (503 errors until uvicorn is ready).
-
-**You cannot make a sleeping free instance start instantly** — something must either keep it awake or you upgrade to always-on.
-
-| Option | Cost | Effect |
-|--------|------|--------|
-| **Render Starter** ($7/mo) | Paid | Instance never sleeps — instant responses |
-| **GitHub Actions keep-alive** | Free | Pings `/health` every 14 min (see `.github/workflows/warm-render-backend.yml`). Add repo secret `BACKEND_URL`. |
-| **UptimeRobot / cron-job.org** | Free | External monitor hits `https://your-api.onrender.com/health` every 5–14 min |
-| **App warmup** (built-in) | Free | Frontend pings `/api/warm-backend` on load and before optimize |
-
-The built-in warmup reduces 503s for users but the **first visitor after a long idle gap** may still wait ~30s while Render boots.
-
-### GCP Cloud Run (recommended for student / free tier RAM)
-
-Project ID: `project-6d6f652b-7066-4341-806` (number `689785530973`).
-
-**1 GiB RAM**, 300s timeout, free tier quotas. See **[gcp-deployment.md](./gcp-deployment.md)** for setup, `GCP_SA_KEY`, and pointing Vercel at Cloud Run.
+### Quick deploy
 
 ```bash
 ./scripts/deploy-gcp-cloud-run.sh
 ```
 
-Or: GitHub Actions → **Deploy API to GCP Cloud Run**.
+Or: GitHub Actions → **Deploy API to GCP Cloud Run** (push to `main` on `backend/**`).
 
-### Alternatives to Render
+### Service profile (team-3mo)
 
-| Platform | Fits this FastAPI app? | Cold start |
-|----------|--------------------------|------------|
-| **GCP Cloud Run** | ✅ **1 GiB RAM**, compose/stream friendly | ~5–15s scale-from-zero (free) |
-| **Firebase Hosting** | Frontend only — does not run Python/FastAPI | N/A |
-| **Google Cloud Run** (paid min instances) | Always warm | ~0s with min instances ($) |
-| **Fly.io / Railway** | ✅ Similar to Render | Paid tiers stay warm |
-| **Render Starter** | ✅ Easiest — no code changes | Always on |
+| Setting | Value |
+|---------|-------|
+| Service name | `logiflow-api` |
+| Region | `asia-south1` |
+| CPU / Memory | 2 CPU · 2 GiB |
+| Min instances | 1 (always-warm) |
+| Max instances | 3 |
+| Timeout | 300s |
+| Concurrency | 40 |
 
-**Recommendation:** Use **GCP Cloud Run** on the free tier if Render OOMs; keep Vercel for the frontend.
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | ✅ | Google Gemini (intent, explanations, hybrid) |
+| `TOMTOM_API_KEY` | ✅ | TomTom routing |
+| `ORS_API_KEY` | recommended | OpenRouteService fallback geocoding |
+| `OPENWEATHER_API_KEY` | recommended | Weather enrichment |
+| `JWT_SECRET` | ✅ | JWT signing secret |
+| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth (same as frontend) |
+| `SUPABASE_URL` | ✅ | Supabase project URL |
+| `SUPABASE_KEY` | ✅ | Supabase service/anon key |
+| `REDIS_URL` | recommended | Shared cache (compose legs, rate limits) |
+| `DATABASE_URL` | ✅ (prod) | Postgres for planner (`postgresql+asyncpg://…`) |
+| `GROQ_API_KEY` | ❌ | Groq fallback (intent, rail explain, Whisper) |
+| `RAILRADAR_API_KEY` | ❌ | Live train data |
+| `RAIL_PRELOAD_ON_STARTUP` | ❌ | Default `false` — preload 2017 CSV on boot |
+| `WATER_AUTO_TRAIN` | ❌ | Default `off` in Dockerfile |
+| `COMPOSE_PARALLEL_WORKERS` | ❌ | Default `8` on team-3mo profile |
+| `RATE_LIMIT_ENABLED` | ❌ | Set `false` in tests |
+
+Secrets are loaded from `backend/.env` at deploy time by `deploy-gcp-cloud-run.sh` (never committed).
+
+### Health check
+
+```bash
+curl https://logiflow-api-sbexkjk72q-el.a.run.app/health
+# → {"status":"ok"}
+```
+
+---
+
+## Backend (Render) — legacy
+
+Render was the original production host (512 MB RAM free tier). The team migrated to Cloud Run for compose/stream workloads that OOM'd on Render.
+
+Render setup remains documented for reference:
+
+| Setting | Value |
+|---------|-------|
+| Root Directory | `backend` |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Python Version | 3.11+ |
+
+Render free tier sleeps after ~15 min idle (30–90s cold start). Use Cloud Run team-3mo profile or external keep-alive instead.
 
 ---
 
@@ -94,101 +89,62 @@ Or: GitHub Actions → **Deploy API to GCP Cloud Run**.
 
 ### Setup
 
-1. Create a new project on [Vercel](https://vercel.com)
-2. Connect your GitHub repository
-3. Set the following:
-
 | Setting | Value |
 |---------|-------|
-| **Root Directory** | `frontend` |
-| **Framework Preset** | Next.js |
-| **Build Command** | `npm run build` |
-| **Output Directory** | `.next` (auto-detected) |
+| Root Directory | `frontend` |
+| Framework Preset | Next.js |
+| Build Command | `npm run build` |
 
-### Environment Variables
+### Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `BACKEND_URL` | ✅ (prod) | Render API URL for server-side rewrites (`/api/auth`, `/api/planner`, `/api/backend`) and warmup |
-| `NEXT_PUBLIC_API_URL` | ✅ (fallback) | Same URL if `BACKEND_URL` is not set; used for SSR |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ (prod) | Google Sign-In (must match backend `GOOGLE_CLIENT_ID`) |
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ (prod) | `https://mwvohdvtxwltzkyuboaz.supabase.co` — **map geometry** + ML metrics (browser → Supabase direct) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ (prod) | Supabase **anon** key (same as `SUPABASE_KEY` in backend `.env`) |
+| `BACKEND_URL` | ✅ | Cloud Run API for server-side rewrites and warmup |
+| `NEXT_PUBLIC_API_URL` | ✅ | Same URL for SSR fallback |
+| `NEXT_PUBLIC_COMPOSE_URL` | ✅ | Direct compose URL (long hybrid runs) |
+| `GOOGLE_CLIENT_ID` | ✅ | Google Sign-In (server-readable) |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ | Google Sign-In (client) |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase anon key |
+| `NEXT_PUBLIC_RAILRADAR_API_KEY` | ❌ | Live train map |
 
-**Critical:** `NEXT_PUBLIC_*` vars are baked in at **build time**. After adding or changing them in Vercel → **Redeploy** (Deployments → ⋯ → Redeploy).
+Production values are baked into `frontend/vercel.json`. After changing env vars in Vercel dashboard → **Redeploy**.
 
-Without these two vars, the train map never loads geometry from Supabase (it falls back to Render, which can cold-start for 30–90s).
+**Critical:** `NEXT_PUBLIC_*` vars are embedded at **build time**.
 
-Verify after deploy: open the site → DevTools → Network → filter `train_route_geometry` — you should see requests to `*.supabase.co`, not only `onrender.com`.
+### API rewrites (`next.config.ts`)
 
-The railway delay-model panel and **route map** both fetch **Supabase first**, then fall back to Render.
+| Browser path | Proxied to |
+|--------------|------------|
+| `/api/auth/*` | `{BACKEND_URL}/auth/*` |
+| `/api/planner/*` | `{BACKEND_URL}/planner/*` |
+| `/api/backend/*` | `{BACKEND_URL}/*` |
+| `/railradar/*` | `https://api.railradar.org/api/v1/*` |
+
+### Vercel route handlers
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/compose` | Long-running compose proxy (90s `maxDuration`) |
+| `GET /api/warm-backend` | Wakes Cloud Run; optional rail preload (`?lite=1` skips) |
+
+### Verify Supabase direct reads
+
+After deploy: DevTools → Network → filter `train_route_geometry` or `rail_ml_metrics` — requests should hit `*.supabase.co`.
 
 ### Vercel Web Analytics & Speed Insights
 
-The frontend includes `@vercel/analytics` and `@vercel/speed-insights` in `src/app/layout.tsx`.
+Enabled in `src/app/layout.tsx`. One-time dashboard enable per project:
+1. Project → Analytics → Web Analytics → Enable
+2. Project → Speed Insights → Enable
 
-After deploy, enable in the Vercel dashboard (one-time per project):
+### Auto-deploy for collaborators
 
-1. **Project → Analytics → Web Analytics → Enable**
-2. **Project → Speed Insights → Enable**
+Workflow `.github/workflows/deploy-vercel-production.yml` deploys as team owner when collaborators push to `main`. See workflow file for required GitHub secrets (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`).
 
-Data appears after the next production deploy and real traffic. View under **Analytics** and **Speed Insights** tabs.
+---
 
-### Auto-deploy when collaborators push (Hobby plan workaround)
-
-Vercel **blocks** production deploys on private repos when the commit author is not the Vercel team owner. The workflow `.github/workflows/deploy-vercel-production.yml` fixes this:
-
-- **Collaborator pushes to `main`** (`github.actor` is not `kvb1201`) → deploy **immediately** as Kaveh (rewrite commit author + Vercel CLI).
-- **Kaveh pushes to `main` himself** → workflow **skipped**; Vercel’s normal Git deploy handles it.
-- **Manual test:** Actions → “Deploy frontend to Vercel” → Run workflow.
-
-#### One-time setup — **Kaveh only** (~10 minutes)
-
-**Step 1 — Vercel access token**
-
-1. Log in to [vercel.com](https://vercel.com) as **kvb1201**
-2. **Account Settings** → **Tokens** → **Create**
-3. Name: `github-actions-logiflow`, scope: full account (or this project)
-4. Copy the token (shown once)
-
-**Step 2 — Org ID and Project ID**
-
-1. Open project **logi-flow-solution-challenge-2026**
-2. **Settings → General** → copy **Project ID** → `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu`
-3. **Team Settings → General** → copy **Team ID** → `team_QNI9cRl0sS1VVLoJhfHRq3sD` (verify it matches)
-
-**Step 3 — GitHub repo secrets**
-
-GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** for each:
-
-| Secret name | Value |
-|-------------|--------|
-| `VERCEL_TOKEN` | Token from Step 1 |
-| `VERCEL_ORG_ID` | Team ID from Step 2 |
-| `VERCEL_PROJECT_ID` | `prj_WipexBr8rHsUP7b0PC8uPYJjxnBu` |
-| `VERCEL_GIT_EMAIL` | `kavyabhatiya44@gmail.com` (must match his GitHub verified email) |
-| `VERCEL_GIT_NAME` | `Bhatiya Kavya Vishnukumar` (his GitHub display / git name) |
-
-**Step 4 — Confirm Vercel env vars are set**
-
-In Vercel project → **Settings → Environment Variables** (Production):
-
-- `BACKEND_URL` = `https://logiflow-solution-challenge-2026.onrender.com`
-- `NEXT_PUBLIC_API_URL` = same
-- `NEXT_PUBLIC_SUPABASE_URL` = `https://mwvohdvtxwltzkyuboaz.supabase.co`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` = Supabase anon key
-
-**Step 5 — Test**
-
-1. GitHub → **Actions** → **Deploy frontend to Vercel** → **Run workflow**
-2. Wait for green check (~3–5 min)
-3. Open https://logi-flow-solution-challenge-2026.vercel.app
-
-After setup, any collaborator push to `main` triggers an immediate production deploy under Kaveh’s Vercel identity. Ignore red **BLOCKED** rows from Vercel’s native Git hook on collaborator commits — the Action deploy is the one that matters.
-
-Verify: GitHub → **Actions** → latest **Deploy frontend to Vercel** run should be green; Vercel should show a new **READY** production deployment (via CLI, not blocked).
-
-### Supabase sync (after deploy or retrain)
+## Supabase sync (after deploy or retrain)
 
 From `backend/` with `SUPABASE_URL` + `SUPABASE_KEY` in `.env`:
 
@@ -197,6 +153,16 @@ make sync-rail-ml-metrics          # ML quantifiers → rail_ml_metrics
 make sync-rail-geometry-trains TRAINS=100   # corridor geometry
 make audit-rail-geometry TRAINS=100         # schedule vs map audit
 ```
+
+### Migrations (`supabase/migrations/`)
+
+| Migration | Table |
+|-----------|-------|
+| `20260606100000_create_airports.sql` | `airports` |
+| `20260606100001_create_air_routes.sql` | `air_routes` |
+| `20260606100002_create_otp_baselines.sql` | `otp_baselines` |
+| `20260607100000_create_rail_ml_metrics.sql` | `rail_ml_metrics` |
+| `20260610100000_create_compose_leg_cache.sql` | `compose_leg_cache` |
 
 ---
 
@@ -208,66 +174,51 @@ make audit-rail-geometry TRAINS=100         # schedule vs map audit
 - Android Studio with SDK 33+
 - Java 17
 
-### Setup
-
-```bash
-cd frontend
-
-# Install Capacitor
-npm install @capacitor/core @capacitor/cli
-npx cap init LogiFlow com.logiflow.app --web-dir=out
-
-# Add Android platform
-npx cap add android
-
-# Build and sync
-npm run build
-npx cap sync android
-```
-
 ### Build APK
 
 ```bash
-# Open in Android Studio
+cd frontend
+npm install @capacitor/core @capacitor/cli
+npx cap init LogiFlow com.logiflow.app --web-dir=out
+npx cap add android
+npm run build
+npx cap sync android
 npx cap open android
-
-# Or build from command line
-cd android
-./gradlew assembleDebug
+# APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The APK will be at: `android/app/build/outputs/apk/debug/app-debug.apk`
+### Configuration (`capacitor.config.ts`)
 
-### Configuration
-
-In `capacitor.config.ts`:
 ```typescript
 const config: CapacitorConfig = {
   appId: 'com.logiflow.app',
   appName: 'LogiFlow',
   webDir: 'out',
   server: {
-    url: 'https://logiflow-api.onrender.com',  // Production API
-    cleartext: true,  // For local dev with HTTP
+    url: 'https://logiflow-api-sbexkjk72q-el.a.run.app',
+    cleartext: true,
   }
 };
 ```
 
+APK download: [Google Drive](https://drive.google.com/file/d/11l_qnlY7JiAerHGyBcq2wIVn0NtWNXNl/view?usp=sharing)
+
 ---
 
-## Local Development
+## Local development
 
 ### Backend
+
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # Add API keys
+cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
@@ -275,14 +226,29 @@ echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 npm run dev
 ```
 
-### Redis (Optional)
-```bash
-# macOS
-brew install redis
-brew services start redis
+### Redis (optional)
 
-# Or use Docker
-docker run -d -p 6379:6379 redis:alpine
+```bash
+brew install redis && brew services start redis
+# or: docker run -d -p 6379:6379 redis:alpine
 ```
 
-Without Redis, the backend falls back to in-memory caching automatically.
+Without Redis, backend falls back to in-memory caching.
+
+### Production audit
+
+```bash
+make prod-audit   # checks Cloud Run health + Vercel frontend
+```
+
+---
+
+## Platform comparison
+
+| Platform | RAM | Timeout | Cold start | LogiFlow fit |
+|----------|-----|---------|------------|--------------|
+| **GCP Cloud Run** (team-3mo) | 2 GiB | 300s | ~0s (min 1) | ✅ **Production** |
+| GCP Cloud Run (free) | 1 GiB | 300s | ~5–15s | ✅ Student budget |
+| Render free | 512 MB | 30s | 30–90s | ❌ OOM on compose |
+| Render Starter | 512 MB+ | — | Always on | ✅ Simple alternative |
+| Vercel | — | 10s (serverless) | — | Frontend only |

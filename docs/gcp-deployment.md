@@ -1,17 +1,35 @@
-# GCP Cloud Run deployment (student / free tier)
+# GCP Cloud Run deployment
 
-Project **number**: `689785530973`  
-Project **ID**: `project-6d6f652b-7066-4341-806`
+**Production backend** for LogiFlow.
 
-Cloud Run gives **1 GiB RAM** and **300s request timeout** on the free tier — enough for compose/stream where Render’s 512 MB OOMs.
+| | |
+|---|---|
+| Project ID | `project-6d6f652b-7066-4341-806` |
+| Project number | `689785530973` |
+| Service | `logiflow-api` |
+| Region | `asia-south1` |
+| URL | https://logiflow-api-sbexkjk72q-el.a.run.app |
+
+Cloud Run provides **2 GiB RAM**, **300s timeout**, and **always-warm min instances** on the team-3mo profile — enough for compose/stream where Render's 512 MB OOM'd.
+
+---
+
+## Deploy profiles
+
+| Profile | Min instances | CPU | Memory | Use case |
+|---------|---------------|-----|--------|----------|
+| `team-3mo` (default) | 1 | 2 | 2Gi | Production — always-warm, parallel compose |
+| `free` | 0 | 1 | 1Gi | Student budget — scale to zero |
+
+Set via `DEPLOY_PROFILE=free ./scripts/deploy-gcp-cloud-run.sh`.
+
+---
 
 ## One-time GCP setup
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/?project=project-6d6f652b-7066-4341-806).
-
-2. Enable billing (required for Cloud Run API even on free tier — you stay within free quotas if traffic is modest).
-
-3. Install [gcloud CLI](https://cloud.google.com/sdk/docs/install) locally, or use **GitHub Actions** (below).
+2. Enable billing (required for Cloud Run API even on free tier).
+3. Install [gcloud CLI](https://cloud.google.com/sdk/docs/install).
 
 ```bash
 gcloud auth login
@@ -34,15 +52,17 @@ done
 gcloud iam service-accounts keys create gcp-sa-key.json --iam-account="$SA"
 ```
 
-Add the JSON file contents as GitHub secret **`GCP_SA_KEY`** (then delete the local file).
+Add JSON contents as GitHub secret **`GCP_SA_KEY`** (then delete local file).
+
+---
 
 ## Deploy
 
 ### Option A — GitHub Actions (recommended)
 
 1. Add secret `GCP_SA_KEY`.
-2. Actions → **Deploy API to GCP Cloud Run** → **Run workflow**.
-3. Copy the Cloud Run URL from the job summary.
+2. Push to `main` with `backend/**` changes, or Actions → **Deploy API to GCP Cloud Run** → Run workflow.
+3. Service URL appears in job summary.
 
 ### Option B — Local script
 
@@ -51,53 +71,96 @@ chmod +x scripts/deploy-gcp-cloud-run.sh
 ./scripts/deploy-gcp-cloud-run.sh
 ```
 
-## Environment variables (Cloud Run console)
+The script:
+- Builds Docker image via Cloud Build
+- Deploys with team-3mo defaults (2 CPU, 2Gi, min 1 instance)
+- Loads secrets from `backend/.env` (ORS, TomTom, Gemini, Supabase, JWT, etc.)
+- Sets runtime tuning: `COMPOSE_PARALLEL_WORKERS=8`, `WATER_AUTO_TRAIN=off`, `RAIL_PRELOAD_ON_STARTUP=false`
 
-After first deploy, set **Variables & secrets** on the `logiflow-api` service:
+---
+
+## Environment variables (Cloud Run)
+
+Loaded automatically from `backend/.env` during deploy. Required keys:
 
 | Variable | Required |
 |----------|----------|
 | `GEMINI_API_KEY` | ✅ |
 | `TOMTOM_API_KEY` | ✅ |
+| `ORS_API_KEY` | recommended |
+| `OPENWEATHER_API_KEY` | recommended |
 | `SUPABASE_URL` | ✅ |
 | `SUPABASE_KEY` | ✅ |
 | `JWT_SECRET` | ✅ |
 | `GOOGLE_CLIENT_ID` | ✅ |
 | `REDIS_URL` | recommended |
 | `DATABASE_URL` | if using Postgres planner |
+| `GROQ_API_KEY` | optional |
+| `RAILRADAR_API_KEY` | optional |
 
-Memory-safe defaults are baked into the Dockerfile / deploy script.
+Runtime defaults baked into deploy:
 
-## Point the frontend at GCP
-
-In `frontend/vercel.json` (or Vercel dashboard):
-
-```json
-"BACKEND_URL": "https://logiflow-api-XXXXXX-uc.a.run.app",
-"NEXT_PUBLIC_API_URL": "https://logiflow-api-XXXXXX-uc.a.run.app",
-"NEXT_PUBLIC_COMPOSE_URL": "https://logiflow-api-XXXXXX-uc.a.run.app"
+```
+WATER_SKIP_CONGESTION_SCAN=1
+WATER_AUTO_TRAIN=off
+RAIL_PRELOAD_ON_STARTUP=false
+COMPOSE_LEG_SUPABASE=1
+RURAL_HUB_SUPABASE=1
+COMPOSE_PARALLEL_WORKERS=8
+COMPOSE_RAIL_API_BUDGET_S=10
+RAIL_ENGINEER_MAX_EXTERNAL_LOOKUPS=1
 ```
 
-Or update the Cloudflare worker origin in `cloudflare/workers/logiflow-render-proxy.js` to the Cloud Run URL.
+---
 
-## Free tier notes
+## Point the frontend at Cloud Run
 
-- **Cloud Run**: ~2M requests/month free; scales to zero when idle (cold start ~5–15s).
-- **Cloud Build**: 120 build-minutes/day free — enough for student deploys.
-- **1 GiB RAM** service uses more of the free memory quota than 512 MB Render but avoids OOM.
-- Keep `min-instances=0` to avoid charges; use GitHub **Warm Render backend** workflow with `BACKEND_URL` set to your Cloud Run URL.
+Update `frontend/vercel.json` (or Vercel dashboard):
 
-## Health check
+```json
+"BACKEND_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+"NEXT_PUBLIC_API_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+"NEXT_PUBLIC_COMPOSE_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app"
+```
+
+Redeploy Vercel after changing env vars.
+
+Optional: update Cloudflare worker origin in `scripts/configure_logiflow_in_cloudflare.py` for `api.logiflow.in`.
+
+---
+
+## Dockerfile
+
+`backend/Dockerfile` — Python 3.11-slim, exposes port 8080:
+
+```dockerfile
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+`.gcloudignore` strips venv, tests, large scrape corpora, and PDFs from the build context.
+
+---
+
+## Health & smoke tests
 
 ```bash
-curl https://YOUR-SERVICE-uc.a.run.app/health
+curl https://logiflow-api-sbexkjk72q-el.a.run.app/health
 # → {"status":"ok"}
 ```
 
 Compose stream:
 
 ```bash
-curl -N -X POST https://YOUR-SERVICE-uc.a.run.app/compose/stream \
+curl -N -X POST https://logiflow-api-sbexkjk72q-el.a.run.app/compose/stream \
   -H "Content-Type: application/json" \
   -d '{"source":"Phulpur, India","destination":"Lucknow, India","priority":"balanced","compose_options":{"budget_seconds":40}}'
 ```
+
+---
+
+## Free tier notes
+
+- **Cloud Run**: ~2M requests/month free; `min-instances=0` scales to zero (~5–15s cold start).
+- **team-3mo profile**: min 1 instance avoids cold start; fits ~$300/3mo student credits.
+- **Cloud Build**: 120 build-minutes/day free.
+- Keep-alive: frontend `/api/warm-backend` + optional GitHub workflow with `BACKEND_URL` secret.

@@ -1,5 +1,8 @@
 # Railway Cargo Decision Engine — Walkthrough
 
+**API:** `POST /railway/optimize` · `POST /railway/simulate`  
+**Frontend:** `/railway` · **Docs:** [docs/pipelines/rail.md](../../../docs/pipelines/rail.md)
+
 ## What is implemented
 
 A railway cargo optimizer using real Indian Railways schedule data, scraped delay labels, parcel tariff math, and multi-objective ranking (cheapest / fastest / safest).

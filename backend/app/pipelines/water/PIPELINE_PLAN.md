@@ -1,6 +1,8 @@
 # Water Pipeline Expansion Plan
 
-## Current state vs target
+> **Status (June 2026):** The target architecture below has been **largely implemented**. The production pipeline uses ~350 PortWatch ports, chokepoint stress, marine weather, trained ML models (`water_delay_model.pkl`, `water_eta_model.pkl`), and PortWatch disruption data. See [docs/pipelines/water.md](../../../docs/pipelines/water.md) for the current production doc.
+
+## Original plan: current state vs target
 
 | Component | Current | Target |
 |---|---|---|

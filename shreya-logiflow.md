@@ -8,7 +8,7 @@
 
 ## One-line summary
 
-Built LogiFlow's **maritime water pipeline** (PortWatch data, ML models, chokepoints, global ports), integrated water into the **comparator**, and led the **cockpit UI redesign** — HomePage, NavBar, AmbientBackdrop, and design tokens.
+Built LogiFlow's **maritime water pipeline** (PortWatch ~350 ports, ML models, chokepoints, global routing), integrated water into the **comparator**, and led the **cockpit UI redesign** — HomePage, NavBar, AmbientBackdrop, and design tokens.
 
 ---
 
@@ -86,6 +86,14 @@ Built LogiFlow's **maritime water pipeline** (PortWatch data, ML models, chokepo
 |--------|-------|
 | Commits on `main` | ~55 |
 | Primary areas owned | Water/maritime pipeline, comparator integration, cockpit UI redesign |
+
+---
+
+## Current platform state (June 2026)
+
+- Water pipeline: **~350 global ports** from PortWatch, chokepoint stress, ML delay/ETA models
+- Frontend: `/water` page with `SeaMapView`, port catalog stats, `WaterRouteResults`
+- Docs: [docs/pipelines/water.md](./docs/pipelines/water.md) updated with PortWatch architecture
 
 ---
 

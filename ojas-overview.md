@@ -409,9 +409,9 @@
 
 | | |
 |---|---|
-| **What it does** | Auto-deploy frontend; cron-warm backend. |
-| **Built with** | Vercel deploy workflow · warm-render-backend workflow |
-| **How it works** | Push to main → deploy · scheduled health ping so Render stays awake. |
+| **What it does** | Auto-deploy frontend + backend; cron-warm API. |
+| **Built with** | Vercel deploy workflow · `deploy-gcp-cloud-run.yml` |
+| **How it works** | Push to main → Vercel + Cloud Run deploy · health ping keeps API warm. |
 | **Where** | `.github/workflows/` |
 
 ---
@@ -457,8 +457,20 @@
 > **Compare & chain:** comparator (all modes), hybrid compose (multi-leg), rural routing  
 > **AI:** plain-English brief, Hinglish, auto-run, route explanations, voice input  
 > **Frontend:** Next.js migration, cockpit UI, railway/hybrid/comparator pages, maps, warmup, reports  
-> **Infra:** Cloudflare proxy, rate limits, waiting queue, `make dev`, prod audit, CI deploy  
+> **Infra:** GCP Cloud Run backend, Cloudflare proxy, rate limits, waiting queue, `make dev`, prod audit, CI deploy  
 > **Also:** location funnel, auth UI wiring, docs, merge fixes
+
+---
+
+## Current platform state (June 2026)
+
+| Surface | URL / detail |
+|---------|--------------|
+| Web app | https://logi-flow-solution-challenge-2026.vercel.app |
+| API | https://logiflow-api-sbexkjk72q-el.a.run.app (GCP Cloud Run, asia-south1) |
+| Pages | 15 routes: home, login, dashboard, reports, 5 mode pipelines, comparator, hybrid, waiting, legal |
+| Auth | Google OAuth → JWT · planner API for saved trips |
+| Docs | Full refresh in `docs/` + root `README.md` (June 2026) |
 
 ---
 

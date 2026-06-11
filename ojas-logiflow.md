@@ -1,6 +1,6 @@
 # Ojas Srivastava — LogiFlow Contributions
 
-**Role:** Technical Lead & Principal Engineer · Primary branch: `ojasdev` · Stack: Next.js, FastAPI, Python ML, Supabase, Vercel, Render, Cloudflare
+**Role:** Technical Lead & Principal Engineer · Primary branch: `ojasdev` · Stack: Next.js, FastAPI, Python ML, Supabase, Vercel, GCP Cloud Run, Cloudflare
 
 > Personal resume-style log of what I built on LogiFlow. Category-wise, human-readable. Not pushed to GitHub.
 
@@ -14,7 +14,7 @@ Led end-to-end engineering and production delivery of LogiFlow — Next.js platf
 
 ## Product & platform leadership
 
-- Owned the **`ojasdev` branch** as the main development line; merged large feature sets into `main` for production (Vercel + Render).
+- Owned the **`ojasdev` branch** as the main development line; merged large feature sets into `main` for production (Vercel + GCP Cloud Run).
 - Resolved major **merge conflicts** and restored the **cockpit UI** when parallel team work diverged — kept the product shippable.
 - Standardized the app around a single **“logistics control center”** experience: dark cockpit theme, mode-based navigation, consistent planner flows across rail / road / air / water / hybrid / comparator.
 - Removed **developer-facing copy and leaked secrets** from production after GitGuardian flags; moved all keys to environment variables.
@@ -224,6 +224,15 @@ Led end-to-end engineering and production delivery of LogiFlow — Next.js platf
 | Distinct feature commits (deduplicated) | ~99 |
 | Files touched | ~370 |
 | Primary areas owned | Frontend, rail pipeline, deployment, security, AI intent, compose |
+
+---
+
+## Current platform state (June 2026)
+
+- **15 frontend pages** including dashboard, reports/planner, login, waiting room, legal
+- **Backend on GCP Cloud Run** (`logiflow-api`, asia-south1) — migrated from Render for compose RAM/timeout
+- **Full documentation refresh** across `docs/`, `README.md`, pipeline guides
+- See [ojas-overview.md](./ojas-overview.md) for detailed feature inventory
 
 ---
 

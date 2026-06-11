@@ -1,6 +1,9 @@
 # Air Freight Pricing and Airport System
 
-## 1. Current Problems Identified
+**API:** `POST /air/optimize` · **Pipeline:** `backend/app/pipelines/air/pipeline.py`  
+**Related:** [air pipeline](./pipelines/air.md) · [OTP scoring](./air-otp-congestion-scoring.md) · [international routing](./international-air-routing-summary.md)
+
+## 1. Problems identified (and resolved)
 
 ### Why pricing was incorrect
 The original pipeline calculated cost using a flat rate per kg (`8.0` for direct, `6.5` for one-stop) and ignored the distance traveled. This resulted in almost identical pricing regardless of whether the route was a short domestic flight (BLR → DEL) or a long-haul international flight (BLR → JFK). The pricing engine was also missing volumetric weight support and dynamic operational surcharges.

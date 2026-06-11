@@ -83,4 +83,13 @@ Owned LogiFlow's **air cargo pipeline** end-to-end — free-stack airport data, 
 
 ---
 
+## Current platform state (June 2026)
+
+- Air pipeline: domestic + **international routing** via Supabase `airports`/`air_routes` + CSV fallbacks
+- **OTP congestion scoring** on every route (`otp_prediction`, `congestion_score`, `congestion_level`)
+- Frontend: `/air` page with `AirInputForm`, `AirResults`, cargo constraint UI
+- Docs: [docs/pipelines/air.md](./docs/pipelines/air.md) · [docs/air-otp-congestion-scoring.md](./docs/air-otp-congestion-scoring.md)
+
+---
+
 *For raw git history: `git log main --author="Bolisetty Samanvitha"`.*

@@ -2,6 +2,8 @@
 
 This document describes how LogiFlow computes **On-Time Performance (OTP) congestion scores** for the air cargo pipeline using existing weather integration and checked-in baseline data.
 
+**API:** `POST /air/optimize` · **Frontend:** `/air` · **Pipeline:** `backend/app/pipelines/air/pipeline.py`
+
 ---
 
 ## Overview
