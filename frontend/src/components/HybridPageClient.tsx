@@ -137,6 +137,7 @@ export default function HybridPageClient() {
           setResult(streamAcc.current);
           setLoading(false);
           setLoadingMore(!partial.done);
+          setRoadUnavailableReason(null);
         });
       } catch {
         if (streamAcc.current?.recommended) {
@@ -161,8 +162,9 @@ export default function HybridPageClient() {
         }
       } else {
 
-        const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
-        if (roadUnavail) setRoadUnavailableReason(roadUnavail);
+          const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
+        if (roadUnavail && !data.recommended) setRoadUnavailableReason(roadUnavail);
+        else setRoadUnavailableReason(null);
 
         setFailureContext(null);
         setResult(data);
@@ -462,7 +464,7 @@ export default function HybridPageClient() {
           <MultimodalPipelineLoading variant="compose" />
         )}
 
-        {roadUnavailableReason && !loading && !loadingMore && (
+        {roadUnavailableReason && !loading && !loadingMore && !result?.recommended && (
           <div className="mb-3">
             <InvalidCorridorCard
               mode="road"

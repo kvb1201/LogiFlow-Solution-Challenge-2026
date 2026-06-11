@@ -23,13 +23,13 @@ export function PipelineResultsLayout({
   children,
 }: PipelineResultsLayoutProps) {
   return (
-    <div className="relative flex min-h-app w-full flex-col overflow-hidden bg-background lg:max-h-app">
-      <div className="pointer-events-none absolute inset-x-0 top-navbar z-0 h-64 overflow-hidden opacity-90" aria-hidden>
+    <div className="relative flex w-full min-h-0 flex-1 flex-col bg-background">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-40 overflow-hidden opacity-30" aria-hidden>
         <AmbientMesh variant="section" tone={mode} />
       </div>
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-navbar z-0 h-px opacity-40"
+        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-px opacity-30"
         style={{
           background: `linear-gradient(90deg, transparent, var(--${mode}), transparent)`,
         }}
@@ -43,8 +43,8 @@ export function PipelineResultsLayout({
         onEdit={onEdit}
       />
 
-      <div className="relative z-10 min-h-0 flex-1 lg:overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6">{children}</div>
       </div>
     </div>
   );

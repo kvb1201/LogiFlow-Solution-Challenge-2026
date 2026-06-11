@@ -599,7 +599,7 @@ class RouteComposer:
                 leg = fetch_leg("road", origin_effective, dest_effective)
                 if leg:
                     _note_itinerary(self._single_leg_itinerary(leg, "direct_road"))
-                else:
+                elif not itineraries:
                     unavailable["direct_road"] = "No direct road route"
 
         if not _past_deadline() and leg_calls < max_leg_calls:
