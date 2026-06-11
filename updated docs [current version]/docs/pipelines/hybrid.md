@@ -1,0 +1,215 @@
+# Hybrid Pipeline
+
+## Overview
+
+LogiFlow has two complementary multimodal systems:
+
+| System | Endpoint | UI page | Purpose |
+|--------|----------|---------|---------|
+| **Comparator** | `POST /optimize` · `POST /comparator/routes` | `/comparator` | Pick best **single mode** for a corridor |
+| **Composer** | `POST /compose` · `POST /compose/stream` | `/hybrid` | Build **chained legs** across modes via hub templates |
+
+The **HybridPipeline** (`app/pipelines/hybrid/pipeline.py`) powers the comparator. The **RouteComposer** (`app/services/route_composer.py`) powers the hybrid page.
+
+## Rural / village corridors (`/compose`)
+
+The **Hybrid** page uses `POST /compose` (`RouteComposer`), not `HybridPipeline`.
+
+For places that are not mapped metros (remote villages, small towns):
+
+1. **Geocode** the village name (offline station DB → static cities → TomTom/Google/Nominatim).
+2. Find **nearest major hub cities** by latitude/longitude (Delhi, Mumbai, Kanpur, etc.).
+3. Build itineraries:
+   - **Direct** road (and air when available)
+   - **Village → hub (road) → hub (rail or air) → destination**
+   - **On-path rail hubs** when CSV schedules connect the metros
+
+Compose runs **road and air first** (fast), then geo-hub chains, then direct rail — so rural users see truck options without waiting for a full rail scrape.
+
+## Flow (legacy mode comparison API)
+
+```
+Input: source, destination, priority, explanation_mode
+  │
+  ├─ 1. Parallel Execution
+  │     ├─ Road Pipeline ──┐
+  │     ├─ Rail Pipeline ──┤
+  │     ├─ Air Pipeline  ──┼── ThreadPoolExecutor max_workers=4 (timeout=30s)
+  │     └─ Water Pipeline ─┘
+  │
+  ├─ 2. Mode Availability Detection
+  │     ├─ status: "no_routes" → skip mode
+  │     └─ timeout / error → skip mode
+  │
+  ├─ 3. Normalization
+  │     └─ {time_hr, cost_inr, risk, confidence, meta}
+  │
+  ├─ 4. Scoring
+  │     ├─ Relative normalization (vs best-in-class)
+  │     ├─ Pareto dominance check
+  │     ├─ Non-linear penalty (outlier time/cost)
+  │     └─ Priority-weighted sum → rank
+  │
+  ├─ 5. Explanation Generation
+  │     ├─ "template" (default) → rule-based, ~0ms
+  │     └─ "detailed" → Gemini AI with cache, ~2-5s
+  │
+  ▼
+Output: {recommended_mode, comparison, tradeoffs, available_modes}
+```
+
+## Key Features
+
+### Parallel Execution with Timeout
+- Uses `ThreadPoolExecutor(max_workers=4)` to run road, rail, air, and water concurrently
+- Each pipeline has a **30-second timeout** via `future.result(timeout=30)`
+- Timed-out pipelines are treated as unavailable — remaining modes proceed
+
+### Handling Missing Modes
+When a pipeline returns `{status: "no_routes"}` or times out:
+- That mode is excluded from normalization, scoring, and comparison
+- Added to `unavailable_modes` in the response
+- Tradeoff text only references available modes
+
+### Normalization
+Each mode's raw output is converted to a common schema:
+
+```json
+{
+  "mode": "rail",
+  "time_hr": 12.5,
+  "cost_inr": 850,
+  "risk": 0.15,
+  "delay_hr": 0.5,
+  "confidence": 0.78,
+  "meta": {
+    "reliability": 0.85,
+    "weather_risk": 0.1,
+    "congestion_risk": 0.2,
+    "stops": 0
+  }
+}
+```
+
+### Scoring Logic
+
+**Step 1 — Relative normalization:**
+```
+norm_time = time / min(all_times)
+norm_cost = cost / min(all_costs)
+norm_risk = risk / min(all_risks)
+```
+
+**Step 2 — Pareto dominance:**
+If one mode beats all others on *every* metric, it wins immediately.
+
+**Step 3 — Non-linear penalty:**
+Outliers are penalized (e.g., 3× the cheapest cost gets +0.3 penalty).
+
+**Step 4 — Priority-weighted sum:**
+
+| Priority | Time Weight | Cost Weight | Risk Weight |
+|----------|------------|------------|------------|
+| `fast` | 0.6 | 0.2 | 0.2 |
+| `cheap` | 0.2 | 0.6 | 0.2 |
+| `safe` | 0.2 | 0.2 | 0.6 |
+| `balanced` | 0.4 | 0.3 | 0.3 |
+
+### Priority Standardization
+All incoming priority values are canonicalized:
+
+| Input | Maps To |
+|-------|---------|
+| `"time"`, `"fast"`, `"fastest"`, `"speed"` | `"fast"` |
+| `"cost"`, `"cheap"`, `"cheapest"` | `"cheap"` |
+| `"safety"`, `"safe"`, `"safest"`, `"reliable"` | `"safe"` |
+| `"balanced"` (default) | `"balanced"` |
+
+### Explanation Engine
+
+**Template mode** (default): Rule-based text generation with zero latency. Uses priority-aware reason templates, tradeoff diffs, and mode-specific insights.
+
+**Detailed mode** (opt-in via `explanation_mode: "detailed"`): Calls Gemini 2.5 Flash API to generate natural language explanations. Features:
+- In-memory cache (TTL 1 hour, 200 entries)
+- 5-second timeout with template fallback
+- Gemini output merged over template (fills gaps)
+
+## Output Structure
+
+```json
+{
+  "priority": "cheap",
+  "recommended_mode": "rail",
+  "reason": "RAIL is the most cost-efficient option at about Rs.850.",
+  "available_modes": ["road", "rail"],
+  "unavailable_modes": {
+    "air": "Air transport not available for this route"
+  },
+  "comparison": [
+    {
+      "mode": "rail",
+      "time_hr": 12.5,
+      "cost_inr": 850,
+      "risk": 0.15,
+      "confidence": 0.78,
+      "explanation": "RAIL ranks first because it has the lowest cost at about Rs.850."
+    },
+    {
+      "mode": "road",
+      "time_hr": 8.2,
+      "cost_inr": 3200,
+      "risk": 0.25,
+      "confidence": 0.72,
+      "explanation": "ROAD is an alternative to RAIL, with 4.3 hours faster, Rs.2350 more expensive."
+    }
+  ],
+  "tradeoffs": [
+    "ROAD is 4.3 hrs lower time compared to RAIL",
+    "ROAD is 2350 Rs. higher cost compared to RAIL"
+  ],
+  "mode_insights": {
+    "road": ["Flexible door-to-door delivery", "Relatively smooth traffic conditions"],
+    "rail": ["Cost-effective for bulk transport", "Stable schedules with predictable transit times"]
+  },
+  "best_per_mode": {
+    "road": { ... },
+    "rail": { ... },
+    "air": null
+  }
+}
+```
+
+---
+
+## Composer (`RouteComposer`)
+
+The `/hybrid` page uses `POST /compose` (not `HybridPipeline`).
+
+### Hub templates
+
+| Template | Example |
+|----------|---------|
+| `road` | Direct truck |
+| `road+rail+road` | Village → hub → rail → destination hub → village |
+| `rail+rail` | Metro-to-metro rail with transfer |
+| `rail+air` | Rail to airport hub → flight |
+| `road+air` | Truck to airport → flight |
+
+### Execution
+
+1. Resolve endpoints via `location_funnel` + geocoding
+2. For rural villages: `geo_hub_finder` discovers nearest metro hubs
+3. Build candidate itineraries from hub templates
+4. Execute legs in parallel (`COMPOSE_PARALLEL_WORKERS`, default 8 on Cloud Run)
+5. Cache successful legs (memory → Redis → Supabase `compose_leg_cache`)
+6. `itinerary_scorer` ranks by cost/time/risk
+
+### Streaming
+
+`POST /compose/stream` emits SSE events as partial itineraries are ranked. Frontend uses `streamComposeMultimodalRoute()` in `api.ts`. Long runs from Vercel are proxied via `POST /api/compose` (90s `maxDuration`).
+
+### Frontend
+
+- `/hybrid` → `HybridPageClient` — 3-step wizard (Corridor → Brief → Route)
+- `ComposeResults`, `ItineraryCard`, `LegTimeline`, `ModeChain`, `RoutePathStrip`
+- `ComposeFailurePanel` for partial-failure messaging

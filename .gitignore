@@ -75,6 +75,9 @@ frontend/.actual.env
 # =========================
 *.tmp
 *.bak
+
+# Local documentation snapshot (copy-only archive, not for version control)
+updated docs [current version]/
 backend/.env
 backend/test_irctc.mjs
 backend/logiflow.db
