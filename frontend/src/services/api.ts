@@ -762,8 +762,8 @@ export async function ensureComposeBackendReady(maxWaitMs = 20_000): Promise<boo
 }
 
 function composeBudgetMs(payload: ComposePayload): number {
-  const budgetSec = payload.compose_options?.budget_seconds ?? 90;
-  return Math.max((budgetSec + 90) * 1000, 120_000);
+  const budgetSec = payload.compose_options?.budget_seconds ?? 150;
+  return Math.max((budgetSec + 120) * 1000, 180_000);
 }
 
 function composeDirectUrl(path: 'compose' | 'compose/stream'): string {

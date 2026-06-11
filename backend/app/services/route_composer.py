@@ -21,18 +21,19 @@ from app.services.transfer_detail import build_transfer_detail, enrich_leg
 from app.services.pipeline_registry import get_pipeline
 from app.utils.request_context import RequestContext
 
-_COMPOSE_BUDGET_S = 42
+_COMPOSE_BUDGET_S = 75
 _SHORT_CORRIDOR_KM = 200
 _HANDLING_FEE_INR = 250
 _MODE_FAIL_SKIP_AFTER = 2
-_MAX_LEG_CALLS_WARM = 12
-_MAX_LEG_CALLS_COLD = 6
-_MAX_LEG_CALLS_RURAL = 14
+_MAX_LEG_CALLS_WARM = 16
+_MAX_LEG_CALLS_COLD = 12
+_MAX_LEG_CALLS_RURAL = 18
+_FEEDER_RESERVED_SLOTS = 4
 
 _MODE_TIMEOUT_CAP: dict[str, float] = {
-    "rail": 24,
-    "road": 8,
-    "air": 10,
+    "rail": 18,
+    "road": 10,
+    "air": 12,
     "water": 10,
 }
 
@@ -341,7 +342,7 @@ class RouteComposer:
         opts = payload.get("compose_options") or {}
         max_hubs = min(3, int(opts.get("max_hubs", 2)))
         include_heavy = bool(opts.get("include_road_water", False))
-        budget_s = min(60, int(opts.get("budget_seconds", _COMPOSE_BUDGET_S)))
+        budget_s = min(180, int(opts.get("budget_seconds", _COMPOSE_BUDGET_S)))
         deadline = time.monotonic() + budget_s
 
         excluded = set(
@@ -354,7 +355,7 @@ class RouteComposer:
         )
         has_feeder = bool(src_feeder or dst_feeder)
         if has_feeder:
-            budget_s = min(90, max(budget_s, 70))
+            budget_s = min(180, max(budget_s, 120))
             deadline = time.monotonic() + budget_s
 
         warm_corridor = _corridor_is_warm(origin_effective, dest_effective, priority)
@@ -377,6 +378,9 @@ class RouteComposer:
             resolution=dst_r.resolution,
         )
         rural_corridor = src_remote or dst_remote
+        if rural_corridor:
+            budget_s = min(180, max(budget_s, 100))
+            deadline = time.monotonic() + budget_s
         hub_pairs: list[HubPair] = (
             discover_rural_hub_pairs(src_r, dst_r, max_pairs=6) if rural_corridor else []
         )
@@ -407,7 +411,7 @@ class RouteComposer:
             if rural_corridor:
                 max_leg_calls = _MAX_LEG_CALLS_RURAL
             if src_feeder or dst_feeder:
-                max_leg_calls += 4
+                max_leg_calls += _FEEDER_RESERVED_SLOTS
             # Rural / village corridors always need road access legs to nearest metros.
             try_road = warm_corridor or known or bool(hubs) or rural_corridor
 
@@ -452,6 +456,12 @@ class RouteComposer:
                 on_progress(snap)
 
         def _note_itinerary(it: dict[str, Any]) -> None:
+            if src_feeder or dst_feeder:
+                wrapped = self._wrap_feeder_access(
+                    it, src_feeder, dst_feeder, access_in_leg, access_out_leg
+                )
+                if wrapped:
+                    it = wrapped
             itineraries.append(it)
             _emit_progress(force=True)
 
@@ -489,6 +499,7 @@ class RouteComposer:
             to: str,
             *,
             use_raw_endpoints: bool = False,
+            reserve_slot: bool = False,
         ) -> Any | None:
             nonlocal leg_calls
 
@@ -531,12 +542,14 @@ class RouteComposer:
                     return leg
 
             wait_s = _leg_wait_s(mode)
-            if wait_s <= 0 or leg_calls >= max_leg_calls:
-                if leg_calls >= max_leg_calls:
-                    unavailable["_leg_cap"] = "Leg call limit reached — partial results returned"
+            if wait_s <= 0:
+                return None
+            if not reserve_slot and leg_calls >= max_leg_calls:
+                unavailable["_leg_cap"] = "Leg call limit reached — partial results returned"
                 return None
 
-            leg_calls += 1
+            if not reserve_slot:
+                leg_calls += 1
             try:
                 future = _executor.submit(_do_pipeline, mode, frm_c, to_c)
                 leg = future.result(timeout=wait_s)
@@ -553,29 +566,31 @@ class RouteComposer:
                 _record_fail(mode)
             return leg
 
-        # ── Phase 0: feeder access legs first — must run before hub chains burn the leg budget ──
+        # ── Phase 0: feeder legs (reserved slots + synthetic fallback) before hub search ──
         if src_feeder and not _past_deadline():
             access_in_leg = self._fetch_access_leg(fetch_leg, src_feeder)
-            if not access_in_leg:
-                unavailable["feeder:in"] = (
-                    f"No local connection {src_feeder.local_place}→{src_feeder.hub_city}"
+            if access_in_leg and self._leg_is_synthetic(access_in_leg):
+                unavailable["feeder:in:estimate"] = (
+                    f"Estimated local leg {src_feeder.local_place}→{src_feeder.hub_city}"
                 )
         elif src_feeder:
-            unavailable["feeder:in"] = (
-                f"No time to schedule {src_feeder.local_place}→{src_feeder.hub_city}"
+            access_in_leg = self._synthetic_feeder_leg(src_feeder, outbound=False)
+            unavailable["feeder:in:estimate"] = (
+                f"Estimated local leg {src_feeder.local_place}→{src_feeder.hub_city}"
             )
 
         if dst_feeder and not _past_deadline():
             access_out_leg = self._fetch_access_leg(
                 fetch_leg, dst_feeder, frm=dst_feeder.hub_city, to=dst_feeder.local_place
             )
-            if not access_out_leg:
-                unavailable["feeder:out"] = (
-                    f"No local connection {dst_feeder.hub_city}→{dst_feeder.local_place}"
+            if access_out_leg and self._leg_is_synthetic(access_out_leg):
+                unavailable["feeder:out:estimate"] = (
+                    f"Estimated local leg {dst_feeder.hub_city}→{dst_feeder.local_place}"
                 )
         elif dst_feeder:
-            unavailable["feeder:out"] = (
-                f"No time to schedule {dst_feeder.hub_city}→{dst_feeder.local_place}"
+            access_out_leg = self._synthetic_feeder_leg(dst_feeder, outbound=True)
+            unavailable["feeder:out:estimate"] = (
+                f"Estimated local leg {dst_feeder.hub_city}→{dst_feeder.local_place}"
             )
 
         # ── Phase 1: fast direct modes (road + air) — emit immediately ──
@@ -595,16 +610,32 @@ class RouteComposer:
                 elif not short_corridor:
                     unavailable["direct_air"] = "No direct air route"
 
-        # ── Phase 2: on-path hub chains — one hub at a time, emit each before the next ──
+        # ── Phase 2: hub-by-hub — emit rail+rail first, then other templates if budget left ──
         if not short_corridor:
             for hub in hubs:
                 if _past_deadline() or leg_calls >= max_leg_calls:
                     unavailable["_budget"] = "Time budget reached — partial results returned"
                     break
 
+                if "rail" not in excluded and not _past_deadline():
+                    leg_in = fetch_leg("rail", origin_effective, hub.city)
+                    leg_out = (
+                        fetch_leg("rail", hub.city, dest_effective)
+                        if leg_in and leg_calls < max_leg_calls and not _past_deadline()
+                        else None
+                    )
+                    if leg_in and leg_out:
+                        _note_itinerary(
+                            self._compose_two_leg("rail+rail", hub, leg_in, leg_out)
+                        )
+
                 for template_id, mode1, mode2 in templates:
+                    if template_id == "rail+rail":
+                        continue
                     if mode1 in excluded or mode2 in excluded or _past_deadline():
                         continue
+                    if leg_calls >= max_leg_calls:
+                        break
                     if not try_road and (mode1 == "road" or mode2 == "road"):
                         continue
 
@@ -699,21 +730,6 @@ class RouteComposer:
             if leg:
                 _note_itinerary(self._single_leg_itinerary(leg, "direct_water"))
 
-        if itineraries and (src_feeder or dst_feeder):
-            wrapped: list[dict[str, Any]] = []
-            for it in itineraries:
-                wrapped_it = self._wrap_feeder_access(
-                    it,
-                    src_feeder,
-                    dst_feeder,
-                    access_in_leg,
-                    access_out_leg,
-                )
-                if wrapped_it:
-                    wrapped.append(wrapped_it)
-            itineraries = wrapped
-            _emit_progress(force=True)
-
         if not itineraries:
             out: dict[str, Any] = {
                 "error": "No multimodal or direct routes could be composed for this corridor",
@@ -798,6 +814,68 @@ class RouteComposer:
         )
         return out
 
+    @staticmethod
+    def _leg_is_synthetic(leg: Any) -> bool:
+        segs = getattr(leg, "segments", None) or []
+        if segs and isinstance(segs[0], dict):
+            return bool(segs[0].get("estimated"))
+        if isinstance(leg, dict):
+            segs = leg.get("segments") or []
+            return bool(segs and segs[0].get("estimated"))
+        return False
+
+    def _synthetic_feeder_leg(
+        self,
+        feeder: FeederAccess,
+        *,
+        outbound: bool = False,
+    ) -> Any:
+        from app.services.leg_extractor import Leg
+
+        dist_km: float | None = None
+        if feeder.local_station_code and feeder.hub_station_code:
+            try:
+                from app.pipelines.rail.station_coordinates import get_station_latlng
+
+                p1 = get_station_latlng(feeder.local_station_code)
+                p2 = get_station_latlng(feeder.hub_station_code)
+                if p1 and p2:
+                    dist_km = _haversine_km(p1[0], p1[1], p2[0], p2[1])
+            except Exception:
+                pass
+        if dist_km is None or dist_km < 1:
+            dist_km = 32.0
+
+        mode = "rail" if dist_km < 90 else "road"
+        speed = 38.0 if mode == "rail" else 45.0
+        time_hr = max(dist_km / speed, 0.25)
+        cost_inr = max(int(dist_km * 2.0 + 45), 55)
+
+        if outbound:
+            src, dst = feeder.hub_city, feeder.local_place
+        else:
+            src, dst = feeder.local_place, feeder.hub_city
+
+        return Leg(
+            mode=mode,
+            source=src,
+            destination=dst,
+            time_hr=round(time_hr, 2),
+            cost_inr=cost_inr,
+            risk=0.12,
+            segments=[
+                {
+                    "mode": mode.title(),
+                    "from": src,
+                    "to": dst,
+                    "distance_km": round(dist_km, 1),
+                    "estimated": True,
+                    "note": "Estimated feeder connection from station coordinates",
+                }
+            ],
+            status="ok",
+        )
+
     def _fetch_access_leg(
         self,
         fetch_leg,
@@ -808,6 +886,7 @@ class RouteComposer:
     ) -> Any | None:
         outbound = bool(frm and to)
         inbound_default = frm is None and to is None
+        reserve = {"reserve_slot": True}
 
         if outbound and feeder.hub_station_code and feeder.local_station_code:
             for mode in ("rail", "road"):
@@ -816,6 +895,7 @@ class RouteComposer:
                     feeder.hub_station_code,
                     feeder.local_station_code,
                     use_raw_endpoints=True,
+                    **reserve,
                 )
                 if leg:
                     return leg
@@ -826,37 +906,22 @@ class RouteComposer:
                     feeder.local_station_code,
                     feeder.hub_station_code,
                     use_raw_endpoints=True,
+                    **reserve,
                 )
                 if leg:
                     return leg
 
-        origin = frm or feeder.local_place
-        dest = to or feeder.hub_city
-        origin_candidates = [origin]
-        dest_candidates = [dest]
-        if feeder.local_station:
-            origin_candidates.append(_strip_station_suffix(feeder.local_station))
-            origin_candidates.append(feeder.local_station)
-        if feeder.hub_station and not frm:
-            dest_candidates.append(_strip_station_suffix(feeder.hub_station))
-            dest_candidates.append(feeder.hub_station)
-        if feeder.hub_station and frm:
-            origin_candidates.append(_strip_station_suffix(feeder.hub_station))
-            origin_candidates.append(feeder.hub_station)
-        if feeder.local_station_code and not frm:
-            origin_candidates.append(f"{feeder.local_place} ({feeder.local_station_code})")
-        if feeder.local_station and to:
-            dest_candidates.append(_strip_station_suffix(feeder.local_station))
-        if feeder.local_station_code and to:
-            dest_candidates.append(f"{feeder.local_place} ({feeder.local_station_code})")
+        leg = fetch_leg(
+            "road",
+            frm or feeder.local_place,
+            to or feeder.hub_city,
+            use_raw_endpoints=True,
+            **reserve,
+        )
+        if leg:
+            return leg
 
-        for mode in ("rail", "road"):
-            for o in origin_candidates:
-                for d in dest_candidates:
-                    leg = fetch_leg(mode, o, d, use_raw_endpoints=True)
-                    if leg:
-                        return leg
-        return None
+        return self._synthetic_feeder_leg(feeder, outbound=outbound)
 
     def _wrap_feeder_access(
         self,

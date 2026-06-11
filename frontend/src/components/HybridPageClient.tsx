@@ -121,7 +121,7 @@ export default function HybridPageClient() {
         budget_limit: state.budgetMax || undefined,
         delay_tolerance_hours: state.deadlineHours,
       },
-      compose_options: { max_hubs: 2, budget_seconds: 90 },
+      compose_options: { max_hubs: 2, budget_seconds: 150 },
     };
 
     const streamAcc = { current: null as ComposeResult | null };
@@ -433,7 +433,7 @@ export default function HybridPageClient() {
         cargoWeight={cargoWeight}
         onEdit={() => resetToEdit(0)}
       >
-        {error && (
+        {error && !result?.recommended && (
           <div className="mb-6 space-y-4">
             {failureContext ? (
               <ComposeFailurePanel
@@ -471,6 +471,12 @@ export default function HybridPageClient() {
               reason={roadUnavailableReason}
               compact
             />
+          </div>
+        )}
+
+        {error && result?.recommended && (
+          <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {error}
           </div>
         )}
 
