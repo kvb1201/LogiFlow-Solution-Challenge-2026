@@ -124,11 +124,11 @@ export default function HybridPageClient() {
       compose_options: { max_hubs: 2, budget_seconds: 90 },
     };
 
+    const streamAcc = { current: null as ComposeResult | null };
     try {
       const ready = await ensureComposeBackendReady(20_000);
       if (!ready) throw new Error(BACKEND_UNAVAILABLE_MSG);
 
-      const streamAcc = { current: null as ComposeResult | null };
       let data: ComposeResult;
       try {
         data = await streamComposeMultimodalRoute(composePayload, (partial) => {
@@ -147,20 +147,37 @@ export default function HybridPageClient() {
       }
 
       if (data.error && !data.recommended) {
-        if (isComposeFailureWithContext(data)) {
+        if (streamAcc.current?.recommended) {
+          setResult(streamAcc.current);
+          setFailureContext(data);
+          setError(
+            'Some hub legs could not be fully connected — showing the best routes found so far.'
+          );
+        } else if (isComposeFailureWithContext(data)) {
           setFailureContext(data);
           throw new Error(data.error);
+        } else {
+          throw new Error(data.error);
         }
-        throw new Error(data.error);
+      } else {
+
+        const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
+        if (roadUnavail) setRoadUnavailableReason(roadUnavail);
+
+        setFailureContext(null);
+        setResult(data);
       }
-
-      const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
-      if (roadUnavail) setRoadUnavailableReason(roadUnavail);
-
-      setFailureContext(null);
-      setResult(data);
     } catch (err: unknown) {
       if (err instanceof TrafficQueueError) return;
+      if (streamAcc.current?.recommended) {
+        setResult(streamAcc.current);
+        setError(
+          sanitizeUserMessage(
+            err instanceof Error ? err.message : 'Compose interrupted — partial routes kept.'
+          )
+        );
+        return;
+      }
       setResult(null);
       setRoadUnavailableReason(null);
       setError(

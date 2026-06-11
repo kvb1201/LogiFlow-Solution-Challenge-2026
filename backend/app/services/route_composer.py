@@ -900,7 +900,17 @@ class RouteComposer:
             extra_handling += _HANDLING_FEE_INR
             extra_time += d0["time_hr"] + buf
         elif src_feeder and not access_in_leg:
-            return None
+            return {
+                **itin,
+                "partial_feeder": True,
+                "feeder_warnings": [
+                    *list(itin.get("feeder_warnings") or []),
+                    (
+                        f"Local pickup not scheduled: {src_feeder.local_place} → "
+                        f"{src_feeder.hub_city} — route starts at the hub."
+                    ),
+                ],
+            }
 
         if dst_feeder and access_out_leg:
             d_last = enrich_leg(leg_to_dict(access_out_leg))
