@@ -4,8 +4,9 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "env": {
-    "BACKEND_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev",
-    "NEXT_PUBLIC_API_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev",
+    "BACKEND_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+    "NEXT_PUBLIC_API_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+    "NEXT_PUBLIC_COMPOSE_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
     "GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com",
     "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com"
   }

@@ -1,14 +1,16 @@
 import type { ComposeResult } from '@/services/api';
 
-/** Extract road-unavailable reason from compose unavailable_templates keys. */
+/** Extract road-unavailable reason — only when road truly blocked, not optional direct-leg miss. */
 export function extractRoadUnavailableReason(
   unavailable?: Record<string, string> | null
 ): string | null {
   if (!unavailable) return null;
   if (unavailable.road) return unavailable.road;
-  if (unavailable.direct_road) return unavailable.direct_road;
+  const direct = unavailable.direct_road;
+  if (direct && !/no direct road route/i.test(direct)) return direct;
   for (const [key, reason] of Object.entries(unavailable)) {
-    if (key.startsWith('rural:road:') || key.includes(':road:')) return reason;
+    if (key.startsWith('rural:road:')) return reason;
+    if (key.includes(':road:') && !/no direct road route/i.test(reason)) return reason;
   }
   return null;
 }

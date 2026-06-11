@@ -332,6 +332,8 @@ class RoadPipeline(BasePipeline):
 
     # --- STEP 3: Decision Engine ---
     def _score_routes(self, routes, priority="balanced"):
+        if not routes:
+            return []
         max_time = max(r["time"] for r in routes) or 1
         max_cost = max(r["cost"] for r in routes) or 1
         max_risk = max(r["risk"] for r in routes) or 1
@@ -427,9 +429,39 @@ class RoadPipeline(BasePipeline):
         realtime_payload["mode"] = "realtime"
 
         realtime_enriched = self._engineer(routes, source, destination, realtime_payload, context=context)
+        if not realtime_enriched:
+            return {
+                "mode": "road",
+                "simulation": simulation_mode,
+                "status": "no_routes",
+                "valid": False,
+                "message": "No drivable road routes could be scored for this corridor.",
+                "reason": "No drivable road route available.",
+                "best": None,
+                "alternatives": [],
+                "all": [],
+                "multistop": is_multistop,
+                "stops": stops if is_multistop else [],
+                "waypoints": ([source] + stops + [destination]) if is_multistop else [source, destination],
+            }
 
         realtime_filtered, _ = self._apply_constraints(realtime_enriched, realtime_payload)
         realtime_ranked = self._score_routes(realtime_filtered, priority)
+        if not realtime_ranked:
+            return {
+                "mode": "road",
+                "simulation": simulation_mode,
+                "status": "no_routes",
+                "valid": False,
+                "message": "No road routes satisfy constraints for this corridor.",
+                "reason": "No drivable road route available.",
+                "best": None,
+                "alternatives": [],
+                "all": [],
+                "multistop": is_multistop,
+                "stops": stops if is_multistop else [],
+                "waypoints": ([source] + stops + [destination]) if is_multistop else [source, destination],
+            }
 
         best_realtime = realtime_ranked[0]
 

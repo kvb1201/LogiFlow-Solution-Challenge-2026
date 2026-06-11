@@ -171,9 +171,12 @@ export default function AiBriefPanel({
         );
       }
 
-      if (contextMode === 'home' && (andNavigate || navigateOnApply)) {
+      if (contextMode === 'home' && corridorReady) {
         setPendingRouteIntent(mergedResult);
         setConfirmOpen(true);
+        if (!andNavigate && !navigateOnApply) {
+          setFillNotice('Shipment understood — choose how to open the recommended tool below.');
+        }
         return;
       }
 

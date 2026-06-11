@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  streamComposeMultimodalRoute,
   composeMultimodalRoute,
+  mergeComposeStreamUpdate,
+  ensureComposeBackendReady,
   BACKEND_UNAVAILABLE_MSG,
   TrafficQueueError,
   type ComposeResult,
@@ -20,7 +23,6 @@ import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { SaveReportModal } from '@/components/planner/SaveReportModal';
 import ParagraphInputWithStt from '@/components/ParagraphInputWithStt';
 import { CorridorRow } from '@/components/forms/pipeline-form-ui';
-import { ensureBackendWarm } from '@/lib/backendWarmup';
 import {
   markShipmentAutorunStarted,
   shouldRunShipmentAutorun,
@@ -64,6 +66,7 @@ export default function HybridPageClient() {
   const [step, setStep] = useState(0);
   const [scenarioBrief, setScenarioBrief] = useState(() => useLogiFlowStore.getState().scenarioBrief || '');
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
@@ -71,7 +74,8 @@ export default function HybridPageClient() {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
-  const inResultsView = loading || Boolean(result?.recommended) || Boolean(error && autoTriggered);
+  const inResultsView =
+    loading || loadingMore || Boolean(result?.recommended) || Boolean(error && autoTriggered);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -98,45 +102,84 @@ export default function HybridPageClient() {
     setFailureContext(null);
     setRoadUnavailableReason(null);
     setLoading(true);
+    setLoadingMore(false);
+    setResult(null);
     setStep(2);
     setAutoTriggered(true);
 
+    const composePayload = {
+      source: origin,
+      destination: dest,
+      priority: state.priority,
+      departure_date: state.departureDate,
+      cargo_weight_kg: state.cargoWeight,
+      cargo_type: state.cargoType,
+      scenario_brief: brief || undefined,
+      cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
+      constraints: {
+        budget_max_inr: state.budgetMax || undefined,
+        budget_limit: state.budgetMax || undefined,
+        delay_tolerance_hours: state.deadlineHours,
+      },
+      compose_options: { max_hubs: 2, budget_seconds: 150 },
+    };
+
+    const streamAcc = { current: null as ComposeResult | null };
     try {
-      const warm = await ensureBackendWarm(90_000);
-      if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
+      const ready = await ensureComposeBackendReady(20_000);
+      if (!ready) throw new Error(BACKEND_UNAVAILABLE_MSG);
 
-      const data = await composeMultimodalRoute({
-        source: origin,
-        destination: dest,
-        priority: state.priority,
-        departure_date: state.departureDate,
-        cargo_weight_kg: state.cargoWeight,
-        cargo_type: state.cargoType,
-        scenario_brief: brief || undefined,
-        cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
-        constraints: {
-          budget_max_inr: state.budgetMax || undefined,
-          budget_limit: state.budgetMax || undefined,
-          delay_tolerance_hours: state.deadlineHours,
-        },
-        compose_options: { max_hubs: 2, budget_seconds: 55 },
-      });
-
-      if (data.error && !data.recommended) {
-        if (isComposeFailureWithContext(data)) {
-          setFailureContext(data);
-          throw new Error(data.error);
+      let data: ComposeResult;
+      try {
+        data = await streamComposeMultimodalRoute(composePayload, (partial) => {
+          if (!partial.recommended) return;
+          streamAcc.current = mergeComposeStreamUpdate(streamAcc.current, partial);
+          setResult(streamAcc.current);
+          setLoading(false);
+          setLoadingMore(!partial.done);
+          setRoadUnavailableReason(null);
+        });
+      } catch {
+        if (streamAcc.current?.recommended) {
+          data = streamAcc.current;
+        } else {
+          data = await composeMultimodalRoute(composePayload);
         }
-        throw new Error(data.error);
       }
 
-      const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
-      if (roadUnavail) setRoadUnavailableReason(roadUnavail);
+      if (data.error && !data.recommended) {
+        if (streamAcc.current?.recommended) {
+          setResult(streamAcc.current);
+          setFailureContext(data);
+          setError(
+            'Some hub legs could not be fully connected — showing the best routes found so far.'
+          );
+        } else if (isComposeFailureWithContext(data)) {
+          setFailureContext(data);
+          throw new Error(data.error);
+        } else {
+          throw new Error(data.error);
+        }
+      } else {
 
-      setFailureContext(null);
-      setResult(data);
+          const roadUnavail = extractRoadUnavailableReason(data.unavailable_templates);
+        if (roadUnavail && !data.recommended) setRoadUnavailableReason(roadUnavail);
+        else setRoadUnavailableReason(null);
+
+        setFailureContext(null);
+        setResult(data);
+      }
     } catch (err: unknown) {
       if (err instanceof TrafficQueueError) return;
+      if (streamAcc.current?.recommended) {
+        setResult(streamAcc.current);
+        setError(
+          sanitizeUserMessage(
+            err instanceof Error ? err.message : 'Compose interrupted — partial routes kept.'
+          )
+        );
+        return;
+      }
       setResult(null);
       setRoadUnavailableReason(null);
       setError(
@@ -148,6 +191,7 @@ export default function HybridPageClient() {
       );
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [scenarioBrief]);
 
@@ -164,6 +208,7 @@ export default function HybridPageClient() {
     setAutoTriggered(true);
     setStep(2);
     setLoading(true);
+    setLoadingMore(false);
     void runComposeRef.current();
   }, []);
 
@@ -390,7 +435,7 @@ export default function HybridPageClient() {
         cargoWeight={cargoWeight}
         onEdit={() => resetToEdit(0)}
       >
-        {error && (
+        {error && !result?.recommended && (
           <div className="mb-6 space-y-4">
             {failureContext ? (
               <ComposeFailurePanel
@@ -415,9 +460,11 @@ export default function HybridPageClient() {
           </div>
         )}
 
-        {loading && <MultimodalPipelineLoading variant="compose" />}
+        {loading && !result?.recommended && (
+          <MultimodalPipelineLoading variant="compose" />
+        )}
 
-        {roadUnavailableReason && !loading && (
+        {roadUnavailableReason && !loading && !loadingMore && !result?.recommended && (
           <div className="mb-3">
             <InvalidCorridorCard
               mode="road"
@@ -429,9 +476,16 @@ export default function HybridPageClient() {
           </div>
         )}
 
-        {result?.recommended && !loading && (
+        {error && result?.recommended && (
+          <div className="mb-4 rounded-lg border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {error}
+          </div>
+        )}
+
+        {result?.recommended && (
           <ComposeResults
             result={result}
+            loadingMore={loadingMore}
             onEdit={() => resetToEdit(0)}
             onSave={() => setSaveModalOpen(true)}
           />
