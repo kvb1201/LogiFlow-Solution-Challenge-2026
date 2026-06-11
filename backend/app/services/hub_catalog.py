@@ -86,7 +86,10 @@ def _match_city_key(place: str) -> str | None:
     if not key:
         return None
     for city in CITY_TO_STATION:
-        if city.lower() == key or key in city.lower() or city.lower() in key:
+        if city.lower() == key:
+            return city
+    for city in CITY_TO_STATION:
+        if key in city.lower() or city.lower() in key:
             return city
     return None
 

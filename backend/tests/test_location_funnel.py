@@ -58,6 +58,14 @@ def test_guwahati_resolves_to_assam_metro_not_hati_satna():
     assert loc.resolution == "curated_metro"
 
 
+def test_patna_resolves_to_bihar_metro_not_auraiya_pata():
+    loc = resolve_location("Patna")
+    assert loc.canonical_city == "Patna"
+    assert loc.station_code in {"PNBE", "RJPB"}
+    assert "PATA" not in loc.station_codes
+    assert loc.resolution == "curated_metro"
+
+
 def test_rail_search_uses_full_pdf_clusters():
     src = _resolve_stations("PRYJ")
     dst = _resolve_stations("BSB")

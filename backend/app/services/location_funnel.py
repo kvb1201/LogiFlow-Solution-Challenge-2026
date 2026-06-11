@@ -222,8 +222,8 @@ def resolve_location(raw: str, *, context=None) -> ResolvedLocation:
     pdf_station_name: str | None = None
 
     # ── 2) Known metro names (rail CITY_TO_STATION) before PDF fuzzy search ──
-    # Prevents "Guwahati" → HATI (Satna) because "hati" is a substring of "guwahati".
-    if not station_codes and not _STATION_CODE_RE.fullmatch(token):
+    # Prevents "Guwahati" → HATI and "Patna" → PATA (Auraiya) via PDF fuzzy code match.
+    if not station_codes:
         try:
             from app.services.hub_catalog import _match_city_key
 
