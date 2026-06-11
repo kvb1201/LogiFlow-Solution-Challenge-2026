@@ -6,6 +6,7 @@
   "env": {
     "BACKEND_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev",
     "NEXT_PUBLIC_API_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev",
+    "NEXT_PUBLIC_COMPOSE_URL": "https://logiflow-solution-challenge-2026.onrender.com",
     "GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com",
     "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com"
   }

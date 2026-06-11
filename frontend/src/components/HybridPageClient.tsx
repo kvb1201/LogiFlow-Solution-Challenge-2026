@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  streamComposeMultimodalRoute,
   composeMultimodalRoute,
   BACKEND_UNAVAILABLE_MSG,
   TrafficQueueError,
@@ -64,6 +65,7 @@ export default function HybridPageClient() {
   const [step, setStep] = useState(0);
   const [scenarioBrief, setScenarioBrief] = useState(() => useLogiFlowStore.getState().scenarioBrief || '');
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeResult | null>(null);
@@ -71,7 +73,8 @@ export default function HybridPageClient() {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [roadUnavailableReason, setRoadUnavailableReason] = useState<string | null>(null);
 
-  const inResultsView = loading || Boolean(result?.recommended) || Boolean(error && autoTriggered);
+  const inResultsView =
+    loading || loadingMore || Boolean(result?.recommended) || Boolean(error && autoTriggered);
 
   const loadDemo = useCallback(() => {
     setSource(DEMO_SOURCE);
@@ -98,29 +101,43 @@ export default function HybridPageClient() {
     setFailureContext(null);
     setRoadUnavailableReason(null);
     setLoading(true);
+    setLoadingMore(false);
+    setResult(null);
     setStep(2);
     setAutoTriggered(true);
+
+    const composePayload = {
+      source: origin,
+      destination: dest,
+      priority: state.priority,
+      departure_date: state.departureDate,
+      cargo_weight_kg: state.cargoWeight,
+      cargo_type: state.cargoType,
+      scenario_brief: brief || undefined,
+      cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
+      constraints: {
+        budget_max_inr: state.budgetMax || undefined,
+        budget_limit: state.budgetMax || undefined,
+        delay_tolerance_hours: state.deadlineHours,
+      },
+      compose_options: { max_hubs: 2, budget_seconds: 75 },
+    };
 
     try {
       const warm = await ensureBackendWarm(90_000);
       if (!warm) throw new Error(BACKEND_UNAVAILABLE_MSG);
 
-      const data = await composeMultimodalRoute({
-        source: origin,
-        destination: dest,
-        priority: state.priority,
-        departure_date: state.departureDate,
-        cargo_weight_kg: state.cargoWeight,
-        cargo_type: state.cargoType,
-        scenario_brief: brief || undefined,
-        cargo: { weight: state.cargoWeight, type: state.cargoType.toLowerCase() },
-        constraints: {
-          budget_max_inr: state.budgetMax || undefined,
-          budget_limit: state.budgetMax || undefined,
-          delay_tolerance_hours: state.deadlineHours,
-        },
-        compose_options: { max_hubs: 2, budget_seconds: 75 },
-      });
+      let data: ComposeResult;
+      try {
+        data = await streamComposeMultimodalRoute(composePayload, (partial) => {
+          if (!partial.recommended) return;
+          setResult(partial);
+          setLoading(false);
+          setLoadingMore(!partial.done);
+        });
+      } catch {
+        data = await composeMultimodalRoute(composePayload);
+      }
 
       if (data.error && !data.recommended) {
         if (isComposeFailureWithContext(data)) {
@@ -148,6 +165,7 @@ export default function HybridPageClient() {
       );
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [scenarioBrief]);
 
@@ -164,6 +182,7 @@ export default function HybridPageClient() {
     setAutoTriggered(true);
     setStep(2);
     setLoading(true);
+    setLoadingMore(false);
     void runComposeRef.current();
   }, []);
 
@@ -415,9 +434,11 @@ export default function HybridPageClient() {
           </div>
         )}
 
-        {loading && <MultimodalPipelineLoading variant="compose" />}
+        {loading && !result?.recommended && (
+          <MultimodalPipelineLoading variant="compose" />
+        )}
 
-        {roadUnavailableReason && !loading && (
+        {roadUnavailableReason && !loading && !loadingMore && (
           <div className="mb-3">
             <InvalidCorridorCard
               mode="road"
@@ -429,9 +450,10 @@ export default function HybridPageClient() {
           </div>
         )}
 
-        {result?.recommended && !loading && (
+        {result?.recommended && (
           <ComposeResults
             result={result}
+            loadingMore={loadingMore}
             onEdit={() => resetToEdit(0)}
             onSave={() => setSaveModalOpen(true)}
           />

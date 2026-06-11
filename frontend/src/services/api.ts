@@ -19,6 +19,11 @@ const BACKEND_SERVER =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
   'http://127.0.0.1:8000';
 
+/** Long-running compose bypasses Vercel serverless (FUNCTION_INVOCATION_TIMEOUT). */
+const COMPOSE_DIRECT =
+  process.env.NEXT_PUBLIC_COMPOSE_URL?.replace(/\/$/, '') ||
+  BACKEND_SERVER;
+
 /** Browser calls use same-origin proxy; SSR uses direct backend URL. */
 export const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
 const RAILRADAR_BASE = '/railradar';
@@ -705,24 +710,135 @@ export interface ComposeResult {
   corridor_distance_km?: number | null;
   compose_note?: string | null;
   error?: string;
+  streaming?: boolean;
+  done?: boolean;
 }
 
-export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
+function composeBudgetMs(payload: ComposePayload): number {
   const budgetSec = payload.compose_options?.budget_seconds ?? 55;
-  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
-  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
-  const composeUrl =
-    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), budgetMs);
-  let res: Response;
+  return Math.max((budgetSec + 90) * 1000, 120_000);
+}
+
+function composeDirectUrl(path: 'compose' | 'compose/stream'): string {
+  if (typeof window === 'undefined') {
+    return `${BACKEND_SERVER}/${path}`;
+  }
+  return `${COMPOSE_DIRECT}/${path}`;
+}
+
+function handleComposeHttpError(res: Response, payload: ComposePayload, text: string): never {
+  if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
+    const corridor =
+      payload.source && payload.destination
+        ? `${payload.source} → ${payload.destination}`
+        : undefined;
+    redirectToWaitingRoom({
+      retryAfter: parseRetryAfter(res),
+      reason: res.status === 429 ? 'rate_limit' : 'capacity',
+      returnPath: getCurrentReturnPath(),
+      autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
+      corridor,
+    });
+    throw new TrafficQueueError('redirecting', true);
+  }
+  let message = text;
   try {
-    res = await fetch(composeUrl, {
+    const parsed = JSON.parse(text) as { error?: string };
+    if (parsed.error) message = parsed.error;
+  } catch {
+    /* use raw body */
+  }
+  if (res.status === 502 || res.status === 504) {
+    throw new Error(message || BACKEND_UNAVAILABLE_MSG);
+  }
+  throw new Error(`Compose failed (${res.status}): ${message}`);
+}
+
+async function parseComposeSseStream(
+  res: Response,
+  onUpdate?: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  if (!res.body) {
+    throw new Error('Compose stream returned no body');
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResult: ComposeResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() ?? '';
+    for (const chunk of chunks) {
+      const line = chunk
+        .split('\n')
+        .find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      const parsed = JSON.parse(line.slice(6)) as ComposeResult;
+      if (onUpdate && parsed.recommended) {
+        onUpdate(parsed);
+      }
+      if (parsed.done) {
+        finalResult = parsed;
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('Compose stream ended without a final result');
+  }
+  return finalResult;
+}
+
+/** Progressive compose — shows routes as they are found (SSE, direct to Render). */
+export async function streamComposeMultimodalRoute(
+  payload: ComposePayload,
+  onUpdate: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return await parseComposeSseStream(res, onUpdate);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Compose is still running — partial routes may already be visible. Retry to load cached legs faster.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return res.json();
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(
@@ -733,35 +849,6 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
   } finally {
     clearTimeout(timeout);
   }
-  if (!res.ok) {
-    if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
-      const corridor =
-        payload.source && payload.destination
-          ? `${payload.source} → ${payload.destination}`
-          : undefined;
-      redirectToWaitingRoom({
-        retryAfter: parseRetryAfter(res),
-        reason: res.status === 429 ? 'rate_limit' : 'capacity',
-        returnPath: getCurrentReturnPath(),
-        autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
-        corridor,
-      });
-      throw new TrafficQueueError('redirecting', true);
-    }
-    const text = await res.text();
-    let message = text;
-    try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed.error) message = parsed.error;
-    } catch {
-      /* use raw body */
-    }
-    if (res.status === 502 || res.status === 504) {
-      throw new Error(message || BACKEND_UNAVAILABLE_MSG);
-    }
-    throw new Error(`Compose failed (${res.status}): ${message}`);
-  }
-  return res.json();
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {

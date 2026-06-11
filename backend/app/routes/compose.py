@@ -1,6 +1,13 @@
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+import json
+import queue
+import threading
 from typing import List, Optional
+
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.services.route_composer import RouteComposer
 from app.utils.request_context import RequestContext
@@ -41,13 +48,8 @@ class ComposeRequest(BaseModel):
     scenario_brief: Optional[str] = None
 
 
-@router.post("/compose")
-@rate_limit(COMPOSE_LIMIT)
-def compose_multimodal(request: Request, data: ComposeRequest):
-    context = RequestContext()
-    composer = RouteComposer()
-
-    payload = {
+def _request_payload(data: ComposeRequest) -> dict:
+    return {
         "priority": (data.priority or "balanced").lower(),
         "cargo_weight_kg": data.cargo.weight if data.cargo else data.cargo_weight_kg,
         "cargo_type": data.cargo.type if data.cargo else data.cargo_type,
@@ -62,4 +64,60 @@ def compose_multimodal(request: Request, data: ComposeRequest):
         "compose_options": data.compose_options.dict() if data.compose_options else {},
     }
 
-    return composer.compose(data.source, data.destination, payload, context=context)
+
+@router.post("/compose")
+@rate_limit(COMPOSE_LIMIT)
+def compose_multimodal(request: Request, data: ComposeRequest):
+    context = RequestContext()
+    composer = RouteComposer()
+    return composer.compose(
+        data.source,
+        data.destination,
+        _request_payload(data),
+        context=context,
+    )
+
+
+@router.post("/compose/stream")
+@rate_limit(COMPOSE_LIMIT)
+def compose_multimodal_stream(request: Request, data: ComposeRequest):
+    """SSE stream — emit ranked partial itineraries as legs are discovered."""
+    context = RequestContext()
+    composer = RouteComposer()
+    payload = _request_payload(data)
+    events: queue.SimpleQueue[dict] = queue.SimpleQueue()
+
+    def on_progress(snap: dict) -> None:
+        events.put({**snap, "done": False})
+
+    def run() -> None:
+        try:
+            result = composer.compose(
+                data.source,
+                data.destination,
+                payload,
+                context=context,
+                on_progress=on_progress,
+            )
+            events.put({**result, "done": True, "streaming": False})
+        except Exception as exc:
+            events.put({"error": str(exc), "done": True, "streaming": False})
+
+    threading.Thread(target=run, name="compose-stream", daemon=True).start()
+
+    def generate():
+        while True:
+            item = events.get()
+            yield f"data: {json.dumps(item, default=str)}\n\n"
+            if item.get("done"):
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

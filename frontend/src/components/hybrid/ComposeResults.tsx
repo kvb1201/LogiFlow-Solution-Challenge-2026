@@ -7,10 +7,12 @@ import { formatHours, formatInr, modeLabel } from '@/lib/hybrid-ui';
 
 export function ComposeResults({
   result,
+  loadingMore = false,
   onEdit,
   onSave,
 }: {
   result: ComposeResult;
+  loadingMore?: boolean;
   onEdit: () => void;
   onSave?: () => void;
 }) {
@@ -75,6 +77,23 @@ export function ComposeResults({
             ))}
           </div>
         </section>
+      )}
+
+      {loadingMore && (
+        <div
+          className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/40 px-4 py-3 text-sm text-muted-foreground animate-pulse"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="material-symbols-outlined text-[20px] animate-spin"
+            style={{ color: 'var(--hybrid)' }}
+            aria-hidden
+          >
+            progress_activity
+          </span>
+          Still searching hub chains and rail legs — new routes will appear below as they are found.
+        </div>
       )}
 
       <button

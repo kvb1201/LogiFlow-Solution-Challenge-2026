@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from app.services.compose_leg_cache import get_cached_leg, set_cached_leg
 from app.services.geo_hub_finder import HubPair, discover_rural_hub_pairs, is_remote_location
@@ -62,6 +62,130 @@ _TRANSFER_BUFFER_HR: dict[tuple[str, str], float] = {
 }
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="compose-leg")
+
+_PROGRESS_EMIT_MIN_S = 0.35
+
+
+def _build_compose_snapshot(
+    itineraries: list[dict[str, Any]],
+    priority: str,
+    *,
+    hubs: list[Hub],
+    hub_pairs: list[HubPair],
+    unavailable: dict[str, str],
+    rural_corridor: bool,
+    has_feeder: bool,
+    warm_corridor: bool,
+    short_corridor: bool,
+    corridor_km: float | None,
+    src_r: Any,
+    dst_r: Any,
+    src_feeder: FeederAccess | None,
+    dst_feeder: FeederAccess | None,
+    access_in_leg: Any | None,
+    access_out_leg: Any | None,
+    partial: bool,
+    streaming: bool = False,
+) -> dict[str, Any]:
+    """Rank current itineraries for SSE progress or final response."""
+    work = list(itineraries)
+    if short_corridor:
+        work = [
+            it
+            for it in work
+            if it.get("type") == "direct"
+            or str(it.get("template_id") or "").startswith("feeder+")
+        ]
+    if not work:
+        return {
+            "partial": partial,
+            "streaming": streaming,
+            "rural_corridor": rural_corridor,
+            "feeder_corridor": has_feeder,
+            "unavailable_templates": unavailable,
+            "hubs_considered": [h.to_dict() for h in hubs],
+            "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+            "short_corridor": short_corridor,
+            "corridor_distance_km": corridor_km,
+            "cold_corridor": not warm_corridor,
+            "resolved_source": {
+                **src_r.to_dict(),
+                **({"feeder_access": src_feeder.to_dict()} if src_feeder else {}),
+            },
+            "resolved_destination": {
+                **dst_r.to_dict(),
+                **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
+            },
+        }
+
+    ranked = score_itineraries(work, priority)
+    for it in ranked:
+        it["explanation"] = build_explanation(it)
+    best = ranked[0]
+
+    baselines = {
+        it["template_id"].replace("direct_", ""): {
+            "time_hr": it["total_time_hr"],
+            "cost_inr": it["total_cost_inr"],
+            "risk": it["total_risk"],
+            "type": "direct",
+        }
+        for it in ranked
+        if it.get("type") == "direct"
+    }
+    multimodal = [it for it in ranked if it.get("type") == "multimodal"]
+    beats = None
+    if best.get("type") == "multimodal" and baselines:
+        direct_best = min(
+            baselines.values(),
+            key=lambda b: b["time_hr"] if priority in ("time", "fast") else b["cost_inr"],
+        )
+        beats = {
+            "baseline_mode": min(baselines, key=lambda k: baselines[k]["time_hr"]),
+            "time_delta_hr": round(direct_best["time_hr"] - best["total_time_hr"], 2),
+            "cost_delta_inr": int(direct_best["cost_inr"] - best["total_cost_inr"]),
+        }
+
+    out: dict[str, Any] = {
+        "priority": priority,
+        "recommended": best,
+        "alternatives": ranked[1:8],
+        "baselines": baselines,
+        "beats_single_mode": beats,
+        "hubs_considered": [h.to_dict() for h in hubs],
+        "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
+        "rural_corridor": rural_corridor,
+        "feeder_corridor": has_feeder,
+        "unavailable_templates": unavailable,
+        "total_candidates": len(ranked),
+        "multimodal_count": len(multimodal),
+        "partial": partial,
+        "streaming": streaming,
+        "cold_corridor": not warm_corridor,
+        "short_corridor": short_corridor,
+        "corridor_distance_km": corridor_km,
+        "resolved_source": {
+            **src_r.to_dict(),
+            **({"feeder_access": src_feeder.to_dict()} if src_feeder else {}),
+        },
+        "resolved_destination": {
+            **dst_r.to_dict(),
+            **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
+        },
+    }
+    feeder_note = _feeder_compose_note(
+        src_feeder, dst_feeder, access_in_leg, access_out_leg
+    )
+    if short_corridor and corridor_km is not None:
+        out["compose_note"] = _short_corridor_note(corridor_km)
+    elif feeder_note:
+        out["compose_note"] = feeder_note
+    elif rural_corridor:
+        out["compose_note"] = (
+            "Rural or unmapped place detected — showing direct routes plus "
+            "options via nearest major hub cities (road + train/air)."
+        )
+    return out
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -200,6 +324,8 @@ class RouteComposer:
         destination: str,
         payload: dict[str, Any] | None = None,
         context: RequestContext | None = None,
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         payload = payload or {}
         context = context or RequestContext()
@@ -291,6 +417,47 @@ class RouteComposer:
         itineraries: list[dict[str, Any]] = []
         unavailable: dict[str, str] = {}
         leg_calls = 0
+        last_progress_emit = 0.0
+
+        def _snapshot_context() -> dict[str, Any]:
+            return dict(
+                hubs=hubs,
+                hub_pairs=hub_pairs,
+                unavailable=unavailable,
+                rural_corridor=rural_corridor,
+                has_feeder=has_feeder,
+                warm_corridor=warm_corridor,
+                short_corridor=short_corridor,
+                corridor_km=corridor_km,
+                src_r=src_r,
+                dst_r=dst_r,
+                src_feeder=src_feeder,
+                dst_feeder=dst_feeder,
+                access_in_leg=access_in_leg,
+                access_out_leg=access_out_leg,
+            )
+
+        def _emit_progress(*, force: bool = False) -> None:
+            nonlocal last_progress_emit
+            if not on_progress or not itineraries:
+                return
+            now = time.monotonic()
+            if not force and now - last_progress_emit < _PROGRESS_EMIT_MIN_S:
+                return
+            last_progress_emit = now
+            snap = _build_compose_snapshot(
+                itineraries,
+                priority,
+                partial=True,
+                streaming=True,
+                **_snapshot_context(),
+            )
+            if snap.get("recommended"):
+                on_progress(snap)
+
+        def _note_itinerary(it: dict[str, Any]) -> None:
+            itineraries.append(it)
+            _emit_progress()
 
         def _remaining_s() -> float:
             return deadline - time.monotonic()
@@ -422,7 +589,7 @@ class RouteComposer:
             if "road" not in excluded and not _should_skip_mode("road") and try_road:
                 leg = fetch_leg("road", origin_effective, dest_effective)
                 if leg:
-                    itineraries.append(self._single_leg_itinerary(leg, "direct_road"))
+                    _note_itinerary(self._single_leg_itinerary(leg, "direct_road"))
                 else:
                     unavailable["direct_road"] = "No direct road route"
 
@@ -430,7 +597,7 @@ class RouteComposer:
             if "air" not in excluded and not _should_skip_mode("air"):
                 leg = fetch_leg("air", origin_effective, dest_effective)
                 if leg:
-                    itineraries.append(self._single_leg_itinerary(leg, "direct_air"))
+                    _note_itinerary(self._single_leg_itinerary(leg, "direct_air"))
                 elif not short_corridor:
                     unavailable["direct_air"] = "No direct air route"
 
@@ -486,11 +653,11 @@ class RouteComposer:
                     template_id = "rural_" + "+".join(template_parts)
                     if len(legs) == 2:
                         hub = h_o if src_remote else h_d
-                        itineraries.append(
+                        _note_itinerary(
                             self._compose_two_leg(template_id, hub, legs[0], legs[1])
                         )
                     else:
-                        itineraries.append(
+                        _note_itinerary(
                             self._compose_three_leg(template_id, h_o, h_d, legs[0], legs[1], legs[2])
                         )
 
@@ -500,7 +667,7 @@ class RouteComposer:
             leg = fetch_leg("rail", origin_effective, dest_effective)
             if leg:
                 direct_rail_leg = leg
-                itineraries.append(self._single_leg_itinerary(leg, "direct_rail"))
+                _note_itinerary(self._single_leg_itinerary(leg, "direct_rail"))
             else:
                 unavailable["direct_rail"] = "No direct rail route"
 
@@ -540,14 +707,14 @@ class RouteComposer:
                         )
                         continue
 
-                    itineraries.append(
+                    _note_itinerary(
                         self._compose_two_leg(template_id, hub, leg_in, leg_out)
                     )
 
         if include_heavy and not _past_deadline() and "water" not in excluded:
             leg = fetch_leg("water", origin_effective, dest_effective)
             if leg:
-                itineraries.append(self._single_leg_itinerary(leg, "direct_water"))
+                _note_itinerary(self._single_leg_itinerary(leg, "direct_water"))
 
         if itineraries and (src_feeder or dst_feeder):
             wrapped: list[dict[str, Any]] = []
@@ -562,6 +729,7 @@ class RouteComposer:
                 if wrapped_it:
                     wrapped.append(wrapped_it)
             itineraries = wrapped
+            _emit_progress(force=True)
 
         if not itineraries:
             out: dict[str, Any] = {
@@ -637,77 +805,14 @@ class RouteComposer:
                 out["compose_note"] = feeder_note
             return out
 
-        ranked = score_itineraries(itineraries, priority)
-        best = ranked[0]
-        best["explanation"] = build_explanation(best)
-
-        baselines = {
-            it["template_id"].replace("direct_", ""): {
-                "time_hr": it["total_time_hr"],
-                "cost_inr": it["total_cost_inr"],
-                "risk": it["total_risk"],
-                "type": "direct",
-            }
-            for it in ranked
-            if it.get("type") == "direct"
-        }
-
-        multimodal = [it for it in ranked if it.get("type") == "multimodal"]
-        beats = None
-        if best.get("type") == "multimodal" and baselines:
-            direct_best = min(
-                baselines.values(),
-                key=lambda b: b["time_hr"] if priority in ("time", "fast") else b["cost_inr"],
-            )
-            beats = {
-                "baseline_mode": min(baselines, key=lambda k: baselines[k]["time_hr"]),
-                "time_delta_hr": round(direct_best["time_hr"] - best["total_time_hr"], 2),
-                "cost_delta_inr": int(direct_best["cost_inr"] - best["total_cost_inr"]),
-            }
-
-        for it in ranked:
-            it["explanation"] = build_explanation(it)
-
         partial = "_budget" in unavailable or "_leg_cap" in unavailable
-
-        out = {
-            "priority": priority,
-            "recommended": best,
-            "alternatives": ranked[1:8],
-            "baselines": baselines,
-            "beats_single_mode": beats,
-            "hubs_considered": [h.to_dict() for h in hubs],
-            "hub_pairs_considered": [p.to_dict() for p in hub_pairs],
-            "rural_corridor": rural_corridor,
-            "feeder_corridor": bool(src_feeder or dst_feeder),
-            "unavailable_templates": unavailable,
-            "total_candidates": len(ranked),
-            "multimodal_count": len(multimodal),
-            "partial": partial,
-            "cold_corridor": not warm_corridor,
-            "short_corridor": short_corridor,
-            "corridor_distance_km": corridor_km,
-            "resolved_source": {
-                **src_r.to_dict(),
-                **({"feeder_access": src_feeder.to_dict()} if src_feeder else {}),
-            },
-            "resolved_destination": {
-                **dst_r.to_dict(),
-                **({"feeder_access": dst_feeder.to_dict()} if dst_feeder else {}),
-            },
-        }
-        feeder_note = _feeder_compose_note(
-            src_feeder, dst_feeder, access_in_leg, access_out_leg
+        out = _build_compose_snapshot(
+            itineraries,
+            priority,
+            partial=partial,
+            streaming=False,
+            **_snapshot_context(),
         )
-        if short_corridor and corridor_km is not None:
-            out["compose_note"] = _short_corridor_note(corridor_km)
-        elif feeder_note:
-            out["compose_note"] = feeder_note
-        elif rural_corridor:
-            out["compose_note"] = (
-                "Rural or unmapped place detected — showing direct routes plus "
-                "options via nearest major hub cities (road + train/air)."
-            )
         return out
 
     def _fetch_access_leg(
