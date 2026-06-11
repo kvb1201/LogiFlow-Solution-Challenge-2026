@@ -39,6 +39,7 @@ CITY_TO_AIRPORT = {
     "Hong Kong": {"code": "HKG", "name": "Hong Kong International Airport"},
     "Tokyo": {"code": "NRT", "name": "Narita International Airport"},
     "Seoul": {"code": "ICN", "name": "Incheon International Airport"},
+    "Shanghai": {"code": "PVG", "name": "Shanghai Pudong International Airport"},
     "Chicago": {"code": "ORD", "name": "O'Hare International Airport"},
     "Los Angeles": {"code": "LAX", "name": "Los Angeles International Airport"},
     "Doha": {"code": "DOH", "name": "Hamad International Airport"},
@@ -71,6 +72,8 @@ CITY_ALIASES = {
     "hong kong": "Hong Kong",
     "tokyo": "Tokyo",
     "seoul": "Seoul",
+    "shanghai": "Shanghai",
+    "shangai": "Shanghai",
     "chicago": "Chicago",
     "los angeles": "Los Angeles",
     "la": "Los Angeles",
@@ -84,7 +87,8 @@ _IATA_PATTERN = re.compile(r"^[A-Z]{3}$")
 
 
 def normalize_city(city: str) -> str:
-    raw = city.strip()
+    # Split by comma to handle "New Delhi, Delhi" -> "New Delhi"
+    raw = city.split(',')[0].strip()
     canonical = CITY_ALIASES.get(raw.lower(), raw)
     return canonical
 

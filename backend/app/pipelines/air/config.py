@@ -6,6 +6,7 @@ CITY_TO_AIRPORT = {
     "Chennai": {"code": "MAA", "name": "Chennai International Airport"},
     "Hyderabad": {"code": "HYD", "name": "Rajiv Gandhi International Airport"},
     "Kolkata": {"code": "CCU", "name": "Netaji Subhas Chandra Bose International Airport"},
+    "Shanghai": {"code": "PVG", "name": "Shanghai Pudong International Airport"},
     "Tirupati": {"code": "TIR", "name": "Tirupati Airport"},
 }
 
@@ -21,6 +22,8 @@ CITY_ALIASES = {
     "mumbai": "Mumbai",
     "hyderabad": "Hyderabad",
     "kolkata": "Kolkata",
+    "shanghai": "Shanghai",
+    "shangai": "Shanghai",
 }
 
 AIRLINE_RELIABILITY = {
