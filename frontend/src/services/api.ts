@@ -1157,6 +1157,108 @@ export async function fetchRailModelInfo(): Promise<RailModelInfo> {
   return (await staticPromise) ?? fetchRailModelInfoFallback();
 }
 
+// ── Road ML Model Info ────────────────────────────────────────────────
+
+export interface RoadMlQuantifier {
+  id: string;
+  label: string;
+  short_label: string;
+  value: number | null;
+  unit: string;
+  summary: string;
+  derivation: string;
+}
+
+export interface RoadModelInfo {
+  delay_model?: string;
+  model_kind?: string;
+  training_rows?: number;
+  training_data?: string;
+  target?: string;
+  features?: string[];
+  validation?: string;
+  cv_metrics?: {
+    accuracy?: number;
+    precision?: number;
+    recall?: number;
+    f1_score?: number;
+    roc_auc?: number;
+    cv_roc_auc?: number;
+  };
+  quantifiers?: RoadMlQuantifier[];
+  documentation_url?: string;
+}
+
+const ROAD_ML_FALLBACK_URL = '/data/road-ml-metrics.json';
+
+function hasRoadQuantifierValues(info: RoadModelInfo | null): boolean {
+  return Boolean(
+    info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
+  );
+}
+
+export async function fetchRoadModelInfo(): Promise<RoadModelInfo> {
+  try {
+    const res = await fetch(ROAD_ML_FALLBACK_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Road ML metrics unavailable');
+    const data = (await res.json()) as RoadModelInfo;
+    if (hasRoadQuantifierValues(data)) return data;
+  } catch {
+    /* fall through */
+  }
+  // Hard-coded fallback so the UI always has something to show
+  return {
+    delay_model: 'Road Delay Prediction ML',
+    model_kind: 'HistGradientBoostingClassifier',
+    training_rows: 1000,
+    training_data: 'smart_logistics_dataset.csv',
+    target: 'Logistics_Delay',
+    features: ['Traffic Severity', 'Temperature', 'Humidity', 'Asset Utilization', 'Demand Forecast'],
+    validation: '80/20 Stratified Holdout + 5-Fold Cross Validation',
+    cv_metrics: {
+      accuracy: 73.0,
+      precision: 81.0,
+      recall: 68.0,
+      f1_score: 74.0,
+      roc_auc: 78.2,
+      cv_roc_auc: 78.3,
+    },
+    quantifiers: [
+      {
+        id: 'delay_detection_accuracy',
+        label: 'Delay Detection Accuracy',
+        short_label: 'ACC',
+        value: 73.0,
+        unit: '%',
+        summary: 'Percentage of shipments correctly classified as delayed or on-time.',
+        derivation:
+          'Measured on a stratified 20% holdout dataset using HistGradientBoostingClassifier. The model correctly classified 73.0% of shipments.',
+      },
+      {
+        id: 'high_risk_shipment_detection',
+        label: 'High-Risk Shipment Detection',
+        short_label: 'RISK',
+        value: 68.0,
+        unit: '%',
+        summary: 'Percentage of delayed shipments successfully identified before execution.',
+        derivation:
+          'Measured as recall on delayed shipments. The model identified 68.0% of logistics events that eventually experienced delays.',
+      },
+      {
+        id: 'cross_validated_reliability',
+        label: 'Cross-Validated Reliability',
+        short_label: 'CV-AUC',
+        value: 78.3,
+        unit: '%',
+        summary: 'Average predictive reliability across five independent validation folds.',
+        derivation:
+          'Calculated using 5-fold cross-validation with ROC-AUC scoring. Mean ROC-AUC achieved 78.3%.',
+      },
+    ],
+    documentation_url: '/docs/road-ml-pipeline.pdf',
+  };
+}
+
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
   if (!query || query.length < 2) return [];
   try {

@@ -1,0 +1,53 @@
+{
+  "delay_model": "Road Delay Prediction ML",
+  "model_kind": "HistGradientBoostingClassifier",
+  "training_rows": 1000,
+  "training_data": "smart_logistics_dataset.csv",
+  "target": "Logistics_Delay",
+  "features": [
+    "Traffic Severity",
+    "Temperature",
+    "Humidity",
+    "Asset Utilization",
+    "Demand Forecast"
+  ],
+  "validation": "80/20 Stratified Holdout + 5-Fold Cross Validation",
+  "cv_metrics": {
+    "accuracy": 73.0,
+    "precision": 81.0,
+    "recall": 68.0,
+    "f1_score": 74.0,
+    "roc_auc": 78.2,
+    "cv_roc_auc": 78.3
+  },
+  "quantifiers": [
+    {
+      "id": "delay_detection_accuracy",
+      "label": "Delay Detection Accuracy",
+      "short_label": "ACC",
+      "value": 73.0,
+      "unit": "%",
+      "summary": "Percentage of shipments correctly classified as delayed or on-time.",
+      "derivation": "Measured on a stratified 20% holdout dataset using HistGradientBoostingClassifier. The model correctly classified 73.0% of shipments."
+    },
+    {
+      "id": "high_risk_shipment_detection",
+      "label": "High-Risk Shipment Detection",
+      "short_label": "RISK",
+      "value": 68.0,
+      "unit": "%",
+      "summary": "Percentage of delayed shipments successfully identified before execution.",
+      "derivation": "Measured as recall on delayed shipments. The model identified 68.0% of logistics events that eventually experienced delays."
+    },
+    {
+      "id": "cross_validated_reliability",
+      "label": "Cross-Validated Reliability",
+      "short_label": "CV-AUC",
+      "value": 78.3,
+      "unit": "%",
+      "summary": "Average predictive reliability across five independent validation folds.",
+      "derivation": "Calculated using 5-fold cross-validation with ROC-AUC scoring. Mean ROC-AUC achieved 78.3%."
+    }
+  ],
+  "documentation_url": "/docs/road-ml-pipeline.pdf"
+}
