@@ -108,7 +108,8 @@ Render free tier sleeps after ~15 min idle (30–90s cold start). Use Cloud Run 
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase anon key |
 | `NEXT_PUBLIC_RAILRADAR_API_KEY` | ❌ | Live train map |
 | `NEXT_PUBLIC_SITE_URL` | ❌ | Canonical URL for SEO/sitemap (e.g. `https://logiflow.in`) |
-| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | ❌ | Google Analytics 4 (`G-…`) — opt-in; see [gcp-optimization.md](./gcp-optimization.md) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | ✅ | GA4 default `G-S710XF91X1` — see [gcp-optimization.md](./gcp-optimization.md) |
+| `NEXT_PUBLIC_SITE_URL` | ❌ | Canonical URL for SEO (`https://logiflow.in` when on custom domain) |
 
 Production values are baked into `frontend/vercel.json`. After changing env vars in Vercel dashboard → **Redeploy**.
 

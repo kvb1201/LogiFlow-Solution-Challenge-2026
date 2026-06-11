@@ -7,13 +7,11 @@ import { SiteFooter } from '@/components/SiteFooter';
 import { BackendWarmup } from '@/components/BackendWarmup';
 import { AmbientBackdrop } from '@/components/cockpit/AmbientBackdrop';
 import { WebSiteJsonLd } from '@/components/seo/JsonLd';
-import { rootMetadata } from '@/lib/seo';
+import { GA_MEASUREMENT_ID, rootMetadata } from '@/lib/seo';
 
 import { AuthInitializer } from '@/components/auth/AuthInitializer';
 
 export const metadata = rootMetadata;
-
-const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
 
 export default function RootLayout({
   children,
@@ -46,7 +44,7 @@ export default function RootLayout({
         <SiteFooter />
         <Analytics />
         <SpeedInsights />
-        {gaId ? <GoogleAnalytics gaId={gaId} /> : null}
+        <GoogleAnalytics gaId={GA_MEASUREMENT_ID} />
       </body>
     </html>
   );

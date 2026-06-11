@@ -14,7 +14,8 @@
 | Vercel Speed Insights | ✅ Live | Minimal | Vercel |
 | Build-time SEO (metadata, sitemap, robots) | ✅ Live | **Zero client JS** — HTML `<head>` only | Next.js |
 | JSON-LD structured data | ✅ Live | **Zero client JS** — inline server script | Next.js |
-| Google Analytics 4 (GA4) | ⏸ Optional | Small — loads **only if** `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set; uses `@next/third-parties` (afterInteractive) | Google Analytics |
+| Google Analytics 4 (GA4) | ✅ Live | Small — `@next/third-parties` loads `afterInteractive` (non-blocking) | Google Analytics |
+| Firebase on GCP project | ✅ Enabled | None on website | GCP + Firebase |
 | Google Search Console | 📋 Manual | None — dashboard only | Google Search |
 | GA4 → BigQuery export | 📋 Optional | None on website | GCP BigQuery |
 | Cloud Monitoring alerts | 📋 Recommended | None on website | GCP |
@@ -71,24 +72,28 @@ curl -s https://logi-flow-solution-challenge-2026.vercel.app/robots.txt
 
 ---
 
-## Google Analytics 4 (optional)
+## Google Analytics 4 (enabled by default)
 
-GA4 is a **Google product** (not hosted on Cloud Run). It integrates with **GCP BigQuery** for warehouse analytics.
+GA4 is linked to the GCP project via **Firebase** (enabled June 2026 on `project-6d6f652b-7066-4341-806`).
 
-### Enable (does not affect site until you set the env var)
+| Item | Value |
+|------|-------|
+| Measurement ID | `G-S710XF91X1` |
+| Web stream | LogiFlow Production |
+| Stream URL | `https://logi-flow-solution-challenge-2026.vercel.app` |
+| GA4 property | `525291588` (account `385057417`) |
+| Firebase web app | `LogiFlow Web` (`1:689785530973:web:d49ee0effad82c5753bbb4`) |
 
-1. [Google Analytics](https://analytics.google.com/) → Admin → Create property **LogiFlow**
-2. Data stream → Web → URL `https://logiflow.in` (or Vercel URL)
-3. Copy **Measurement ID** (`G-XXXXXXXXXX`)
-4. Vercel → Settings → Environment Variables → Production:
-   ```
-   NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
-   ```
-5. Redeploy frontend
+**Implementation:** `@next/third-parties/google` in `frontend/src/app/layout.tsx` — always on, `afterInteractive` (non-blocking).
 
-**Implementation:** `@next/third-parties/google` `GoogleAnalytics` in `frontend/src/app/layout.tsx` — script loads `afterInteractive`, not render-blocking.
+**Configured in:** `frontend/vercel.json`, `frontend/src/lib/seo.ts` (`GA_MEASUREMENT_ID` fallback), `NEXT_PUBLIC_GA_MEASUREMENT_ID` in Vercel Production.
 
-**Leave unset** to disable GA4 entirely (zero overhead).
+**Dashboard:** [Google Analytics](https://analytics.google.com/analytics/web/#/a385057417p525291588/reports/intelligenthome) → Realtime to verify traffic after deploy.
+
+### Disable GA4 (if you notice slowdown)
+
+1. Remove `NEXT_PUBLIC_GA_MEASUREMENT_ID` from Vercel → redeploy, **or**
+2. Set `NEXT_PUBLIC_GA_MEASUREMENT_ID=` (empty) in Vercel to override the code fallback.
 
 ### Link GA4 → BigQuery (GCP)
 
@@ -113,7 +118,8 @@ Keep both if you need BigQuery; otherwise Vercel Analytics alone is enough for s
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `NEXT_PUBLIC_SITE_URL` | Recommended for production | Canonical URL for SEO (e.g. `https://logiflow.in`) |
-| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional | Enables GA4 when set (`G-…`) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | ✅ Default `G-S710XF91X1` | GA4 measurement ID (override in Vercel to change/disable) |
+| `NEXT_PUBLIC_SITE_URL` | Recommended | Canonical URL for SEO/sitemap |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ✅ | Google Sign-In (existing) |
 
 Template: `frontend/.actual.env`
@@ -162,7 +168,7 @@ git push origin main
 ```
 
 ### Disable GA4 only (keep SEO)
-Remove `NEXT_PUBLIC_GA_MEASUREMENT_ID` from Vercel → redeploy. No code change.
+Remove or empty `NEXT_PUBLIC_GA_MEASUREMENT_ID` in Vercel → redeploy. Or revert the GA commit below.
 
 ### Disable SEO metadata only
 Revert files under `frontend/src/lib/seo.ts`, `frontend/src/app/sitemap.ts`, `frontend/src/app/robots.ts`, and pipeline `layout.tsx` files. SEO has **no runtime cost**, so reverting is only needed for content reasons, not speed.

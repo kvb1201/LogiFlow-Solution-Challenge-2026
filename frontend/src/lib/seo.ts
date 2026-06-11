@@ -11,6 +11,10 @@ export const SITE_URL = (
 
 export const SITE_NAME = 'LogiFlow';
 
+/** GA4 measurement ID — GCP-linked property (LogiFlow Production web stream). */
+export const GA_MEASUREMENT_ID =
+  process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() || 'G-S710XF91X1';
+
 const DEFAULT_DESCRIPTION =
   'Compare rail, road, air, water, and hybrid freight routes across India with live data, AI-assisted planning, and explainable recommendations.';
 
