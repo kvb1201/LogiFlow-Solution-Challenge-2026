@@ -25,7 +25,7 @@ function friendlyError(err: unknown): string {
   return 'Google authentication failed. Please try again.';
 }
 
-export function LoginPage() {
+export function LoginPage({ googleClientId = '' }: { googleClientId?: string }) {
   const router = useRouter();
   const { user, token, setUser, setToken, setError, error } = useAuthStore();
   const [authenticating, setAuthenticating] = useState(false);
@@ -138,7 +138,7 @@ export function LoginPage() {
                 <h2 id="login-google-heading" className="sr-only">
                   Sign in with Google
                 </h2>
-                <GoogleSignInButton onSuccess={handleGoogleSuccess} />
+                <GoogleSignInButton clientId={googleClientId} onSuccess={handleGoogleSuccess} />
                 <p className="text-center text-xs leading-relaxed text-muted-foreground">
                   By signing in, you agree to LogiFlow&apos;s{' '}
                   <Link
