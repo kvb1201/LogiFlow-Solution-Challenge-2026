@@ -81,3 +81,6 @@ updated docs [current version]/
 backend/.env
 backend/test_irctc.mjs
 backend/logiflow.db
+
+# Firecrawl CLI cache (scraped web research)
+.firecrawl/

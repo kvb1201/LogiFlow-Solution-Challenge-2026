@@ -128,18 +128,21 @@ export default function NavBar() {
           aria-label="LogiFlow home"
         >
           <div
-            className="relative grid h-9 w-9 place-items-center rounded-lg border bg-surface-2 shadow-[0_0_24px_-20px_var(--logo-accent)] transition-all duration-300 group-hover:shadow-[0_0_28px_-18px_var(--logo-accent)]"
+            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border shadow-[0_0_28px_-18px_var(--logo-accent)] transition-all duration-300 group-hover:shadow-[0_0_32px_-14px_var(--logo-accent)]"
             style={{
               ['--logo-accent' as string]: logoAccent,
               borderColor: activeMode
                 ? accentMix(activeMode, 40, 'var(--border-strong)')
                 : 'var(--border-strong)',
               color: logoAccent,
+              background: activeMode
+                ? `color-mix(in oklab, ${logoAccent} 14%, var(--surface-2))`
+                : 'var(--surface-2)',
             }}
           >
-            <LogiFlowMark className="h-[18px] w-[18px]" />
+            <LogiFlowMark className="absolute inset-0 h-full w-full" />
             <span
-              className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background"
+              className="absolute right-0.5 top-0.5 z-10 h-2 w-2 rounded-full border border-background shadow-sm"
               style={{ background: activeMode ? logoAccent : 'var(--live)' }}
             />
           </div>

@@ -208,6 +208,152 @@
   to { transform: rotate(0deg); }
 }
 
+/* LogiFlow mark — routes draw on, hub locks in, loop */
+@keyframes logiflow-draw-lane {
+  0%, 5% { stroke-dashoffset: 1; opacity: 0.25; }
+  40% { stroke-dashoffset: 0; opacity: 1; }
+  74% { stroke-dashoffset: 0; opacity: 1; }
+  92%, 100% { stroke-dashoffset: 1; opacity: 0.25; }
+}
+
+@keyframes logiflow-hub-pop {
+  0%, 30% { opacity: 0; transform: scale(0.15); }
+  44%, 74% { opacity: 1; transform: scale(1); }
+  92%, 100% { opacity: 0; transform: scale(0.15); }
+}
+
+@keyframes logiflow-tip-pop {
+  0%, 36% { opacity: 0; transform: scale(0); }
+  50%, 74% { opacity: 1; transform: scale(1); }
+  92%, 100% { opacity: 0; transform: scale(0); }
+}
+
+@keyframes logiflow-orbit-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes logiflow-hub-breathe {
+  0%, 100% { stroke-opacity: 0.3; transform: scale(1); }
+  50% { stroke-opacity: 0.65; transform: scale(1.08); }
+}
+
+.logiflow-mark {
+  overflow: visible;
+}
+
+.logiflow-mark__flow {
+  fill: none;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.logiflow-mark--static .logiflow-mark__flow {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+.logiflow-mark--live .logiflow-mark__flow--a {
+  animation: logiflow-draw-lane 3.4s cubic-bezier(0.42, 0, 0.2, 1) infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__flow--b {
+  animation: logiflow-draw-lane 3.4s cubic-bezier(0.42, 0, 0.2, 1) 0.32s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__flow--c {
+  animation: logiflow-draw-lane 3.4s cubic-bezier(0.42, 0, 0.2, 1) 0.48s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__flow--d {
+  animation: logiflow-draw-lane 3.4s cubic-bezier(0.42, 0, 0.2, 1) 0.58s infinite;
+}
+
+.logiflow-mark__hub-wrap,
+.logiflow-mark__tips,
+.logiflow-mark__orbit-wrap {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.logiflow-mark__hub-wrap {
+  opacity: 0;
+  transform: scale(0.15);
+}
+
+.logiflow-mark--static .logiflow-mark__hub-wrap {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.logiflow-mark--live .logiflow-mark__hub-wrap {
+  animation: logiflow-hub-pop 3.4s cubic-bezier(0.34, 1.4, 0.64, 1) infinite;
+}
+
+.logiflow-mark__hub-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.logiflow-mark--live .logiflow-mark__hub-ring {
+  animation: logiflow-hub-breathe 2.2s ease-in-out infinite;
+}
+
+.logiflow-mark__tip {
+  opacity: 0;
+  transform: scale(0);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.logiflow-mark--static .logiflow-mark__tip {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.logiflow-mark--live .logiflow-mark__tip--a {
+  animation: logiflow-tip-pop 3.4s ease-out 0.52s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__tip--b {
+  animation: logiflow-tip-pop 3.4s ease-out 0.62s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__tip--c {
+  animation: logiflow-tip-pop 3.4s ease-out 0.72s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__tip--d {
+  animation: logiflow-tip-pop 3.4s ease-out 0.82s infinite;
+}
+
+.logiflow-mark--live .logiflow-mark__orbit-wrap {
+  animation: logiflow-orbit-spin 10s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logiflow-mark--live .logiflow-mark__flow,
+  .logiflow-mark--live .logiflow-mark__hub-wrap,
+  .logiflow-mark--live .logiflow-mark__tip,
+  .logiflow-mark--live .logiflow-mark__orbit-wrap,
+  .logiflow-mark--live .logiflow-mark__hub-ring {
+    animation: none !important;
+  }
+
+  .logiflow-mark--live .logiflow-mark__flow,
+  .logiflow-mark--live .logiflow-mark__flow--c,
+  .logiflow-mark--live .logiflow-mark__flow--d {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  .logiflow-mark--live .logiflow-mark__hub-wrap,
+  .logiflow-mark--live .logiflow-mark__tip {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
