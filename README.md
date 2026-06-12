@@ -29,7 +29,11 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 ## How it fits together
 
 <p align="center">
-  <img src="./docs/diagrams/png/01-system-architecture.png" alt="LogiFlow system architecture" width="900"/>
+  <img
+    src="./docs/diagrams/png/01-system-architecture.png"
+    alt="LogiFlow system architecture"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+  />
   <br/>
   <sub>Full diagram set → <a href="./docs/diagrams/">docs/diagrams</a></sub>
 </p>
@@ -44,7 +48,11 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 | **Data** | TomTom · RailRadar · OpenFlights · PortWatch · Supabase · Redis · Postgres |
 
 <p align="center">
-  <img src="./docs/diagrams/png/02-user-journey.png" alt="User journey from brief to ranked routes" width="900"/>
+  <img
+    src="./docs/diagrams/png/02-user-journey.png"
+    alt="User journey from brief to ranked routes"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+  />
 </p>
 
 ---
@@ -61,7 +69,11 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 | **Composer** | `POST /compose` · `/compose/stream` | Chained hub templates | [architecture.md](./docs/architecture.md) |
 
 <p align="center">
-  <img src="./docs/diagrams/png/04-comparator-hybrid.png" alt="Comparator and hybrid compose flow" width="900"/>
+  <img
+    src="./docs/diagrams/png/04-comparator-hybrid.png"
+    alt="Comparator and hybrid compose flow"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+  />
 </p>
 
 ---
