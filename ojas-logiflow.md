@@ -1,6 +1,6 @@
 # Ojas Srivastava — LogiFlow Contributions
 
-**Role:** Technical Lead & Principal Engineer · Primary branch: `ojasdev` · Stack: Next.js, FastAPI, Python ML, Supabase, Vercel, GCP Cloud Run, Cloudflare
+**Role:** Technical Lead & Principal Engineer · Primary branch: `ojasdev` · Stack: Next.js, FastAPI, Python ML, Supabase, Vercel, GCP Cloud Run
 
 > Personal resume-style log of what I built on LogiFlow. Category-wise, human-readable. Not pushed to GitHub.
 
@@ -103,7 +103,7 @@ Led end-to-end engineering and production delivery of LogiFlow — Next.js platf
 
 ## Backend — core API & app structure
 
-- Extended **FastAPI `main.py`** — CORS for Vercel/Cloudflare, rate-limit middleware wiring, route registration for all modes.
+- Extended **FastAPI `main.py`** — CORS for Vercel, rate-limit middleware wiring, route registration for all modes.
 - Created and maintained API routes: **rail, road, air, water, optimize, compose, intent, explain, auth, comparator, planner, location**.
 - Added **`backend/run`** script and **project Makefiles** for one-command local dev (`make dev`).
 - Hardened **Python 3.9** compatibility on Render for compose and rail pipelines.
@@ -177,20 +177,20 @@ Led end-to-end engineering and production delivery of LogiFlow — Next.js platf
 
 ## Security, abuse protection & reliability
 
-- Designed **3-layer protection** for a 512MB Render instance:
-  - **Cloudflare Worker** proxy in front of Render (hide origin, absorb edge traffic).
+- Designed **abuse protection** for a student-budget deployment:
+  - **Vercel edge + GCP Cloud Run** platform DDoS mitigation (no Cloudflare Worker in path).
   - **slowapi rate limits** on heavy endpoints (8 req/min per IP on optimize / compose / intent).
   - **Concurrency cap** — max 5 simultaneous `/optimize` jobs; extra requests get 503 + waiting room.
 - Added **optimize response cache** — identical corridor requests return cached result (cuts RAM and API cost).
 - Built **traffic waiting room** frontend — branded queue page instead of raw 429/503 errors; auto-retries and resumes the user’s plan.
 - Wrote **security limit unit tests** for rate limiter and concurrency guard.
-- Updated **deployment docs** with Worker URL, env vars, and protection architecture.
+- Updated **deployment docs** with env vars and protection architecture.
 
 ---
 
 ## Deployment, CI/CD & DevOps
 
-- Deployed **frontend on Vercel** and **backend on Render**; wired env vars (`BACKEND_URL`, `NEXT_PUBLIC_API_URL`) through Worker proxy.
+- Deployed **frontend on Vercel** and **backend on GCP Cloud Run**; wired env vars (`BACKEND_URL`, `NEXT_PUBLIC_API_URL`) directly to the Cloud Run URL.
 - Created **GitHub Action** for Vercel production deploy as team owner (collaborator push trigger).
 - Fixed multiple **Vercel build failures** (TypeScript types, compose proxy paths, Supabase env pull in CI).
 - Added **warm-render-backend** workflow to reduce cold-start pain.

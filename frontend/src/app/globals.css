@@ -2,6 +2,7 @@
 
 /* App design tokens */
 :root {
+  --site-footer-height: 3.25rem;
   --radius: 0.75rem;
   --background: oklch(0.118 0.012 250);
   --foreground: oklch(0.965 0.006 255);

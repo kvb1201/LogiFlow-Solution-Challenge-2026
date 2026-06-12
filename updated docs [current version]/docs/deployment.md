@@ -8,9 +8,28 @@
 | **Backend API** | GCP Cloud Run (asia-south1) | https://logiflow-api-sbexkjk72q-el.a.run.app |
 | **Database (planner)** | Postgres (production) or SQLite (local) | via `DATABASE_URL` |
 | **Cache / geometry** | Supabase + optional Redis | https://mwvohdvtxwltzkyuboaz.supabase.co |
-| **Custom domain** | Cloudflare (optional) | https://logiflow.in · https://api.logiflow.in |
+| **Custom domain** | Optional (DNS only) | e.g. `logiflow.in` → Vercel; API via Cloud Run URL or GCP Load Balancer |
 
 **Primary backend deploy path:** [gcp-deployment.md](./gcp-deployment.md)
+
+**Legacy:** Cloudflare Workers proxy removed — see [cloudflare/README.md](../../cloudflare/README.md).
+
+---
+
+## Security & abuse protection (current)
+
+LogiFlow is **not “DDoS-proof”** (no public site is), but layers below protect against casual abuse and small floods on a student budget:
+
+| Layer | What it does |
+|-------|----------------|
+| **Vercel edge** | Platform DDoS mitigation and CDN for the Next.js app |
+| **Google Cloud (Cloud Run)** | Infrastructure-level network protection on `*.run.app` |
+| **Per-IP rate limits** | `slowapi` on heavy routes (`/optimize`, `/compose`, `/intent/parse`, auth) — default 8 req/min per IP |
+| **Concurrency cap** | Max parallel heavy optimize jobs; overflow → `503` |
+| **Waiting room** | `/waiting` — branded queue when API returns `429`/`503` |
+| **Response cache** | Identical optimize requests served from cache (less RAM/API cost) |
+
+**Not enabled by default:** [Cloud Armor](https://cloud.google.com/armor) (edge WAF/DDoS on a custom API domain via GCP Load Balancer). Add if you move `api.logiflow.in` off direct Cloud Run and need stronger volumetric protection.
 
 ---
 

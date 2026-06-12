@@ -1,6 +1,6 @@
 /**
- * Cloudflare Worker: proxy LogiFlow Render API through workers.dev (free edge).
- * Live URL: https://logiflow-render-proxy.ojas-logiflow.workers.dev
+ * @deprecated Not used in production. Vercel calls Cloud Run directly.
+ * Legacy edge proxy (originally Render → now Cloud Run). See cloudflare/README.md.
  */
 const ORIGIN = "https://logiflow-api-sbexkjk72q-el.a.run.app";
 

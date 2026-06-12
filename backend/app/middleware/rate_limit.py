@@ -17,7 +17,7 @@ def _rate_limits_enabled() -> bool:
 
 
 def _client_ip(request: Request) -> str:
-    """Prefer X-Forwarded-For when behind Render/Vercel/Cloudflare."""
+    """Prefer X-Forwarded-For when behind Vercel rewrites or a reverse proxy."""
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()

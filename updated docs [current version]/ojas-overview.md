@@ -348,18 +348,7 @@
 
 ## Production & security
 
-### 31. Cloudflare Worker proxy
-
-| | |
-|---|---|
-| **What it does** | Free edge layer in front of Render — hides backend URL, absorbs traffic spikes. |
-| **Built with** | Cloudflare Workers · `logiflow-render-proxy` |
-| **How it works** | All API: Vercel → Worker → Render. Forwards real client IP. |
-| **Where** | Production `BACKEND_URL` |
-
----
-
-### 32. Rate limits & concurrency cap
+### 31. Rate limits & concurrency cap
 
 | | |
 |---|---|
@@ -370,7 +359,7 @@
 
 ---
 
-### 33. Traffic waiting room
+### 32. Traffic waiting room
 
 | | |
 |---|---|
@@ -381,7 +370,7 @@
 
 ---
 
-### 34. Secrets & production cleanup
+### 33. Secrets & production cleanup
 
 | | |
 |---|---|
@@ -394,7 +383,7 @@
 
 ## DevOps & docs
 
-### 35. Local dev & prod audit
+### 34. Local dev & prod audit
 
 | | |
 |---|---|
@@ -405,7 +394,7 @@
 
 ---
 
-### 36. CI/CD (GitHub Actions)
+### 35. CI/CD (GitHub Actions)
 
 | | |
 |---|---|
@@ -416,7 +405,7 @@
 
 ---
 
-### 37. Documentation
+### 36. Documentation
 
 | | |
 |---|---|
@@ -427,7 +416,7 @@
 
 ---
 
-### 38. Merge conflict resolution
+### 37. Merge conflict resolution
 
 | | |
 |---|---|
@@ -457,7 +446,7 @@
 > **Compare & chain:** comparator (all modes), hybrid compose (multi-leg), rural routing  
 > **AI:** plain-English brief, Hinglish, auto-run, route explanations, voice input  
 > **Frontend:** Next.js migration, cockpit UI, railway/hybrid/comparator pages, maps, warmup, reports  
-> **Infra:** GCP Cloud Run backend, Cloudflare proxy, rate limits, waiting queue, `make dev`, prod audit, CI deploy  
+> **Infra:** GCP Cloud Run backend, Vercel edge, rate limits, waiting queue, `make dev`, prod audit, CI deploy  
 > **Also:** location funnel, auth UI wiring, docs, merge fixes
 
 ---

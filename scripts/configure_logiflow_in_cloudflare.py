@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Configure api.logiflow.in → Render behind Cloudflare (free plan).
+DEPRECATED — LogiFlow no longer uses Cloudflare Workers in the production path.
 
-Prerequisites (manual, one-time):
-  1. Cloudflare dashboard → Add site → logiflow.in → Free plan
-  2. GoDaddy → Nameservers → use Cloudflare's two NS (replace domaincontrol.com)
-  3. Wait until zone status is "active"
-  4. Render → logiflow-solution-challenge-2026 → Custom Domains → api.logiflow.in
+Production API: GCP Cloud Run (see docs/deployment.md). Vercel env vars point
+directly at the Cloud Run URL.
 
-Usage:
+This script only remains for teams that still host DNS on Cloudflare and want
+api.logiflow.in as a CNAME to a backend. Prefer pointing the domain at Cloud Run
+or a GCP HTTPS Load Balancer with Cloud Armor for edge DDoS.
+
+Usage (legacy):
   export CLOUDFLARE_API_TOKEN="..."   # Zone:Edit on logiflow.in
   python scripts/configure_logiflow_in_cloudflare.py
-
-Or from repo root:
-  make configure-cloudflare-api-domain
 """
 
 from __future__ import annotations

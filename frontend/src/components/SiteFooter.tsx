@@ -6,7 +6,7 @@ import Link from 'next/link';
  */
 export function SiteFooter() {
   return (
-    <footer className="relative shrink-0 border-t border-border/40 bg-background/60 backdrop-blur-sm">
+    <footer className="relative shrink-0 min-h-[var(--site-footer-height)] border-t border-border/40 bg-background/60 backdrop-blur-sm">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-50"

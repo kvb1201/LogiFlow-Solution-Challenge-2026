@@ -67,7 +67,7 @@ curl -s https://logi-flow-solution-challenge-2026.vercel.app/robots.txt
 
 1. Go to [Google Search Console](https://search.google.com/search-console)
 2. Add property: `https://logiflow.in` or the Vercel URL
-3. Verify via DNS (Cloudflare) or HTML tag
+3. Verify via DNS (your registrar) or HTML tag
 4. Submit sitemap: `https://<your-domain>/sitemap.xml`
 
 ---

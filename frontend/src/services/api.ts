@@ -399,6 +399,7 @@ export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
   tradeoffs?: string[] | null;
+  mode_insights?: Record<string, string[]> | null;
   ai_constraints?: AiConstraintsApplied | null;
   demo_mode?: boolean;
   /**

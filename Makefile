@@ -1,7 +1,8 @@
 .PHONY: setup install dev dev-clean dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick configure-cloudflare-api-domain verify-api-domain
 
-# Cloudflare → api.logiflow.in → Render (see scripts/configure_logiflow_in_cloudflare.py)
+# Deprecated — production uses Vercel → Cloud Run (see cloudflare/README.md)
 configure-cloudflare-api-domain:
+	@echo "⚠️  Deprecated: Cloudflare is not in the production path. See cloudflare/README.md"
 	python3 scripts/configure_logiflow_in_cloudflare.py
 
 verify-api-domain:
