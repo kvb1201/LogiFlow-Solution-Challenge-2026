@@ -127,5 +127,5 @@ Station coordinates live in Supabase `station_coordinates` (~9,500 rows).
 
 ## Related docs
 
-- [Indian Railways data ecosystem](../INDIAN_RAILWAYS_DATA.md)
+- [Indian Railways data ecosystem](../miscellaneous/INDIAN_RAILWAYS_DATA.md)
 - [Rail ML pipeline PDF](../../frontend/public/docs/rail-ml-pipeline.pdf) (generated via `make rail-ml-doc`)

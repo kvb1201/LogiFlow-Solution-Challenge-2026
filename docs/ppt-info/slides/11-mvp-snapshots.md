@@ -37,7 +37,7 @@
 - Browser width **1440px** for clean crops  
 - Hide browser bookmarks bar  
 - Filename pattern: `ppt-snap-01-home.png`, etc.  
-- Store exports in `ppt-info/screenshots/` (create when capturing)
+- Store exports in `docs/ppt-info/screenshots/` (create when capturing)
 
 ---
 

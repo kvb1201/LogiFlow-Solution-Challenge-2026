@@ -43,6 +43,6 @@ Each transport mode lives under `app/pipelines/{road,rail,air,water,hybrid}/`.
 | Road | [docs/pipelines/road.md](../../../docs/pipelines/road.md) |
 | Rail | [docs/pipelines/rail.md](../../../docs/pipelines/rail.md) |
 | Air | [docs/pipelines/air.md](../../../docs/pipelines/air.md) + [air/README.md](air/README.md) |
-| Water | [docs/pipelines/water.md](../../../docs/pipelines/water.md) + [water/PIPELINE_PLAN.md](water/PIPELINE_PLAN.md) |
+| Water | [docs/pipelines/water.md](../../../docs/pipelines/water.md) + [water-pipeline-plan.md](../../../docs/miscellaneous/water-pipeline-plan.md) |
 | Hybrid | [docs/pipelines/hybrid.md](../../../docs/pipelines/hybrid.md) |
-| Rail walkthrough | [rail/walkthrough.md](rail/walkthrough.md) |
+| Rail walkthrough | [rail-walkthrough.md](../../../docs/pipelines/rail-walkthrough.md) |

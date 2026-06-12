@@ -1,6 +1,6 @@
 # Frontend Implementation Notes
 
-> **Index:** See [implementation.md](../implementation.md) for the full feature index.  
+> **Index:** See [docs/README.md](../README.md) for the documentation index.  
 > **This file** documents invalid corridor UX (`InvalidCorridorCard`) across road, comparator, and hybrid.
 
 ---

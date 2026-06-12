@@ -8,7 +8,7 @@ The Air pipeline finds cargo-feasible flight routes using **OpenFlights** plus *
 **API:** `POST /air/optimize`  
 **Frontend:** `/air` → `AirPageClient` → `AirInputForm` → `AirResults`
 
-See also [international air routing](../international-air-routing-summary.md) · [OTP scoring](../air-otp-congestion-scoring.md).
+See also [international air routing](../miscellaneous/international-air-routing-summary.md) · [OTP scoring](../miscellaneous/air-otp-congestion-scoring.md).
 
 ## Flow
 

@@ -1,6 +1,6 @@
 # LogiFlow — Solution Challenge 2026 PPT Kit
 
-Content mapped to **`[EXT] Solution Challenge 2026 - Updated Prototype PPT Template.pptx`** (16 slides).
+Content for the **Google Solution Challenge 2026** prototype deck (16 slides). Use your team’s copy of the official template.
 
 ## How to use
 

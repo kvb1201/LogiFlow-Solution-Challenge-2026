@@ -125,7 +125,7 @@ Update `frontend/vercel.json` (or Vercel dashboard):
 
 Redeploy Vercel after changing env vars.
 
-Custom domain for the API: point DNS at Cloud Run or use a GCP HTTPS Load Balancer (+ optional Cloud Armor). Cloudflare Workers are **not** in the production path — see [cloudflare/README.md](../cloudflare/README.md).
+Custom domain for the API: point DNS at Cloud Run or use a GCP HTTPS Load Balancer (+ optional Cloud Armor). Cloudflare Workers are **not** in the production path — see [cloudflare-legacy.md](./miscellaneous/cloudflare-legacy.md).
 
 ---
 

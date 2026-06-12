@@ -1,5 +1,7 @@
 # Architecture
 
+> **Project status:** Complete — Google Solution Challenge 2026 submission. Documentation index: [README.md](./README.md).
+
 ## System overview
 
 LogiFlow is a **multi-modal cargo logistics optimizer**. Each transport mode (road, rail, air, water) is an independent pipeline. A **hybrid comparator** and **composer** layer normalize outputs, score across modes, and build chained itineraries. A **planner** subsystem persists saved shipment reports with trip lifecycle and route health monitoring.

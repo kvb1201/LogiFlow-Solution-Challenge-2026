@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build an India-only train delay CSV (see docs/INDIAN_RAILWAYS_DATA.md).
+Build an India-only train delay CSV (see docs/miscellaneous/INDIAN_RAILWAYS_DATA.md).
 
 Strategies (--strategy):
   history     — runningstatus.in past days (default; resumable bulk history)

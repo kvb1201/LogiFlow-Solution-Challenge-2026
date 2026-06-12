@@ -72,7 +72,7 @@ backend/
 | `/explain` | explain_routes | Route explanations |
 | `/speech` | speech_routes | Groq Whisper transcription |
 
-Full contract: [docs/api_contract.md](../docs/api_contract.md)
+Full contract: [docs/miscellaneous/api_contract.md](../docs/miscellaneous/api_contract.md)
 
 ---
 

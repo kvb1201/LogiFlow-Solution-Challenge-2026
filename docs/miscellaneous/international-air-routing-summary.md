@@ -35,8 +35,8 @@
 | `scripts/seedAirports.js` | Download OurAirports → Supabase |
 | `scripts/seedRoutes.js` | Seed routes + OTP baselines |
 | `backend/tests/test_international_air.py` | International + regression tests |
-| `docs/international-air-routing.md` | Full architecture documentation |
-| `docs/international-air-routing-summary.md` | This file |
+| `docs/miscellaneous/international-air-routing.md` | Full architecture documentation |
+| `docs/miscellaneous/international-air-routing-summary.md` | This file |
 
 ## Unchanged (Backward Compatibility)
 

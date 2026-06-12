@@ -1,6 +1,6 @@
 /**
  * @deprecated Not used in production. Vercel calls Cloud Run directly.
- * Legacy edge proxy (originally Render → now Cloud Run). See cloudflare/README.md.
+ * Legacy edge proxy (originally Render → now Cloud Run). See docs/miscellaneous/cloudflare-legacy.md.
  */
 const ORIGIN = "https://logiflow-api-sbexkjk72q-el.a.run.app";
 

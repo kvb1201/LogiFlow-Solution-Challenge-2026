@@ -12,7 +12,7 @@
 
 **Primary backend deploy path:** [gcp-deployment.md](./gcp-deployment.md)
 
-**Legacy:** Cloudflare Workers proxy removed — see [cloudflare/README.md](../cloudflare/README.md).
+**Legacy:** Cloudflare Workers proxy removed — see [cloudflare-legacy.md](./miscellaneous/cloudflare-legacy.md).
 
 ---
 

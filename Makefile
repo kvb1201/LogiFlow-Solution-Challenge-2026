@@ -1,15 +1,15 @@
 .PHONY: setup install dev dev-clean dev-frontend dev-backend clean collect-delays collect-delays-pilot validate-active-trains validate-active-trains-resume discover-trains-corridors discover-trains-corridors-pilot discover-trains-corridors-resume validate-discovered-trains validate-discovered-trains-resume build-station-coords build-station-coords-geocode fetch-air-data verify-air-data test-otp-scoring prod-audit prod-audit-quick configure-cloudflare-api-domain verify-api-domain
 
-# Deprecated — production uses Vercel → Cloud Run (see cloudflare/README.md)
+# Deprecated — production uses Vercel → Cloud Run (see docs/miscellaneous/cloudflare-legacy.md)
 configure-cloudflare-api-domain:
-	@echo "⚠️  Deprecated: Cloudflare is not in the production path. See cloudflare/README.md"
+	@echo "⚠️  Deprecated: Cloudflare is not in the production path. See docs/miscellaneous/cloudflare-legacy.md"
 	python3 scripts/configure_logiflow_in_cloudflare.py
 
 verify-api-domain:
 	@echo "Checking https://api.logiflow.in/health ..."
 	@curl -fsSI "https://api.logiflow.in/health" | head -20 || true
 
-# IR delay CSV — see docs/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
+# IR delay CSV — see docs/miscellaneous/INDIAN_RAILWAYS_DATA.md (history = runningstatus, not unlimited NTES)
 # Step 1: filter 2017 CSV → trains that still show on runningstatus.in (~1–2h)
 validate-active-trains:
 	cd backend && rm -f data/ir_delay_scrape/active_validation_checkpoint.json && PYTHONUNBUFFERED=1 ./venv/bin/python scripts/build_active_train_list.py --lookback 3 --resume --log-interval 60
