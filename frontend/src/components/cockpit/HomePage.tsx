@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Play, Sparkles, Zap } from 'lucide-react';
 import { CapabilityStrip } from './CapabilityStrip';
+import { HomeIntroSection } from './HomeIntroSection';
 import { AmbientMesh } from './AmbientMesh';
 import { AmbientMetricTile } from './AmbientSurface';
 import { ModePickerCard } from './ModePickerCard';
@@ -32,7 +33,7 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
           <div className="mb-8 flex flex-wrap items-center justify-center gap-2.5">
             <span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-surface/50 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-md">
               <span className="live-dot" />
-              Multimodal freight · India
+              Multimodal logistics · India
             </span>
             <span
               className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] backdrop-blur-md"
@@ -47,19 +48,15 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
             </span>
           </div>
 
-          <h1 className="mb-5 font-headline text-4xl font-black leading-[0.95] tracking-tighter xs:text-5xl sm:text-6xl md:text-[4.5rem]">
-            <span
-              className="bg-gradient-to-r from-violet-400 via-sky-300 via-50% to-teal-300 bg-clip-text text-transparent animate-gradient-shift"
-              style={{ backgroundSize: '200% auto' }}
-            >
-              Logi
-            </span>
-            <span className="text-foreground">Flow</span>
+          <h1 className="mb-5 font-headline text-3xl font-black leading-[1.05] tracking-tight text-foreground xs:text-4xl sm:text-5xl md:text-[3.25rem] text-balance">
+            LogiFlow moves cargo smarter
           </h1>
 
-          <p className="mx-auto max-w-lg text-sm sm:text-[15px] leading-relaxed text-muted-foreground text-balance">
-            Compare road, rail, air, and water on cost, time, and risk. Describe your shipment in
-            plain English — we parse constraints and route you to the right tool.
+          <p className="mx-auto max-w-xl text-sm sm:text-[15px] leading-relaxed text-muted-foreground text-balance">
+            One platform to plan and compare{' '}
+            <span className="font-medium text-foreground/90">rail, road, water, air, and hybrid</span>{' '}
+            options with real data where it matters — schedules, traffic, risk, and live visibility —
+            so teams ship with confidence across India.
           </p>
 
           <div
@@ -124,8 +121,15 @@ export function HomePage({ intentSection }: { intentSection: ReactNode }) {
         </section>
 
         <section
+          className="relative mb-10 animate-fade-in"
+          style={{ animationDelay: '0.16s', animationFillMode: 'backwards' }}
+        >
+          <HomeIntroSection />
+        </section>
+
+        <section
           className="relative mb-14 animate-fade-in"
-          style={{ animationDelay: '0.18s', animationFillMode: 'backwards' }}
+          style={{ animationDelay: '0.22s', animationFillMode: 'backwards' }}
         >
           {intentSection}
         </section>

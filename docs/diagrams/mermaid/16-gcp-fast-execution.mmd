@@ -1,0 +1,36 @@
+flowchart TB
+    subgraph deploy["GCP deploy — team-3mo profile"]
+        A([GitHub push / gcloud deploy]) --> B[Cloud Build]
+        B --> C[(Container Registry)]
+        C --> D[Cloud Run · asia-south1]
+        D --> E["min-instances = 1<br/>always warm · no cold start"]
+        D --> F["2 CPU · 2 GiB RAM<br/>300s timeout · concurrency 40"]
+    end
+
+    subgraph traffic["Traffic & keep-warm"]
+        G[Vercel Next.js frontend] -->|API proxy| H[FastAPI logiflow-api]
+        I[Cron /api/warm-backend] -->|ping| H
+    end
+
+    subgraph tuning["Runtime tuning — fast execution"]
+        J["COMPOSE_PARALLEL_WORKERS = 8"]
+        K["COMPOSE_LEG_SUPABASE = 1<br/>RURAL_HUB_SUPABASE = 1"]
+        L["WATER_SKIP_CONGESTION_SCAN = 1<br/>WATER_AUTO_TRAIN = off"]
+        M["RAIL_PRELOAD_ON_STARTUP = false<br/>RAIL_PERMANENT_CACHE = false"]
+        N["COMPOSE_RAIL_API_BUDGET_S = 10<br/>RAIL_ENGINEER_MAX_EXTERNAL_LOOKUPS = 1"]
+    end
+
+    subgraph data["Shared data layer"]
+        O[(Redis L3 cache)]
+        P[(Supabase Postgres)]
+    end
+
+    D --> H
+    H --> J
+    H --> K
+    H --> L
+    H --> M
+    H --> N
+    H --> O
+    H --> P
+    H --> Q([SSE /compose/stream response])

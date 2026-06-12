@@ -29,6 +29,7 @@ Local copies of the LogiFlow architecture diagrams. These mirror the diagrams on
 | `13-security-rate-limiting` | Security & rate limiting |
 | `14-planner-route-health` | Planner & route health |
 | `15-comparator-api-sequence` | Comparator API sequence |
+| `16-gcp-fast-execution` | GCP Cloud Run fast execution strategy |
 
 ## Re-render after edits
 
@@ -50,3 +51,4 @@ Miro MCP cannot bulk-download diagram images. For exact Miro styling:
 
 - [Board home](https://miro.com/app/board/uXjVGolTIkk=/)
 - [Documentation index doc](https://miro.com/app/board/uXjVGolTIkk=/?moveToWidget=3458764675178384783)
+- [GCP fast execution](https://miro.com/app/board/uXjVGolTIkk=/?moveToWidget=3458764675255846765)
