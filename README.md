@@ -73,9 +73,7 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
   <img
     src="./docs/diagrams/png/01-system-architecture.png"
     alt="LogiFlow system architecture"
-    width="900"
-    height="500"
-    style="display:block; margin:0 auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; max-height:500px; width:auto; height:auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
   <br/>
   <sub>Full diagram set → <a href="./docs/diagrams/">docs/diagrams</a></sub>
@@ -94,9 +92,7 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
   <img
     src="./docs/diagrams/png/02-user-journey.png"
     alt="User journey from brief to ranked routes"
-    width="900"
-    height="500"
-    style="display:block; margin:0 auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; max-height:500px; width:auto; height:auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
 </p>
 
@@ -125,9 +121,7 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
   <img
     src="./docs/diagrams/png/04-comparator-hybrid.png"
     alt="Comparator and hybrid compose flow"
-    width="900"
-    height="500"
-    style="display:block; margin:0 auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; max-height:500px; width:auto; height:auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
 </p>
 
