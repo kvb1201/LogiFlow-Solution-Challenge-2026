@@ -1,6 +1,23 @@
 <div align="center">
 
-# LogiFlow
+<p align="center">
+  <svg width="100%" height="180" viewBox="0 0 1200 180" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#4285F4;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#34A853;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#FBBC05;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="180" fill="#08090C" rx="12"/>
+    <text x="600" y="80" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="url(#headerGrad)" text-anchor="middle">LogiFlow</text>
+    <text x="600" y="130" font-family="Arial, sans-serif" font-size="20" fill="#D4D4D8" text-anchor="middle">Decision Intelligence for Multi-Modal Logistics</text>
+    <circle cx="200" cy="90" r="40" fill="#4285F4" opacity="0.3"/>
+    <circle cx="1000" cy="90" r="40" fill="#34A853" opacity="0.3"/>
+    <circle cx="400" cy="50" r="25" fill="#FBBC05" opacity="0.3"/>
+    <circle cx="800" cy="50" r="25" fill="#EA4335" opacity="0.3"/>
+  </svg>
+</p>
 
 ### Compare every way to move cargo — road, rail, air, water, and chained hybrid routes — in one honest run.
 
@@ -16,9 +33,25 @@
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">The Problem</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## The problem
 
 India moves **4.6 billion tonnes** of freight every year, yet most shippers still plan in **one mode at a time**. A corridor that is faster by rail, cheaper by water, or safer by road rarely gets compared side-by-side. The result is higher cost, missed deadlines, and blind risk — especially for MSMEs who cannot afford a full logistics desk.
+
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">The Solution</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
 
 ## The solution
 
@@ -26,13 +59,21 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">How It Fits Together</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## How it fits together
 
 <p align="center">
   <img
     src="./docs/diagrams/png/01-system-architecture.png"
     alt="LogiFlow system architecture"
-    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:500px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
   <br/>
   <sub>Full diagram set → <a href="./docs/diagrams/">docs/diagrams</a></sub>
@@ -51,11 +92,19 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
   <img
     src="./docs/diagrams/png/02-user-journey.png"
     alt="User journey from brief to ranked routes"
-    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:500px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
 </p>
 
 ---
+
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">Pipelines at a Glance</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
 
 ## Pipelines at a glance
 
@@ -72,15 +121,27 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
   <img
     src="./docs/diagrams/png/04-comparator-hybrid.png"
     alt="Comparator and hybrid compose flow"
-    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:480px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+    style="display:block; margin:0 auto; max-width:900px; width:100%; max-height:500px; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
   />
 </p>
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">For Developers</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## For developers
 
 **Stack:** Next.js 16 · React 19 · FastAPI · Python 3.11+ · Supabase · Redis · GCP Cloud Run · Vercel · Gemini 2.5 Flash
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=nextjs,react,python,fastapi,postgres,redis,googlecloud,vercel,tensorflow,git,github,docker" alt="Tech stack icons" />
+</p>
 
 ```bash
 # Backend
@@ -108,6 +169,14 @@ npm run dev   # → http://localhost:3000
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">Team</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## Team
 
 Built by **Neural Foundry** for the **Google Solution Challenge 2026**.
@@ -121,6 +190,14 @@ Built by **Neural Foundry** for the **Google Solution Challenge 2026**.
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">A Note From The Team</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## A note from the team
 
 We built LogiFlow because logistics should not be a guessing game. Every farmer, factory owner, and small business deserves the same clarity that large freight desks take for granted — **see every option, understand the tradeoff, and ship with confidence.**
@@ -131,7 +208,27 @@ This repository is our finished submission: working product, real pipelines, and
 
 ---
 
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">License</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
 ## License
 
 Competition submission — **team members only**. External reuse or redistribution is not permitted.  
 All rights reserved © 2026 **Kavya Bhatiya**
+
+---
+
+<p align="center">
+  <a href="https://logi-flow-solution-challenge-2026.vercel.app/" title="Live Demo"><img src="https://img.shields.io/badge/Live-34D399?style=for-the-badge&logo=vercel&logoColor=white&labelColor=08090C" alt="Live Demo" /></a>
+  <a href="https://github.com/Ojas-Srivastava05/LogiFlow-Solution-Challenge-2026" title="GitHub"><img src="https://img.shields.io/badge/Code-21262D?style=for-the-badge&logo=github&logoColor=white&labelColor=08090C" alt="GitHub" /></a>
+  <a href="https://developers.google.com/solution-challenge" title="Google Solution Challenge"><img src="https://img.shields.io/badge/Google%20Solution%20Challenge-4285F4?style=for-the-badge&logo=google&logoColor=white&labelColor=08090C" alt="Google Solution Challenge" /></a>
+</p>
+
+<p align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/Ojas-Srivastava05">Neural Foundry</a> for Google Solution Challenge 2026</sub>
+</p>
