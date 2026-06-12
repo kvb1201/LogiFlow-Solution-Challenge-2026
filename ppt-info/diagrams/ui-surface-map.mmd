@@ -1,0 +1,21 @@
+%% Slide 7 (optional) — UI surface map / wireframe layout
+%% Shows major pages without pixel mockups
+
+flowchart TB
+    HOME["Home<br/>AI brief · mode picker"]
+    HOME --> R["/road"]
+    HOME --> RL["/railway"]
+    HOME --> A["/air"]
+    HOME --> W["/water"]
+    HOME --> C["/comparator"]
+    HOME --> H["/hybrid"]
+    LOGIN["/login Google"] --> DASH["/dashboard"]
+    DASH --> REP["/reports saved plans"]
+    R --> MAP1["Map + route cards"]
+    RL --> MAP2["Train list + corridor map"]
+    C --> CMP["Scoreboard + per-mode picks"]
+    H --> CHAIN["Leg timeline + compose map"]
+
+    style HOME fill:#1a1a2e,stroke:#8AB4F8,color:#fff
+    style C fill:#1a2a4a,stroke:#60A5FA,color:#fff
+    style H fill:#2d1a4a,stroke:#C084FC,color:#fff

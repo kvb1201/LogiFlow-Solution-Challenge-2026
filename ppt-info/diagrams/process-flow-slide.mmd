@@ -1,0 +1,23 @@
+%% Slide 6 — Process flow (export PNG @ 1600px width, landscape)
+%% mermaid.live → Export → insert full width below title
+
+flowchart LR
+    A(["Shipper"]) --> B["Describe shipment<br/>text or voice"]
+    B --> C["Gemini intent parse<br/>cities · cargo · priority"]
+    C --> D{"Choose path"}
+    D --> E["Single mode<br/>Road / Rail / Air / Water"]
+    D --> F["Comparator<br/>all 4 modes"]
+    D --> G["Hybrid compose<br/>chained legs"]
+    E --> H["Pipeline optimize<br/>ML + live APIs"]
+    F --> H
+    G --> H
+    H --> I["Scores<br/>cost · time · risk"]
+    I --> J["Maps + explanations"]
+    J --> K{"Save plan?"}
+    K -->|Yes| L["Planner + route health"]
+    K -->|No| M(["Done"])
+    L --> M
+
+    style C fill:#1a3a5c,stroke:#4285F4,color:#fff
+    style H fill:#1a3a2c,stroke:#34A853,color:#fff
+    style F fill:#2d1a4a,stroke:#A855F7,color:#fff

@@ -1,0 +1,40 @@
+%% Slide 8 — End-to-end architecture (ONE slide)
+%% Export landscape 1920×1080 or fit template content box
+
+flowchart LR
+    U(["User<br/>Web · Android"])
+
+    subgraph L1["Experience"]
+        FE["Next.js 16<br/>Vercel CDN"]
+        API_PROXY["/api proxy<br/>OAuth JWT"]
+    end
+
+    subgraph L2["API layer"]
+        CR["FastAPI<br/>GCP Cloud Run"]
+    end
+
+    subgraph L3["Decision engine"]
+        direction TB
+        P["Parallel pipelines<br/>Road · Rail · Air · Water"]
+        X["Comparator + Composer<br/>normalize · score · explain"]
+    end
+
+    subgraph L4["Data & AI"]
+        direction TB
+        EXT["External APIs<br/>TomTom · Weather · Trains · Flights · Ports"]
+        DATA["Supabase · Redis · Postgres"]
+        GEM["Google Gemini<br/>Intent · Explain"]
+        ML["ML models<br/>Delay · Risk · OTP"]
+    end
+
+    U --> FE --> API_PROXY --> CR
+    CR --> P --> X
+    P --> EXT
+    P --> DATA
+    X --> GEM
+    X --> ML
+    X --> DATA
+
+    style GEM fill:#1a3a5c,stroke:#4285F4,color:#e8f0fe
+    style CR fill:#1a2e1a,stroke:#34A853,color:#e8f5e9
+    style FE fill:#1a1a2e,stroke:#8AB4F8,color:#e8eaf6

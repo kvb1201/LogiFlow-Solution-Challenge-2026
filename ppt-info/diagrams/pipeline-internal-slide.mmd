@@ -1,0 +1,17 @@
+%% Optional appendix — how one optimize request works inside the API
+%% Use only if you have an extra slide; otherwise skip
+
+flowchart TB
+    REQ["POST /optimize or mode endpoint"] --> LF["Location funnel<br/>resolve cities"]
+    LF --> TP["ThreadPoolExecutor<br/>4 pipelines · 30s timeout"]
+    TP --> RD["Road pipeline"]
+    TP --> RL["Rail pipeline"]
+    TP --> AR["Air pipeline"]
+    TP --> WT["Water pipeline"]
+    RD --> NORM["Hybrid normalizer"]
+    RL --> NORM
+    AR --> NORM
+    WT --> NORM
+    NORM --> SCORE["Pareto + priority weights"]
+    SCORE --> EXP["Gemini / template explain"]
+    EXP --> RES["JSON: winner · comparison · best_per_mode"]

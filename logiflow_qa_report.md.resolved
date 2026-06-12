@@ -1,0 +1,517 @@
+# 🧪 LogiFlow — Comprehensive QA Bug Report
+
+> **Tested On:** `https://logi-flow-solution-challenge-2026.vercel.app/`
+> **Date:** June 12, 2026
+> **Tester:** Automated QA (Antigravity Agent)
+> **Scope:** Road Pipeline, Air Pipeline, Smart Shipment Planner
+> **Viewports:** Desktop (1280×800), Mobile (375×812)
+
+---
+
+## 📊 Executive Summary
+
+| Severity | Count |
+|----------|-------|
+| 🔴 Critical | 3 |
+| 🟠 High | 7 |
+| 🟡 Medium | 12 |
+| 🔵 Low | 8 |
+| **Total** | **30** |
+
+---
+
+## 🔴 CRITICAL BUGS
+
+### BUG-001: Air Pipeline — No Same-City Validation (Backend)
+
+> [!CAUTION]
+> The Air pipeline backend (`air_routes.py`) has **zero validation** for same-city routes. Unlike the Road pipeline, which explicitly checks `source == destination` (line 52), the Air endpoint blindly forwards any pair to the pipeline.
+
+- **Severity:** 🔴 Critical
+- **Pipeline:** Air
+- **Layer:** Backend (FastAPI)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Enter "Mumbai" as both origin and destination
+  3. Click "Optimize air route"
+- **Expected:** Error message: "Origin and destination cannot be the same city"
+- **Actual:** Request is sent to the backend, which processes it and may return nonsensical routes or waste compute.
+- **Root Cause:** [air_routes.py](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/backend/app/routes/air_routes.py#L26-L57) — the `optimize_air` function has no `source == destination` guard, unlike [road_routes.py L52-60](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/backend/app/routes/road_routes.py#L52-L60).
+- **Frontend Also Missing:** [AirInputForm.tsx](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/AirInputForm.tsx#L98-L104) — `onSubmit` calls `runAirOptimize()` without any same-city check. Compare with [roadInputForm.tsx L401-417](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/roadInputForm.tsx#L401-L417) which has comprehensive validation.
+
+---
+
+### BUG-002: Air Pipeline — No Weight Validation (Frontend & Backend)
+
+> [!CAUTION]
+> The Air form and backend accept **any weight value** including 0, negative, and absurdly large numbers.
+
+- **Severity:** 🔴 Critical
+- **Pipeline:** Air
+- **Layer:** Both Frontend and Backend
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Set weight to `0` or `-50`
+  3. Click "Optimize air route"
+- **Expected:** Validation error for invalid weight
+- **Actual:** Request is sent to backend with invalid weight
+- **Root Cause:**
+  - **Frontend:** [AirInputForm.tsx L98-104](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/AirInputForm.tsx#L98-L104) — `onSubmit` only checks `source.trim()` and `destination.trim()`, never validates `cargoWeight`. The Road form checks `cargoWeight <= 0` at [roadInputForm.tsx L411-414](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/roadInputForm.tsx#L411-L414).
+  - **Backend:** [AirCargoPayload](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/backend/app/routes/air_routes.py#L11-L23) has `cargo_weight_kg: float = 100` but no `field_validator` for range constraints.
+
+---
+
+### BUG-003: Air Pipeline — Accepts Gibberish Cities and Returns Misleading Results
+
+> [!CAUTION]
+> Entering nonsensical city names (e.g., "xyz" and "abc") causes the autocomplete to show matching entries (ABC airport code), and submitting returns a "No air routes found" message — but the **dropdown shows duplicate entries** and the previous results remain visible below the error message, creating confusion.
+
+- **Severity:** 🔴 Critical
+- **Pipeline:** Air
+- **Layer:** Frontend (Autocomplete + Results Persistence)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Run a valid search (e.g., Mumbai → Delhi) to get results
+  3. Change origin to "xyz" and destination to "abc"
+  4. The autocomplete dropdown shows 4 identical "abc" / "ABC" entries
+  5. Submit — "No air routes found" message appears
+  6. Previous results (from Mumbai → Delhi) remain visible below
+- **Expected:** (a) Autocomplete should deduplicate entries. (b) Previous results should be cleared when new search begins. (c) Better validation before allowing gibberish submissions.
+- **Impact:** Users see stale results from a previous search mixed with an error banner, creating a deeply confusing UX.
+
+---
+
+## 🟠 HIGH SEVERITY BUGS
+
+### BUG-004: Road Pipeline — Map Zooms to World View Instead of Route
+
+- **Severity:** 🟠 High
+- **Pipeline:** Road
+- **Layer:** Frontend (Map Component)
+- **Steps to Reproduce:**
+  1. Navigate to `/road`
+  2. Search "Mumbai" → "Delhi"
+  3. Wait for results, then expand Cost Breakdown section
+  4. Observe the map zooms out to show entire world (Australia, Philippines visible)
+- **Expected:** Map should stay focused on the Mumbai-Delhi corridor (India)
+- **Actual:** Map zooms out to world view after interacting with cost breakdown panel
+- **Impact:** Users lose visual context of the route when exploring cost details
+
+---
+
+### BUG-005: Road Pipeline — No Auto-Scroll to Results
+
+- **Severity:** 🟠 High
+- **Pipeline:** Road, Air (both affected)
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/road` (desktop viewport)
+  2. Enter valid route and click "Find optimal routes"
+  3. Wait for results to load
+- **Expected:** Page should auto-scroll to the results section
+- **Actual:** Results render below the fold. User must manually scroll down to see them.
+- **Impact:** On mobile especially, users may think the search failed because they see no immediate visual feedback when results load below the visible area.
+
+---
+
+### BUG-006: Air Pipeline — Shimla-Puducherry Returns Routes (Should Return "No Routes")
+
+- **Severity:** 🟠 High
+- **Pipeline:** Air
+- **Layer:** Backend (Route Graph)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Enter "Shimla" → "Puducherry"
+  3. Submit — observe that 4 routes are returned with 94% confidence
+- **Expected:** These small cities have no direct airports. Should return "No air routes found" or "Limited airport access".
+- **Actual:** Returns 4 ranked routes (all showing IndiGo, Direct flights) with suspiciously identical confidence scores (94%). This suggests the backend is **fabricating routes** or mapping to nearest airports without disclosure.
+- **Impact:** Completely misleading to logistics operators who may plan shipments based on non-existent air routes.
+
+---
+
+### BUG-007: Air Pipeline — All Route Cards Show Identical Data (IndiGo, 94%, Direct)
+
+- **Severity:** 🟠 High
+- **Pipeline:** Air
+- **Layer:** Backend + Frontend
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Search "Mumbai" → "Delhi"
+  3. Observe route cards: all 4 show "IndiGo", "Direct", "94%"
+- **Expected:** Different route options should show different airlines, connection types, and confidence scores
+- **Actual:** All 4 route cards appear identical — same airline, same flight type, same confidence score. The only visible difference is the ranking number (#1, #2, etc.).
+- **Impact:** Users cannot make informed decisions between supposedly "different" route options. This defeats the purpose of multi-route ranking.
+
+---
+
+### BUG-008: Notification Bell — No Visible Response on Click
+
+- **Severity:** 🟠 High
+- **Pipeline:** Cross-cutting (NavBar)
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. On any page, click the bell icon (🔔) in the top-right navbar
+- **Expected:** Either a notification dropdown, a "No notifications" message, or a redirect to a notifications page
+- **Actual:** Nothing happens. No visual feedback, no dropdown, no navigation.
+- **Impact:** The bell icon is a false affordance. Users will click it expecting notifications functionality and be confused by the lack of response.
+
+---
+
+### BUG-009: Road Pipeline — "AI Explain" Button Truncation in Detail Panel
+
+- **Severity:** 🟠 High
+- **Pipeline:** Road
+- **Layer:** Frontend (UI)
+- **Steps to Reproduce:**
+  1. Navigate to `/road`, run a valid search
+  2. In the route detail panel, click the "AI Explain" button
+  3. Wait for the AI explanation to load
+- **Expected:** Full AI-generated explanation displayed
+- **Actual:** The explanation text is truncated or overlaps with surrounding elements. The container does not expand to accommodate the full text.
+- **Impact:** Users lose valuable AI insight that could help decision-making.
+
+---
+
+### BUG-010: Autocomplete Dropdown Duplicates Across Pipelines
+
+- **Severity:** 🟠 High
+- **Pipeline:** Air (confirmed), likely also Road
+- **Layer:** Frontend (Autocomplete)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Type "Puducherry" in destination field
+  3. Observe dropdown shows 3 identical "Puducherry" entries, all with code "PUDUC"
+- **Expected:** Single "Puducherry" entry or differentiated entries (e.g., different airports/stations)
+- **Actual:** Three identical entries with no distinguishing information
+- **Root Cause:** The `useCitySearch` hook or backend location API returns duplicates. The frontend does not deduplicate.
+
+---
+
+## 🟡 MEDIUM SEVERITY BUGS
+
+### BUG-011: Mobile — Navbar Hamburger Menu Exists but Smart Shipment Planner Button Competes
+
+- **Severity:** 🟡 Medium
+- **Viewport:** Mobile (375×812)
+- **Steps to Reproduce:**
+  1. Load any page on mobile viewport
+  2. Observe navbar: hamburger (≡) on left, "+ Planner" button on right
+- **Expected:** Clean mobile navbar with all actions behind hamburger OR a minimal CTA
+- **Actual:** Both hamburger and "+ Planner" button visible. The Planner button text may truncate on smaller screens (320px width).
+- **Impact:** Visually cluttered navbar on small screens
+
+---
+
+### BUG-012: Mobile — Form Fields Lack Minimum Touch Targets
+
+- **Severity:** 🟡 Medium
+- **Viewport:** Mobile (375×812)
+- **Pipeline:** Road, Air
+- **Steps to Reproduce:**
+  1. Load `/road` or `/air` on mobile
+  2. Inspect ChoicePills (Cargo Type, Priority)
+  3. Measure touch targets
+- **Expected:** All interactive elements ≥ 44×44px (Apple/Google accessibility guidelines)
+- **Actual:** ChoicePill buttons are ~35px tall, making them difficult to tap accurately
+- **Impact:** Accessibility violation, poor usability on touch devices
+
+---
+
+### BUG-013: Road Pipeline — Cargo Weight Allows 0 via Number Input Spin-Down
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Road
+- **Layer:** Frontend
+- **Steps to Reproduce:**
+  1. Navigate to `/road`
+  2. Use the number input spinner to decrease weight below 1
+  3. The `min={1}` HTML attribute prevents typing "0" but the validation at [roadInputForm.tsx L411](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/roadInputForm.tsx#L411) only checks `cargoWeight <= 0`, allowing `0` through the number input on some browsers
+- **Expected:** Weight should be validated to be > 0 on blur and on submit
+- **Actual:** In some browsers, `min={1}` is advisory not enforced, and typing "0" triggers the error but using the spinner may not.
+
+---
+
+### BUG-014: Road Pipeline — "Start Driving" Opens Google Maps but Route May Differ
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Road
+- **Layer:** Frontend (UX/Expectation Management)
+- **Steps to Reproduce:**
+  1. Get road results, click "Start Driving"
+  2. Google Maps opens with origin/destination
+- **Expected:** Disclaimer that Google Maps may choose different roads
+- **Actual:** Disclaimer exists ("LogiFlow sets the stop sequence · Google Maps chooses roads between stops") but only for multi-stop routes. For simple A→B routes, there's no warning.
+- **Impact:** Users may trust that the Google Maps route is identical to LogiFlow's optimized route, leading to different cost/time than expected.
+
+---
+
+### BUG-015: Air Pipeline — Window Slider Label Not Clearly Explained
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Air
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. Look at the "Window · 48h" label and slider
+- **Expected:** Clear explanation of what "Window" means (delivery window? departure flexibility?)
+- **Actual:** Label says `Window · 48h` with no tooltip or helper text. The underlying code maps it to `deadlineHours` which represents a delivery deadline, but the label "Window" doesn't convey this.
+- **Impact:** Users won't understand what they're adjusting
+
+---
+
+### BUG-016: Road Pipeline — "More Options" Toggle Not Obvious
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Road
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/road`
+  2. Look for advanced options (Budget Cap, Deadline, Vehicle Type, Fuel Price)
+  3. They are hidden behind "More options" text at the top-right of the form card
+- **Expected:** Advanced toggle should be more discoverable
+- **Actual:** Small "More options" text is easy to miss. Many users will never discover Budget Cap, Vehicle Type, and Fuel Price settings.
+
+---
+
+### BUG-017: Road Pipeline — Cost Breakdown Total May Not Match Route Cost
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Road
+- **Layer:** Frontend (Calculation)
+- **Root Cause:** [RouteResults.tsx L224-264](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/RouteResults.tsx#L224-L264) — `buildCostBreakdown()` uses **synthetic estimates** when backend doesn't provide all fields. The `total` is recomputed as `fuel + driver + toll + handling + stops + gst + documentation`, which may differ from `route.cost`.
+- **Example:** Route cost = ₹3,528 but breakdown total = ₹3,528 only when all synthetic multipliers align. For routes where backend provides partial data, the breakdown total can diverge.
+- **Impact:** Users comparing the headline cost with the breakdown total may notice discrepancies, eroding trust.
+
+---
+
+### BUG-018: Login Page — No Loading State for Google OAuth
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Smart Shipment Planner
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/login`
+  2. Click "Continue with Google"
+- **Expected:** Button should show a loading spinner while OAuth redirect processes
+- **Actual:** Button clicks but no visual feedback during the redirect. On slow connections, users may click multiple times.
+
+---
+
+### BUG-019: Dashboard/Reports — Redirect Behavior for Unauthenticated Users Unclear
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Smart Shipment Planner
+- **Layer:** Frontend (Auth Guard)
+- **Steps to Reproduce:**
+  1. Navigate directly to `/dashboard` without being logged in
+  2. Navigate directly to `/reports` without being logged in
+- **Expected:** Redirect to `/login` with a return URL parameter
+- **Actual:** Testing showed the pages redirect, but there's no toast message explaining "You must log in to access this page."
+- **Impact:** Users arriving via direct links won't understand why they were redirected.
+
+---
+
+### BUG-020: Road Pipeline — Simulation Mode Always Visible (Should Be Behind "More Options")
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Road
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/road`
+  2. The Simulation Mode section with checkbox, presets, and sliders is always visible at the bottom of the form
+- **Expected:** Simulation Mode is a power-user feature and should be hidden behind "More Options" toggle
+- **Actual:** Always visible, making the form long and potentially overwhelming for first-time users
+- **Root Cause:** [roadInputForm.tsx L772](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/roadInputForm.tsx#L772) — Simulation Mode is rendered outside the `showAdvanced` conditional block.
+
+---
+
+### BUG-021: Air Pipeline — "Understand & fill form" / "Understand & run optimize" Buttons Not Differentiated Enough
+
+- **Severity:** 🟡 Medium
+- **Pipeline:** Air
+- **Layer:** Frontend (UX)
+- **Steps to Reproduce:**
+  1. Navigate to `/air`
+  2. View the AI Brief section with two similar-looking buttons
+- **Expected:** Clear visual distinction between "fill only" and "fill + auto-run"
+- **Actual:** Both buttons have similar styling (outlined vs filled), making it unclear which is the "safer" choice for users who want to review before submitting.
+
+---
+
+### BUG-022: Mobile — AI Brief Panel Text Area Partially Obscured by Microphone Button
+
+- **Severity:** 🟡 Medium
+- **Viewport:** Mobile (375×812)
+- **Pipeline:** Road, Air (AI Brief panel)
+- **Steps to Reproduce:**
+  1. Load `/road` or `/air` on mobile
+  2. Tap into the AI Brief text area
+  3. Start typing a long shipment description
+- **Expected:** Full text area with no overlap
+- **Actual:** The microphone icon (🎙) overlaps the right side of the text area, potentially covering the last few characters of typed text.
+
+---
+
+## 🔵 LOW SEVERITY BUGS
+
+### BUG-023: Footer Copyright Year Static
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Cross-cutting
+- **Steps to Reproduce:** Scroll to footer on any page
+- **Expected:** Dynamic year or explicit "2026" matching the current year
+- **Actual:** Shows "© 2026 LogiFlow — Google Solution Challenge 2026" — correct for now, but hardcoded.
+
+---
+
+### BUG-024: Road Pipeline — "Share Route" Copies Google Maps URL, Not LogiFlow URL
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Road
+- **Steps to Reproduce:**
+  1. Get road results, click "Share Route"
+  2. Paste clipboard contents
+- **Expected:** LogiFlow shareable link that preserves route parameters
+- **Actual:** Copies a Google Maps URL. Other users won't see the LogiFlow-optimized view.
+
+---
+
+### BUG-025: Privacy Policy Page — Back Button Says "Back to home"
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Cross-cutting (Legal)
+- **Steps to Reproduce:**
+  1. Navigate from login page → Terms of Service → Privacy Policy
+  2. Click "Back to home"
+- **Expected:** "Back to home" or "Back to previous page"
+- **Actual:** "← Back to home" always navigates to `/`, even if the user came from `/login`. Should either use browser back or be labeled more accurately.
+
+---
+
+### BUG-026: Road Pipeline — ML Model Metrics Could Benefit from Contextual Help
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Road
+- **Steps to Reproduce:** View the ML metrics section showing Delay Detection Accuracy (73%), High-Risk Shipment Detection (68%), Cross-Validated Reliability (78.3%)
+- **Expected:** Tooltips or info icons explaining what these metrics mean for non-technical users
+- **Actual:** Raw ML metrics displayed without context. A logistics manager won't know if 73% accuracy is "good enough."
+
+---
+
+### BUG-027: Air Pipeline — Route Card Confidence Badges All Show Same Value
+
+- **Severity:** 🔵 Low (related to BUG-007)
+- **Pipeline:** Air
+- **Steps to Reproduce:** Run any Air search — all route cards show "94%" confidence
+- **Impact:** While the confidence computation in the frontend is well-implemented for Road (see [RouteResults.tsx L122-168](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/RouteResults.tsx#L122-L168)), the Air pipeline appears to use a backend-computed confidence that doesn't differentiate routes.
+
+---
+
+### BUG-028: Legal Pages — No Table of Contents for Long Document
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Cross-cutting (Legal)
+- **Steps to Reproduce:** Navigate to `/privacy` or `/terms`
+- **Expected:** Table of contents or section navigation for long legal documents
+- **Actual:** Long scrolling document with no quick navigation
+
+---
+
+### BUG-029: Road Pipeline — Route Badge Labels Could Overlap on Mobile
+
+- **Severity:** 🔵 Low
+- **Viewport:** Mobile
+- **Steps to Reproduce:** View road results on mobile with multiple badge labels (cheapest, fastest, recommended)
+- **Expected:** Badges should wrap gracefully
+- **Actual:** Badges may overlap when multiple labels apply to the same route on narrow screens
+
+---
+
+### BUG-030: Air Pipeline — "Save Report" Button Visible but Disabled Styling is Unclear
+
+- **Severity:** 🔵 Low
+- **Pipeline:** Air
+- **Steps to Reproduce:**
+  1. Run air search, get results
+  2. Click "Save Report" while not logged in
+- **Expected:** Clear disabled state or "Sign in to save" tooltip
+- **Actual:** Button text includes "(sign in required)" but the button itself appears clickable. Compare with Road pipeline where the Save Report has clearer styling.
+
+---
+
+## 🏗 ARCHITECTURAL OBSERVATIONS
+
+### ARCH-001: Backend Validation Asymmetry
+
+The Road pipeline has robust validation:
+- Same-city check ✅
+- Frontend weight validation ✅
+- Backend Pydantic field validators ✅
+
+The Air pipeline has **minimal** validation:
+- No same-city check ❌
+- No frontend weight/city validation ❌
+- No Pydantic field validators ❌
+
+**Recommendation:** Standardize validation across all pipelines. Create a shared `BasePipelinePayload` Pydantic model with common validators.
+
+### ARCH-002: State Persistence Between Searches
+
+When switching from one search to another (e.g., valid Air search → gibberish search), stale results from the previous search persist in the UI. The `handleOptimize` function in the store [useLogiFlowStore.ts L384](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/store/useLogiFlowStore.ts#L384) clears results upon **success** but for `no_routes` cases, old results may still be visible in the DOM.
+
+### ARCH-003: Confidence Score Design Difference
+
+- **Road:** Frontend-computed using a sophisticated 4-factor weighted formula ([RouteResults.tsx L122-168](file:///Users/ojas/Desktop/LogiFlow-Solution-Challenge-2026/frontend/src/components/RouteResults.tsx#L122-L168))
+- **Air:** Backend-computed, appears to be static (always 94%)
+
+This inconsistency means the confidence metric has different meanings across pipelines.
+
+---
+
+## ✅ THINGS WORKING WELL
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Road form validation (same-city) | ✅ Pass | Clean error message with red border |
+| Road multi-stop routing | ✅ Pass | Up to 10 stops, reorder, auto-optimize |
+| Road simulation mode | ✅ Pass | 5 presets, 3 sliders, integrates with pipeline |
+| Road cost breakdown | ✅ Pass | 7 line items with emoji icons |
+| Road "Start Driving" (Google Maps) | ✅ Pass | Opens correct corridor |
+| Road map with route polylines | ✅ Pass | Interactive, zoomable, route labels |
+| Air form layout | ✅ Pass | Clean, intuitive grid layout |
+| Air "No routes" messaging | ✅ Pass | Clear message with rail/road alternative links |
+| Login page design | ✅ Pass | Clean, professional, Google OAuth prominent |
+| Login → Terms/Privacy links | ✅ Pass | Working navigation |
+| Protected route redirects | ✅ Pass | Dashboard/Reports redirect to login |
+| Mobile hamburger menu | ✅ Pass | Opens with all nav links accessible |
+| Mobile form stacking | ✅ Pass | Forms stack vertically, readable |
+| Homepage hero section | ✅ Pass | Beautiful glassmorphic design |
+| AI Brief panel (mobile) | ✅ Pass | Usable, buttons properly stacked |
+| Legal pages content | ✅ Pass | Comprehensive, well-written |
+| NavBar responsiveness | ✅ Pass | Transitions from full links → hamburger |
+
+---
+
+## 📋 RECOMMENDED FIX PRIORITY
+
+### Immediate (Pre-Demo)
+1. **BUG-001** — Add same-city validation to Air backend
+2. **BUG-002** — Add weight validation to Air frontend + backend
+3. **BUG-003** — Clear stale results on new search, deduplicate autocomplete
+4. **BUG-005** — Add `scrollIntoView()` after results load
+
+### Before Submission
+5. **BUG-006/007** — Investigate Air pipeline route generation (all identical routes is suspicious)
+6. **BUG-008** — Either implement notification dropdown or remove the bell icon
+7. **BUG-010** — Deduplicate city autocomplete results
+8. **BUG-017** — Ensure cost breakdown total matches route.cost
+
+### Nice-to-Have
+9. **BUG-015** — Add tooltip to Window slider
+10. **BUG-020** — Move Simulation Mode behind advanced toggle
+11. **BUG-012** — Increase touch targets to 44px minimum
+12. All 🔵 Low severity items
+
+---
+
+*Report generated by exhaustive browser-based testing across desktop (1280×800) and mobile (375×812) viewports, combined with source code review of frontend components and backend route handlers.*
