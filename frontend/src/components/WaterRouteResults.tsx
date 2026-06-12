@@ -103,14 +103,14 @@ function Metric({ icon, label, value, unit, tone = 'text-teal-300' }: {
   icon: string; label: string; value: React.ReactNode; unit?: string; tone?: string;
 }) {
   return (
-    <div className="rounded-lg border border-outline-variant/10 bg-surface-container-lowest/35 px-3 py-2">
-      <div className="flex items-center gap-1 text-[9px] font-label font-bold uppercase tracking-[0.12em] text-outline">
-        <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>{icon}</span>
-        {label}
+    <div className="flex flex-col min-w-0 rounded-lg border border-outline-variant/10 bg-surface-container-lowest/35 px-3 py-2" style={{ minWidth: '76px' }}>
+      <div className="flex items-center gap-1 text-[9px] font-label font-bold uppercase tracking-[0.12em] text-outline leading-snug min-w-0 overflow-hidden text-ellipsis">
+        <span className="material-symbols-outlined shrink-0" style={{ fontSize: '12px' }}>{icon}</span>
+        <span className="overflow-hidden text-ellipsis">{label}</span>
       </div>
-      <div className={`mt-1 mono text-sm font-black tabular-nums ${tone}`}>
-        {value}
-        {unit && <span className="ml-0.5 text-[10px] font-medium text-outline">{unit}</span>}
+      <div className={`mt-1 flex items-baseline gap-0.5 whitespace-nowrap ${tone}`}>
+        <span className="mono text-sm font-bold tabular-nums">{value}</span>
+        {unit && <span className="ml-0.5 text-[10px] font-medium text-outline shrink-0">{unit}</span>}
       </div>
     </div>
   );
@@ -402,12 +402,12 @@ function WaterRouteCard({
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-[15px] font-black mono text-teal-300 leading-tight">₹{fmt(route.cost)}</div>
+            <div className="text-[15px] font-black mono text-teal-300 leading-tight whitespace-nowrap">₹{fmt(route.cost)}</div>
           </div>
         </div>
 
         {/* Core metrics */}
-        <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="mb-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(76px, 1fr))' }}>
           <Metric icon="schedule" label="Time" value={Number(route.time).toFixed(1)} unit="hrs" tone="text-amber-200" />
           <Metric icon="savings" label="Cost" value={`₹${fmt(route.cost)}`} tone="text-emerald-300" />
           <Metric icon="shield" label="Risk" value={`${Math.round(risk * 100)}%`} tone={rt.text} />

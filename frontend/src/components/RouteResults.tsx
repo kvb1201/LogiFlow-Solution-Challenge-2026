@@ -678,13 +678,16 @@ function MetricTile({
   unit?: string;
 }) {
   return (
-    <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-      <div className="text-[10px] text-outline mb-1 flex items-center gap-1 font-medium">
-        <span aria-hidden>{emoji}</span> {label}
+    <div className="flex flex-col min-w-0 rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5" style={{ minWidth: '80px' }}>
+      {/* Label — allowed to wrap if needed */}
+      <div className="text-[10px] text-outline mb-1 flex items-center gap-1 font-medium leading-snug">
+        <span aria-hidden>{emoji}</span>
+        <span className="min-w-0 overflow-hidden text-ellipsis">{label}</span>
       </div>
-      <div className="text-sm font-bold text-on-surface mono tabular-nums">
-        <span className="text-primary">{value}</span>
-        {unit && <span className="text-outline text-xs ml-0.5">{unit}</span>}
+      {/* Value — must NEVER wrap */}
+      <div className="flex items-baseline gap-0.5 whitespace-nowrap">
+        <span className="text-[15px] font-bold text-primary mono tabular-nums leading-tight">{value}</span>
+        {unit && <span className="text-outline text-xs font-medium ml-0.5 shrink-0">{unit}</span>}
       </div>
     </div>
   );
@@ -880,11 +883,11 @@ function RouteCard({
           </div>
 
           <div className="text-right shrink-0">
-            <div className="text-[15px] font-black mono text-primary leading-tight">
+            <div className="text-[15px] font-black mono text-primary leading-tight whitespace-nowrap">
               ₹{formatCurrency(route.cost)}
             </div>
             {route.cost_range && (
-              <div className="text-[10px] text-outline mono mt-0.5">
+              <div className="text-[10px] text-outline mono mt-0.5 whitespace-nowrap">
                 ₹{formatCurrency(route.cost_range.low)}–₹{formatCurrency(route.cost_range.high)}
               </div>
             )}
@@ -892,7 +895,7 @@ function RouteCard({
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))' }}>
           <MetricTile emoji="⏱" label="Time"     value={Number(route.time).toFixed(1)}                   unit="hrs" />
           <MetricTile emoji="💰" label="Cost"     value={`₹${formatCurrency(route.cost)}`} />
           <MetricTile emoji="⚠️" label="Risk"     value={riskPct(route)}                                  unit="%" />

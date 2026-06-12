@@ -354,9 +354,9 @@ function modeMetrics(data: Record<string, unknown>) {
 
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 flex-1 rounded-lg border border-border/30 bg-surface/10 px-2 py-1.5 text-center backdrop-blur-sm">
-      <div className="text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-headline text-sm font-bold tabular-nums text-foreground">{value}</div>
+    <div className="min-w-0 flex-1 rounded-lg border border-border/30 bg-surface/10 px-2 py-1.5 text-center backdrop-blur-sm" style={{ minWidth: '60px' }}>
+      <div className="text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground overflow-hidden text-ellipsis">{label}</div>
+      <div className="mt-0.5 font-headline text-sm font-bold tabular-nums text-foreground whitespace-nowrap">{value}</div>
     </div>
   );
 }
