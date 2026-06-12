@@ -4,12 +4,8 @@ import type { ReactNode } from 'react';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { CapabilityStrip } from '@/components/cockpit/CapabilityStrip';
 import { AmbientMesh } from '@/components/cockpit/AmbientMesh';
-import {
-  LOGI_GRADIENT,
-  badgeDotStyle,
-  badgePillStyle,
-  badgeTextStyle,
-} from '@/lib/pipeline-theme';
+import { LogiFlowWordmark } from '@/components/cockpit/LogiFlowWordmark';
+import { badgeDotStyle, badgePillStyle, badgeTextStyle } from '@/lib/pipeline-theme';
 
 export type PipelineBadge = { icon: string; label: string };
 
@@ -59,16 +55,8 @@ export function PipelineLogiLanding({
           </div>
 
           <div className="mb-8 text-center">
-            <h1 className="mb-4 font-headline text-4xl font-black leading-none tracking-tighter xs:text-5xl sm:text-6xl md:text-[72px]">
-              <span
-                className={`${LOGI_GRADIENT[mode]} bg-clip-text text-transparent animate-gradient-shift`}
-                style={{ backgroundSize: '200% auto' }}
-              >
-                Logi
-              </span>
-              <span className="text-on-surface">Flow</span>
-            </h1>
-            <p className="text-sm sm:text-[15px] text-on-surface-variant max-w-lg mx-auto leading-relaxed">
+            <LogiFlowWordmark variant={mode} className="mb-4" />
+            <p className="text-sm sm:text-[15px] text-muted-foreground max-w-lg mx-auto leading-relaxed">
               {description}
             </p>
             {metrics ? (

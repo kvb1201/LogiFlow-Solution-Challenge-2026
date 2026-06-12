@@ -23,6 +23,9 @@ export const LOGI_GRADIENT: Record<LogisticsMode, string> = {
   comparator: 'bg-gradient-to-r from-blue-400 via-cyan-300 to-indigo-300',
 };
 
+/** Home hero — cycles every pipeline accent (CSS vars). Pair with `text-gradient-logiflow-home`. */
+export const LOGI_GRADIENT_HOME_CLASS = 'text-gradient-logiflow-home animate-gradient-shift';
+
 /** Slim hero action — primary CTA on mode landings */
 export const PIPELINE_ACTION_PRIMARY =
   'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 hover:brightness-110';

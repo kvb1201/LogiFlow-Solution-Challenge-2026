@@ -157,6 +157,15 @@
   50% { background-position: 100% 50%; }
 }
 
+@keyframes tutorial-target-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--hybrid) 12%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in oklab, var(--hybrid) 22%, transparent);
+  }
+}
+
 @keyframes mesh-drift-1 {
   0%, 100% { transform: translate(0, 0) scale(1); }
   25% { transform: translate(8%, 12%) scale(1.1); }
@@ -513,6 +522,47 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  .text-gradient-logiflow-home {
+    background: linear-gradient(
+      100deg,
+      var(--hybrid) 0%,
+      var(--comparator) 17%,
+      var(--rail) 34%,
+      var(--road) 51%,
+      var(--air) 68%,
+      var(--water) 85%,
+      var(--hybrid) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .home-tutorial-target {
+    outline: 2px solid var(--hybrid);
+    outline-offset: 3px;
+    border-radius: 0.75rem;
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--hybrid) 18%, transparent);
+    animation: tutorial-target-pulse 2.2s ease-in-out infinite;
+  }
+
+  html.home-tutorial-active .home-main-inset {
+    transition: padding-left 0.28s ease, padding-bottom 0.28s ease;
+  }
+
+  @media (min-width: 1024px) {
+    html.home-tutorial-active .home-main-inset {
+      padding-left: var(--home-tutorial-inset, 18rem);
+    }
+  }
+
+  @media (max-width: 1023px) {
+    html.home-tutorial-active .home-main-inset {
+      padding-bottom: min(42dvh, 22rem);
+    }
   }
 
   .scanline {

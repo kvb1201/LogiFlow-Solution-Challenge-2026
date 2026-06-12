@@ -28,6 +28,7 @@ import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { useIntentFormReset } from '@/hooks/useIntentFormReset';
+import { HeroMetricsGrid } from '@/components/cockpit/HeroMetricsGrid';
 import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
 import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
@@ -76,19 +77,6 @@ const MODE_META: Record<
     symbol: 'directions_boat',
   },
 };
-
-function ComparatorMetricItem({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center">
-      <div className="text-xl sm:text-2xl font-black" style={{ color: 'var(--comparator)' }}>
-        {value}
-      </div>
-      <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-        {label}
-      </div>
-    </div>
-  );
-}
 
 const ALL_MODES: Mode[] = ['road', 'rail', 'air', 'water'];
 
@@ -689,13 +677,7 @@ export default function ComparatorPageClient() {
               on delay-adjusted time, cost, and risk — describe your shipment in plain English first.
             </>
           }
-          metrics={
-            <div className="flex flex-wrap justify-center gap-6">
-              {COMPARATOR_HERO_METRICS.map((m) => (
-                <ComparatorMetricItem key={m.label} value={m.value} label={m.label} />
-              ))}
-            </div>
-          }
+          metrics={<HeroMetricsGrid metrics={COMPARATOR_HERO_METRICS} mode="comparator" />}
           badges={COMPARATOR_CAPABILITY_BADGES}
           actions={
             <>

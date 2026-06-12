@@ -1,98 +1,148 @@
-import Link from 'next/link';
-import { CheckCircle2 } from 'lucide-react';
 import type { LogisticsMode } from '@/lib/mode-meta';
-import { modeMeta } from '@/lib/mode-meta';
-import { accentMix } from '@/lib/pipeline-theme';
-import { AmbientSurface } from './AmbientSurface';
-import { ModeIcon } from './ModeIcon';
+import { accentMix, accentVar } from '@/lib/pipeline-theme';
+import { AmbientMesh } from './AmbientMesh';
+import { WorkspacePanel } from './WorkspacePanel';
 
-const FEATURE_GUIDES: {
-  mode: LogisticsMode;
-  description: string;
-}[] = [
+const LENSES = [
   {
-    mode: 'rail',
-    description:
-      'Optimize parcel-friendly trains, compare cheapest / fastest / safest, and inspect delays and live position on the map.',
+    icon: 'payments',
+    label: 'Cost',
+    line: 'Rank routes by tariff, toll & fuel — not guesswork.',
+    mode: 'comparator' as const,
   },
   {
-    mode: 'road',
-    description:
-      'Run road optimization with traffic awareness, toll and vehicle preferences, and side-by-side route comparison.',
+    icon: 'schedule',
+    label: 'Time',
+    line: 'ETAs that factor traffic, delays & hand-offs.',
+    mode: 'rail' as const,
   },
   {
-    mode: 'air',
-    description:
-      'Find express air cargo lanes, compare OTP risk and cut-off times, and balance speed against cost.',
+    icon: 'shield',
+    label: 'Risk',
+    line: 'Weather, congestion & reliability in one score.',
+    mode: 'road' as const,
   },
-  {
-    mode: 'water',
-    description:
-      'Plan port-to-port maritime corridors with disruption signals, ETA estimates, and transshipment awareness.',
-  },
-  {
-    mode: 'hybrid',
-    description:
-      'Chain rail, road, air, and water legs through hub cities — ideal when no single mode covers the full corridor.',
-  },
-  {
-    mode: 'comparator',
-    description:
-      'Run all four single modes in parallel on one corridor and see which wins on cost, time, and risk.',
-  },
+] as const;
+
+const FLOW = ['Your brief', 'LogiFlow reads it', 'Best mode opens', 'You decide'] as const;
+
+function FlowStepBadge({ index }: { index: number }) {
+  return (
+    <span
+      className="mb-2 flex h-7 w-7 items-center justify-center rounded-full border bg-background text-[11px] font-bold font-headline"
+      style={{
+        borderColor: accentMix('hybrid', 35, 'var(--border)'),
+        color: accentMix('hybrid', 90, 'white'),
+      }}
+    >
+      {index + 1}
+    </span>
+  );
+}
+
+const MODE_SPECTRUM: { mode: LogisticsMode; label: string }[] = [
+  { mode: 'rail', label: 'Rail' },
+  { mode: 'road', label: 'Road' },
+  { mode: 'air', label: 'Air' },
+  { mode: 'water', label: 'Water' },
+  { mode: 'hybrid', label: 'Hybrid' },
+  { mode: 'comparator', label: 'Compare' },
 ];
 
-export function HomeIntroSection() {
-  return (
-    <div className="space-y-4">
-      <AmbientSurface mode="home" mesh="section" className="p-5 sm:p-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-rail">About us</p>
-        <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-          LogiFlow is built for operators who juggle tight budgets, deadlines, and uncertain networks.
-          We combine optimization engines with live feeds — like RailRadar for railways — so you see
-          not just a route, but cost, time, risk, and what is happening on the ground right now.
-        </p>
-      </AmbientSurface>
+const LF_BADGE = (
+  <div
+    aria-hidden
+    className="flex h-11 w-11 items-center justify-center rounded-full border border-border/40"
+    style={{
+      background: `conic-gradient(from 210deg, ${accentVar('rail')}, ${accentVar('road')}, ${accentVar('air')}, ${accentVar('water')}, ${accentVar('hybrid')}, ${accentVar('comparator')}, ${accentVar('rail')})`,
+      boxShadow: `0 0 32px -12px ${accentVar('hybrid')}`,
+    }}
+  >
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-background/95 text-[9px] font-black uppercase tracking-wider text-foreground">
+      LF
+    </span>
+  </div>
+);
 
-      <AmbientSurface mode="home" mesh="section" className="p-5 sm:p-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-road">What you can do</p>
-        <ul className="mt-4 space-y-4">
-          {FEATURE_GUIDES.map(({ mode, description }) => {
-            const meta = modeMeta[mode];
-            return (
-              <li key={mode} className="flex gap-3">
+type HomeIntroSectionProps = {
+  className?: string;
+};
+
+export function HomeIntroSection({ className = '' }: HomeIntroSectionProps) {
+  return (
+    <WorkspacePanel
+      className={className}
+      eyebrow="The LogiFlow way"
+      title={
+        <>
+          Every corridor through <span className="text-gradient">three lenses</span>
+        </>
+      }
+      icon={LF_BADGE}
+      bodyClassName="gap-4"
+    >
+      <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-2.5">
+        {LENSES.map(({ icon, label, line, mode }) => (
+          <div
+            key={label}
+            className="group relative flex h-full min-h-[4.5rem] overflow-hidden rounded-xl border border-border/35 bg-background/20 p-3 backdrop-blur-sm"
+            style={{
+              boxShadow: `inset 0 1px 0 0 ${accentMix(mode, 10, 'transparent')}`,
+            }}
+          >
+            <AmbientMesh variant="card" tone={mode} />
+            <div className="relative z-10 flex items-center gap-3">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/35 bg-surface/30"
+                style={{ color: accentVar(mode) }}
+              >
                 <span
-                  className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-background/40"
-                  style={{ color: meta.accent }}
+                  className="material-symbols-outlined text-[17px]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
                 >
-                  <ModeIcon mode={mode} className="h-4 w-4" />
+                  {icon}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <Link
-                    href={meta.href}
-                    className="group inline-flex items-center gap-1.5 text-sm font-semibold text-foreground transition-colors hover:opacity-90"
-                  >
-                    {meta.label}
-                    <CheckCircle2
-                      className="h-3.5 w-3.5 opacity-70 transition-opacity group-hover:opacity-100"
-                      style={{ color: meta.accent }}
-                    />
-                  </Link>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <p
-          className="mt-5 rounded-lg border border-border/30 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground"
-          style={{ background: accentMix('hybrid', 6, 'transparent') }}
-        >
-          <span className="font-semibold text-foreground">How to start:</span> type a shipment brief
-          below, confirm origin and destination, then open the recommended mode — or pick a tool from
-          the list at the bottom of this page.
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{label}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{line}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="shrink-0 rounded-xl border border-border/30 bg-surface/10 px-2.5 py-3">
+        <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {FLOW.map((step, i) => (
+            <li key={step} className="flex flex-col items-center text-center">
+              <FlowStepBadge index={i} />
+              <span className="text-[10px] font-medium leading-tight text-foreground">{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="mt-auto shrink-0 space-y-2 border-t border-border/20 pt-3">
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          One brief in. Six ways to move it.
         </p>
-      </AmbientSurface>
-    </div>
+        <div className="flex flex-wrap gap-1.5" role="presentation" aria-hidden>
+          {MODE_SPECTRUM.map(({ mode, label }) => (
+            <span
+              key={mode}
+              className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]"
+              style={{
+                color: accentMix(mode, 88, 'white'),
+                background: accentMix(mode, 10, 'transparent'),
+                border: `1px solid ${accentMix(mode, 20, 'transparent')}`,
+              }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </WorkspacePanel>
   );
 }

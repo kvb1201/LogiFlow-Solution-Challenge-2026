@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Bell, LogOut, Menu, Plus, Radar, X } from 'lucide-react';
+import { Bell, LogOut, Menu, Plus, X } from 'lucide-react';
 import { modeFromPathname, modeMeta } from '@/lib/mode-meta';
 import type { LogisticsMode } from '@/lib/mode-meta';
 import { accentMix } from '@/lib/pipeline-theme';
+import { LogiFlowMark } from '@/components/brand/LogiFlowMark';
 import { ModeIcon } from '@/components/cockpit/ModeIcon';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -136,11 +137,7 @@ export default function NavBar() {
               color: logoAccent,
             }}
           >
-            {activeMode ? (
-              <ModeIcon mode={activeMode} className="h-4 w-4" strokeWidth={2.4} />
-            ) : (
-              <Radar className="h-4 w-4" strokeWidth={2.4} />
-            )}
+            <LogiFlowMark className="h-[18px] w-[18px]" />
             <span
               className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background"
               style={{ background: activeMode ? logoAccent : 'var(--live)' }}
