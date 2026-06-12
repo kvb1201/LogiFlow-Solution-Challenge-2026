@@ -1,21 +1,26 @@
 'use client';
 
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 type LogiFlowMarkProps = {
   className?: string;
-  /** Looping draw-on formation animation (respects reduced motion). */
+  /** One-time formation + slow needle rotation (respects reduced motion). */
   animate?: boolean;
 };
 
 /**
- * Compass mark — ring traces on, needle forms, cardinals lock in.
- * Minimal rose for navigation / multimodal routing.
+ * Compass mark — body forms once and holds; needle rotates slowly inside the ring.
  */
 export function LogiFlowMark({ className, animate = true }: LogiFlowMarkProps) {
   const gradId = useId().replace(/:/g, '');
-  const glowId = useId().replace(/:/g, '');
-  const liveClass = animate ? 'logiflow-mark--live' : 'logiflow-mark--static';
+  const clipId = useId().replace(/:/g, '');
+  const [motionReady, setMotionReady] = useState(false);
+
+  useEffect(() => {
+    setMotionReady(true);
+  }, []);
+
+  const liveClass = animate && motionReady ? 'logiflow-mark--live' : 'logiflow-mark--static';
 
   return (
     <svg
@@ -31,26 +36,22 @@ export function LogiFlowMark({ className, animate = true }: LogiFlowMarkProps) {
           <stop offset="55%" stopColor="currentColor" stopOpacity="0.95" />
           <stop offset="100%" stopColor="currentColor" stopOpacity="0.35" />
         </linearGradient>
-        <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="0.5" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        <clipPath id={clipId}>
+          <circle cx="12" cy="12" r="7.15" />
+        </clipPath>
       </defs>
 
-      <circle
-        className="logiflow-mark__flow logiflow-mark__flow--a"
-        cx="12"
-        cy="12"
-        r="8.85"
-        stroke={`url(#${gradId})`}
-        strokeWidth="1.7"
-        pathLength={1}
-      />
+      <g className="logiflow-mark__body">
+        <circle
+          className="logiflow-mark__flow logiflow-mark__flow--ring"
+          cx="12"
+          cy="12"
+          r="8.85"
+          stroke={`url(#${gradId})`}
+          strokeWidth="1.7"
+          pathLength={1}
+        />
 
-      <g className="logiflow-mark__orbit-wrap">
         <circle
           className="logiflow-mark__orbit"
           cx="12"
@@ -61,63 +62,65 @@ export function LogiFlowMark({ className, animate = true }: LogiFlowMarkProps) {
           strokeWidth="0.55"
           strokeDasharray="1.75 3.25"
         />
+
+        <g className="logiflow-mark__tips">
+          <circle className="logiflow-mark__tip logiflow-mark__tip--a" cx="12" cy="3.15" r="1" fill="currentColor" />
+          <circle
+            className="logiflow-mark__tip logiflow-mark__tip--b"
+            cx="20.85"
+            cy="12"
+            r="0.75"
+            fill="currentColor"
+            fillOpacity="0.7"
+          />
+          <circle
+            className="logiflow-mark__tip logiflow-mark__tip--c"
+            cx="12"
+            cy="20.85"
+            r="0.75"
+            fill="currentColor"
+            fillOpacity="0.7"
+          />
+          <circle
+            className="logiflow-mark__tip logiflow-mark__tip--d"
+            cx="3.15"
+            cy="12"
+            r="0.75"
+            fill="currentColor"
+            fillOpacity="0.7"
+          />
+        </g>
       </g>
 
-      <g filter={`url(#${glowId})`}>
-        <path
-          className="logiflow-mark__flow logiflow-mark__flow--b"
-          d="M12 11.35V4.35"
-          stroke="currentColor"
-          strokeWidth="3.1"
-          strokeLinecap="round"
-          pathLength={1}
-        />
-        <path
-          className="logiflow-mark__flow logiflow-mark__flow--c"
-          d="M12 12.65V19.65"
-          stroke="currentColor"
-          strokeOpacity="0.38"
-          strokeWidth="2.35"
-          strokeLinecap="round"
-          pathLength={1}
-        />
-        <path
-          className="logiflow-mark__flow logiflow-mark__flow--d"
-          d="M9.15 12h5.7"
-          stroke="currentColor"
-          strokeOpacity="0.55"
-          strokeWidth="1.65"
-          strokeLinecap="round"
-          pathLength={1}
-        />
-      </g>
-
-      <g className="logiflow-mark__tips">
-        <circle className="logiflow-mark__tip logiflow-mark__tip--a" cx="12" cy="3.15" r="1" fill="currentColor" />
-        <circle
-          className="logiflow-mark__tip logiflow-mark__tip--b"
-          cx="20.85"
-          cy="12"
-          r="0.75"
-          fill="currentColor"
-          fillOpacity="0.7"
-        />
-        <circle
-          className="logiflow-mark__tip logiflow-mark__tip--c"
-          cx="12"
-          cy="20.85"
-          r="0.75"
-          fill="currentColor"
-          fillOpacity="0.7"
-        />
-        <circle
-          className="logiflow-mark__tip logiflow-mark__tip--d"
-          cx="3.15"
-          cy="12"
-          r="0.75"
-          fill="currentColor"
-          fillOpacity="0.7"
-        />
+      <g clipPath={`url(#${clipId})`}>
+        <g className="logiflow-mark__needle-spin">
+          <path
+            className="logiflow-mark__flow logiflow-mark__flow--north"
+            d="M12 12V6.65"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            pathLength={1}
+          />
+          <path
+            className="logiflow-mark__flow logiflow-mark__flow--south"
+            d="M12 12V17.35"
+            stroke="currentColor"
+            strokeOpacity="0.38"
+            strokeWidth="1.85"
+            strokeLinecap="round"
+            pathLength={1}
+          />
+          <path
+            className="logiflow-mark__flow logiflow-mark__flow--cross"
+            d="M10.35 12h3.3"
+            stroke="currentColor"
+            strokeOpacity="0.55"
+            strokeWidth="1.35"
+            strokeLinecap="round"
+            pathLength={1}
+          />
+        </g>
       </g>
 
       <g className="logiflow-mark__hub-wrap">

@@ -140,7 +140,7 @@ export default function NavBar() {
                 : 'var(--surface-2)',
             }}
           >
-            <LogiFlowMark className="absolute inset-0 h-full w-full" />
+            <LogiFlowMark className="absolute inset-[2px] h-[calc(100%-4px)] w-[calc(100%-4px)]" />
             <span
               className="absolute right-0.5 top-0.5 z-10 h-2 w-2 rounded-full border border-background shadow-sm"
               style={{ background: activeMode ? logoAccent : 'var(--live)' }}

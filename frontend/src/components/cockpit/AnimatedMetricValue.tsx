@@ -10,20 +10,20 @@ type AnimatedMetricValueProps = {
 };
 
 export function AnimatedMetricValue({ value, className, style }: AnimatedMetricValueProps) {
-  const parsed = parseMetricValue(value);
   const ref = useRef<HTMLSpanElement>(null);
   const hasAnimated = useRef(false);
-  const [display, setDisplay] = useState(() =>
-    parsed.kind === 'literal' ? parsed.display : formatAnimatedMetric(0, parsed),
-  );
+  /** Match SSR text on first paint; animate after hydration in useEffect. */
+  const [display, setDisplay] = useState(value);
 
   useEffect(() => {
     hasAnimated.current = false;
     const next = parseMetricValue(value);
+
     if (next.kind === 'literal') {
       setDisplay(next.display);
       return;
     }
+
     setDisplay(formatAnimatedMetric(0, next));
 
     const el = ref.current;
@@ -57,7 +57,7 @@ export function AnimatedMetricValue({ value, className, style }: AnimatedMetricV
   }, [value]);
 
   return (
-    <span ref={ref} className={className} style={style}>
+    <span ref={ref} className={className} style={style} suppressHydrationWarning>
       {display}
     </span>
   );
