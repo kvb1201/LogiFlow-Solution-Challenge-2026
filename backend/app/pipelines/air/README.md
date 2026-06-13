@@ -2,6 +2,9 @@
 
 This folder contains the air cargo decision engine for LogiFlow.
 
+**API:** `POST /air/optimize` · **Frontend:** `/air`  
+**Docs:** [docs/pipelines/air.md](../../../docs/pipelines/air.md) · [OTP scoring](../../../docs/miscellaneous/air-otp-congestion-scoring.md) · [International routing](../../../docs/miscellaneous/international-air-routing-summary.md)
+
 ## Goal
 
 The airway pipeline selects the best air cargo option using:
@@ -150,6 +153,6 @@ API example (Swagger at `/docs`):
 
 These can be added without changing the core scoring structure.
 
-See also: [docs/air-otp-congestion-scoring.md](../../../docs/air-otp-congestion-scoring.md)
+See also: [docs/miscellaneous/air-otp-congestion-scoring.md](../../../docs/miscellaneous/air-otp-congestion-scoring.md)
 
 "The air pipeline resolves cities to Indian airports using static mappings plus OurAirports, finds route support from a trimmed OpenFlights snapshot, enriches with weather and OTP baselines, and ranks options with a weighted scoring engine. When no route exists in the dataset, it returns a clean `no_routes` response — no fabricated flights."

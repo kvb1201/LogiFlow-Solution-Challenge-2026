@@ -74,12 +74,17 @@ function loadGsiScript(): Promise<void> {
 }
 
 type GoogleSignInButtonProps = {
+  clientId?: string;
   onSuccess: (credential: string) => void;
   disabled?: boolean;
 };
 
 /** Branded shell over the official Google Sign-In control (required for OAuth). */
-export function GoogleSignInButton({ onSuccess, disabled = false }: GoogleSignInButtonProps) {
+export function GoogleSignInButton({
+  clientId: clientIdProp,
+  onSuccess,
+  disabled = false,
+}: GoogleSignInButtonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
@@ -99,7 +104,10 @@ export function GoogleSignInButton({ onSuccess, disabled = false }: GoogleSignIn
         await loadGsiScript();
         if (cancelled || !window.google?.accounts?.id) return;
 
-        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        const clientId =
+          clientIdProp?.trim() ||
+          process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim() ||
+          '';
         if (!clientId) {
           setLoadError('Google sign-in is not configured.');
           return;
@@ -142,7 +150,7 @@ export function GoogleSignInButton({ onSuccess, disabled = false }: GoogleSignIn
     return () => {
       cancelled = true;
     };
-  }, [disabled]);
+  }, [disabled, clientIdProp]);
 
   return (
     <div ref={containerRef} className="group relative w-full">

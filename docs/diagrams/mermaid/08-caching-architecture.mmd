@@ -1,0 +1,10 @@
+flowchart TB
+    A([API Request]) --> B[L1 RequestContext]
+    B -->|Miss| C[L2 In-memory dict]
+    C -->|Miss| D[L3 Redis shared]
+    D -->|Miss| E[L4 Supabase tables]
+    E -->|Miss| F[L5 Static JSON fallback]
+    F --> G{Cache hit?}
+    G -->|Yes| H([Return cached])
+    G -->|No| I[Compute fresh]
+    I -->|Store| B

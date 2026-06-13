@@ -1,0 +1,16 @@
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor':'#1e293b','arrowheadColor':'#1e293b','primaryBorderColor':'#334155','edgeLabelBackground':'#ffffff'}}}%%
+flowchart TB
+    A([POST /optimize]) --> B[Create RequestContext]
+    B --> C[ThreadPool 4 workers]
+    C --> D[Road pipeline]
+    C --> E[Rail pipeline]
+    C --> F[Air pipeline]
+    C --> G[Water pipeline]
+    D & E & F & G --> H{Mode timeout 30s?}
+    H -->|Yes| I[Mark unavailable]
+    H -->|No| J[Normalizer]
+    I --> J
+    J --> K[Pareto scorer]
+    K --> L[Priority ranking]
+    L --> M[Gemini explainer]
+    M --> N([Return comparison JSON])

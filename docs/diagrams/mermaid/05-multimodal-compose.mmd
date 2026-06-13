@@ -1,0 +1,12 @@
+flowchart TB
+    A([POST /compose]) --> B[Location funnel + geocode]
+    B --> C{Rural village?}
+    C -->|Yes| D[Geo hub finder]
+    C -->|No| E[Hub template builder]
+    D --> E
+    E --> F[Execute legs in parallel]
+    F --> G[(Leg cache L1/L2/L3)]
+    G --> H[Itinerary scorer]
+    H --> I{SSE stream?}
+    I -->|Yes| J([Ranked itineraries])
+    I -->|No| J

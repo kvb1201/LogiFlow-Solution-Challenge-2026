@@ -4,7 +4,15 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "env": {
-    "BACKEND_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev",
-    "NEXT_PUBLIC_API_URL": "https://logiflow-render-proxy.ojas-logiflow.workers.dev"
+    "BACKEND_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+    "NEXT_PUBLIC_API_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+    "NEXT_PUBLIC_COMPOSE_URL": "https://logiflow-api-sbexkjk72q-el.a.run.app",
+    "GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com",
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "1007508154155-vveq29qevc09gn2haneo1bosoakq9eu1.apps.googleusercontent.com",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://mwvohdvtxwltzkyuboaz.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dm9oZHZ0eHdsdHpreXVib2F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NjY3ODQsImV4cCI6MjA5NjI0Mjc4NH0.ca_lnOR-_5JJpjYZI-KhL4hyRoxsJ-Cy62fhEjzCL3w",
+    "NEXT_PUBLIC_RAILRADAR_API_KEY": "rr_ltpc8uns16vnstp3sucr42giq6m116xp",
+    "NEXT_PUBLIC_GA_MEASUREMENT_ID": "G-S710XF91X1",
+    "NEXT_PUBLIC_SITE_URL": "https://logi-flow-solution-challenge-2026.vercel.app"
   }
 }

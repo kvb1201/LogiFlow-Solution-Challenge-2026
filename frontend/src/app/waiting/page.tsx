@@ -1,10 +1,12 @@
-import type { Metadata } from 'next';
 import { WaitingRoomFromSearchParams } from '@/components/waiting/WaitingRoom';
+import { buildPageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Traffic Queue — LogiFlow',
+export const metadata = buildPageMetadata({
+  title: 'Traffic Queue',
   description: 'Your route request is queued. LogiFlow will resume automatically when capacity is available.',
-};
+  path: '/waiting',
+  noIndex: true,
+});
 
 export default async function WaitingPage({
   searchParams,

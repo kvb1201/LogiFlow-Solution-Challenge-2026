@@ -1,8 +1,8 @@
 /**
- * Cloudflare Worker: proxy LogiFlow Render API through workers.dev (free edge).
- * Live URL: https://logiflow-render-proxy.ojas-logiflow.workers.dev
+ * @deprecated Not used in production. Vercel calls Cloud Run directly.
+ * Legacy edge proxy (originally Render → now Cloud Run). See docs/miscellaneous/cloudflare-legacy.md.
  */
-const ORIGIN = "https://logiflow-solution-challenge-2026.onrender.com";
+const ORIGIN = "https://logiflow-api-sbexkjk72q-el.a.run.app";
 
 export default {
   async fetch(request) {
@@ -21,7 +21,7 @@ export default {
 
     const target = new URL(incoming.pathname + incoming.search, ORIGIN);
     const headers = new Headers(request.headers);
-    headers.set("Host", "logiflow-solution-challenge-2026.onrender.com");
+    headers.set("Host", "logiflow-api-sbexkjk72q-el.a.run.app");
     headers.set(
       "X-Forwarded-For",
       request.headers.get("CF-Connecting-IP") ||

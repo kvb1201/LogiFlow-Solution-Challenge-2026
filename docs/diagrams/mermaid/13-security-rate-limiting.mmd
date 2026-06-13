@@ -1,0 +1,11 @@
+flowchart TB
+    A([Incoming API request]) --> B{slowapi rate limit?}
+    B -->|Exceeded| F[Return 429]
+    B -->|OK| C{Concurrency semaphore?}
+    C -->|Full| F
+    C -->|OK| D{Response cache SHA256?}
+    D -->|Hit/Miss| E[Execute pipeline]
+    F --> G[Waiting room redirect]
+    A --> H{JWT auth check?}
+    H -->|Valid| I[Planner route]
+    H -->|Invalid| J[Return 401]

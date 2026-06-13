@@ -1,9 +1,11 @@
-import type { Metadata } from 'next';
+import { buildPageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Dashboard — LogiFlow',
-  description: 'Your logistics planning dashboard',
-};
+export const metadata = buildPageMetadata({
+  title: 'Dashboard',
+  description: 'Your logistics planning dashboard.',
+  path: '/dashboard',
+  noIndex: true,
+});
 
 export default function DashboardLayout({
   children,

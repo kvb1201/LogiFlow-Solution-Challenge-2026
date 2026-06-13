@@ -1,0 +1,52 @@
+erDiagram
+    USER ||--o{ USER_PREFERENCES : has
+    USER ||--o{ SHIPMENT_REPORT : owns
+    USER ||--o{ SHIPMENT_NOTIFICATION : receives
+    SHIPMENT_REPORT ||--o{ SHIPMENT_NOTIFICATION : triggers
+
+    USER {
+        int id PK
+        string email UK
+        string name
+        string google_id
+    }
+
+    USER_PREFERENCES {
+        int id PK
+        int user_id FK
+        json settings
+    }
+
+    SHIPMENT_REPORT {
+        int id PK
+        int user_id FK
+        json corridor
+        json results
+        string mode
+    }
+
+    SHIPMENT_NOTIFICATION {
+        int id PK
+        int user_id FK
+        int report_id FK
+        string message
+        bool read
+    }
+
+    TRAIN_ROUTE_GEOMETRY {
+        string train_id PK
+        json polyline
+        json stations
+    }
+
+    RAIL_ML_METRICS {
+        string id PK
+        json metrics
+        datetime updated_at
+    }
+
+    COMPOSE_LEG_CACHE {
+        string leg_key PK
+        json result
+        datetime expires_at
+    }

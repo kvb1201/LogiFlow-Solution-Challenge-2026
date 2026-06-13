@@ -31,7 +31,7 @@ export default function ParagraphInputWithStt({
     [value, onChange]
   );
 
-  const { supported, listening, error, toggle } = useSpeechToText({
+  const { supported, listening, error, hint, serverMode, toggle } = useSpeechToText({
     lang,
     onFinalTranscript: appendTranscript,
   });
@@ -53,8 +53,20 @@ export default function ParagraphInputWithStt({
           <button
             type="button"
             onClick={toggle}
-            title={listening ? 'Stop listening' : 'Speak your shipment details'}
-            aria-label={listening ? 'Stop speech input' : 'Start speech input'}
+            title={
+              listening
+                ? serverMode
+                  ? 'Stop recording'
+                  : 'Stop listening'
+                : 'Speak your shipment details'
+            }
+            aria-label={
+              listening
+                ? serverMode
+                  ? 'Stop recording'
+                  : 'Stop speech input'
+                : 'Start speech input'
+            }
             className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-lg border transition-all ${
               listening
                 ? 'border-red-400/50 bg-red-500/20 text-red-200 animate-pulse'
@@ -67,10 +79,15 @@ export default function ParagraphInputWithStt({
           </button>
         )}
       </div>
-      {listening && (
+      {(listening || hint) && (
         <p className="text-[11px] text-violet-200/90 flex items-center gap-1.5">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />
-          Listening… speak your corridor, cargo, budget, and deadline.
+          {listening && (
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse shrink-0" />
+          )}
+          {hint ||
+            (serverMode
+              ? 'Recording… tap the mic again when you finish speaking.'
+              : 'Listening… speak your corridor, cargo, budget, and deadline.')}
         </p>
       )}
       {mounted && !supported && (

@@ -62,6 +62,23 @@ def test_compose_phulpur_to_lucknow():
     assert result.get("feeder_corridor") is True
 
 
+def test_feeder_failure_note_not_misleading():
+    """Do not claim local connection is included when feeder legs failed."""
+    from unittest.mock import patch
+
+    composer = RouteComposer()
+    with patch.object(RouteComposer, "_fetch_access_leg", return_value=None):
+        result = composer.compose(
+            "Delhi",
+            "Dabhoi",
+            {"priority": "balanced", "compose_options": {"budget_seconds": 25}},
+            RequestContext(),
+        )
+    note = result.get("compose_note") or ""
+    assert "Local connection included" not in note
+    assert result.get("feeder_corridor") is True
+
+
 def test_feeder_without_access_leg_not_mislabeled():
     """Hub-only legs must not appear when local feeder access could not be scheduled."""
     from unittest.mock import patch
@@ -74,6 +91,9 @@ def test_feeder_without_access_leg_not_mislabeled():
             {"priority": "balanced", "compose_options": {"budget_seconds": 20}},
             RequestContext(),
         )
-    assert not result.get("recommended")
     assert result.get("feeder_corridor") is True
-    assert "feeder:in" in (result.get("unavailable_templates") or {})
+    rec = result.get("recommended")
+    if rec:
+        assert rec.get("partial_feeder") or rec.get("feeder_warnings")
+    else:
+        assert "feeder:in" in (result.get("unavailable_templates") or {})

@@ -1,0 +1,39 @@
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor':'#1e293b','arrowheadColor':'#1e293b','primaryBorderColor':'#334155','edgeLabelBackground':'#ffffff'}}}%%
+flowchart LR
+    subgraph Client["Client Layer"]
+        UC[User Client]
+        NJ[Next.js 16 App]
+    end
+
+    subgraph Edge["Edge Layer (Vercel)"]
+        VE[Vercel Edge API]
+    end
+
+    subgraph Backend["Backend (GCP Cloud Run)"]
+        API[FastAPI]
+        LF[Location Funnel]
+        HC[Hybrid Comparator]
+        RC[Route Composer]
+        PA[Planner Auth]
+    end
+
+    subgraph Pipelines["Mode Pipelines"]
+        RD[Road Pipeline]
+        RL[Rail Pipeline]
+        AR[Air Pipeline]
+        WT[Water Pipeline]
+    end
+
+    subgraph Data["Data Layer"]
+        EXT[External APIs<br/>TomTom · RailRadar · OpenFlights · PortWatch]
+        SB[(Supabase · Redis · Postgres)]
+    end
+
+    UC -->|HTTP| NJ
+    NJ -->|Same-origin| VE
+    VE -->|Proxy| API
+    API --> LF
+    LF --> RD & RL & AR & WT
+    API --> HC & RC & PA
+    RD & RL & AR & WT --> EXT
+    RL & RC & PA --> SB

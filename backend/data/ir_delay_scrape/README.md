@@ -22,4 +22,4 @@ make collect-delays-3d-foreground  # only confirmed-active trains
 
 ## Strategies
 
-See [docs/INDIAN_RAILWAYS_DATA.md](../../../docs/INDIAN_RAILWAYS_DATA.md).
+See [docs/miscellaneous/INDIAN_RAILWAYS_DATA.md](../../../docs/miscellaneous/INDIAN_RAILWAYS_DATA.md).

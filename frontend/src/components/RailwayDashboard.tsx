@@ -801,7 +801,10 @@ export default function RailwayDashboard() {
 
   // ── Results dashboard ─────────────────────────────────────────────
   return (
-    <div className="fixed inset-x-0 top-14 bottom-0 z-[15] flex flex-col overflow-hidden bg-background sm:top-16">
+    <div
+      className="fixed inset-x-0 top-14 z-[15] flex flex-col overflow-hidden bg-background sm:top-16"
+      style={{ bottom: 'var(--site-footer-height)' }}
+    >
       {showRailLoading && <RailwayLoading />}
 
       <PipelineResultsChrome mode="rail" />
@@ -856,7 +859,7 @@ export default function RailwayDashboard() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-y-contain p-3 pt-0 pb-3 [scrollbar-gutter:stable]">
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-y-contain p-3 pt-0 pb-8 [scrollbar-gutter:stable]">
             {loading && (
               <div className="flex flex-col items-center justify-center gap-3 py-12">
                 <span className="material-symbols-outlined animate-spin text-3xl text-rail">

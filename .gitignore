@@ -59,6 +59,8 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.actual.env
+frontend/.actual.env
 
 
 # =========================
@@ -73,5 +75,15 @@ build/
 # =========================
 *.tmp
 *.bak
+
+# Local documentation snapshot (copy-only archive, not for version control)
+updated docs [current version]/
+
+# Personal notes (local only — copies kept for team convenience)
+personal-work/
 backend/.env
 backend/test_irctc.mjs
+backend/logiflow.db
+
+# Firecrawl CLI cache (scraped web research)
+.firecrawl/

@@ -1,0 +1,18 @@
+sequenceDiagram
+    actor User
+    participant FE as Next.js Frontend
+    participant Proxy as Vercel API Proxy
+    participant Auth as FastAPI Auth
+    participant Google as Google OAuth
+    participant DB as Postgres DB
+
+    User->>FE: Click Sign In
+    FE->>Proxy: Google credential JWT
+    Proxy->>Auth: POST /auth/login
+    Auth->>Google: Verify token
+    Google-->>Auth: User profile
+    Auth->>DB: Upsert user
+    DB-->>Auth: User record
+    Auth-->>Proxy: JWT + user
+    Proxy-->>FE: Store in session
+    FE-->>User: Protected routes

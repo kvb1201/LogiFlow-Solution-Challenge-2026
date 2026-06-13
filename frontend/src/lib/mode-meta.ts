@@ -43,3 +43,15 @@ export const modeMeta: Record<
 };
 
 export const modeOrder: LogisticsMode[] = ['hybrid', 'comparator', 'rail', 'road', 'air', 'water'];
+
+/** Active pipeline from the current route, or null on home / non-pipeline pages. */
+export function modeFromPathname(pathname: string | null): LogisticsMode | null {
+  if (!pathname) return null;
+  for (const mode of modeOrder) {
+    const href = modeMeta[mode].href;
+    if (pathname === href || pathname.startsWith(`${href}/`)) {
+      return mode;
+    }
+  }
+  return null;
+}

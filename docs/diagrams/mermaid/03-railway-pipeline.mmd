@@ -1,0 +1,13 @@
+flowchart TB
+    A([POST /railway/optimize]) --> B[Location funnel resolve]
+    B --> C[Station catalog lookup]
+    C --> D[Route finder]
+    D --> E{Live RailRadar API?}
+    E -->|Yes| D
+    E -->|No| F[Offline CSV fallback]
+    F --> G[Delay ML prediction]
+    G --> H[IRCA parcel tariff]
+    H --> I[Score and rank trains]
+    I --> J[Build route geometry]
+    J --> K[LLM train explanation]
+    K --> L([Return ranked options])

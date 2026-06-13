@@ -10,6 +10,7 @@ import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { HeroMetricsGrid } from '@/components/cockpit/HeroMetricsGrid';
 import { ROAD_CAPABILITY_BADGES, ROAD_HERO_METRICS } from '@/lib/road-metrics';
 import { accentVar } from '@/lib/pipeline-theme';
+import { RoadMlQuantifiers } from '@/components/road/RoadMlQuantifiers';
 
 export default function RoadPageClient() {
   usePlannerRegenerateParams('road');
@@ -50,9 +51,12 @@ export default function RoadPageClient() {
           ) : null
         }
         footer={
-          <p className="text-[10px] text-muted-foreground/60 uppercase tracking-[0.2em]">
-            Powered by TomTom routing · live traffic · ML delay prediction
-          </p>
+          <>
+            <RoadMlQuantifiers variant="inline" className="justify-center mb-4" />
+            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-[0.2em]">
+              Powered by TomTom routing · live traffic · ML delay prediction
+            </p>
+          </>
         }
       >
         <RoadInputForm />
@@ -79,6 +83,8 @@ export default function RoadPageClient() {
       )}
 
       <RoadInputForm />
+
+      <RoadMlQuantifiers variant="compact" className="mt-4" />
 
       {!loading && !hasResults && hasSearched && searchMode === 'road' && !error && (
         <div className="mt-4 flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">

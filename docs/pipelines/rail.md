@@ -2,7 +2,11 @@
 
 ## Overview
 
-The rail pipeline finds parcel-feasible train routes between Indian cities, ranks them by cost/time/risk, predicts delay from scraped history, and renders corridor geometry on the map. It uses a **tiered schedule strategy** (online scrape → delay-scrape cache → 2017 CSV) plus a centralized **location funnel** for station resolution.
+The rail pipeline finds parcel-feasible train routes between Indian cities, ranks them by cost/time/risk, predicts delay from scraped history, and renders corridor geometry on the map. It uses a **tiered schedule strategy** (RailRadar live → delay-scrape cache → 2017 CSV) plus a centralized **location funnel** for station resolution.
+
+**Entry:** `backend/app/pipelines/rail/pipeline.py` (`RailCargoOptimizer` for `/railway/optimize`)  
+**API:** `POST /railway/optimize` · `POST /railway/simulate` · `GET /railway/trains/{n}/geometry`  
+**Frontend:** `/railway` → `RailwayDashboard` → `InputForm` · `Map` · `RailMlQuantifiers`
 
 ## Flow
 
@@ -44,7 +48,11 @@ Debug endpoints:
 | `ir_train_delays.csv` + delay_scrape JSON | Per-train halts for geometry & ML labels | `delay_scrape` / `schedule` |
 | `Train_details_22122017.csv` | Offline fallback (11,113 trains) | `csv_fallback` |
 
-The 2017 CSV is **lazy-loaded** on Render free tier (512MB RAM) unless `RAIL_PRELOAD_ON_STARTUP=true`.
+The 2017 CSV is **lazy-loaded** by default (`RAIL_PRELOAD_ON_STARTUP=false`) to save memory on Cloud Run/Render.
+
+### Simulation mode
+
+`POST /railway/simulate` accepts user-controlled weather/congestion multipliers and returns the same result shape as optimize — used for demo/testing without live API fan-out.
 
 ## Delay ML
 
@@ -64,7 +72,7 @@ Current CV metrics (see `scraped_delay_metrics.json`):
 | ±30 min hit rate | 80.9% |
 | Backtest ±30 min (mean) | 80.1% |
 
-UI quantifiers are served from **Supabase** (`rail_ml_metrics`) so Vercel does not wait for Render cold start. Fallback: `frontend/public/data/rail-ml-metrics.json`, then `GET /railway/model-info`.
+UI quantifiers are served from **Supabase** (`rail_ml_metrics`) so Vercel does not wait for backend latency. Fallback: `frontend/public/data/rail-ml-metrics.json`, then `GET /railway/model-info`.
 
 Sync after training:
 
@@ -119,5 +127,5 @@ Station coordinates live in Supabase `station_coordinates` (~9,500 rows).
 
 ## Related docs
 
-- [Indian Railways data ecosystem](../INDIAN_RAILWAYS_DATA.md)
+- [Indian Railways data ecosystem](../miscellaneous/INDIAN_RAILWAYS_DATA.md)
 - [Rail ML pipeline PDF](../../frontend/public/docs/rail-ml-pipeline.pdf) (generated via `make rail-ml-doc`)

@@ -50,6 +50,22 @@ def test_banaras_resolves_via_pdf_station_name():
     assert "BSB" in loc.station_codes or "BSBS" in loc.station_codes
 
 
+def test_guwahati_resolves_to_assam_metro_not_hati_satna():
+    loc = resolve_location("Guwahati")
+    assert loc.canonical_city == "Guwahati"
+    assert loc.station_code in {"GHY", "KYQ"}
+    assert "HATI" not in loc.station_codes
+    assert loc.resolution == "curated_metro"
+
+
+def test_patna_resolves_to_bihar_metro_not_auraiya_pata():
+    loc = resolve_location("Patna")
+    assert loc.canonical_city == "Patna"
+    assert loc.station_code in {"PNBE", "RJPB"}
+    assert "PATA" not in loc.station_codes
+    assert loc.resolution == "curated_metro"
+
+
 def test_rail_search_uses_full_pdf_clusters():
     src = _resolve_stations("PRYJ")
     dst = _resolve_stations("BSB")

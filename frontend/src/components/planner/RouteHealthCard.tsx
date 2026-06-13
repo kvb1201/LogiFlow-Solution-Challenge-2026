@@ -1111,23 +1111,23 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       </div>
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Progress</div>
-          <div className="text-sm font-bold text-foreground mono">{routeHealth.progress_percentage}%</div>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Progress</div>
+          <div className="text-sm font-bold text-foreground mono whitespace-nowrap">{routeHealth.progress_percentage}%</div>
           {routeHealth.covered_distance_km > 0 && (
-            <div className="text-[9px] text-outline mt-0.5">{routeHealth.covered_distance_km} km</div>
+            <div className="text-[9px] text-outline mt-0.5 whitespace-nowrap">{routeHealth.covered_distance_km} km</div>
           )}
         </div>
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Elapsed Time</div>
-          <div className="text-sm font-bold text-foreground mono">{routeHealth.elapsed_minutes}m</div>
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Elapsed Time</div>
+          <div className="text-sm font-bold text-foreground mono whitespace-nowrap">{routeHealth.elapsed_minutes}m</div>
         </div>
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Distance</div>
-          <div className="text-sm font-bold text-foreground mono">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Distance</div>
+          <div className="text-sm font-bold text-foreground mono whitespace-nowrap">
             {routeHealth.covered_distance_km > 0 ? `${routeHealth.covered_distance_km} km` : `${routeHealth.progress_percentage}%`}
           </div>
           {routeHealth.total_route_km > 0 && (
-            <div className="text-[9px] text-outline mt-0.5">of {routeHealth.total_route_km} km</div>
+            <div className="text-[9px] text-outline mt-0.5 whitespace-nowrap">of {routeHealth.total_route_km} km</div>
           )}
         </div>
       </div>
@@ -1138,8 +1138,8 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Remaining ETA</div>
-          <div className="text-sm font-bold text-foreground mono">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Remaining ETA</div>
+          <div className="text-sm font-bold text-foreground mono whitespace-nowrap">
             {routeHealth.remaining_eta_minutes != null
               ? `${routeHealth.remaining_eta_minutes}m`
               : `${routeHealth.eta_variance_minutes}m`}
@@ -1149,8 +1149,8 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           )}
         </div>
         <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Remaining</div>
-          <div className="text-sm font-bold text-foreground mono">
+          <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Remaining</div>
+          <div className="text-sm font-bold text-foreground mono whitespace-nowrap">
             {routeHealth.remaining_distance_km > 0
               ? `${routeHealth.remaining_distance_km} km`
               : `${routeHealth.remaining_minutes}m`}
@@ -1158,16 +1158,16 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
         </div>
         {routeHealth.updated_cost != null && (
           <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Proj. Cost</div>
-            <div className="text-sm font-bold text-foreground mono">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Proj. Cost</div>
+            <div className="text-sm font-bold text-foreground mono whitespace-nowrap">
               ₹{Math.round(routeHealth.updated_cost).toLocaleString('en-IN')}
             </div>
           </div>
         )}
         {routeHealth.updated_risk != null && (
           <div className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1">Proj. Risk</div>
-            <div className="text-sm font-bold text-foreground mono">
+            <div className="text-[9px] uppercase tracking-widest text-outline font-bold mb-1 overflow-hidden text-ellipsis">Proj. Risk</div>
+            <div className="text-sm font-bold text-foreground mono whitespace-nowrap">
               {Math.round(routeHealth.updated_risk * 100)}%
             </div>
           </div>
@@ -1243,25 +1243,25 @@ export function RouteHealthCard({ report, onShipmentUpdated }: Props) {
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
             <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-              <div className="text-[9px] text-outline uppercase mb-0.5">Progress</div>
-              <div className="text-[12px] font-bold text-foreground mono">{routeHealth.progress_percentage}%</div>
+              <div className="text-[9px] text-outline uppercase mb-0.5 overflow-hidden text-ellipsis">Progress</div>
+              <div className="text-[12px] font-bold text-foreground mono whitespace-nowrap">{routeHealth.progress_percentage}%</div>
             </div>
             <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-              <div className="text-[9px] text-outline uppercase mb-0.5">Rem. ETA</div>
-              <div className="text-[12px] font-bold text-foreground mono">
+              <div className="text-[9px] text-outline uppercase mb-0.5 overflow-hidden text-ellipsis">Rem. ETA</div>
+              <div className="text-[12px] font-bold text-foreground mono whitespace-nowrap">
                 {routeHealth.remaining_eta_minutes != null ? `${routeHealth.remaining_eta_minutes}m` : '—'}
               </div>
             </div>
             <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-              <div className="text-[9px] text-outline uppercase mb-0.5">Remaining</div>
-              <div className="text-[12px] font-bold text-foreground mono">
+              <div className="text-[9px] text-outline uppercase mb-0.5 overflow-hidden text-ellipsis">Remaining</div>
+              <div className="text-[12px] font-bold text-foreground mono whitespace-nowrap">
                 {routeHealth.remaining_distance_km > 0 ? `${routeHealth.remaining_distance_km} km` : '—'}
               </div>
             </div>
             {routeHealth.updated_risk != null && (
               <div className="rounded-lg bg-surface/30 border border-border/20 px-2.5 py-2">
-                <div className="text-[9px] text-outline uppercase mb-0.5">Risk</div>
-                <div className="text-[12px] font-bold text-foreground mono">
+                <div className="text-[9px] text-outline uppercase mb-0.5 overflow-hidden text-ellipsis">Risk</div>
+                <div className="text-[12px] font-bold text-foreground mono whitespace-nowrap">
                   {Math.round(routeHealth.updated_risk * 100)}%
                 </div>
               </div>

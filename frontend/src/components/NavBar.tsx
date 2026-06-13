@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Bell, LogOut, Menu, Plus, Radar, X } from 'lucide-react';
-import { modeMeta } from '@/lib/mode-meta';
+import { Bell, LogOut, Menu, Plus, X } from 'lucide-react';
+import { modeFromPathname, modeMeta } from '@/lib/mode-meta';
 import type { LogisticsMode } from '@/lib/mode-meta';
+import { accentMix } from '@/lib/pipeline-theme';
+import { LogiFlowMark } from '@/components/brand/LogiFlowMark';
 import { ModeIcon } from '@/components/cockpit/ModeIcon';
 import { useLogiFlowStore } from '@/store/useLogiFlowStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -105,6 +107,9 @@ export default function NavBar() {
     router.push('/');
   };
 
+  const activeMode = modeFromPathname(pathname);
+  const logoAccent = activeMode ? modeMeta[activeMode].accent : 'var(--hybrid)';
+
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-border/70 bg-background/80 shadow-[0_12px_40px_-28px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
       <div
@@ -122,9 +127,24 @@ export default function NavBar() {
           className="group flex items-center gap-2.5"
           aria-label="LogiFlow home"
         >
-          <div className="relative grid h-9 w-9 place-items-center rounded-lg border border-border-strong bg-surface-2 text-rail shadow-[0_0_24px_-20px_var(--rail)] transition-shadow duration-300 group-hover:shadow-[0_0_28px_-18px_var(--rail)]">
-            <Radar className="h-4 w-4" strokeWidth={2.4} />
-            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background bg-live" />
+          <div
+            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border shadow-[0_0_28px_-18px_var(--logo-accent)] transition-all duration-300 group-hover:shadow-[0_0_32px_-14px_var(--logo-accent)]"
+            style={{
+              ['--logo-accent' as string]: logoAccent,
+              borderColor: activeMode
+                ? accentMix(activeMode, 40, 'var(--border-strong)')
+                : 'var(--border-strong)',
+              color: logoAccent,
+              background: activeMode
+                ? `color-mix(in oklab, ${logoAccent} 14%, var(--surface-2))`
+                : 'var(--surface-2)',
+            }}
+          >
+            <LogiFlowMark className="absolute inset-[2px] h-[calc(100%-4px)] w-[calc(100%-4px)]" />
+            <span
+              className="absolute right-0.5 top-0.5 z-10 h-2 w-2 rounded-full border border-background shadow-sm"
+              style={{ background: activeMode ? logoAccent : 'var(--live)' }}
+            />
           </div>
           <div className="min-w-0 leading-tight">
             <div className="truncate text-[13px] font-bold sm:text-[14px]">LogiFlow</div>

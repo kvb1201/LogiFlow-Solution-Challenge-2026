@@ -28,14 +28,18 @@ import { InvalidCorridorInline } from '@/components/InvalidCorridorCard';
 import { usePlannerRegenerateParams } from '@/hooks/usePlannerRegenerateParams';
 import AiBriefPanel from '@/components/AiBriefPanel';
 import { useIntentFormReset } from '@/hooks/useIntentFormReset';
+import { HeroMetricsGrid } from '@/components/cockpit/HeroMetricsGrid';
 import { PipelineLogiLanding } from '@/components/cockpit/PipelineLogiLanding';
 import { PipelineResultsLayout } from '@/components/cockpit/PipelineResultsLayout';
 import { AmbientSurface } from '@/components/cockpit/AmbientSurface';
-import { accentVar, PIPELINE_ACTION_PRIMARY, PIPELINE_ACTION_SECONDARY } from '@/lib/pipeline-theme';
+import { ModeIcon } from '@/components/cockpit/ModeIcon';
+import { accentMix, accentVar, PIPELINE_ACTION_PRIMARY, PIPELINE_ACTION_SECONDARY } from '@/lib/pipeline-theme';
+import { modeMeta } from '@/lib/mode-meta';
 import {
   COMPARATOR_CAPABILITY_BADGES,
   COMPARATOR_HERO_METRICS,
 } from '@/lib/comparator-metrics';
+import { ComparatorModePicks } from '@/components/comparator/ComparatorModePicks';
 
 const MapView = dynamic(() => import('@/components/Mapview'), { ssr: false });
 
@@ -77,21 +81,6 @@ const MODE_META: Record<
   },
 };
 
-function ComparatorMetricItem({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="text-center">
-      <div className="text-xl sm:text-2xl font-black" style={{ color: 'var(--comparator)' }}>
-        {value}
-      </div>
-      <div className="text-[10px] sm:text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-const ALL_MODES: Mode[] = ['road', 'rail', 'air', 'water'];
-
 function toNum(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   if (typeof v === 'string') {
@@ -125,7 +114,7 @@ function normalizeMode(value: unknown): Mode | null {
   return null;
 }
 
-function ComparisonTable({
+function ComparisonScoreboard({
   rows,
   recommendedMode,
 }: {
@@ -139,83 +128,160 @@ function ComparisonTable({
   const minCost = Math.min(...validRows.map((row) => toNum(row.cost_inr) ?? Number.POSITIVE_INFINITY));
 
   return (
-    <div className="rounded-xl border border-border/60 bg-surface/30 overflow-hidden">
-      <div className="px-4 sm:px-5 py-3 border-b border-border/40 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-on-surface tracking-tight">Multimodal comparison</h3>
-        <span className="text-xs uppercase tracking-wider text-muted-foreground">4 modes · delay-adjusted</span>
+    <AmbientSurface mode="comparator" mesh="section" className="overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-border/25 px-4 py-3 sm:px-5">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">Scoreboard</p>
+          <p className="font-headline text-sm font-bold text-foreground sm:text-base">Delay-adjusted comparison</p>
+        </div>
+        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">4 modes</span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-surface/40 text-muted-foreground text-xs uppercase tracking-wider">
-            <tr>
-              <th className="px-5 py-3 text-left font-semibold">Mode</th>
-              <th className="px-5 py-3 text-left font-semibold">Time</th>
-              <th className="px-5 py-3 text-left font-semibold">Cost</th>
-              <th className="px-5 py-3 text-left font-semibold">Risk</th>
-              <th className="px-5 py-3 text-left font-semibold hidden md:table-cell">Insight</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/30">
-            {validRows.map((row) => {
-              const mode = normalizeMode(row.mode) as Mode;
-              const meta = MODE_META[mode];
-              const time = toNum(row.time_hr);
-              const cost = toNum(row.cost_inr);
-              const isRec = mode === recommendedMode;
-              return (
-                <tr
-                  key={`row-${mode}`}
-                  className={isRec ? 'bg-[color-mix(in_oklab,var(--comparator)_8%,transparent)]' : 'hover:bg-surface/20 transition-colors'}
-                >
-                  <td className="px-4 sm:px-5 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${meta.cardTint}`}
-                      >
-                        <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>
-                          {meta.symbol}
+      <ul className="divide-y divide-border/20">
+        {validRows.map((row) => {
+          const mode = normalizeMode(row.mode) as Mode;
+          const time = toNum(row.time_hr);
+          const cost = toNum(row.cost_inr);
+          const isRec = mode === recommendedMode;
+          const accent = modeMeta[mode].accent;
+
+          return (
+            <li
+              key={`row-${mode}`}
+              className="px-4 py-3 transition-colors sm:px-5 sm:py-3.5"
+              style={
+                isRec
+                  ? { background: accentMix('comparator', 6, 'transparent') }
+                  : undefined
+              }
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-background/40 backdrop-blur-sm"
+                    style={{ color: accent, boxShadow: `0 0 20px -8px ${accentVar(mode)}` }}
+                  >
+                    <ModeIcon mode={mode} className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">{MODE_META[mode].label}</span>
+                      {isRec && (
+                        <span
+                          className="rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em]"
+                          style={{
+                            color: accentVar('comparator'),
+                            borderColor: accentMix('comparator', 28, 'transparent'),
+                            background: accentMix('comparator', 8, 'transparent'),
+                          }}
+                        >
+                          Pick
                         </span>
-                      </span>
-                      <div>
-                        <span className={`font-semibold ${meta.tint}`}>{meta.label}</span>
-                        {isRec && (
-                          <span
-                            className="ml-2 text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5"
-                            style={{
-                              color: 'var(--comparator)',
-                              border: '1px solid color-mix(in oklab, var(--comparator) 35%, transparent)',
-                              background: 'color-mix(in oklab, var(--comparator) 10%, transparent)',
-                            }}
-                          >
-                            Pick
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  </td>
-                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">
-                    {formatHours(time)}
-                    {time != null && time === minTime && (
-                      <span className="ml-2 text-[10px] text-emerald-400 font-sans font-semibold">fastest</span>
-                    )}
-                  </td>
-                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">
-                    {formatInr(cost)}
-                    {cost != null && cost === minCost && (
-                      <span className="ml-2 text-[10px] text-sky-300 font-sans font-semibold">cheapest</span>
-                    )}
-                  </td>
-                  <td className="px-4 sm:px-5 py-3 text-on-surface font-mono text-sm">{formatRisk(row.risk)}</td>
-                  <td className="px-4 sm:px-5 py-3 text-muted-foreground text-xs leading-relaxed hidden md:table-cell max-w-xs">
-                    {row.explanation?.trim() || '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground sm:line-clamp-1">
+                      {row.explanation?.trim() || 'Scored on time, cost, and risk for your priority.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                  {[
+                    {
+                      label: 'Time',
+                      value: formatHours(time),
+                      tag: time != null && time === minTime ? 'fastest' : null,
+                    },
+                    {
+                      label: 'Cost',
+                      value: formatInr(cost),
+                      tag: cost != null && cost === minCost ? 'cheapest' : null,
+                    },
+                    { label: 'Risk', value: formatRisk(row.risk), tag: null },
+                  ].map(({ label, value, tag }) => (
+                    <div
+                      key={label}
+                      className="min-w-[4.5rem] rounded-lg border border-border/30 bg-surface/10 px-2.5 py-1.5 text-center backdrop-blur-sm"
+                    >
+                      <div className="text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                        {label}
+                      </div>
+                      <div className="mt-0.5 font-headline text-sm font-bold tabular-nums text-foreground">
+                        {value}
+                      </div>
+                      {tag && (
+                        <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-400/90">
+                          {tag}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </AmbientSurface>
+  );
+}
+
+function ComparatorWinnerHero({
+  recommendedMode,
+  recommendedRow,
+  reason,
+}: {
+  recommendedMode: Mode | null;
+  recommendedRow: HybridComparisonRow | null;
+  reason?: string | null;
+}) {
+  const metrics = [
+    { value: formatHours(recommendedRow?.time_hr), label: 'Time' },
+    { value: formatInr(recommendedRow?.cost_inr), label: 'Cost' },
+    { value: formatRisk(recommendedRow?.risk), label: 'Risk' },
+  ];
+
+  return (
+    <AmbientSurface mode="comparator" mesh="section" className="p-4 sm:p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          {recommendedMode ? (
+            <>
+              <span
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/40 bg-background/45 backdrop-blur-sm"
+                style={{
+                  color: modeMeta[recommendedMode].accent,
+                  boxShadow: `0 0 32px -10px ${accentVar(recommendedMode)}`,
+                }}
+              >
+                <ModeIcon mode={recommendedMode} className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                  Recommended mode
+                </p>
+                <h2
+                  className="font-headline text-2xl font-bold tracking-tight sm:text-3xl"
+                  style={{ color: modeMeta[recommendedMode].accent }}
+                >
+                  {MODE_META[recommendedMode].label}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">Best fit for your priority and constraints</p>
+              </div>
+            </>
+          ) : (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">Result</p>
+              <h2 className="font-headline text-xl font-bold text-foreground">No single mode won</h2>
+            </div>
+          )}
+        </div>
+        <HeroMetricsGrid metrics={metrics} mode={recommendedMode ?? 'comparator'} className="lg:justify-end" />
       </div>
-    </div>
+      {reason?.trim() && (
+        <p className="mt-4 border-t border-border/25 pt-3 text-sm leading-relaxed text-muted-foreground">
+          {reason.trim()}
+        </p>
+      )}
+    </AmbientSurface>
   );
 }
 
@@ -229,27 +295,27 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
   if (c.excluded_modes?.length) chips.push(`Exclude: ${c.excluded_modes.join(', ')}`);
 
   return (
-    <div className="rounded-lg border border-border/60 bg-surface/25 px-4 py-3">
+    <AmbientSurface mode="comparator" mesh={false} className="px-4 py-3 sm:px-5">
       <div className="flex items-start gap-3">
         <span
-          className="material-symbols-outlined shrink-0"
-          style={{ color: 'var(--comparator)', fontVariationSettings: "'FILL' 1" }}
+          className="material-symbols-outlined shrink-0 text-base"
+          style={{ color: accentVar('comparator'), fontVariationSettings: "'FILL' 1" }}
         >
           auto_awesome
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
             Shipment understood
           </p>
-          <p className="text-sm text-on-surface leading-relaxed">
+          <p className="text-sm leading-relaxed text-foreground/90">
             {ai.scenario_summary || 'Scenario parsed into optimization constraints before scoring.'}
           </p>
           {chips.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-2">
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
               {chips.map((chip) => (
                 <span
                   key={chip}
-                  className="text-xs font-medium px-2.5 py-1 rounded-full border border-border/60 bg-surface/40 text-muted-foreground"
+                  className="rounded-full border border-border/35 bg-surface/15 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground backdrop-blur-sm"
                 >
                   {chip}
                 </span>
@@ -258,7 +324,7 @@ function AiConstraintsPanel({ ai }: { ai: AiConstraintsApplied }) {
           )}
         </div>
       </div>
-    </div>
+    </AmbientSurface>
   );
 }
 
@@ -489,77 +555,35 @@ export default function ComparatorPageClient() {
   );
 
   const resultsBody = result && !loading && (
-    <div className="space-y-5 animate-fade-in pb-8">
+    <div className="animate-fade-in space-y-4 pb-6">
       {result.demo_mode && (
-        <p className="text-xs text-amber-200/90 border border-amber-400/20 bg-amber-500/10 rounded-lg px-3 py-2 inline-block">
-          Demo cache mode — stable snapshot for judging.
-        </p>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200/90 backdrop-blur-sm">
+          Demo snapshot
+        </span>
       )}
 
       {result.ai_constraints && <AiConstraintsPanel ai={result.ai_constraints} />}
 
-      <div
-        className="rounded-xl border overflow-hidden"
-        style={{
-          borderColor: 'color-mix(in oklab, var(--comparator) 30%, var(--border))',
-          background: 'color-mix(in oklab, var(--comparator) 6%, var(--surface))',
-        }}
-      >
-        <div className="px-4 sm:px-5 py-3 border-b border-border/40">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Recommended mode
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            {recommendedMode ? (
-              <>
-                <span
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border ${MODE_META[recommendedMode].cardTint}`}
-                >
-                  <span
-                    className="material-symbols-outlined text-xl"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    {MODE_META[recommendedMode].symbol}
-                  </span>
-                </span>
-                <div>
-                  <h2 className={`text-2xl font-black font-headline ${MODE_META[recommendedMode].tint}`}>
-                    {MODE_META[recommendedMode].label}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Best fit for your priority and constraints
-                  </p>
-                </div>
-              </>
-            ) : (
-              <span className="text-lg font-semibold">No single mode won</span>
-            )}
-          </div>
-        </div>
-        <div className="grid max-w-md grid-cols-1 gap-2 border-b border-border/30 px-4 py-4 min-[360px]:grid-cols-3 min-[360px]:gap-3 sm:px-5">
-          {[
-            { label: 'Time', value: formatHours(recommendedRow?.time_hr) },
-            { label: 'Cost', value: formatInr(recommendedRow?.cost_inr) },
-            { label: 'Risk', value: formatRisk(recommendedRow?.risk) },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-lg border border-border/40 bg-surface/40 px-2.5 py-2 sm:px-3">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-              <div className="mt-0.5 font-mono text-sm font-bold text-on-surface sm:text-base">{value}</div>
-            </div>
-          ))}
-        </div>
-        <p className="px-4 sm:px-5 py-4 text-sm text-on-surface leading-relaxed border-l-2 border-[var(--comparator)] ml-4 sm:ml-5 my-3">
-          {result.reason?.trim() || 'Recommendation based on multimodal scoring.'}
-        </p>
-      </div>
+      <ComparatorWinnerHero
+        recommendedMode={recommendedMode}
+        recommendedRow={recommendedRow}
+        reason={result.reason?.trim() || 'Recommendation based on multimodal scoring.'}
+      />
 
-      <ComparisonTable rows={comparisonRows} recommendedMode={recommendedMode} />
+      <ComparisonScoreboard rows={comparisonRows} recommendedMode={recommendedMode} />
+
+      <ComparatorModePicks
+        result={result}
+        recommendedMode={recommendedMode}
+        comparisonRows={comparisonRows}
+        onSaveMode={setSaveMode}
+      />
 
       {(() => {
         const unavailableModes = Array.isArray(result.unavailable_modes) ? result.unavailable_modes : [];
         return unavailableModes.length > 0 ? (
-          <div className="rounded-lg border border-border/50 bg-surface/25 px-4 py-3 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <AmbientSurface mode="comparator" mesh={false} className="space-y-2 px-4 py-3 sm:px-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
               Unavailable modes
             </p>
             {unavailableModes.map((entry, entryIdx) => {
@@ -577,88 +601,65 @@ export default function ComparatorPageClient() {
                 />
               );
             })}
-          </div>
+          </AmbientSurface>
         ) : null;
       })()}
 
       {Array.isArray(result.tradeoffs) && result.tradeoffs.length > 0 && (
-        <div className="rounded-lg border border-border/50 bg-surface/25 p-4">
-          <h3 className="text-sm font-semibold mb-2">Tradeoffs</h3>
+        <AmbientSurface mode="comparator" mesh={false} className="p-4 sm:p-5">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Tradeoffs</p>
           <ul className="space-y-1.5">
             {result.tradeoffs.map((line, i) => (
-              <li key={i} className="text-sm text-muted-foreground flex gap-2">
-                <span style={{ color: 'var(--comparator)' }}>•</span>
+              <li key={i} className="flex gap-2 text-sm leading-relaxed text-muted-foreground">
+                <span style={{ color: accentVar('comparator') }}>·</span>
                 {line}
               </li>
             ))}
           </ul>
-        </div>
+        </AmbientSurface>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {ALL_MODES.map((mode) => {
-          const data = result.best_per_mode?.[mode];
-          const won = mode === recommendedMode;
-          const safeUnavailable = Array.isArray(result.unavailable_modes) ? result.unavailable_modes : [];
-          const unavailableEntry = safeUnavailable.find((e) => {
-            if (typeof e === 'object' && e !== null) return String(e.mode ?? '').toLowerCase() === mode;
-            return String(e ?? '').toLowerCase().startsWith(mode);
-          });
-          const unavailableReason = unavailableEntry
-            ? typeof unavailableEntry === 'object' && unavailableEntry !== null
-              ? String((unavailableEntry as { reason?: string }).reason ?? 'Not available for this corridor.')
-              : 'Not available for this corridor.'
-            : null;
-          return (
-            <div
-              key={mode}
-              className={`rounded-lg border p-4 ${
-                won ? MODE_META[mode].cardTint : 'border-border/50 bg-surface/20'
-              }`}
-            >
-              <h4 className={`font-semibold text-sm ${MODE_META[mode].tint} mb-2`}>{MODE_META[mode].label}</h4>
-              {data ? (
-                <>
-                  <div className="text-xs space-y-1 font-mono text-muted-foreground">
-                    <p>Time {formatHours(data.time_hr ?? data.time)}</p>
-                    <p>Cost {formatInr(data.cost_inr ?? data.cost)}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSaveMode(mode)}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-lg border border-border/50 bg-surface/40 px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface/60 transition-all"
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                      save
-                    </span>
-                    Save report
-                  </button>
-                </>
-              ) : unavailableReason ? (
-                <InvalidCorridorInline mode={mode} reason={unavailableReason} />
-              ) : (
-                <p className="text-xs text-muted-foreground italic">Unavailable for this corridor</p>
-              )}
+      {(() => {
+        const road = result.best_per_mode?.road;
+        const geometry = road?.geometry;
+        if (!Array.isArray(geometry) || geometry.length < 2) return null;
+        const waypoints = Array.isArray((road as { waypoints?: string[] }).waypoints)
+          ? (road as { waypoints: string[] }).waypoints
+          : undefined;
+
+        return (
+          <AmbientSurface
+            mode="road"
+            mesh="section"
+            className="min-h-[280px] h-[min(52vh,360px)] overflow-hidden sm:h-[360px]"
+            innerClassName="flex h-full min-h-0 flex-col p-3 sm:p-4"
+          >
+            <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                Road corridor map
+              </span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {formatHours(road?.time_hr ?? road?.time)} · {formatInr(road?.cost_inr ?? road?.cost)}
+              </span>
             </div>
-          );
-        })}
-      </div>
-
-      {Boolean(result.best_per_mode?.road?.geometry?.length) && (
-        <div className="h-[min(50vh,360px)] overflow-hidden rounded-xl border border-border/50 sm:h-[360px]">
-          <MapView
-            routes={[
-              {
-                geometry: result.best_per_mode!.road!.geometry!,
-                time: result.best_per_mode!.road!.time_hr ?? result.best_per_mode!.road!.time ?? 0,
-                cost: result.best_per_mode!.road!.cost_inr ?? result.best_per_mode!.road!.cost ?? 0,
-                risk: result.best_per_mode!.road!.risk ?? 0,
-              },
-            ]}
-            selectedRoute={0}
-          />
-        </div>
-      )}
+            <div className="min-h-0 flex-1">
+              <MapView
+                key={`comparator-road-${geometry.length}-${geometry[0]?.join?.(',') ?? ''}`}
+                routes={[
+                  {
+                    geometry,
+                    time: road?.time_hr ?? road?.time ?? 0,
+                    cost: road?.cost_inr ?? road?.cost ?? 0,
+                    risk: road?.risk ?? 0,
+                  },
+                ]}
+                selectedRoute={0}
+                waypoints={waypoints}
+              />
+            </div>
+          </AmbientSurface>
+        );
+      })()}
 
       <button
         type="button"
@@ -666,8 +667,7 @@ export default function ComparatorPageClient() {
           setStep(2);
           setResult(null);
         }}
-        className="text-sm font-medium hover:underline"
-        style={{ color: 'var(--comparator)' }}
+        className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-foreground"
       >
         ← Adjust scenario and re-run
       </button>
@@ -689,13 +689,7 @@ export default function ComparatorPageClient() {
               on delay-adjusted time, cost, and risk — describe your shipment in plain English first.
             </>
           }
-          metrics={
-            <div className="flex flex-wrap justify-center gap-6">
-              {COMPARATOR_HERO_METRICS.map((m) => (
-                <ComparatorMetricItem key={m.label} value={m.value} label={m.label} />
-              ))}
-            </div>
-          }
+          metrics={<HeroMetricsGrid metrics={COMPARATOR_HERO_METRICS} mode="comparator" />}
           badges={COMPARATOR_CAPABILITY_BADGES}
           actions={
             <>

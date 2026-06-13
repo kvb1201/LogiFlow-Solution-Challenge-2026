@@ -9,6 +9,8 @@ type AmbientSurfaceProps = {
   mode?: LogisticsMode | 'home';
   children: ReactNode;
   className?: string;
+  /** Classes on the inner content wrapper (use flex flex-col min-h-0 for scroll + sticky footers) */
+  innerClassName?: string;
   /** Show mesh behind card content */
   mesh?: 'card' | 'section' | false;
 };
@@ -18,6 +20,7 @@ export function AmbientSurface({
   mode = 'home',
   children,
   className = '',
+  innerClassName = '',
   mesh = 'card',
 }: AmbientSurfaceProps) {
   const accent = mode === 'home' ? 'var(--hybrid)' : accentVar(mode);
@@ -45,7 +48,7 @@ export function AmbientSurface({
               : `linear-gradient(90deg, transparent, ${accent}, transparent)`,
         }}
       />
-      <div className="relative z-10">{children}</div>
+      <div className={`relative z-10 ${innerClassName}`.trim()}>{children}</div>
     </div>
   );
 }

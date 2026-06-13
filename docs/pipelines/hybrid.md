@@ -2,11 +2,18 @@
 
 ## Overview
 
-The Hybrid pipeline is the central orchestrator that executes all transport mode pipelines in parallel, normalizes their outputs into a common schema, scores and ranks them using priority-weighted multi-objective optimization, and generates human-readable explanations.
+LogiFlow has two complementary multimodal systems:
+
+| System | Endpoint | UI page | Purpose |
+|--------|----------|---------|---------|
+| **Comparator** | `POST /optimize` · `POST /comparator/routes` | `/comparator` | Pick best **single mode** for a corridor |
+| **Composer** | `POST /compose` · `POST /compose/stream` | `/hybrid` | Build **chained legs** across modes via hub templates |
+
+The **HybridPipeline** (`app/pipelines/hybrid/pipeline.py`) powers the comparator. The **RouteComposer** (`app/services/route_composer.py`) powers the hybrid page.
 
 ## Rural / village corridors (`/compose`)
 
-The **Hybrid** page uses `POST /compose` (`RouteComposer`), not the legacy `HybridPipeline`.
+The **Hybrid** page uses `POST /compose` (`RouteComposer`), not `HybridPipeline`.
 
 For places that are not mapped metros (remote villages, small towns):
 
@@ -122,7 +129,7 @@ All incoming priority values are canonicalized:
 
 **Template mode** (default): Rule-based text generation with zero latency. Uses priority-aware reason templates, tradeoff diffs, and mode-specific insights.
 
-**Detailed mode** (opt-in via `explanation_mode: "detailed"`): Calls Gemini 1.5 Flash API to generate natural language explanations. Features:
+**Detailed mode** (opt-in via `explanation_mode: "detailed"`): Calls Gemini 2.5 Flash API to generate natural language explanations. Features:
 - In-memory cache (TTL 1 hour, 200 entries)
 - 5-second timeout with template fallback
 - Gemini output merged over template (fills gaps)
@@ -171,3 +178,38 @@ All incoming priority values are canonicalized:
   }
 }
 ```
+
+---
+
+## Composer (`RouteComposer`)
+
+The `/hybrid` page uses `POST /compose` (not `HybridPipeline`).
+
+### Hub templates
+
+| Template | Example |
+|----------|---------|
+| `road` | Direct truck |
+| `road+rail+road` | Village → hub → rail → destination hub → village |
+| `rail+rail` | Metro-to-metro rail with transfer |
+| `rail+air` | Rail to airport hub → flight |
+| `road+air` | Truck to airport → flight |
+
+### Execution
+
+1. Resolve endpoints via `location_funnel` + geocoding
+2. For rural villages: `geo_hub_finder` discovers nearest metro hubs
+3. Build candidate itineraries from hub templates
+4. Execute legs in parallel (`COMPOSE_PARALLEL_WORKERS`, default 8 on Cloud Run)
+5. Cache successful legs (memory → Redis → Supabase `compose_leg_cache`)
+6. `itinerary_scorer` ranks by cost/time/risk
+
+### Streaming
+
+`POST /compose/stream` emits SSE events as partial itineraries are ranked. Frontend uses `streamComposeMultimodalRoute()` in `api.ts`. Long runs from Vercel are proxied via `POST /api/compose` (90s `maxDuration`).
+
+### Frontend
+
+- `/hybrid` → `HybridPageClient` — 3-step wizard (Corridor → Brief → Route)
+- `ComposeResults`, `ItineraryCard`, `LegTimeline`, `ModeChain`, `RoutePathStrip`
+- `ComposeFailurePanel` for partial-failure messaging

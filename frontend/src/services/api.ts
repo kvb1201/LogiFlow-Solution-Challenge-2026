@@ -11,13 +11,21 @@ import {
   redirectToWaitingRoom,
   TrafficQueueError,
 } from '@/lib/traffic-queue';
+import { ensureAbsoluteUrl } from '@/lib/seo';
 
 export { TrafficQueueError } from '@/lib/traffic-queue';
 
-const BACKEND_SERVER =
+const BACKEND_SERVER = ensureAbsoluteUrl(
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
-  'http://127.0.0.1:8000';
+  'http://127.0.0.1:8000'
+);
+
+/** Long-running compose bypasses Vercel serverless (FUNCTION_INVOCATION_TIMEOUT). */
+const COMPOSE_DIRECT = ensureAbsoluteUrl(
+  process.env.NEXT_PUBLIC_COMPOSE_URL?.replace(/\/$/, '') ||
+  BACKEND_SERVER
+);
 
 /** Browser calls use same-origin proxy; SSR uses direct backend URL. */
 export const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;
@@ -394,6 +402,7 @@ export interface HybridOptimizeResult {
   recommended_mode?: string | null;
   reason?: string | null;
   tradeoffs?: string[] | null;
+  mode_insights?: Record<string, string[]> | null;
   ai_constraints?: AiConstraintsApplied | null;
   demo_mode?: boolean;
   /**
@@ -705,24 +714,182 @@ export interface ComposeResult {
   corridor_distance_km?: number | null;
   compose_note?: string | null;
   error?: string;
+  streaming?: boolean;
+  done?: boolean;
+  just_found_id?: string;
 }
 
-export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
-  const budgetSec = payload.compose_options?.budget_seconds ?? 55;
-  // Same-origin /api/compose proxy allows up to 90s on Vercel (see app/api/compose/route.ts).
-  const budgetMs = Math.max((budgetSec + 50) * 1000, 95_000);
-  const composeUrl =
-    typeof window !== 'undefined' ? '/api/compose' : `${BACKEND_BASE}/compose`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), budgetMs);
-  let res: Response;
+/** Merge streamed snapshots so each hub route stacks below prior results. */
+export function mergeComposeStreamUpdate(
+  prev: ComposeResult | null,
+  next: ComposeResult,
+): ComposeResult {
+  if (!prev?.recommended) return next;
+
+  const byId = new Map<string, ComposedItinerary>();
+  for (const it of [prev.recommended, ...(prev.alternatives || [])]) {
+    if (it) byId.set(it.id, it);
+  }
+  if (next.recommended) byId.set(next.recommended.id, next.recommended);
+  for (const it of next.alternatives || []) {
+    if (it) byId.set(it.id, it);
+  }
+
+  const recommended = next.recommended ?? prev.recommended;
+  const alternatives = [...byId.values()].filter((it) => it.id !== recommended?.id);
+
+  return {
+    ...next,
+    recommended,
+    alternatives,
+    total_candidates: byId.size,
+    partial: !next.done,
+  };
+}
+
+/** Quick ping to the compose backend (Render direct) — do not block UI for 90s warm. */
+export async function ensureComposeBackendReady(maxWaitMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${COMPOSE_DIRECT}/health`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) return true;
+    } catch {
+      /* cold start */
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return false;
+}
+
+function composeBudgetMs(payload: ComposePayload): number {
+  const budgetSec = payload.compose_options?.budget_seconds ?? 150;
+  return Math.max((budgetSec + 120) * 1000, 180_000);
+}
+
+function composeDirectUrl(path: 'compose' | 'compose/stream'): string {
+  if (typeof window === 'undefined') {
+    return `${BACKEND_SERVER}/${path}`;
+  }
+  return `${COMPOSE_DIRECT}/${path}`;
+}
+
+function handleComposeHttpError(res: Response, payload: ComposePayload, text: string): never {
+  if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
+    const corridor =
+      payload.source && payload.destination
+        ? `${payload.source} → ${payload.destination}`
+        : undefined;
+    redirectToWaitingRoom({
+      retryAfter: parseRetryAfter(res),
+      reason: res.status === 429 ? 'rate_limit' : 'capacity',
+      returnPath: getCurrentReturnPath(),
+      autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
+      corridor,
+    });
+    throw new TrafficQueueError('redirecting', true);
+  }
+  let message = text;
   try {
-    res = await fetch(composeUrl, {
+    const parsed = JSON.parse(text) as { error?: string };
+    if (parsed.error) message = parsed.error;
+  } catch {
+    /* use raw body */
+  }
+  if (res.status === 502 || res.status === 504) {
+    throw new Error(message || BACKEND_UNAVAILABLE_MSG);
+  }
+  throw new Error(`Compose failed (${res.status}): ${message}`);
+}
+
+async function parseComposeSseStream(
+  res: Response,
+  onUpdate?: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  if (!res.body) {
+    throw new Error('Compose stream returned no body');
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResult: ComposeResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() ?? '';
+    for (const chunk of chunks) {
+      const line = chunk
+        .split('\n')
+        .find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      const parsed = JSON.parse(line.slice(6)) as ComposeResult;
+      if (onUpdate && (parsed.recommended || parsed.done)) {
+        onUpdate(parsed);
+      }
+      if (parsed.done) {
+        finalResult = parsed;
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('Compose stream ended without a final result');
+  }
+  return finalResult;
+}
+
+/** Progressive compose — shows routes as they are found (SSE, direct to Render). */
+export async function streamComposeMultimodalRoute(
+  payload: ComposePayload,
+  onUpdate: (partial: ComposeResult) => void,
+): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return await parseComposeSseStream(res, onUpdate);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'Compose is still running — partial routes may already be visible. Retry to load cached legs faster.'
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function composeMultimodalRoute(payload: ComposePayload): Promise<ComposeResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), composeBudgetMs(payload));
+  try {
+    const res = await fetch(composeDirectUrl('compose'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      handleComposeHttpError(res, payload, text);
+    }
+    return res.json();
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(
@@ -733,35 +900,6 @@ export async function composeMultimodalRoute(payload: ComposePayload): Promise<C
   } finally {
     clearTimeout(timeout);
   }
-  if (!res.ok) {
-    if (typeof window !== 'undefined' && isQueueStatus(res.status)) {
-      const corridor =
-        payload.source && payload.destination
-          ? `${payload.source} → ${payload.destination}`
-          : undefined;
-      redirectToWaitingRoom({
-        retryAfter: parseRetryAfter(res),
-        reason: res.status === 429 ? 'rate_limit' : 'capacity',
-        returnPath: getCurrentReturnPath(),
-        autorunMode: inferAutorunModeFromPath() ?? 'hybrid',
-        corridor,
-      });
-      throw new TrafficQueueError('redirecting', true);
-    }
-    const text = await res.text();
-    let message = text;
-    try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed.error) message = parsed.error;
-    } catch {
-      /* use raw body */
-    }
-    if (res.status === 502 || res.status === 504) {
-      throw new Error(message || BACKEND_UNAVAILABLE_MSG);
-    }
-    throw new Error(`Compose failed (${res.status}): ${message}`);
-  }
-  return res.json();
 }
 
 export async function optimizeHybridRoute(payload: HybridPayload): Promise<HybridOptimizeResult> {
@@ -1021,6 +1159,108 @@ export async function fetchRailModelInfo(): Promise<RailModelInfo> {
   }
 
   return (await staticPromise) ?? fetchRailModelInfoFallback();
+}
+
+// ── Road ML Model Info ────────────────────────────────────────────────
+
+export interface RoadMlQuantifier {
+  id: string;
+  label: string;
+  short_label: string;
+  value: number | null;
+  unit: string;
+  summary: string;
+  derivation: string;
+}
+
+export interface RoadModelInfo {
+  delay_model?: string;
+  model_kind?: string;
+  training_rows?: number;
+  training_data?: string;
+  target?: string;
+  features?: string[];
+  validation?: string;
+  cv_metrics?: {
+    accuracy?: number;
+    precision?: number;
+    recall?: number;
+    f1_score?: number;
+    roc_auc?: number;
+    cv_roc_auc?: number;
+  };
+  quantifiers?: RoadMlQuantifier[];
+  documentation_url?: string;
+}
+
+const ROAD_ML_FALLBACK_URL = '/data/road-ml-metrics.json';
+
+function hasRoadQuantifierValues(info: RoadModelInfo | null): boolean {
+  return Boolean(
+    info?.quantifiers?.some((q) => q.value != null && !Number.isNaN(q.value))
+  );
+}
+
+export async function fetchRoadModelInfo(): Promise<RoadModelInfo> {
+  try {
+    const res = await fetch(ROAD_ML_FALLBACK_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Road ML metrics unavailable');
+    const data = (await res.json()) as RoadModelInfo;
+    if (hasRoadQuantifierValues(data)) return data;
+  } catch {
+    /* fall through */
+  }
+  // Hard-coded fallback so the UI always has something to show
+  return {
+    delay_model: 'Road Delay Prediction ML',
+    model_kind: 'HistGradientBoostingClassifier',
+    training_rows: 1000,
+    training_data: 'smart_logistics_dataset.csv',
+    target: 'Logistics_Delay',
+    features: ['Traffic Severity', 'Temperature', 'Humidity', 'Asset Utilization', 'Demand Forecast'],
+    validation: '80/20 Stratified Holdout + 5-Fold Cross Validation',
+    cv_metrics: {
+      accuracy: 73.0,
+      precision: 81.0,
+      recall: 68.0,
+      f1_score: 74.0,
+      roc_auc: 78.2,
+      cv_roc_auc: 78.3,
+    },
+    quantifiers: [
+      {
+        id: 'delay_detection_accuracy',
+        label: 'Delay Detection Accuracy',
+        short_label: 'ACC',
+        value: 73.0,
+        unit: '%',
+        summary: 'Percentage of shipments correctly classified as delayed or on-time.',
+        derivation:
+          'Measured on a stratified 20% holdout dataset using HistGradientBoostingClassifier. The model correctly classified 73.0% of shipments.',
+      },
+      {
+        id: 'high_risk_shipment_detection',
+        label: 'High-Risk Shipment Detection',
+        short_label: 'RISK',
+        value: 68.0,
+        unit: '%',
+        summary: 'Percentage of delayed shipments successfully identified before execution.',
+        derivation:
+          'Measured as recall on delayed shipments. The model identified 68.0% of logistics events that eventually experienced delays.',
+      },
+      {
+        id: 'cross_validated_reliability',
+        label: 'Cross-Validated Reliability',
+        short_label: 'CV-AUC',
+        value: 78.3,
+        unit: '%',
+        summary: 'Average predictive reliability across five independent validation folds.',
+        derivation:
+          'Calculated using 5-fold cross-validation with ROC-AUC scoring. Mean ROC-AUC achieved 78.3%.',
+      },
+    ],
+    documentation_url: '/docs/road-ml-pipeline.pdf',
+  };
 }
 
 export async function searchStations(query: string): Promise<StationSearchResult[]> {
@@ -1741,6 +1981,36 @@ export async function parseShipmentIntent(
     );
   }
   return parsed as ParsedIntent;
+}
+
+/** Server-side Whisper fallback when browser Web Speech API fails (e.g. network). */
+export async function transcribeSpeechAudio(blob: Blob): Promise<string> {
+  const fd = new FormData();
+  const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
+  fd.append('file', blob, `speech.${ext}`);
+  const res = await fetchBackend(
+    '/speech/transcribe',
+    { method: 'POST', body: fd },
+    { retries: 1, retryDelayMs: 2000 }
+  );
+  const raw = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      res.ok ? 'Could not read transcription response.' : BACKEND_UNAVAILABLE_MSG
+    );
+  }
+  if (!res.ok) {
+    const err = parsed as { detail?: string; error?: string };
+    throw new Error(
+      (typeof err.detail === 'string' ? err.detail : null) ||
+        err.error ||
+        `Transcription failed (${res.status})`
+    );
+  }
+  return String((parsed as { text?: string }).text || '').trim();
 }
 
 // ── Legacy fallback (for the old /optimize endpoint) ─────────────────

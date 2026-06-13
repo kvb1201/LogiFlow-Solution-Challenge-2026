@@ -266,12 +266,15 @@ class StationPdfIndex:
                 _add(code)
 
         for name_key, codes in self.by_name.items():
-            if q in name_key or name_key in q:
+            if name_key == q:
+                for c in codes:
+                    _add(c)
+            elif len(name_key) >= 4 and (q.startswith(name_key) or name_key.startswith(q)):
                 for c in codes:
                     _add(c)
 
         for dkey, codes in self.by_district.items():
-            if q in dkey or dkey in q:
+            if dkey == q or (len(dkey) >= 4 and (q.startswith(dkey) or dkey.startswith(q))):
                 for c in codes:
                     _add(c)
 
