@@ -1052,17 +1052,19 @@ export async function searchCities(query: string): Promise<Array<{ name: string;
     );
     if (!res.ok) return [];
     const rows = (await res.json()) as Array<Record<string, unknown>>;
-    return rows.flatMap((r) => {
-      const name = String(r.display_name ?? '').split(',').slice(0, 2).join(',').trim();
-      const lat = Number(r.lat);
-      const lng = Number(r.lon);
-      if (!name) return [];
-      return [{
-        name,
-        lat: Number.isNaN(lat) ? undefined : lat,
-        lng: Number.isNaN(lng) ? undefined : lng,
-      }];
-    });
+    return rows
+      .filter((r) => r.class === 'place' || r.class === 'boundary')
+      .flatMap((r) => {
+        const name = String(r.display_name ?? '').split(',').slice(0, 2).join(',').trim();
+        const lat = Number(r.lat);
+        const lng = Number(r.lon);
+        if (!name) return [];
+        return [{
+          name,
+          lat: Number.isNaN(lat) ? undefined : lat,
+          lng: Number.isNaN(lng) ? undefined : lng,
+        }];
+      });
   } catch {
     return [];
   }

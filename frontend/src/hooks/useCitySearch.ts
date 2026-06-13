@@ -7,14 +7,23 @@ import { searchCities, type StationSearchResult } from '@/services/api';
 export function citiesToStationRows(
   rows: { name: string; lat?: number; lng?: number }[]
 ): StationSearchResult[] {
-  return rows.map((r) => {
-    // Split by comma and take the first part (e.g., "New Delhi, Delhi" -> "New Delhi")
+  const seen = new Set<string>();
+  const results: StationSearchResult[] = [];
+
+  for (const r of rows) {
     const cityName = r.name.split(',')[0]?.trim() || r.name;
-    return {
-      code: cityName.slice(0, 5).toUpperCase() || 'CITY',
-      name: cityName,
-    };
-  });
+    const normalized = cityName.toLowerCase();
+    
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        code: cityName.slice(0, 5).toUpperCase() || 'CITY',
+        name: cityName,
+      });
+    }
+  }
+
+  return results;
 }
 
 /**

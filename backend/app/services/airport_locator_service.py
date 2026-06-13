@@ -113,11 +113,40 @@ def resolve_city_to_airport(city: str) -> dict:
             return {**details, **static}
         return static
 
-    nearest = find_nearest_airport_for_city(canonical)
-    if nearest:
-        return nearest
+    # Only attempt to find nearest airport if input seems like a valid city name
+    if _is_reasonable_city_name(canonical):
+        nearest = find_nearest_airport_for_city(canonical)
+        if nearest:
+            return nearest
 
     return None
+
+
+def _is_reasonable_city_name(city_name: str) -> bool:
+    """Check if the input looks like a reasonable city name."""
+    if not city_name or len(city_name.strip()) < 2:
+        return False
+    
+    clean_name = city_name.strip().lower()
+    
+    # Reject obvious test/invalid inputs
+    invalid_patterns = [
+        r'^[a-z]{1,3}$',  # Very short strings like 'abc', 'xyz'
+        r'^test\d*$',     # test, test1, etc.
+        r'^dummy\d*$',    # dummy inputs
+        r'^\d+$',         # Pure numbers
+        r'^[!@#$%^&*()]+$',  # Special characters only
+    ]
+    
+    for pattern in invalid_patterns:
+        if re.match(pattern, clean_name):
+            return False
+    
+    # Must contain alphabetic characters
+    if not re.search(r'[a-zA-Z]', clean_name):
+        return False
+    
+    return True
 
 
 def get_airport_by_iata(iata_code: str) -> Optional[dict]:

@@ -319,8 +319,12 @@ def google_geocode_latlng(query: str) -> Optional[tuple[float, float]]:
 
     status = body.get("status", "")
     if status == "OK" and body.get("results"):
-        loc = body["results"][0]["geometry"]["location"]
-        return float(loc["lat"]), float(loc["lng"])
+        for res_item in body.get("results", []):
+            types = set(res_item.get("types", []))
+            valid = {"locality", "administrative_area_level_1", "administrative_area_level_2", "administrative_area_level_3", "colloquial_area", "sublocality", "neighborhood"}
+            if types.intersection(valid):
+                loc = res_item["geometry"]["location"]
+                return float(loc["lat"]), float(loc["lng"])
 
     if status not in ("ZERO_RESULTS", "OK"):
         err = body.get("error_message", "")
@@ -339,7 +343,23 @@ def _tomtom(query: str) -> Optional[tuple[float, float]]:
     rows = res.json().get("results") or []
     if not rows:
         return None
-    pos = rows[0]["position"]
+    
+    result = rows[0]
+    pos = result["position"]
+    
+    # Check TomTom's confidence score if available
+    score = result.get("score", 0)
+    address = result.get("address", {})
+    country = address.get("country", "").lower()
+    
+    # Reject low confidence results for short queries
+    if len(query.strip()) <= 3 and score < 0.8:
+        return None
+    
+    # Ensure result is in India
+    if country and "india" not in country and "in" != country:
+        return None
+    
     return float(pos["lat"]), float(pos["lon"])
 
 
@@ -369,7 +389,13 @@ def _nominatim(query: str) -> Optional[tuple[float, float]]:
 
     res = requests.get(
         "https://nominatim.openstreetmap.org/search",
-        params={"format": "jsonv2", "limit": 1, "q": f"{query}, India", "countrycodes": "in"},
+        params={
+            "format": "jsonv2", 
+            "limit": 1, 
+            "q": f"{query}, India", 
+            "countrycodes": "in",
+            "addressdetails": 1  # Get more details for validation
+        },
         headers={"User-Agent": "LogiFlow-Geocoder/1.0"},
         timeout=8,
     )
@@ -379,7 +405,93 @@ def _nominatim(query: str) -> Optional[tuple[float, float]]:
     rows = res.json()
     if not rows:
         return None
-    return float(rows[0]["lat"]), float(rows[0]["lon"])
+    
+    result = rows[0]
+    display_name = result.get("display_name", "").lower()
+    importance = result.get("importance", 0)
+    
+    # For short queries, be very strict about matching
+    query_lower = query.strip().lower()
+    if len(query_lower) <= 3:
+        # For very short queries, the display name should contain the query
+        if query_lower not in display_name and not any(word.startswith(query_lower) for word in display_name.split()):
+            return None
+        # Also require reasonable importance score
+        if importance < 0.3:
+            return None
+    
+    # For longer queries, check if there's some reasonable match
+    elif len(query_lower) <= 6:
+        # Check if query tokens appear in the result
+        query_tokens = set(query_lower.split())
+        display_tokens = set(display_name.split())
+        if not query_tokens.intersection(display_tokens) and importance < 0.4:
+            return None
+    
+    return float(result["lat"]), float(result["lon"])
+
+
+def _is_valid_location_input(name: str) -> bool:
+    """Validate if the input looks like a reasonable location name."""
+    if not name or not str(name).strip():
+        return False
+    
+    clean_name = str(name).strip().lower()
+    
+    # Reject obviously invalid inputs
+    if len(clean_name) < 2:
+        return False
+    
+    # Reject test/placeholder names
+    invalid_patterns = [
+        r'^[a-z]{1,3}$',  # Single letters or very short strings like 'a', 'abc', 'xyz'
+        r'^test\d*$',     # test, test1, test2, etc.
+        r'^dummy\d*$',    # dummy, dummy1, etc.
+        r'^sample\d*$',   # sample, sample1, etc.
+        r'^placeholder\d*$',  # placeholder names
+        r'^\d+$',         # Pure numbers
+        r'^[!@#$%^&*()]+$',  # Special characters only
+        r'^(.)\1{2,}$',   # Repeated characters like 'aaa', 'bbb' (fixed backreference)
+        r'^(na|n\/a|null|undefined|none)$',  # Common null values
+        r'^(asdf|qwerty|hjkl|zxcv)$',  # Keyboard patterns
+    ]
+    
+    for pattern in invalid_patterns:
+        if re.match(pattern, clean_name):
+            return False
+    
+    # Must contain at least one alphabetic character
+    if not re.search(r'[a-zA-Z]', clean_name):
+        return False
+        
+    return True
+
+
+def _validate_geocoding_result(query: str, result: tuple[float, float], source: str) -> bool:
+    """Validate if the geocoding result makes sense for the given query."""
+    if not result:
+        return False
+    
+    lat, lng = result
+    
+    # Basic coordinate validation
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return False
+    
+    # For very short or suspicious queries, be more strict
+    query_clean = query.strip().lower()
+    if len(query_clean) <= 3:
+        # For 3-character or shorter queries, only accept if it's a known station code
+        # or if it matches exactly with our static lookups
+        if query_clean.upper() in _MAJOR_STATION_COORDS:
+            return True
+        if _static_lookup(query_clean):
+            return True
+        # Otherwise reject short queries that come from external APIs
+        if source in ["nominatim", "tomtom", "ors", "google_maps"]:
+            return False
+    
+    return True
 
 
 def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
@@ -388,6 +500,12 @@ def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
         return None
 
     raw = str(name).strip()
+    
+    # Validate input before attempting geocoding
+    if not _is_valid_location_input(raw):
+        print(f"[Geocoder] Invalid location input rejected: '{raw}'")
+        return None
+
     token = raw.upper()
     if re.fullmatch(r"[A-Z0-9]{2,5}", token):
         station_hit = _station_code_latlng(token)
@@ -443,10 +561,13 @@ def geocode_latlng(name: str, *, context=None) -> Optional[tuple[float, float]]:
         for q in queries:
             for pname, fn in api_providers:
                 try:
-                    hit = fn(q)
-                    if hit:
+                    api_result = fn(q)
+                    if api_result and _validate_geocoding_result(q, api_result, pname):
+                        hit = api_result
                         provider = pname
                         break
+                    elif api_result:
+                        print(f"[Geocoder] {pname} result rejected for '{q}': coordinates don't match query quality")
                 except urllib.error.HTTPError as exc:
                     if exc.code == 429:
                         print(f"[Geocoder] {pname} rate-limited for {q}")
