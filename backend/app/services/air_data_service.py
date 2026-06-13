@@ -101,8 +101,11 @@ def get_live_air_routes(source: str, destination: str, departure_date: str) -> L
     return routes
 
 
-def _resolve_airport_details(city: str) -> dict:
+def _resolve_airport_details(city: str) -> Optional[dict]:
     resolved = resolve_city_to_airport(city)
+    if not resolved:
+        return None
+        
     lookup = get_airport_by_iata(resolved.get("code", ""))
     
     result = {**lookup, **resolved} if lookup else resolved

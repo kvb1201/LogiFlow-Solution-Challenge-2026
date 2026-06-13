@@ -105,6 +105,20 @@ class AirPipeline(BasePipeline):
         return "2026-04-10"
 
     def _fetch_routes(self, source, destination, payload, context=None):
+        source_resolved = resolve_city_to_airport(source)
+        dest_resolved = resolve_city_to_airport(destination)
+        if not source_resolved or not dest_resolved:
+            simulation_mode = payload.get("mode") == "simulation"
+            return {
+                "mode": "air",
+                "simulation": simulation_mode,
+                "status": "route_not_found",
+                "message": f"Could not resolve airport for '{source}' or '{destination}'. Route not found.",
+                "best": None,
+                "alternatives": [],
+                "all": [],
+            }
+
         departure_date = self._get_departure_date(payload)
         live_routes = get_live_air_routes(source, destination, departure_date)
         if live_routes:
@@ -455,39 +469,60 @@ class AirPipeline(BasePipeline):
             route_type = "Domestic"
             base_charge = 500.0
             distance_rate = 0.8
-            weight_rate = 25.0
             handling_fee = 500.0
-            fuel_rate_per_km = 0.15
+            fuel_surcharge_pct = 0.18
+
+            if chargeable_weight < 45:
+                weight_rate = 220.0
+            elif chargeable_weight < 100:
+                weight_rate = 160.0
+            elif chargeable_weight < 500:
+                weight_rate = 130.0
+            else:
+                weight_rate = 110.0
         else:
             route_type = "International"
             base_charge = 2500.0
             distance_rate = 2.5
-            weight_rate = 60.0
             handling_fee = 2500.0
-            fuel_rate_per_km = 0.40
-            
+            fuel_surcharge_pct = 0.30
+
+            if chargeable_weight < 45:
+                weight_rate = 280.0
+            elif chargeable_weight < 100:
+                weight_rate = 220.0
+            elif chargeable_weight < 500:
+                weight_rate = 180.0
+            else:
+                weight_rate = 150.0
+
+        GST_RATE = 0.18
+
         distance_charge = distance_km * distance_rate
         weight_charge = chargeable_weight * weight_rate
         base_cost = base_charge + distance_charge + weight_charge
-        
-        fuel_surcharge = distance_km * fuel_rate_per_km
-        
+
+        fuel_surcharge = base_cost * fuel_surcharge_pct
+
         stops = int(route.get("stops", 0))
         handling_fee_total = handling_fee + (stops * cargo_rule.get("handling_fee_per_stop", 0.0))
-        
+
         cargo_markup = base_cost * (cargo_rule.get("base_markup", 1.0) - 1.0)
-        
+
         adjusted_cost = base_cost + fuel_surcharge + handling_fee_total + cargo_markup
-        
+
         cost_multiplier = 1.0
         weather_adj = weather_risk * 0.10
         congestion_adj = congestion_risk * 0.15
         otp_adj = (1.0 - reliability) * 0.10
-        
+
         cost_multiplier += weather_adj + congestion_adj + otp_adj
         cost_multiplier = max(1.0, min(cost_multiplier, 1.5))
-        
-        final_cost = round(adjusted_cost * cost_multiplier, 2)
+
+        pre_tax_total = adjusted_cost * cost_multiplier
+
+        gst_amount = pre_tax_total * GST_RATE
+        final_cost = round(pre_tax_total + gst_amount, 2)
 
         breakdown = {
             "routeType": route_type,
@@ -505,6 +540,9 @@ class AirPipeline(BasePipeline):
             "congestionAdjustment": round(congestion_adj, 4),
             "otpAdjustment": round(otp_adj, 4),
             "costMultiplier": round(cost_multiplier, 4),
+            "preTaxTotal": round(pre_tax_total, 2),
+            "gstRate": GST_RATE,
+            "gstAmount": round(gst_amount, 2),
             "finalCost": final_cost,
             "total": final_cost,
             "currency": "INR"
@@ -532,6 +570,9 @@ class AirPipeline(BasePipeline):
             "congestion_adjustment": breakdown["congestionAdjustment"],
             "otp_adjustment": breakdown["otpAdjustment"],
             "cost_multiplier": breakdown["costMultiplier"],
+            "pre_tax_total": breakdown["preTaxTotal"],
+            "gst_rate": breakdown["gstRate"],
+            "gst_amount": breakdown["gstAmount"],
             "final_cost": breakdown["finalCost"],
             "pricing_basis": breakdown["routeType"],
         })
@@ -636,6 +677,8 @@ class AirPipeline(BasePipeline):
             priority = normalized["priority"]
 
             routes = self._fetch_routes(source, destination, normalized, context=context)
+            if isinstance(routes, dict):
+                return routes
             if not routes:
                 return {
                     "mode": "air",

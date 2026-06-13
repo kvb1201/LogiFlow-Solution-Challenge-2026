@@ -32,7 +32,7 @@ export function useCitySearch(setGlobalSuggestions: (rows: StationSearchResult[]
       if (!query || query.length < 2) {
         setResults([]);
         setGlobalSuggestions([]);
-        return;
+                return;
       }
       setLoading(true);
       timeoutRef.current = setTimeout(async () => {

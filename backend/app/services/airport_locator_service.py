@@ -117,7 +117,7 @@ def resolve_city_to_airport(city: str) -> dict:
     if nearest:
         return nearest
 
-    return {"code": canonical[:3].upper(), "name": canonical}
+    return None
 
 
 def get_airport_by_iata(iata_code: str) -> Optional[dict]:

@@ -12,7 +12,7 @@ def run_pipeline_only():
     print("=" * 60)
 
     pipeline = AirPipeline()
-    routes = pipeline.generate(
+    result = pipeline.generate(
         "Delhi",
         "Mumbai",
         {
@@ -22,8 +22,9 @@ def run_pipeline_only():
         },
     )
 
-    print(f"Routes returned: {len(routes)}")
-    for idx, route in enumerate(routes, start=1):
+    routes_list = result.get("all", [])
+    print(f"Routes returned: {len(routes_list)}")
+    for idx, route in enumerate(routes_list, start=1):
         print(f"\nRoute {idx}")
         print(f"  Airline      : {route['airline']}")
         print(f"  Stops        : {route['stops']}")
