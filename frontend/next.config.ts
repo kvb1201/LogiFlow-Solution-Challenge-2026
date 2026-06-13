@@ -1,10 +1,4 @@
 import type { NextConfig } from "next";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-// Next 16 picks the nearest lockfile as workspace root; repo root has an empty
-// package-lock.json, which breaks Tailwind resolution (looks in ../ not frontend/).
-const turbopackRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const backendBase =
   process.env.BACKEND_URL?.replace(/\/$/, "")
@@ -12,9 +6,6 @@ const backendBase =
   || "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: turbopackRoot,
-  },
   async rewrites() {
     // Do NOT use a catch-all /api/* rewrite — it shadows Next.js route handlers
     // (/api/warm-backend, /api/compose) and breaks Turbopack dev when cache is stale.
