@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ensureAbsoluteUrl } from '@/lib/seo';
 
 function backendBase(): string | null {
   const url =
@@ -7,7 +8,7 @@ function backendBase(): string | null {
     // Match next.config.ts — local `make dev` without .env.local still warms localhost:8000
     (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8000' : '');
   if (!url) return null;
-  return url.replace(/\/$/, '');
+  return ensureAbsoluteUrl(url).replace(/\/$/, '');
 }
 
 /** Wake Render (or any sleeping backend) by hitting /health with a long timeout. */

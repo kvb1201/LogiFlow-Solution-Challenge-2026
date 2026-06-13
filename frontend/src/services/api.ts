@@ -11,18 +11,21 @@ import {
   redirectToWaitingRoom,
   TrafficQueueError,
 } from '@/lib/traffic-queue';
+import { ensureAbsoluteUrl } from '@/lib/seo';
 
 export { TrafficQueueError } from '@/lib/traffic-queue';
 
-const BACKEND_SERVER =
+const BACKEND_SERVER = ensureAbsoluteUrl(
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_BASE?.trim()) ||
-  'http://127.0.0.1:8000';
+  'http://127.0.0.1:8000'
+);
 
 /** Long-running compose bypasses Vercel serverless (FUNCTION_INVOCATION_TIMEOUT). */
-const COMPOSE_DIRECT =
+const COMPOSE_DIRECT = ensureAbsoluteUrl(
   process.env.NEXT_PUBLIC_COMPOSE_URL?.replace(/\/$/, '') ||
-  BACKEND_SERVER;
+  BACKEND_SERVER
+);
 
 /** Browser calls use same-origin proxy; SSR uses direct backend URL. */
 export const BACKEND_BASE = typeof window !== 'undefined' ? '/api/backend' : BACKEND_SERVER;

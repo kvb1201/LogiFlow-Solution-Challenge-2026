@@ -2,8 +2,19 @@ import type { Metadata } from 'next';
 import type { LogisticsMode } from './mode-meta';
 import { modeMeta } from './mode-meta';
 
+export function ensureAbsoluteUrl(value: string): string {
+  if (!value) return "";
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://")
+  ) {
+    return value;
+  }
+  return `https://${value}`;
+}
+
 /** Canonical public site URL — set in Vercel for custom domain (e.g. https://logiflow.in). */
-export const SITE_URL = (
+export const SITE_URL = ensureAbsoluteUrl(
   process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
   process.env.VERCEL_URL?.trim() ||
   'https://logi-flow-solution-challenge-2026.vercel.app'
@@ -77,11 +88,18 @@ export function buildPageMetadata({
   const canonical = path ? `${SITE_URL}${path}` : SITE_URL;
   const fullTitle = title ? `${title} — ${SITE_NAME}` : `${SITE_NAME} — Multimodal Logistics`;
 
+  let metadataBaseUrl: URL | undefined;
+  try {
+    metadataBaseUrl = new URL(SITE_URL);
+  } catch {
+    console.error("Invalid URL:", SITE_URL);
+  }
+
   return {
     title: fullTitle,
     description,
     keywords: keywords.length ? keywords : undefined,
-    metadataBase: new URL(SITE_URL),
+    metadataBase: metadataBaseUrl,
     alternates: { canonical },
     robots: noIndex ? { index: false, follow: false } : { index: true, follow: true },
     openGraph: {
