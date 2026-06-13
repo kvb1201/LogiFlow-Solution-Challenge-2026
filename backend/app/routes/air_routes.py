@@ -56,6 +56,30 @@ def optimize_air(payload: AirCargoPayload):
             context=context,
         )
 
+        print("\n" + "=" * 60)
+        print("AIR PIPELINE DEBUG")
+        print("=" * 60)
+        print("SOURCE:", payload.source)
+        print("DESTINATION:", payload.destination)
+        print("MODE:", mode)
+        print("RESULT TYPE:", type(result))
+
+        if isinstance(result, dict):
+            print("RESULT KEYS:", list(result.keys()))
+            print("STATUS:", result.get("status"))
+            print("BEST EXISTS:", result.get("best") is not None)
+
+            all_routes = result.get("all") or []
+            print("TOTAL ROUTES:", len(all_routes))
+
+            if all_routes:
+                print("FIRST ROUTE:")
+                print(all_routes[0])
+        else:
+            print("RESULT:", result)
+
+        print("=" * 60 + "\n")
+
         constraints_applied = {
             "budget_limit": payload.budget_limit,
             "deadline_hours": payload.deadline_hours,
@@ -70,11 +94,13 @@ def optimize_air(payload: AirCargoPayload):
             ranked_routes = result.get("all") or []
             best_route = result.get("best")
             alternatives = result.get("alternatives") or []
+
             no_routes = (
                 result.get("status") == "no_routes"
                 or not ranked_routes
                 or best_route is None
             )
+
             no_routes_message = result.get(
                 "message",
                 "No valid air routes found for the selected corridor",
@@ -83,8 +109,12 @@ def optimize_air(payload: AirCargoPayload):
             ranked_routes = result or []
             best_route = ranked_routes[0] if ranked_routes else None
             alternatives = ranked_routes[1:] if len(ranked_routes) > 1 else []
+
             no_routes = not ranked_routes or best_route is None
-            no_routes_message = "No valid air routes found for the selected corridor"
+
+            no_routes_message = (
+                "No valid air routes found for the selected corridor"
+            )
 
         if no_routes:
             return {
@@ -110,14 +140,17 @@ def optimize_air(payload: AirCargoPayload):
 
     except HTTPException:
         raise
+
     except Exception as e:
-        # Return a clearer API error while preserving traceback in server logs.
         logger.exception("Air optimize failed")
+
         message = str(e).strip() or "Unknown error"
+
         raise HTTPException(
             status_code=500,
             detail=f"Air optimize internal error ({type(e).__name__}): {message}",
         )
+
 
 
 @air_router.get("/health")

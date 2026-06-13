@@ -178,8 +178,9 @@ class AirPipeline(BasePipeline):
                     sim_reliability = float(sim.get("reliability_factor"))
                     reliability = 0.5 * reliability + 0.5 * sim_reliability
 
-            stops = int(route.get("stops", 0))
-            time = float(route.get("duration", 0))
+            stops = int(route.get("stops", 0) or 0)
+            time = float(route.get("duration", 0) or 0)
+
             cost_breakdown = self._build_cost_breakdown(
                 route,
                 payload,
@@ -215,14 +216,26 @@ class AirPipeline(BasePipeline):
             source_airport = route.get("source_airport") or CITY_TO_AIRPORT.get(source, {"code": source[:3].upper(), "name": source})
             destination_airport = route.get("destination_airport") or CITY_TO_AIRPORT.get(destination, {"code": destination[:3].upper(), "name": destination})
             confidence_score, confidence_reasons = self._build_confidence(route, reliability, cargo_rule, business_rules)
-            schedule = build_route_schedule(
-                departure_date,
-                time,
-                source_airport,
-                destination_airport,
-            )
+            # Build schedule defensively; any failure should not crash the whole pipeline.
+            try:
+                schedule = build_route_schedule(
+                    departure_date,
+                    time,
+                    source_airport,
+                    destination_airport,
+                )
+            except Exception:
+                schedule = {
+                    "departure_utc": str(departure_date),
+                    "arrival_utc": str(departure_date),
+                    "departure_local": str(departure_date),
+                    "arrival_local": str(departure_date),
+                    "departure_timezone": "UTC",
+                    "arrival_timezone": "UTC",
+                }
 
             engineered.append({
+
                 "type": "Air",
                 "mode": "air",
                 "time": round(time, 2),
@@ -236,8 +249,9 @@ class AirPipeline(BasePipeline):
                 "weather_risk": weather_risk,
                 "congestion_risk": congestion_risk,
                 "otp_prediction": otp_prediction,
-                "congestion_score": otp_prediction["congestionScore"],
-                "congestion_level": otp_prediction["congestionLevel"],
+                "congestion_score": float(otp_prediction.get("congestionScore", 0)) if isinstance(otp_prediction, dict) else 0,
+                "congestion_level": otp_prediction.get("congestionLevel", "Low") if isinstance(otp_prediction, dict) else "Low",
+
                 "reliability": round(reliability, 3),
                 "cargo_type": cargo_type,
                 "cargo_weight": cargo_weight,
@@ -272,8 +286,9 @@ class AirPipeline(BasePipeline):
                     "weather_risk": weather_risk,
                     "congestion_risk": congestion_risk,
                     "otp_prediction": otp_prediction,
-                    "congestion_score": otp_prediction["congestionScore"],
-                    "congestion_level": otp_prediction["congestionLevel"],
+                "congestion_score": float(otp_prediction.get("congestionScore", 0)) if isinstance(otp_prediction, dict) else 0,
+                "congestion_level": otp_prediction.get("congestionLevel", "Low") if isinstance(otp_prediction, dict) else "Low",
+
                     "reliability": round(reliability, 3),
                     "cargo_type": cargo_type,
                     "cargo_weight": cargo_weight,
@@ -299,13 +314,25 @@ class AirPipeline(BasePipeline):
         return engineered
 
     def _apply_constraints(self, routes, payload):
-        max_stops = payload.get("max_stops")
-        budget_limit = payload.get("budget_limit")
-        deadline_hours = payload.get("deadline_hours")
+        constraints = payload or {}
+        max_stops = constraints.get("max_stops")
+        budget_limit = constraints.get("budget_limit")
+        deadline_hours = constraints.get("deadline_hours")
+
+        # Normalize empty/zero constraint values to None
+        max_stops = (
+            max_stops if max_stops not in (0, "0", "", None) else None
+        )
+        budget_limit = (
+            budget_limit if budget_limit not in (0, 0.0, "0", "", None) else None
+        )
+        deadline_hours = (
+            deadline_hours if deadline_hours not in (0, 0.0, "0", "", None) else None
+        )
 
         MIN_CONFIDENCE = 60
-
         filtered = []
+
         for route in routes:
             # Step 1: Minimum confidence threshold
             if route.get("confidence_score", 0) < MIN_CONFIDENCE:
@@ -314,7 +341,7 @@ class AirPipeline(BasePipeline):
 
             # Step 4: Prevent unrealistic routes
             stops = route.get("stops", 0)
-            if stops > 1:
+            if stops > 2:  # Allow up to 2 stops, reject only routes with 3+ stops
                 print(f"[AIR FILTER] rejected route with excessive stops: {stops}")
                 continue
 
@@ -326,11 +353,17 @@ class AirPipeline(BasePipeline):
 
             if max_stops is not None and stops > int(max_stops):
                 continue
-            if budget_limit is not None and route["cost"] > float(budget_limit):
-                continue
-            if deadline_hours is not None and route["time"] > float(deadline_hours):
-                continue
+
+            if budget_limit is not None and float(budget_limit) > 0:
+                if route.get("cost") is None or route["cost"] > float(budget_limit):
+                    continue
+
+            if deadline_hours is not None and float(deadline_hours) > 0:
+                if route.get("time") is None or route["time"] > float(deadline_hours):
+                    continue
+
             filtered.append(route)
+
         return filtered
 
     def _explain_route(self, route, priority, simulation_mode=False):
