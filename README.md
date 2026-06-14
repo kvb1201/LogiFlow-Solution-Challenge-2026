@@ -27,7 +27,7 @@
 
 <br/>
 
-[**Try the app**](https://logi-flow-solution-challenge-2026.vercel.app/) · [**API health**](https://logiflow-api-sbexkjk72q-el.a.run.app/health) · [**Documentation**](./docs/) · [**Android APK**](https://drive.google.com/file/d/11l_qnlY7JiAerHGyBcq2wIVn0NtWNXNl/view?usp=sharing)
+[**Try the app**](https://logi-flow-solution-challenge-2026.vercel.app/) · [**API health**](https://logiflow-api-sbexkjk72q-el.a.run.app/health) · [**Documentation**](./docs/) · [**Android APK**](https://drive.google.com/file/d/17uYe7_o_Sqc373dVvzrk8FUo48cbZ-ME/view?usp=drive_link)
 
 </div>
 
@@ -57,7 +57,49 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 
 **LogiFlow** runs five transport pipelines in parallel, normalizes every result into one schema, and ranks options with **priority-weighted scoring** and **Pareto dominance**. Shippers get cheapest / fastest / safest picks, a full multimodal comparator, chained hybrid itineraries, saved shipment plans with route health monitoring, and plain-language AI explanations — backed by **real data**, not fabricated routes.
 
+### Key capabilities
+
+- Multi-modal route optimization (Road, Rail, Air, Water)
+- Hybrid route composition across transport modes
+- Priority-aware optimization (Cost / Time / Safety)
+- Pareto-based route ranking
+- ML-powered delay prediction
+- Real-time traffic and weather intelligence
+- AI-generated route explanations
+- Shipment planning and lifecycle monitoring
+- Web + Android support
+
+### Why LogiFlow?
+
+| Traditional Planning | LogiFlow |
+|----------------------|----------|
+| Single transport mode | Multi-modal comparison |
+| Manual evaluation | Automated optimization |
+| Static routes | Real-time intelligence |
+| No explanations | AI-generated reasoning |
+| Separate planning tools | Unified decision platform |
+
 ---
+
+<p align="center">
+  <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="60" fill="#08090C" rx="8"/>
+    <text x="600" y="40" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#34D399" text-anchor="middle">Product Snapshot</text>
+    <line x1="400" y1="50" x2="800" y2="50" stroke="#34D399" stroke-width="2" opacity="0.5"/>
+  </svg>
+</p>
+
+## Product snapshot
+
+<p align="center">
+  <img
+    src="./docs/diagrams/png/01-system-architecture.png"
+    alt="LogiFlow product overview"
+    style="display:block; margin:0 auto; max-width:1000px; max-height:600px; width:auto; height:auto; object-fit:contain; background:#fff; border:1px solid #d0d7de; border-radius:8px;"
+  />
+  <br/>
+  <sub>Multi-modal logistics planning, optimization, monitoring and decision intelligence.</sub>
+</p>
 
 <p align="center">
   <svg width="100%" height="60" viewBox="0 0 1200 60" xmlns="http://www.w3.org/2000/svg">
@@ -85,7 +127,7 @@ India moves **4.6 billion tonnes** of freight every year, yet most shippers stil
 | **Edge (Vercel)** | Same-origin API proxy, compose streaming, backend warmup, Google Sign-In |
 | **API (Cloud Run)** | FastAPI orchestrator — one endpoint per mode plus hybrid, compose, and planner |
 | **Pipelines** | Road · Rail · Air · Water — each with its own data sources and ML where it matters |
-| **Intelligence** | Gemini intent parsing, delay/OTP models, template or LLM explanations |
+| **Decision Intelligence** | Gemini intent parsing, Pareto ranking, delay/OTP models, route explanations, trade-off analysis |
 | **Data** | TomTom · RailRadar · OpenFlights · PortWatch · Supabase · Redis · Postgres |
 
 <p align="center">
@@ -183,10 +225,10 @@ Built by **Neural Foundry** for the **Google Solution Challenge 2026**.
 
 | Member | Focus |
 |--------|-------|
-| Kavya Bhatiya | Founder · road pipeline · hybrid scoring · auth/planner · deployment |
-| Ojas Srivastava | Technical lead · Next.js · rail · compose · Supabase · GCP |
-| Shreya | Water/maritime pipeline · PortWatch · cockpit UI |
-| Samanvitha Bolisetty | Air cargo · OTP scoring · international routing |
+| [Kavya Bhatiya](https://github.com/kvb1201) | Founder · road pipeline · hybrid scoring · auth/planner · deployment |
+| [Ojas Srivastava](https://github.com/Ojas-Srivastava05) | Technical lead · Next.js · rail · compose · Supabase · GCP |
+| [Shreya](https://github.com/ShreyaSVNIT) | Water/maritime pipeline · PortWatch · cockpit UI |
+| [Samanvitha Bolisetty](https://github.com/samanvitha7) | Air cargo · OTP scoring · international routing |
 
 ---
 
@@ -202,9 +244,22 @@ Built by **Neural Foundry** for the **Google Solution Challenge 2026**.
 
 We built LogiFlow because logistics should not be a guessing game. Every farmer, factory owner, and small business deserves the same clarity that large freight desks take for granted — **see every option, understand the tradeoff, and ship with confidence.**
 
-This repository is our finished submission: working product, real pipelines, and documentation we would hand to the next engineer on day one. Thank you for taking the time to explore what we made. We hope it helps someone move cargo smarter, somewhere in India or beyond.
+This repository contains the complete implementation, documentation, deployment assets, and architecture artifacts for our Google Solution Challenge 2026 submission.
 
 — **Kavya, Ojas, Shreya & Samanvitha** · Neural Foundry · 2026
+
+---
+
+## Business impact
+
+LogiFlow is designed to help shippers and logistics planners:
+
+- Reduce freight costs through cross-modal comparison
+- Reduce planning time from hours to minutes
+- Mitigate delay risk using predictive intelligence
+- Increase visibility across transport networks
+- Enable MSMEs to access enterprise-grade logistics planning
+- Improve supply-chain resilience through continuous monitoring and re-optimization
 
 ---
 
@@ -230,5 +285,5 @@ All rights reserved © 2026 **Kavya Bhatiya**
 </p>
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://github.com/Ojas-Srivastava05">Neural Foundry</a> for Google Solution Challenge 2026</sub>
+  <sub>Built with ❤️ by <a href="https://github.com/kvb1201/LogiFlow-Solution-Challenge-2026">Neural Foundry</a> for Google Solution Challenge 2026</sub>
 </p>
